@@ -1,0 +1,14 @@
+.direnv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+*.egg-info/
+*.fcs
+*.lmd
+*.flowdesk/cache/
+*.flowdesk/exports/

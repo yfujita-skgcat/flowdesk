@@ -1,0 +1,1 @@
+"""Sample browser placeholder."""

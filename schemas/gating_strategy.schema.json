@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowdesk.local/schemas/gating_strategy.schema.json",
+  "title": "Flowdesk Gating Strategy",
+  "type": "object",
+  "required": ["id", "name", "gates"],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "gate_type"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "gate_type": { "type": "string", "enum": ["rectangle", "polygon", "range", "boolean"] },
+          "parent_population_id": { "type": ["string", "null"] },
+          "x_parameter": { "type": ["string", "null"] },
+          "y_parameter": { "type": ["string", "null"] },
+          "transform_id": { "type": ["string", "null"] },
+          "compensation_id": { "type": ["string", "null"] },
+          "coordinates": {},
+          "thresholds": {},
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

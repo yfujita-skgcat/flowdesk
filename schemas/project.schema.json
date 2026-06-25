@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowdesk.local/schemas/project.schema.json",
+  "title": "Flowdesk Project Manifest",
+  "type": "object",
+  "required": ["project_id", "project_version", "pipeline_version", "samples"],
+  "properties": {
+    "project_id": { "type": "string" },
+    "project_version": { "type": "string" },
+    "pipeline_version": { "type": "string" },
+    "created_at": { "type": "string" },
+    "updated_at": { "type": "string" },
+    "samples": { "type": "array", "items": { "type": "object" } },
+    "compensation_matrices": { "type": "array", "items": { "type": "object" } },
+    "derived_parameters": { "type": "array", "items": { "type": "object" } },
+    "transforms": { "type": "array", "items": { "type": "object" } },
+    "gating_strategies": { "type": "array", "items": { "type": "object" } },
+    "default_gating_strategy_id": { "type": "string" },
+    "default_compensation_matrix_id": { "type": ["string", "null"] },
+    "export_settings": { "type": "array", "items": { "type": "object" } },
+    "execution_profiles": { "type": "array", "items": { "type": "object" } },
+    "last_execution_report_path": { "type": ["string", "null"] },
+    "sample_path_resolution_policy": { "type": "string" },
+    "software": { "type": "object" }
+  },
+  "additionalProperties": true
+}

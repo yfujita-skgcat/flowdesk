@@ -1,0 +1,46 @@
+{
+  "project_id": "example_project",
+  "project_version": "0.1",
+  "pipeline_version": "0.1",
+  "created_at": "2026-06-25T00:00:00Z",
+  "updated_at": "2026-06-25T00:00:00Z",
+  "sample_path_resolution_policy": "relative_to_project_or_absolute",
+  "samples": [],
+  "compensation_matrices": [],
+  "derived_parameters": [
+    {
+      "id": "fl1_over_fl2",
+      "name": "FL1_over_FL2",
+      "expression": "FL1-A / FL2-A",
+      "source_stage": "compensated",
+      "input_parameters": ["FL1-A", "FL2-A"],
+      "invalid_value_policy": "division_by_zero_to_nan"
+    }
+  ],
+  "transforms": [],
+  "gating_strategies": ["default_gating"],
+  "default_gating_strategy_id": "default_gating",
+  "default_compensation_matrix_id": null,
+  "export_settings": [
+    {
+      "id": "default_tsv",
+      "format": "tsv",
+      "include_metrics": ["event_count", "frequency_of_parent", "frequency_of_total"]
+    }
+  ],
+  "execution_profiles": [
+    {
+      "id": "default",
+      "name": "Default analysis",
+      "gating_strategy_id": "default_gating",
+      "sample_selector": "all",
+      "export_settings_id": "default_tsv",
+      "recompute_cache": false
+    }
+  ],
+  "last_execution_report_path": null,
+  "software": {
+    "name": "flowdesk",
+    "version": "0.1.0"
+  }
+}

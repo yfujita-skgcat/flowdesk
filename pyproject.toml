@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flowdesk"
+version = "0.1.0"
+description = "Linux-first FlowJo-like flow cytometry analysis application"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Flowdesk contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+io = ["flowio", "flowkit"]
+gui = ["PySide6", "pyqtgraph", "datashader"]
+dev = ["pytest", "ruff", "mypy"]
+
+[project.scripts]
+flowdesk = "flowdesk_cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["flowdesk_core", "flowdesk_storage", "flowdesk_cli"]
