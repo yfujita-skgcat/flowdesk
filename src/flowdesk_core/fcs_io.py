@@ -6,9 +6,10 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-import flowio
+# type: ignore[import-untyped]
+import flowio  # type: ignore[import-untyped]
 import numpy as np
-from flowio.exceptions import FlowIOException, MultipleDataSetsError
+from flowio.exceptions import FlowIOException, MultipleDataSetsError  # type: ignore[import-untyped]
 
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.models import ChannelSpec, CompensationMatrixSpec

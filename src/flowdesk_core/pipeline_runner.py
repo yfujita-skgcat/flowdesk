@@ -113,7 +113,9 @@ class PipelineRunner:
     self, profile_id: str
   ) -> dict[str, Any]:
     """Locate and return the execution profile by id."""
-    profiles = self._project.get("execution_profiles", [])
+    profiles: list[dict[str, Any]] = self._project.get(
+      "execution_profiles", []
+    )
     for p in profiles:
       if p.get("id") == profile_id:
         return p

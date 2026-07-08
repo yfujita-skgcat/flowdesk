@@ -215,7 +215,8 @@ def _point_in_polygon_vectorized(
   # Also check if point is on any edge (inclusive boundary).
   on_edge = _point_on_polygon_edge(px, py, vertices)
 
-  return (crossings % 2 == 1) | on_edge
+  inside = (crossings % 2 == 1).astype(np.bool_)
+  return inside | on_edge
 
 
 def _point_on_polygon_edge(
