@@ -91,7 +91,7 @@ class GateSpec:
   transform_id: str | None = None
   compensation_id: str | None = None
   coordinates: tuple[tuple[float, float], ...] = field(default_factory=tuple)
-  thresholds: dict[str, float] = field(default_factory=dict)
+  thresholds: dict[str, Any] = field(default_factory=dict)
   notes: str = ""
 
 
