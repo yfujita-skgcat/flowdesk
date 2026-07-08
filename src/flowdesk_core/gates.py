@@ -216,7 +216,8 @@ def _point_in_polygon_vectorized(
   on_edge = _point_on_polygon_edge(px, py, vertices)
 
   inside = (crossings % 2 == 1).astype(np.bool_)
-  return inside | on_edge
+  result: NDArray[np.bool_] = np.logical_or(inside, on_edge)
+  return result
 
 
 def _point_on_polygon_edge(

@@ -271,14 +271,14 @@ class PipelineRunner:
       label = spec.output_label or spec.name
 
       # Build variable dict from current columns.
-      variables: dict[str, float | NDArray[np.float64]] = {}
+      variables: dict[str, NDArray[np.float64]] = {}
       for i, name in enumerate(current_names):
         variables[name] = current_data[:, i]
 
       try:
-        result = evaluate_expression(
-          spec.expression, variables, allow_functions=True
-        )
+        result_any = evaluate_expression(spec.expression, variables,  # type: ignore[arg-type]
+                                         allow_functions=True)
+        result = np.asarray(result_any, dtype=np.float64)
       except Exception:
         # Produce NaN column on evaluation failure.
         result = np.full(current_data.shape[0], np.nan, dtype=np.float64)

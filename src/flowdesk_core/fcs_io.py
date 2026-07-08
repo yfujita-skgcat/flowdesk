@@ -6,7 +6,6 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-# type: ignore[import-untyped]
 import flowio  # type: ignore[import-untyped]
 import numpy as np
 from flowio.exceptions import FlowIOException, MultipleDataSetsError  # type: ignore[import-untyped]
