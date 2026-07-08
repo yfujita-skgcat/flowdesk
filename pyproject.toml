@@ -37,7 +37,11 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 mypy_path = "src"
 packages = ["flowdesk_core", "flowdesk_storage", "flowdesk_cli"]
+
+[[tool.mypy.overrides]]
+module = ["numpy.*"]
+ignore_errors = true

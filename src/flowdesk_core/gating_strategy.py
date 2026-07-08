@@ -58,6 +58,12 @@ def evaluate_gating_strategy(
     x_vals = _get_column(gate.x_parameter, data, channel_names)
     y_vals = _get_column(gate.y_parameter, data, channel_names)
 
+    # x_vals is required for all gate types.
+    if x_vals is None:
+      raise GatingStrategyError(
+        f"gate {gate.id!r} has no x_parameter defined"
+      )
+
     # Evaluate the gate.
     gate_mask = evaluate_gate(gate, x_vals, y_vals, population_masks)
 
