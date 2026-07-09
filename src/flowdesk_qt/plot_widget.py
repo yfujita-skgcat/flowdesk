@@ -680,28 +680,30 @@ class PlotWidget(QWidget):
         if vb is None:
             return None
         try:
-            # In pyqtgraph 0.14.0, event.pos is a method, not a property.
-            pos = event.pos()
+            if hasattr(event, "scenePos"):
+                pos = event.scenePos()
+            else:
+                # In pyqtgraph 0.14.0, event.pos is a method, not a property.
+                pos = event.pos()
             view_pos = vb.mapSceneToView(pos)
             return (float(view_pos.x()), float(view_pos.y()))
         except Exception:
             return None
 
-    def _on_mouse_click(self, event: Any) -> None:
-        """Handle mouse click events for gate creation."""
+    def _on_scene_mouse_click(self, event: Any) -> None:
+        """Handle scene-level mouse clicks for polygon gate creation."""
         if self._active_gate_creation != "polygon":
-            self._default_mouse_click_event(event)
             return
 
         data_pos = self._get_data_position(event)
         if data_pos is None:
-            self._default_mouse_click_event(event)
             return
 
-        is_double = event.button() == Qt.LeftButton and hasattr(event, "isDoubleClicked")
-        # Check for actual double-click via button state
+        if event.button() != Qt.LeftButton:
+            return
+
         try:
-            is_double = event.isDoubleClicked()  # type: ignore[attr-defined]
+            is_double = bool(event.double())
         except Exception:
             is_double = False
 
@@ -712,6 +714,10 @@ class PlotWidget(QWidget):
                 pass
 
         event.accept()
+
+    def _on_mouse_click(self, event: Any) -> None:
+        """Delegate ViewBox mouse clicks to pyqtgraph defaults."""
+        self._default_mouse_click_event(event)
 
     def _on_mouse_drag(self, event: Any) -> None:
         """Handle mouse drag for rectangle gate creation."""
@@ -779,8 +785,9 @@ class PlotWidget(QWidget):
         if vb is not None:
             self._default_mouse_click_event = vb.mouseClickEvent
             self._default_mouse_drag_event = vb.mouseDragEvent
-            vb.mouseClickEvent = self._on_mouse_click  # type: ignore[assignment]
             vb.mouseDragEvent = self._on_mouse_drag  # type: ignore[assignment]
+
+        self._glw.scene().sigMouseClicked.connect(self._on_scene_mouse_click)
 
         # Apply initial style (background, grid, etc.)
         self._apply_style()
