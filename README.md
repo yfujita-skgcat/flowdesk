@@ -81,6 +81,60 @@ The CLI `run` command exports population statistics as TSV by default. Use `--cs
 - `empty`: leave the cell empty
 - `zero`: write `0`
 
+## GUI Usage
+
+The PySide6-based GUI is available as an optional dependency. Install the `gui` extra:
+
+```bash
+python -m pip install -e '.[io,gui,dev]'
+```
+
+### Launching the GUI
+
+```bash
+# Launch with no data
+python -m flowdesk_qt
+
+# Launch and auto-load FCS files from a directory
+python -m flowdesk_qt --data-dir data/
+```
+
+### GUI Layout
+
+```
++-----------+--------------------------+----------------+
+| Samples   |  Plot Parameters         |  Gates         |
+| Browser   |  +------------------+    |  Editor        |
+|           |  | 2D Scatter Plot  |    |                |
+| - File    |  |  (pyqtgraph)     |    |  - Create Gate |
+|   list    |  |                  |    |  - Delete      |
+|           |  |  + Gate overlays |    |  - Polygon     |
+| - Channel |  +------------------+    +----------------+
+|   metadata|                                |          |
++-----------+                                |          |
+                                             +----------------+
+                                             | Population     |
+                                             | Results        |
+                                             | (table)        |
+                                             +----------------+
+```
+
+- **Sample Browser** (left): lists loaded FCS files and shows channel metadata.
+- **Channel Selector** (center top): choose X and Y parameters for the 2D plot.
+- **Plot Widget** (center): pyqtgraph-based scatter plot with gate overlays in data coordinates.
+- **Gate Editor** (right top): create rectangle, range, and polygon gates.
+- **Population Results** (right bottom): displays pipeline execution results.
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+O` | Open directory with FCS files |
+| `Ctrl+Shift+O` | Open specific FCS files |
+| `Ctrl+R` | Run analysis pipeline |
+| `Ctrl+G` | Clear all gates |
+| `Ctrl+Q` | Quit application |
+
 ## Architecture
 
 ```text
@@ -100,6 +154,6 @@ raw FCS events
 
 ## Current Status
 
-Implemented: core dataclasses, pipeline runner, FCS I/O, compensation, derived parameters, transforms, gates, population statistics, TSV/CSV export, CLI commands, and synthetic tests (237 tests passing). `mypy` and `ruff` checks pass for all source files.
+Implemented: core dataclasses, pipeline runner, FCS I/O, compensation, derived parameters, transforms, gates, population statistics, TSV/CSV export, CLI commands, and synthetic tests (237 tests passing). PySide6 GUI with sample browser, 2D scatter plots, gate editing, and pipeline execution. `mypy` and `ruff` checks pass for all source files.
 
 Not yet implemented: complete FlowJo compatibility, full GatingML support, production GUI behavior, and large-file FCS rendering.

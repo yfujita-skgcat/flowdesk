@@ -19,6 +19,7 @@ dev = ["pytest", "ruff", "mypy"]
 
 [project.scripts]
 flowdesk = "flowdesk_cli.main:main"
+flowdesk-gui = "flowdesk_qt:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
