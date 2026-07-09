@@ -1,3 +1,8 @@
+---
+name: scientific-review
+description: Guidance for reviewing Flowdesk scientific correctness, reproducibility, analysis assumptions, and GUI versus headless consistency. Use when auditing compensation, transforms, gates, frequencies, export results, or any change that could affect flow cytometry analysis validity.
+---
+
 # Scientific Review Skill
 
 Use this skill when reviewing analysis correctness.

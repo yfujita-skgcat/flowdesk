@@ -1,3 +1,8 @@
+---
+name: compensation
+description: Guidance for implementing and reviewing Flowdesk compensation matrix representation, channel alignment, compensation execution order, source metadata, and raw event immutability. Use when changing compensation matrix models, spillover application, matrix provenance, or compensation-related tests.
+---
+
 # Compensation Skill
 
 Use this skill when changing compensation matrix representation or application.

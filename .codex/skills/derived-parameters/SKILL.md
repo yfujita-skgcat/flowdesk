@@ -1,3 +1,8 @@
+---
+name: derived-parameters
+description: Guidance for implementing and reviewing Flowdesk derived parameter definitions, safe expression parsing and evaluation, source stage handling, invalid value policy, and export behavior. Use when changing derived channel models, expression syntax, expression execution, or NaN handling for derived parameters.
+---
+
 # Derived Parameters Skill
 
 Use this skill when changing derived parameter definitions or expression handling.
