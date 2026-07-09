@@ -263,6 +263,7 @@ class MainWindow(QMainWindow):
 
         # Connect plot mouse events to gate creation
         self._plot_widget.on_mouse_clicked(self._on_plot_mouse_clicked)
+        self._plot_widget.on_gate_geometry_changed(self._on_gate_geometry_changed)
 
     # -- sample handling -----------------------------------------------------
 
@@ -557,6 +558,11 @@ class MainWindow(QMainWindow):
         )
         self._gate_editor.add_gate(gate)
         self._update_status(f"Rectangle gate created: {gate.name}")
+
+    def _on_gate_geometry_changed(self, gate_index: int, gate) -> None:
+        """Persist interactive ROI edits back into the gate editor."""
+        self._gate_editor.update_gate(gate_index, gate, notify=False)
+        self._update_status(f"Gate updated: {gate.name}")
 
     # -- plot toolbar handlers -----------------------------------------------
 

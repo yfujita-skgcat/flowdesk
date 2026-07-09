@@ -17,6 +17,8 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from flowdesk_core.models import GateSpec  # noqa: E402
+from flowdesk_qt.gate_editor import GateEditor  # noqa: E402
 from flowdesk_qt.main_window import MainWindow  # noqa: E402
 from flowdesk_qt.plot_widget import PlotWidget  # noqa: E402
 
@@ -252,4 +254,96 @@ def test_main_window_polygon_create_gate_flow_finishes_on_double_click() -> None
     window._plot_widget._get_data_position = original_get_data_position
     window.close()
     window.deleteLater()
+    app.processEvents()
+
+
+def test_polygon_gate_overlay_uses_editable_polyline_roi() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="gate-1",
+      name="poly",
+      gate_type="polygon",
+      x_parameter="FSC-A",
+      y_parameter="SSC-A",
+      coordinates=((1.0, 1.0), (5.0, 1.0), (3.0, 4.0)),
+    )
+
+    widget.add_gate_overlay(gate, gate_index=0)
+
+    assert len(widget._gate_items) == 1
+    item = widget._gate_items[0]
+    assert item.__class__.__name__ == "PolyLineROI"
+    assert item.closed is True
+    assert len(item.getHandles()) == 3
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_polygon_roi_edit_emits_updated_gate_coordinates() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="gate-1",
+      name="poly",
+      gate_type="polygon",
+      x_parameter="FSC-A",
+      y_parameter="SSC-A",
+      coordinates=((1.0, 1.0), (5.0, 1.0), (3.0, 4.0)),
+    )
+    updates: list[tuple[int, GateSpec]] = []
+    widget.on_gate_geometry_changed(
+      lambda index, updated_gate: updates.append((index, updated_gate))
+    )
+    widget.add_gate_overlay(gate, gate_index=2)
+
+    item = widget._gate_items[0]
+    item.setPos(10.0, 20.0)
+
+    assert updates[-1] == (
+      2,
+      GateSpec(
+        id="gate-1",
+        name="poly",
+        gate_type="polygon",
+        x_parameter="FSC-A",
+        y_parameter="SSC-A",
+        coordinates=((11.0, 21.0), (15.0, 21.0), (13.0, 24.0)),
+      ),
+    )
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_gate_editor_defined_gate_item_rename_updates_gate_name() -> None:
+  app = _app()
+  editor = GateEditor()
+  try:
+    gate = GateSpec(
+      id="gate-1",
+      name="old_name",
+      gate_type="polygon",
+      x_parameter="FSC-A",
+      y_parameter="SSC-A",
+      coordinates=((1.0, 1.0), (5.0, 1.0), (3.0, 4.0)),
+    )
+
+    editor.add_gate(gate)
+    item = editor._list_widget.item(0)
+    item.setText("new_name")
+    app.processEvents()
+
+    gates = editor.gates()
+    assert len(gates) == 1
+    assert gates[0].name == "new_name"
+    assert item.text() == "new_name (polygon)"
+  finally:
+    editor.close()
+    editor.deleteLater()
     app.processEvents()

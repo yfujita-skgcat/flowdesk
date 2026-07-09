@@ -18,6 +18,7 @@ membership or any analytical result.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -52,6 +53,7 @@ class PlotWidget(QWidget):
         super().__init__(parent)
         self._scatter: ScatterPlotItem | None = None
         self._gate_items: list[Any] = []
+        self._gate_geometry_callbacks: list[Any] = []
         self._x_label: str = ""
         self._y_label: str = ""
         self._downsample_factor: int = 1
@@ -180,17 +182,17 @@ class PlotWidget(QWidget):
         self._y_label = ""
         self._update_labels()
 
-    def add_gate_overlay(self, gate: GateSpec) -> None:
+    def add_gate_overlay(self, gate: GateSpec, gate_index: int | None = None) -> None:
         """Add a gate geometry overlay in data coordinates."""
-        item = self._create_gate_item(gate)
+        item = self._create_gate_item(gate, gate_index)
         if item is not None:
             self._plot_item.addItem(item)
             self._gate_items.append(item)
 
     def add_gate_overlays(self, gates: list[GateSpec]) -> None:
         """Add multiple gate overlays."""
-        for g in gates:
-            self.add_gate_overlay(g)
+        for idx, gate in enumerate(gates):
+            self.add_gate_overlay(gate, idx)
 
     def clear_gates(self) -> None:
         """Remove all gate overlays."""
@@ -298,6 +300,14 @@ class PlotWidget(QWidget):
         is_double_click: bool)``.
         """
         self._click_callbacks.append(callback)
+
+    def on_gate_geometry_changed(self, callback) -> None:
+        """Register callback for interactive gate geometry edits.
+
+        Callback receives ``(gate_index: int, gate: GateSpec)`` after an ROI
+        move or handle edit is finished.
+        """
+        self._gate_geometry_callbacks.append(callback)
 
     def begin_gate_creation(self, gate_type: InteractiveGateType) -> None:
         """Temporarily capture plot mouse input for interactive gate creation.
@@ -457,7 +467,7 @@ class PlotWidget(QWidget):
             y=self._y_transform == "log10",
         )
 
-    def _create_gate_item(self, gate: GateSpec) -> Any:
+    def _create_gate_item(self, gate: GateSpec, gate_index: int | None = None) -> Any:
         """Create a pyqtgraph geometry item for a gate."""
         from pyqtgraph import mkPen  # type: ignore[attr-defined]
 
@@ -477,18 +487,82 @@ class PlotWidget(QWidget):
                 movable=True,
                 removable=False,
             )
+            self._connect_gate_item_changed(rect, gate, gate_index)
             return rect
 
         if gate.gate_type == "polygon":
             if len(gate.coordinates) < 3:
                 return None
-            from pyqtgraph import PolygonROI  # type: ignore[attr-defined]
+            from pyqtgraph import PolyLineROI  # type: ignore[attr-defined]
 
             pts = list(gate.coordinates)
-            poly = PolygonROI(pts, pen=pen, closed=True, movable=True, removable=False)
+            poly = PolyLineROI(pts, pen=pen, closed=True, movable=True, removable=False)
+            self._connect_gate_item_changed(poly, gate, gate_index)
             return poly
 
         # range / boolean gates do not have a 2D geometry overlay.
+        return None
+
+    def _connect_gate_item_changed(
+        self,
+        item: Any,
+        gate: GateSpec,
+        gate_index: int | None,
+    ) -> None:
+        if gate_index is None:
+            return
+        try:
+            item.sigRegionChangeFinished.connect(
+                lambda *_args, item=item, gate=gate, gate_index=gate_index: (
+                    self._emit_gate_geometry_changed(gate_index, gate, item)
+                )
+            )
+        except Exception:
+            pass
+
+    def _emit_gate_geometry_changed(self, gate_index: int, gate: GateSpec, item: Any) -> None:
+        updated_gate = self._gate_from_item(gate, item)
+        if updated_gate is None:
+            return
+        for cb in self._gate_geometry_callbacks:
+            try:
+                cb(gate_index, updated_gate)
+            except Exception:
+                pass
+
+    def _gate_from_item(self, gate: GateSpec, item: Any) -> GateSpec | None:
+        if gate.gate_type == "rectangle":
+            state = item.saveState()
+            pos = state.get("pos", (0.0, 0.0))
+            size = state.get("size", (0.0, 0.0))
+            x_min = float(pos[0])
+            y_min = float(pos[1])
+            x_max = x_min + float(size[0])
+            y_max = y_min + float(size[1])
+            return replace(
+                gate,
+                thresholds={
+                    "x_min": min(x_min, x_max),
+                    "x_max": max(x_min, x_max),
+                    "y_min": min(y_min, y_max),
+                    "y_max": max(y_min, y_max),
+                },
+            )
+
+        if gate.gate_type == "polygon":
+            state = item.saveState()
+            pos = state.get("pos", (0.0, 0.0))
+            points = state.get("points", [])
+            x0 = float(pos[0])
+            y0 = float(pos[1])
+            coordinates = tuple(
+                (x0 + float(point[0]), y0 + float(point[1]))
+                for point in points
+            )
+            if len(coordinates) < 3:
+                return None
+            return replace(gate, coordinates=coordinates)
+
         return None
 
     def _clear_scatter(self) -> None:

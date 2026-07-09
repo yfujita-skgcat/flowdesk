@@ -11,8 +11,10 @@ This widget contains NO scientific execution logic.  It produces
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from typing import Any
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -192,9 +194,24 @@ class GateEditor(QWidget):
     def add_gate(self, gate: GateSpec) -> None:
         """Add a gate programmatically."""
         self._gates.append(gate)
-        self._list_widget.addItem(f"{gate.name} ({gate.gate_type})")
+        self._add_gate_list_item(gate)
         self._status_label.setText("Ready")
         self._emit_gates_changed()
+
+    def update_gate(self, index: int, gate: GateSpec, notify: bool = True) -> None:
+        """Replace an existing gate definition and refresh the list label."""
+        if index < 0 or index >= len(self._gates):
+            return
+        self._gates[index] = gate
+        item = self._list_widget.item(index)
+        if item is not None:
+            self._updating_list_item = True
+            try:
+                item.setText(self._gate_label(gate))
+            finally:
+                self._updating_list_item = False
+        if notify:
+            self._emit_gates_changed()
 
     def clear_gates(self) -> None:
         """Remove all gates."""
@@ -241,7 +258,7 @@ class GateEditor(QWidget):
             coordinates=coords,
         )
         self._gates.append(gate)
-        self._list_widget.addItem(f"{gate.name} (polygon)")
+        self._add_gate_list_item(gate)
         self._cancel_polygon()
         self._emit_gates_changed()
 
@@ -346,7 +363,7 @@ class GateEditor(QWidget):
         )
 
         self._gates.append(gate)
-        self._list_widget.addItem(f"{name} ({gate_type})")
+        self._add_gate_list_item(gate)
         self._emit_gates_changed()
 
     def _delete_selected_gate(self) -> None:
@@ -367,12 +384,56 @@ class GateEditor(QWidget):
             except Exception:
                 pass
 
+    def _on_item_changed(self, item) -> None:
+        if self._updating_list_item:
+            return
+        idx = self._list_widget.row(item)
+        if idx < 0 or idx >= len(self._gates):
+            return
+        gate = self._gates[idx]
+        new_name = self._name_from_item_text(item.text(), gate.gate_type)
+        if not new_name:
+            self._updating_list_item = True
+            try:
+                item.setText(self._gate_label(gate))
+            finally:
+                self._updating_list_item = False
+            return
+        if new_name == gate.name:
+            return
+        updated_gate = replace(gate, name=new_name)
+        self._gates[idx] = updated_gate
+        self._updating_list_item = True
+        try:
+            item.setText(self._gate_label(updated_gate))
+        finally:
+            self._updating_list_item = False
+        self._emit_gates_changed()
+
+    def _add_gate_list_item(self, gate: GateSpec) -> None:
+        from PySide6.QtWidgets import QListWidgetItem  # noqa: N812
+
+        item = QListWidgetItem(self._gate_label(gate))
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
+        self._list_widget.addItem(item)
+
+    def _gate_label(self, gate: GateSpec) -> str:
+        return f"{gate.name} ({gate.gate_type})"
+
+    def _name_from_item_text(self, text: str, gate_type: str) -> str:
+        value = text.strip()
+        suffix = f" ({gate_type})"
+        if value.endswith(suffix):
+            value = value[: -len(suffix)].strip()
+        return value
+
     # -- UI construction -----------------------------------------------------
 
     def _build_ui(self) -> None:
         self._gate_selected_callbacks: list[Any] = []
         self._gates_changed_callbacks: list[Any] = []
         self._interactive_gate_callbacks: list[Any] = []
+        self._updating_list_item = False
 
         # Gate type selector
         self._type_combo = QComboBox()
@@ -389,6 +450,7 @@ class GateEditor(QWidget):
         self._list_widget = QListWidget()
         self._list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
         self._list_widget.currentRowChanged.connect(self._on_list_selection_changed)
+        self._list_widget.itemChanged.connect(self._on_item_changed)
 
         # Status
         self._status_label = QLabel("Ready")
