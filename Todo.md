@@ -5,7 +5,7 @@
 ## 必ず守る前提
 
 - `AGENTS.md` を最初に読み、Python は 2 spaces indentation を維持する。
-- 機能実装前に該当する `docs/implementation/*.md` を読む。GUI は `docs/implementation/qt-integration.md`、プロット性能は `docs/implementation/performance-and-review.md`、gate は `docs/implementation/gate-engine.md`、headless 実行は `docs/implementation/pipeline-runner.md` を読む。
+- 機能実装前に該当する `docs/implementation/*.md` を読む。GUI は `docs/implementation/qt-integration.md` と `docs/implementation/qt-interactive-plot-controls.md`、プロット性能は `docs/implementation/performance-and-review.md`、gate は `docs/implementation/gate-engine.md`、headless 実行は `docs/implementation/pipeline-runner.md` を読む。
 - `flowdesk_core` は PySide6 / Qt / `flowdesk_qt` に依存させない。
 - GUI は科学計算を実装しない。GUI は project state を編集し、headless pipeline runner を呼び、結果を表示するだけにする。
 - raw FCS event array は immutable として扱う。表示用 downsampling や表示範囲調整を analytical result に混ぜない。
@@ -19,6 +19,42 @@
 - GUI依存は venv に存在する: PySide6, pyqtgraph, numpy, flowio import OK。
 - GUI関連の pytest は現状ほぼ無い。`tests/` は core/CLI/storage 中心。
 - **2026-07-09 追加**: axis transform (linear/log10/asinh) の GUI 実装済み。`ChannelSelector` に X/Y scale の `QComboBox`、`PlotWidget` に `_apply_transform()` / `_update_log_mode()` を追加。
+- **2026-07-09 追加**: 通常のFlowJo類似GUI操作の実装指示書を `docs/implementation/qt-interactive-plot-controls.md` に追加。プロット上のゲート作成/編集、logscale、plot/dot/gate color、population highlight、PNG export、テスト方針をここに集約。
+
+## P0: 通常のGUIプロット操作を実装する
+
+### 指示書
+
+local LLM は実装前に必ず `docs/implementation/qt-interactive-plot-controls.md` を読むこと。
+
+### 実装対象
+
+- プロット上での rectangle gate 作成
+- プロット上での polygon gate 作成
+- range gate 作成
+- gate 選択、移動、リサイズ、頂点編集、リネーム、削除、複製
+- parent population 変更
+- linear/log10/asinh のX/Y個別scale設定
+- plot background color、dot color、dot opacity、dot size、gate outline/fill color の変更
+- selected population の highlight / backgating
+- robust range / full range reset
+- current plot view のPNG export
+
+### 実装ルール
+
+- 表示設定と解析設定を分離する。
+- 色、dot size、opacity、背景、grid、viewport は表示設定であり、pipeline result を変えてはいけない。
+- gate、parent population、analysis transform は解析設定であり、project data と headless pipeline runner で再現可能にする。
+- plot mouse 座標は pyqtgraph の scene/view 変換で data coordinate または transformed data coordinate に変換し、screen pixel を保存しない。
+- log10 表示は `PlotItem.setLogMode(x=..., y=...)` など、点データと軸tickを同時に整合させるAPIを使う。`ViewBox.setLogMode()` 単独に戻さない。
+
+### 受け入れ条件
+
+- ユーザーが数値入力なしに plot 上で gate を作成・編集・削除できる。
+- GUI作成 gate の population count が headless `PipelineRunner` と一致する。
+- 色やdot size変更で population count が変わらない。
+- linear/log10/asinh の表示で点群と gate overlay が一致する。
+- exported PNG が現在の表示、色、scale、gate overlay を反映する。
 
 ## P0: GUIプロットで細胞ドットが下端に潰れて見える問題を直す
 

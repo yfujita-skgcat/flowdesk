@@ -10,6 +10,10 @@ Axis transforms (linear, log10, asinh) are applied to the display data
 before rendering.  The log10 path uses pyqtgraph's native ``setLogMode``
 for proper axis tick formatting.  The asinh path pre-transforms the data
 via ``flowdesk_core.transforms`` and plots on a linear axis.
+
+Display style (colors, dot size, opacity, background, grid) is controlled
+by ``PlotStyleSettings``.  Changing these settings must NEVER affect gate
+membership or any analytical result.
 """
 
 from __future__ import annotations
@@ -22,11 +26,16 @@ from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from flowdesk_core.models import GateSpec
 from flowdesk_core.transforms import TransformError
+from flowdesk_qt.plot_style import PlotStyleSettings
+
+# Local tool mode constants (mirrors plot_toolbar to avoid circular import)
+_TOOL_RECTANGLE_GATE = "rectangle_gate"
+_TOOL_POLYGON_GATE = "polygon_gate"
 
 AxisTransform = Literal["linear", "log10", "asinh"]
 
@@ -53,6 +62,11 @@ class PlotWidget(QWidget):
         # Axis transform state (display-only, defaults to linear).
         self._x_transform: AxisTransform = "linear"
         self._y_transform: AxisTransform = "linear"
+        # Display style settings (display-only, never affects analysis).
+        self._style: PlotStyleSettings = PlotStyleSettings()
+        # Cached raw data for range reset operations.
+        self._cached_x: NDArray[np.float64] | None = None
+        self._cached_y: NDArray[np.float64] | None = None
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -66,6 +80,34 @@ class PlotWidget(QWidget):
         if factor < 1:
             factor = 1
         self._downsample_factor = factor
+
+    # -- style / appearance API (display-only) --------------------------------
+
+    def set_style(self, style: PlotStyleSettings) -> None:
+        """Update display style settings.
+
+        This changes only visual appearance (colors, sizes, background, grid).
+        It does NOT reload data, recompute gates, or change analytical results.
+        """
+        self._style = style
+        self._apply_style()
+
+    def style(self) -> PlotStyleSettings:
+        """Return the current display style settings."""
+        return self._style
+
+    # -- range reset API (display-only) ---------------------------------------
+
+    def set_robust_range(self) -> None:
+        """Reset viewport to robust auto-range (percentile-based)."""
+        self._auto_range()
+
+    def set_full_range(self) -> None:
+        """Reset viewport to full data range (all finite points).
+
+        Uses the cached raw data from the last plot_events call.
+        """
+        self._set_full_range_internal()
 
     def set_axis_transforms(
         self,
@@ -99,6 +141,10 @@ class PlotWidget(QWidget):
         self._x_label = x_label
         self._y_label = y_label
 
+        # Cache raw data for range reset operations.
+        self._cached_x = x_data
+        self._cached_y = y_data
+
         # Apply axis transforms (display only).
         x_plot = self._apply_transform(x_data, self._x_transform)
         y_plot = self._apply_transform(y_data, self._y_transform)
@@ -120,8 +166,9 @@ class PlotWidget(QWidget):
             y_plot,
             pen=None,
             symbol="o",
-            symbolSize=3,
+            symbolSize=self._style.dot_size,
             pxMode=True,
+            brush=self._make_brush(self._style.dot_color, self._style.dot_opacity),
         )
 
         self._update_labels()
@@ -151,6 +198,35 @@ class PlotWidget(QWidget):
     def clear_gates(self) -> None:
         """Remove all gate overlays."""
         self._clear_gates()
+
+    def highlight_gate_index(self, index: int) -> None:
+        """Highlight a gate overlay by index.
+
+        The selected gate gets a solid white pen; all others revert to
+        the style-defined dashed outline.
+        """
+        from pyqtgraph import mkPen  # type: ignore[attr-defined]
+
+        s = self._style
+        default_pen = mkPen(
+            color=s.gate_outline_color,
+            width=2,
+            style=Qt.DashLine,
+        )
+        highlight_pen = mkPen(
+            color="#ffffff",
+            width=3,
+            style=Qt.SolidLine,
+        )
+
+        for idx, item in enumerate(self._gate_items):
+            try:
+                if idx == index:
+                    item.setPen(highlight_pen)
+                else:
+                    item.setPen(default_pen)
+            except Exception:
+                pass
 
     def export_png(
         self,
@@ -218,7 +294,111 @@ class PlotWidget(QWidget):
         """
         self._mouse_callbacks.append(callback)
 
+    def on_mouse_clicked(self, callback) -> None:
+        """Register a callback for mouse clicks in data coordinates.
+
+        The callback receives ``(data_x: float, data_y: float,
+        is_double_click: bool)``.
+        """
+        self._click_callbacks.append(callback)
+
+    def set_tool_mode(self, mode: str) -> None:
+        """Set the active interaction tool mode.
+
+        Supported modes: ``"pan"``, ``"rectangle_gate"``, ``"polygon_gate"``.
+        This is a display-level setting and does not affect analysis.
+        """
+        self._current_tool = mode
+        vb = self._view_box()
+        if vb is not None:
+            if mode == "pan":
+                vb.setMouseMode(vb.PanMode)
+            else:
+                vb.setMouseMode(vb.RectMode)
+
+    # -- callback storage (initialised in _build_ui) -------------------------
+    # These are populated in _build_ui to avoid forward-reference issues.
+    # _click_callbacks: list[Callable[[float, float, bool], None]]
+    # _drag_start: tuple[float, float] | None
+    # _current_tool: str
+
     # -- private ------------------------------------------------------------
+
+    def _make_brush(
+        self,
+        color: str,
+        opacity: float,
+    ) -> Any:
+        """Create a Qt brush from a hex color string and opacity."""
+        try:
+            from PySide6.QtGui import QBrush
+
+            c = QColor(color)
+            c.setAlphaF(max(0.0, min(1.0, opacity)))
+            return QBrush(c)
+        except Exception:
+            return QColor(color)
+
+    def _apply_style(self) -> None:
+        """Apply current style settings to the plot display.
+
+        This updates background, grid, scatter appearance, and gate colors
+        without reloading data or recomputing gates.
+        """
+        s = self._style
+
+        # Background (set on ViewBox, not PlotItem)
+        vb = self._view_box()
+        if vb is not None:
+            vb.setBackgroundColor(s.background_color)
+
+        # Grid
+        if s.show_grid:
+            self._plot_item.showGrid(True, True, alpha=0.3)
+        else:
+            self._plot_item.showGrid(False, False)
+
+        # Re-apply scatter brush/size if scatter exists
+        if self._scatter is not None:
+            brush = self._make_brush(s.dot_color, s.dot_opacity)
+            self._scatter.setBrush(brush)
+            self._scatter.setSymbolSize(s.dot_size)
+
+        # Re-apply gate overlay colors
+        self._refresh_gate_colors()
+
+    def _refresh_gate_colors(self) -> None:
+        """Update gate overlay outline and fill colors without removing items."""
+        s = self._style
+        from pyqtgraph import mkColor, mkPen  # type: ignore[attr-defined]
+
+        try:
+            fill_color = mkColor(s.gate_fill_color)
+            fill_color.setAlphaF(max(0.0, min(1.0, s.gate_fill_opacity)))
+        except Exception:
+            fill_color = None
+
+        pen = mkPen(
+            color=s.gate_outline_color,
+            width=2,
+            style=Qt.DashLine,
+        )
+
+        for item in self._gate_items:
+            try:
+                item.setPen(pen)
+            except Exception:
+                pass
+            try:
+                if hasattr(item, "setBrush"):
+                    if fill_color is not None:
+                        from PySide6.QtGui import QBrush  # noqa: N812
+
+                        item.setBrush(QBrush(fill_color))
+                    else:
+                        item.setBrush(None)
+            except Exception:
+                pass
 
     def _apply_transform(
         self,
@@ -295,7 +475,7 @@ class PlotWidget(QWidget):
                 [x_min, y_min],
                 [x_max - x_min, y_max - y_min],
                 pen=pen,
-                movable=False,
+                movable=True,
                 removable=False,
             )
             return rect
@@ -306,7 +486,7 @@ class PlotWidget(QWidget):
             from pyqtgraph import PolygonROI  # type: ignore[attr-defined]
 
             pts = list(gate.coordinates)
-            poly = PolygonROI(pts, pen=pen, closed=True, movable=False, removable=False)
+            poly = PolygonROI(pts, pen=pen, closed=True, movable=True, removable=False)
             return poly
 
         # range / boolean gates do not have a 2D geometry overlay.
@@ -427,6 +607,61 @@ class PlotWidget(QWidget):
         else:
             vb.autoRange(padding=0.02)
 
+    def _set_full_range_internal(self) -> None:
+        """Reset viewport to full data range using all finite display points.
+
+        Uses the cached raw data from the last ``plot_events`` call and
+        applies the same per-axis log-space handling as ``_auto_range``.
+        """
+        vb = self._view_box()
+        if vb is None:
+            return
+
+        if self._cached_x is None or self._cached_y is None:
+            vb.autoRange(padding=0.02)
+            return
+
+        x_arr = np.asarray(self._cached_x, dtype=np.float64)
+        y_arr = np.asarray(self._cached_y, dtype=np.float64)
+
+        x_low, x_high = self._full_range_for_axis(x_arr, self._x_transform)
+        y_low, y_high = self._full_range_for_axis(y_arr, self._y_transform)
+
+        vb.setXRange(x_low, x_high, padding=0.02)
+        vb.setYRange(y_low, y_high, padding=0.02)
+
+    def _full_range_for_axis(
+        self,
+        data: NDArray[np.float64],
+        transform: AxisTransform,
+    ) -> tuple[float, float]:
+        """Compute full display range for one axis using all finite values.
+
+        For ``log10`` axes, non-positive values are excluded and bounds
+        are converted to log10-space.
+        """
+        if transform == "log10":
+            positive = data[data > 0]
+            if len(positive) == 0:
+                return (1.0, 10.0)
+            finite = positive[np.isfinite(positive)]
+            if len(finite) == 0:
+                return (1.0, 10.0)
+            low = max(float(finite.min()), 1e-300)
+            high = float(finite.max())
+            if high <= low:
+                high = low * 10.0
+            return (float(np.log10(low)), float(np.log10(high)))
+
+        finite = data[np.isfinite(data)]
+        if len(finite) == 0:
+            return (0.0, 1.0)
+        low = float(finite.min())
+        high = float(finite.max())
+        if high <= low:
+            high = low + 1.0
+        return (low, high)
+
     def _view_box(self) -> ViewBox | None:
         """Return the ViewBox of the PlotItem.
 
@@ -437,6 +672,102 @@ class PlotWidget(QWidget):
             return self._plot_item.vb  # type: ignore[attr-defined]
         except Exception:
             return None
+
+    # -- mouse event handlers ------------------------------------------------
+
+    def _get_data_position(self, event: Any) -> tuple[float, float] | None:
+        """Extract data coordinates from a pyqtgraph mouse event."""
+        vb = self._view_box()
+        if vb is None:
+            return None
+        try:
+            pos = event.pos
+            view_pos = vb.mapSceneToView(pos)
+            return (float(view_pos.x()), float(view_pos.y()))
+        except Exception:
+            return None
+
+    def _on_mouse_click(self, event: Any) -> None:
+        """Handle mouse click events for gate creation."""
+        data_pos = self._get_data_position(event)
+        if data_pos is None:
+            event.accept()
+            return
+
+        is_double = event.button() == Qt.LeftButton and hasattr(event, "isDoubleClicked")
+        # Check for actual double-click via button state
+        try:
+            is_double = event.isDoubleClicked()  # type: ignore[attr-defined]
+        except Exception:
+            is_double = False
+
+        for cb in self._click_callbacks:
+            try:
+                cb(data_pos[0], data_pos[1], is_double)
+            except Exception:
+                pass
+
+        event.accept()
+
+    def _on_mouse_drag(self, event: Any) -> None:
+        """Handle mouse drag for rectangle gate creation."""
+        if self._current_tool != _TOOL_RECTANGLE_GATE:
+            event.accept()
+            return
+
+        data_pos = self._get_data_position(event)
+        if data_pos is None:
+            event.accept()
+            return
+
+        if event.isStart():
+            self._drag_start = data_pos
+        else:
+            # During drag, notify callbacks with current drag state
+            for cb in self._click_callbacks:
+                try:
+                    cb(data_pos[0], data_pos[1], False, dragging=True)
+                except TypeError:
+                    # Callback doesn't support dragging kwarg
+                    pass
+                except Exception:
+                    pass
+
+        event.accept()
+
+    def _on_mouse_release(self, event: Any) -> None:
+        """Handle mouse release for rectangle gate completion."""
+        if self._current_tool != _TOOL_RECTANGLE_GATE:
+            event.accept()
+            return
+
+        if self._drag_start is None:
+            event.accept()
+            return
+
+        data_pos = self._get_data_position(event)
+        if data_pos is None:
+            event.accept()
+            return
+
+        # Notify callbacks that a rectangle was drawn
+        for cb in self._click_callbacks:
+            try:
+                cb(
+                    self._drag_start[0],
+                    self._drag_start[1],
+                    False,
+                    dragging=False,
+                    rect_end_x=data_pos[0],
+                    rect_end_y=data_pos[1],
+                )
+            except TypeError:
+                pass
+            except Exception:
+                pass
+
+        self._drag_start = None
+        event.accept()
 
     # -- UI construction -----------------------------------------------------
 
@@ -450,5 +781,20 @@ class PlotWidget(QWidget):
 
         # addPlot() returns a PlotItem with .plot(), .vb, etc.
         self._plot_item = self._glw.addPlot()
+
+        # Callback storage for mouse events.
+        self._click_callbacks: list[Any] = []
+        self._drag_start: tuple[float, float] | None = None
+        self._current_tool: str = "pan"
+
+        # Wire up mouse events via the ViewBox.
+        vb = self._view_box()
+        if vb is not None:
+            vb.mouseClickEvent = self._on_mouse_click  # type: ignore[assignment]
+            vb.mouseDragEvent = self._on_mouse_drag  # type: ignore[assignment]
+            vb.mouseReleaseEvent = self._on_mouse_release  # type: ignore[assignment]
+
+        # Apply initial style (background, grid, etc.)
+        self._apply_style()
 
         layout.addWidget(self._glw)

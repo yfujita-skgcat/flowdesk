@@ -24,4 +24,5 @@ Recommended implementation order:
 8. `fcs-io.md`
 9. `export-and-cli.md`
 10. `qt-integration.md`
-11. `performance-and-review.md`
+11. `qt-interactive-plot-controls.md`
+12. `performance-and-review.md`

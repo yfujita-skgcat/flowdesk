@@ -28,6 +28,11 @@ from flowdesk_core.fcs_io import read_fcs_events
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_qt.channel_selector import ChannelSelector
 from flowdesk_qt.gate_editor import GateEditor
+from flowdesk_qt.plot_toolbar import (
+    TOOL_PAN,
+    TOOL_POLYGON_GATE,
+    PlotToolbar,
+)
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
@@ -212,13 +217,17 @@ class MainWindow(QMainWindow):
     def _create_center_pane(self) -> QWidget:
         from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+        self._plot_toolbar = PlotToolbar()
+
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._channel_selector)
+        layout.addWidget(self._plot_toolbar)
         layout.addWidget(self._plot_widget)
         layout.setStretch(0, 0)
-        layout.setStretch(1, 1)
+        layout.setStretch(1, 0)
+        layout.setStretch(2, 1)
         return widget
 
     def _create_right_pane(self) -> QWidget:
@@ -247,6 +256,15 @@ class MainWindow(QMainWindow):
 
         # When the gate list changes (add/delete/clear), refresh overlays
         self._gate_editor.on_gates_changed(self._replot)
+
+        # Plot toolbar callbacks
+        self._plot_toolbar.on_tool_mode_changed(self._on_tool_mode_changed)
+        self._plot_toolbar.on_reset_robust(self._on_reset_robust)
+        self._plot_toolbar.on_reset_full(self._on_reset_full)
+        self._plot_toolbar.on_export_png(self._on_export_png)
+
+        # Connect plot mouse events to gate creation
+        self._plot_widget.on_mouse_clicked(self._on_plot_mouse_clicked)
 
     # -- sample handling -----------------------------------------------------
 
@@ -331,8 +349,8 @@ class MainWindow(QMainWindow):
 
     def _on_gate_selected(self, gate_index: int) -> None:
         """Called when a gate is selected in the gate editor."""
-        # Could highlight the gate or show its properties
-        pass
+        # Highlight the selected gate overlay with a solid pen
+        self._plot_widget.highlight_gate_index(gate_index)
 
     def _on_clear_gates(self) -> None:
         """Clear all gates."""
@@ -473,6 +491,112 @@ class MainWindow(QMainWindow):
 
         count = self._sample_browser.add_samples_from_paths(paths)
         self._update_status(f"Loaded {count} samples")
+
+    # -- plot mouse handlers -------------------------------------------------
+
+    def _on_plot_mouse_clicked(
+        self,
+        data_x: float,
+        data_y: float,
+        is_double_click: bool,
+        dragging: bool = False,
+        rect_end_x: float | None = None,
+        rect_end_y: float | None = None,
+    ) -> None:
+        """Handle mouse clicks on the plot for gate creation."""
+        # Rectangle gate completion (drag release)
+        if not dragging and rect_end_x is not None and rect_end_y is not None:
+            self._create_rectangle_gate(data_x, data_y, rect_end_x, rect_end_y)
+            return
+
+        # Polygon vertex collection
+        if self._gate_editor.is_collecting_polygon():
+            if is_double_click:
+                # Double-click finishes the polygon
+                self._gate_editor.finish_polygon_gate()
+                self._plot_toolbar.set_tool_mode(TOOL_PAN)
+            else:
+                # Single click adds a vertex
+                self._gate_editor.receive_polygon_vertex(data_x, data_y)
+            return
+
+    def _create_rectangle_gate(self, x1: float, y1: float, x2: float, y2: float) -> None:
+        """Create a rectangle gate from two drag endpoints."""
+        from flowdesk_core.models import GateSpec
+
+        x_min = min(x1, x2)
+        x_max = max(x1, x2)
+        y_min = min(y1, y2)
+        y_max = max(y1, y2)
+
+        # Avoid degenerate rectangles
+        if abs(x_max - x_min) < 1e-10 or abs(y_max - y_min) < 1e-10:
+            return
+
+        x_name = self._channel_selector.x_channel()
+        y_name = self._channel_selector.y_channel()
+
+        import uuid
+
+        gate = GateSpec(
+            id=f"gate_{uuid.uuid4().hex[:8]}",
+            name=f"rect_{len(self._gate_editor.gates()) + 1}",
+            gate_type="rectangle",
+            parent_population_id="all_events",
+            x_parameter=x_name,
+            y_parameter=y_name,
+            thresholds={
+                "x_min": x_min,
+                "x_max": x_max,
+                "y_min": y_min,
+                "y_max": y_max,
+            },
+        )
+        self._gate_editor.add_gate(gate)
+        self._update_status(f"Rectangle gate created: {gate.name}")
+
+    # -- plot toolbar handlers -----------------------------------------------
+
+    def _on_tool_mode_changed(self, mode: str) -> None:
+        """Handle tool mode change from plot toolbar."""
+        # Sync tool mode to plot widget
+        self._plot_widget.set_tool_mode(mode)
+        self._update_status(f"Tool: {mode}")
+        # If switching away from polygon mode, finish any in-progress polygon
+        if mode != TOOL_POLYGON_GATE and self._gate_editor.is_collecting_polygon():
+            self._gate_editor.cancel_polygon()
+
+        # If switching to polygon mode, start collecting vertices
+        if mode == TOOL_POLYGON_GATE:
+            self._gate_editor.start_polygon_collection()
+            self._update_status("Click on plot to add polygon vertices. Switch to Pan to finish.")
+
+    def _on_reset_robust(self) -> None:
+        """Reset viewport to robust auto-range."""
+        self._plot_widget.set_robust_range()
+        self._update_status("Viewport reset to robust range")
+
+    def _on_reset_full(self) -> None:
+        """Reset viewport to full data range."""
+        self._plot_widget.set_full_range()
+        self._update_status("Viewport reset to full range")
+
+    def _on_export_png(self) -> None:
+        """Export current plot view to PNG."""
+        path_str = QFileDialog.getSaveFileName(
+            self,
+            "Export Plot as PNG",
+            "",
+            "PNG files (*.png)",
+        )[0]
+        if not path_str:
+            return
+        try:
+            self._plot_widget.export_png(path_str)
+            self._update_status(f"Plot exported to {path_str}")
+        except Exception as exc:
+            logger.error("PNG export failed: %s", exc)
+            QMessageBox.critical(self, "Export Error", str(exc))
 
     # -- help ----------------------------------------------------------------
 
