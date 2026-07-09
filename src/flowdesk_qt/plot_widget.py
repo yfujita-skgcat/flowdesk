@@ -14,13 +14,15 @@ via ``flowdesk_core.transforms`` and plots on a linear axis.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from flowdesk_core.models import GateSpec
@@ -150,6 +152,39 @@ class PlotWidget(QWidget):
         """Remove all gate overlays."""
         self._clear_gates()
 
+    def export_png(
+        self,
+        path: str | Path,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> None:
+        """Render the current plot widget to a PNG file.
+
+        This exports the display state only.  It does not run analysis,
+        change event data, or affect gate membership.
+        """
+        original_size = self.size()
+        resized = width is not None or height is not None
+        try:
+            if resized:
+                if width is None:
+                    width = max(1, original_size.width())
+                if height is None:
+                    height = max(1, original_size.height())
+                self.resize(max(1, width), max(1, height))
+
+            image = QImage(self.size(), QImage.Format_ARGB32)
+            image.fill(Qt.white)
+            self.render(image, QPoint(0, 0))
+
+            out_path = Path(path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            if not image.save(str(out_path), "PNG"):
+                raise OSError(f"failed to write PNG plot: {out_path}")
+        finally:
+            if resized:
+                self.resize(original_size)
+
     def screen_to_data(self, screen_x: float, screen_y: float) -> tuple[float, float]:
         """Convert screen coordinates to data coordinates.
 
@@ -232,25 +267,16 @@ class PlotWidget(QWidget):
         return values
 
     def _update_log_mode(self) -> None:
-        """Configure pyqtgraph ViewBox log mode based on current axis transforms.
+        """Configure pyqtgraph log mode based on current axis transforms.
 
-        pyqtgraph's setLogMode(axis, logMode) enables native log-axis
-        rendering with proper tick marks and labels.  It must be called
-        per-axis because X and Y can have different transforms.
+        PlotItem.setLogMode updates PlotDataItem mapping, axis tick
+        formatting, and the linked ViewBox state.  Calling ViewBox.setLogMode
+        alone only updates range constraints and does not transform points.
         """
-        vb = self._view_box()
-        if vb is None:
-            return
-
-        if self._x_transform == "log10":
-            vb.setLogMode("x", True)
-        else:
-            vb.setLogMode("x", False)
-
-        if self._y_transform == "log10":
-            vb.setLogMode("y", True)
-        else:
-            vb.setLogMode("y", False)
+        self._plot_item.setLogMode(
+            x=self._x_transform == "log10",
+            y=self._y_transform == "log10",
+        )
 
     def _create_gate_item(self, gate: GateSpec) -> Any:
         """Create a pyqtgraph geometry item for a gate."""
@@ -315,7 +341,7 @@ class PlotWidget(QWidget):
         finite min/max if the percentile range collapses.
 
         Returns:
-            (low, high) range values.
+            (low, high) range values in the same space as ``data``.
         """
         finite = data[np.isfinite(data)]
         if len(finite) == 0:
@@ -333,8 +359,49 @@ class PlotWidget(QWidget):
 
         return (low, high)
 
+    def _robust_range_for_axis(
+        self,
+        data: NDArray[np.float64],
+        transform: AxisTransform,
+    ) -> tuple[float, float]:
+        """Compute display range for one axis, respecting its transform.
+
+        For ``log10`` axes the ViewBox ``setXRange``/``setYRange``
+        interpret arguments in log10-space.  This method computes
+        percentiles on the positive-only subset and converts the
+        bounds to log10-space so that the ViewBox displays correctly.
+
+        For ``asinh`` and ``linear`` the raw percentile bounds are
+        returned unchanged.
+
+        Returns:
+            (low, high) in the coordinate space expected by the ViewBox
+            for the given transform.
+        """
+        if transform == "log10":
+            # Only positive values are valid in log space.
+            positive = data[data > 0]
+            if len(positive) == 0:
+                return (1.0, 10.0)
+
+            low, high = self._robust_range(positive)
+            # Ensure strictly positive floor.
+            low = max(low, 1e-300)
+            # Convert to log10-space for ViewBox.
+            return (float(np.log10(low)), float(np.log10(high)))
+
+        # linear and asinh: ViewBox expects data-space values.
+        return self._robust_range(data)
+
     def _auto_range(self) -> None:
-        """Set the view range using robust percentile-based bounds."""
+        """Set the view range using robust percentile-based bounds.
+
+        When an axis is in log10 mode, ``setXRange``/``setYRange``
+        interpret their arguments in log10-space.  Therefore the
+        percentile bounds must be log10-transformed before passing them
+        to the ViewBox.  Non-positive values are excluded from the
+        percentile calculation for log axes.
+        """
         vb = self._view_box()
         if vb is None:
             return
@@ -351,8 +418,10 @@ class PlotWidget(QWidget):
         if x_data is not None and y_data is not None:
             x_arr = np.asarray(x_data, dtype=np.float64)
             y_arr = np.asarray(y_data, dtype=np.float64)
-            x_low, x_high = self._robust_range(x_arr)
-            y_low, y_high = self._robust_range(y_arr)
+
+            x_low, x_high = self._robust_range_for_axis(x_arr, self._x_transform)
+            y_low, y_high = self._robust_range_for_axis(y_arr, self._y_transform)
+
             vb.setXRange(x_low, x_high, padding=0.02)
             vb.setYRange(y_low, y_high, padding=0.02)
         else:
