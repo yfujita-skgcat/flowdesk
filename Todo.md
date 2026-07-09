@@ -18,6 +18,7 @@
 - `pyenv exec pytest -q`: `numpy` / `flowio` が無く collection error。作業時は `.direnv/python-3.12.13/bin/...` を使う。
 - GUI依存は venv に存在する: PySide6, pyqtgraph, numpy, flowio import OK。
 - GUI関連の pytest は現状ほぼ無い。`tests/` は core/CLI/storage 中心。
+- **2026-07-09 追加**: axis transform (linear/log10/asinh) の GUI 実装済み。`ChannelSelector` に X/Y scale の `QComboBox`、`PlotWidget` に `_apply_transform()` / `_update_log_mode()` を追加。
 
 ## P0: GUIプロットで細胞ドットが下端に潰れて見える問題を直す
 
@@ -91,7 +92,7 @@ offscreen で `data/1_A1.fcs` を `PlotWidget` に描画すると、FSC-H vs FSC
    - raw coordinate gate を保存する場合、overlay の threshold / vertices を表示 transform 後の座標へ変換して描画する。
    - display coordinate gate を保存する場合、pipeline runner 側が同じ transform stage で評価できるよう `transform_id` と `TransformSpec` を project に保存する。
 
-4. pyqtgraph の log mode は `PlotItem.setLogMode(x=..., y=...)` の利用も検討し、`ViewBox.setLogMode("x", True)` が正しいAPI利用か確認する。
+4. pyqtgraph の `ViewBox.setLogMode(axis, logMode)` で axis=`"x"`/`"y"` は有効（`"both"` は非サポート）。`PlotItem.setLogMode(x=..., y=...)` も存在し、表示上は同様の効果が得られる。現在の `plot_widget.py` は `ViewBox.setLogMode` を利用しており、gate overlay の座標系整合性が主な懸念点。
 
 ### 受け入れ条件
 
@@ -267,15 +268,17 @@ core には compensation, derived parameters, transforms, pipeline runner のテ
 
 - P0/P1 修正後、README の status を実態に合わせて更新する。
 - 「GUIは初期実装」「large-file rendering / robust gate editing は作業中」など、過大表現を避ける。
+- axis transform (linear/log10/asinh) は2026-07-09に実装済みであることを反映する。
 
 ## 推奨作業順
 
 1. P0の `PlotWidget` robust auto-range と marker pxMode 修正。
-2. P0の channel sync と gates changed callback 修正。
+2. P0の channel sync（`set_plot_channels` 接続）と gates changed callback 修正。
 3. P0の gate overlay 座標系を整理し、linear表示でまず GUI gate と pipeline result を一致させる。
-4. P1の polygon click wiring。
-5. P1の複数サンプル channel_names 問題。
-6. project save/load と GUI-created analysis の headless reproduction。
+4. P0の gate overlay を asinh/log10 表示でも座標整合させる（2-3が完了してから）。
+5. P1の polygon click wiring。
+6. P1の複数サンプル channel_names 問題。
+7. project save/load と GUI-created analysis の headless reproduction。
 
 ## 実行コマンド
 
@@ -288,8 +291,10 @@ core には compensation, derived parameters, transforms, pipeline runner のテ
 GUIの手動確認:
 
 ```bash
-.direnv/python-3.12.13/bin/flowdesk-gui data
+flowdesk-gui --data-dir data/
 ```
+
+※ `python -m flowdesk_qt` は動作しない。entry point は `flowdesk-gui`。
 
 期待する手動確認:
 

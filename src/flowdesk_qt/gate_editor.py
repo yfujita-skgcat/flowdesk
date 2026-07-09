@@ -193,11 +193,13 @@ class GateEditor(QWidget):
         """Add a gate programmatically."""
         self._gates.append(gate)
         self._list_widget.addItem(f"{gate.name} ({gate.gate_type})")
+        self._emit_gates_changed()
 
     def clear_gates(self) -> None:
         """Remove all gates."""
         self._gates.clear()
         self._list_widget.clear()
+        self._emit_gates_changed()
 
     def receive_polygon_vertex(self, data_x: float, data_y: float) -> None:
         """Add a vertex to the in-progress polygon gate.
@@ -236,6 +238,7 @@ class GateEditor(QWidget):
         self._gates.append(gate)
         self._list_widget.addItem(f"{gate.name} (polygon)")
         self._cancel_polygon()
+        self._emit_gates_changed()
 
     def start_polygon_collection(self) -> None:
         """Begin collecting polygon vertices from plot clicks."""
@@ -259,7 +262,23 @@ class GateEditor(QWidget):
         """
         self._gate_selected_callbacks.append(callback)
 
+    def on_gates_changed(self, callback) -> None:
+        """Register callback when the gate list changes.
+
+        Fired on gate add, delete, clear, and polygon finish.
+        Callback receives no arguments.
+        """
+        self._gates_changed_callbacks.append(callback)
+
     # -- private ------------------------------------------------------------
+
+    def _emit_gates_changed(self) -> None:
+        """Notify all gates-changed callbacks."""
+        for cb in self._gates_changed_callbacks:
+            try:
+                cb()
+            except Exception:
+                pass
 
     def _cancel_polygon(self) -> None:
         self._collecting_polygon = False
@@ -295,6 +314,7 @@ class GateEditor(QWidget):
 
         self._gates.append(gate)
         self._list_widget.addItem(f"{name} ({gate_type})")
+        self._emit_gates_changed()
 
     def _start_polygon(self) -> None:
         self.start_polygon_collection()
@@ -307,6 +327,7 @@ class GateEditor(QWidget):
             self._gates.pop(idx)
         item = self._list_widget.takeItem(idx)
         del item  # free Qt object
+        self._emit_gates_changed()
 
     def _on_list_selection_changed(self) -> None:
         idx = self._list_widget.currentRow()
@@ -320,6 +341,7 @@ class GateEditor(QWidget):
 
     def _build_ui(self) -> None:
         self._gate_selected_callbacks: list[Any] = []
+        self._gates_changed_callbacks: list[Any] = []
 
         # Gate type selector
         self._type_combo = QComboBox()

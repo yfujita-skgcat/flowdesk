@@ -242,8 +242,11 @@ class MainWindow(QMainWindow):
         # When channel selection changes, replot
         self._channel_selector.on_channel_changed(self._on_channel_changed)
 
-        # When a gate is created, update plot overlays
+        # When a gate is selected, update highlight
         self._gate_editor.on_gate_selected(self._on_gate_selected)
+
+        # When the gate list changes (add/delete/clear), refresh overlays
+        self._gate_editor.on_gates_changed(self._replot)
 
     # -- sample handling -----------------------------------------------------
 
@@ -292,6 +295,9 @@ class MainWindow(QMainWindow):
 
         x_name = self._channel_selector.x_channel()
         y_name = self._channel_selector.y_channel()
+
+        # Sync gate editor with current channels
+        self._gate_editor.set_plot_channels(x_name, y_name)
 
         x_idx = self._get_channel_index(x_name)
         y_idx = self._get_channel_index(y_name)

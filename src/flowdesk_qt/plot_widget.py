@@ -118,8 +118,8 @@ class PlotWidget(QWidget):
             y_plot,
             pen=None,
             symbol="o",
-            symbolSize=2,
-            pxMode=False,
+            symbolSize=3,
+            pxMode=True,
         )
 
         self._update_labels()
@@ -307,9 +307,55 @@ class PlotWidget(QWidget):
         self._plot_item.setLabel("bottom", self._x_label)
         self._plot_item.setLabel("left", self._y_label)
 
+    def _robust_range(self, data: NDArray[np.float64]) -> tuple[float, float]:
+        """Compute a robust display range using percentiles.
+
+        Uses 0.5% and 99.5% percentiles to exclude extreme outliers while
+        retaining the vast majority of the population.  Falls back to
+        finite min/max if the percentile range collapses.
+
+        Returns:
+            (low, high) range values.
+        """
+        finite = data[np.isfinite(data)]
+        if len(finite) == 0:
+            return (0.0, 1.0)
+
+        low = float(np.percentile(finite, 0.5))
+        high = float(np.percentile(finite, 99.5))
+
+        # Fallback if percentiles collapse (e.g. all same value).
+        if high <= low:
+            low = float(finite.min())
+            high = float(finite.max())
+            if high <= low:
+                high = low + 1.0
+
+        return (low, high)
+
     def _auto_range(self) -> None:
+        """Set the view range using robust percentile-based bounds."""
         vb = self._view_box()
-        if vb is not None:
+        if vb is None:
+            return
+
+        # Use the last plotted data stored in the scatter item.
+        x_data, y_data = None, None
+        if self._scatter is not None:
+            try:
+                x_data = np.asarray(self._scatter.xData, dtype=np.float64)
+                y_data = np.asarray(self._scatter.yData, dtype=np.float64)
+            except Exception:
+                pass
+
+        if x_data is not None and y_data is not None:
+            x_arr = np.asarray(x_data, dtype=np.float64)
+            y_arr = np.asarray(y_data, dtype=np.float64)
+            x_low, x_high = self._robust_range(x_arr)
+            y_low, y_high = self._robust_range(y_arr)
+            vb.setXRange(x_low, x_high, padding=0.02)
+            vb.setYRange(y_low, y_high, padding=0.02)
+        else:
             vb.autoRange(padding=0.02)
 
     def _view_box(self) -> ViewBox | None:

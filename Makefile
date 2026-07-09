@@ -12,6 +12,9 @@
 
 .PHONY: test lint type-check check fmt all clean help
 
+gui:
+	flowdesk-gui
+
 help:
 	@echo "Flowdesk Makefile targets:"
 	@echo "  test        - Run all tests (pytest)"
