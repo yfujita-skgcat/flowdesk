@@ -33,11 +33,8 @@ from flowdesk_core.models import GateSpec
 from flowdesk_core.transforms import TransformError
 from flowdesk_qt.plot_style import PlotStyleSettings
 
-# Local tool mode constants (mirrors plot_toolbar to avoid circular import)
-_TOOL_RECTANGLE_GATE = "rectangle_gate"
-_TOOL_POLYGON_GATE = "polygon_gate"
-
 AxisTransform = Literal["linear", "log10", "asinh"]
+InteractiveGateType = Literal["rectangle", "polygon"]
 
 # ---------------------------------------------------------------------------
 # PlotWidget
@@ -302,25 +299,27 @@ class PlotWidget(QWidget):
         """
         self._click_callbacks.append(callback)
 
-    def set_tool_mode(self, mode: str) -> None:
-        """Set the active interaction tool mode.
+    def begin_gate_creation(self, gate_type: InteractiveGateType) -> None:
+        """Temporarily capture plot mouse input for interactive gate creation.
 
-        Supported modes: ``"pan"``, ``"rectangle_gate"``, ``"polygon_gate"``.
-        This is a display-level setting and does not affect analysis.
+        Outside this short-lived state, mouse events are delegated to
+        pyqtgraph so normal pan/zoom/range operations remain available.
         """
-        self._current_tool = mode
-        vb = self._view_box()
-        if vb is not None:
-            if mode == "pan":
-                vb.setMouseMode(vb.PanMode)
-            else:
-                vb.setMouseMode(vb.RectMode)
+        if gate_type not in ("rectangle", "polygon"):
+            raise ValueError(f"unsupported interactive gate type: {gate_type}")
+        self._active_gate_creation = gate_type
+        self._drag_start = None
+
+    def clear_gate_creation(self) -> None:
+        """Return plot mouse handling to pyqtgraph defaults."""
+        self._active_gate_creation = None
+        self._drag_start = None
 
     # -- callback storage (initialised in _build_ui) -------------------------
     # These are populated in _build_ui to avoid forward-reference issues.
     # _click_callbacks: list[Callable[[float, float, bool], None]]
     # _drag_start: tuple[float, float] | None
-    # _current_tool: str
+    # _active_gate_creation: InteractiveGateType | None
 
     # -- private ------------------------------------------------------------
 
@@ -681,7 +680,8 @@ class PlotWidget(QWidget):
         if vb is None:
             return None
         try:
-            pos = event.pos
+            # In pyqtgraph 0.14.0, event.pos is a method, not a property.
+            pos = event.pos()
             view_pos = vb.mapSceneToView(pos)
             return (float(view_pos.x()), float(view_pos.y()))
         except Exception:
@@ -689,9 +689,13 @@ class PlotWidget(QWidget):
 
     def _on_mouse_click(self, event: Any) -> None:
         """Handle mouse click events for gate creation."""
+        if self._active_gate_creation != "polygon":
+            self._default_mouse_click_event(event)
+            return
+
         data_pos = self._get_data_position(event)
         if data_pos is None:
-            event.accept()
+            self._default_mouse_click_event(event)
             return
 
         is_double = event.button() == Qt.LeftButton and hasattr(event, "isDoubleClicked")
@@ -711,8 +715,8 @@ class PlotWidget(QWidget):
 
     def _on_mouse_drag(self, event: Any) -> None:
         """Handle mouse drag for rectangle gate creation."""
-        if self._current_tool != _TOOL_RECTANGLE_GATE:
-            event.accept()
+        if self._active_gate_creation != "rectangle":
+            self._default_mouse_drag_event(event)
             return
 
         data_pos = self._get_data_position(event)
@@ -722,6 +726,23 @@ class PlotWidget(QWidget):
 
         if event.isStart():
             self._drag_start = data_pos
+        elif event.isFinish():
+            if self._drag_start is not None:
+                for cb in self._click_callbacks:
+                    try:
+                        cb(
+                            self._drag_start[0],
+                            self._drag_start[1],
+                            False,
+                            dragging=False,
+                            rect_end_x=data_pos[0],
+                            rect_end_y=data_pos[1],
+                        )
+                    except TypeError:
+                        pass
+                    except Exception:
+                        pass
+            self._drag_start = None
         else:
             # During drag, notify callbacks with current drag state
             for cb in self._click_callbacks:
@@ -733,40 +754,6 @@ class PlotWidget(QWidget):
                 except Exception:
                     pass
 
-        event.accept()
-
-    def _on_mouse_release(self, event: Any) -> None:
-        """Handle mouse release for rectangle gate completion."""
-        if self._current_tool != _TOOL_RECTANGLE_GATE:
-            event.accept()
-            return
-
-        if self._drag_start is None:
-            event.accept()
-            return
-
-        data_pos = self._get_data_position(event)
-        if data_pos is None:
-            event.accept()
-            return
-
-        # Notify callbacks that a rectangle was drawn
-        for cb in self._click_callbacks:
-            try:
-                cb(
-                    self._drag_start[0],
-                    self._drag_start[1],
-                    False,
-                    dragging=False,
-                    rect_end_x=data_pos[0],
-                    rect_end_y=data_pos[1],
-                )
-            except TypeError:
-                pass
-            except Exception:
-                pass
-
-        self._drag_start = None
         event.accept()
 
     # -- UI construction -----------------------------------------------------
@@ -785,14 +772,15 @@ class PlotWidget(QWidget):
         # Callback storage for mouse events.
         self._click_callbacks: list[Any] = []
         self._drag_start: tuple[float, float] | None = None
-        self._current_tool: str = "pan"
+        self._active_gate_creation: InteractiveGateType | None = None
 
         # Wire up mouse events via the ViewBox.
         vb = self._view_box()
         if vb is not None:
+            self._default_mouse_click_event = vb.mouseClickEvent
+            self._default_mouse_drag_event = vb.mouseDragEvent
             vb.mouseClickEvent = self._on_mouse_click  # type: ignore[assignment]
             vb.mouseDragEvent = self._on_mouse_drag  # type: ignore[assignment]
-            vb.mouseReleaseEvent = self._on_mouse_release  # type: ignore[assignment]
 
         # Apply initial style (background, grid, etc.)
         self._apply_style()

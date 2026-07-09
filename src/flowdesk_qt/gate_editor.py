@@ -193,6 +193,7 @@ class GateEditor(QWidget):
         """Add a gate programmatically."""
         self._gates.append(gate)
         self._list_widget.addItem(f"{gate.name} ({gate.gate_type})")
+        self._status_label.setText("Ready")
         self._emit_gates_changed()
 
     def clear_gates(self) -> None:
@@ -208,6 +209,10 @@ class GateEditor(QWidget):
         """
         if not self._collecting_polygon:
             return
+        if self._polygon_vertices:
+            last_x, last_y = self._polygon_vertices[-1]
+            if abs(last_x - data_x) < 1e-12 and abs(last_y - data_y) < 1e-12:
+                return
         self._polygon_vertices.append((data_x, data_y))
 
     def finish_polygon_gate(self, gate_name: str | None = None) -> None:
@@ -270,6 +275,14 @@ class GateEditor(QWidget):
         """
         self._gates_changed_callbacks.append(callback)
 
+    def on_interactive_gate_requested(self, callback) -> None:
+        """Register callback for plot-based gate creation requests.
+
+        Callback receives ``(gate_type: str)``.  Rectangle and polygon gates
+        are drawn on the plot pane; range gates still use the numeric dialog.
+        """
+        self._interactive_gate_callbacks.append(callback)
+
     # -- private ------------------------------------------------------------
 
     def _emit_gates_changed(self) -> None:
@@ -279,6 +292,16 @@ class GateEditor(QWidget):
                 cb()
             except Exception:
                 pass
+
+    def _emit_interactive_gate_requested(self, gate_type: str) -> bool:
+        accepted = False
+        for cb in self._interactive_gate_callbacks:
+            try:
+                if cb(gate_type):
+                    accepted = True
+            except Exception:
+                pass
+        return accepted
 
     def _cancel_polygon(self) -> None:
         self._collecting_polygon = False
@@ -293,6 +316,16 @@ class GateEditor(QWidget):
         gate_type = self._type_combo.currentText()
         x_ch = self._x_channel or "X"
         y_ch = self._y_channel or "Y"
+
+        if gate_type in {"rectangle", "polygon"}:
+            if not self._emit_interactive_gate_requested(gate_type):
+                self._status_label.setText("Ready")
+                return
+            if gate_type == "rectangle":
+                self._status_label.setText("Drag on plot to create rectangle gate...")
+            else:
+                self._status_label.setText("Click plot vertices; double-click to finish...")
+            return
 
         dlg = _GateDialog(gate_type, x_ch, y_ch, self)
         if dlg.exec() != QDialog.Accepted:
@@ -315,9 +348,6 @@ class GateEditor(QWidget):
         self._gates.append(gate)
         self._list_widget.addItem(f"{name} ({gate_type})")
         self._emit_gates_changed()
-
-    def _start_polygon(self) -> None:
-        self.start_polygon_collection()
 
     def _delete_selected_gate(self) -> None:
         idx = self._list_widget.currentRow()
@@ -342,6 +372,7 @@ class GateEditor(QWidget):
     def _build_ui(self) -> None:
         self._gate_selected_callbacks: list[Any] = []
         self._gates_changed_callbacks: list[Any] = []
+        self._interactive_gate_callbacks: list[Any] = []
 
         # Gate type selector
         self._type_combo = QComboBox()
@@ -350,9 +381,6 @@ class GateEditor(QWidget):
         # Buttons
         self._btn_create = QPushButton("Create Gate")
         self._btn_create.clicked.connect(self._create_gate_dialog)
-
-        self._btn_polygon = QPushButton("Start Polygon")
-        self._btn_polygon.clicked.connect(self._start_polygon)
 
         self._btn_delete = QPushButton("Delete Selected")
         self._btn_delete.clicked.connect(self._delete_selected_gate)
@@ -371,7 +399,6 @@ class GateEditor(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.addWidget(self._btn_create)
-        btn_row.addWidget(self._btn_polygon)
         btn_row.addWidget(self._btn_delete)
 
         box_layout.addWidget(QLabel("Gate type:"))

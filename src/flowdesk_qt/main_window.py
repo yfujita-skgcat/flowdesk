@@ -28,11 +28,7 @@ from flowdesk_core.fcs_io import read_fcs_events
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_qt.channel_selector import ChannelSelector
 from flowdesk_qt.gate_editor import GateEditor
-from flowdesk_qt.plot_toolbar import (
-    TOOL_PAN,
-    TOOL_POLYGON_GATE,
-    PlotToolbar,
-)
+from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
@@ -257,8 +253,10 @@ class MainWindow(QMainWindow):
         # When the gate list changes (add/delete/clear), refresh overlays
         self._gate_editor.on_gates_changed(self._replot)
 
+        # Interactive gate creation starts from the gate editor.
+        self._gate_editor.on_interactive_gate_requested(self._on_interactive_gate_requested)
+
         # Plot toolbar callbacks
-        self._plot_toolbar.on_tool_mode_changed(self._on_tool_mode_changed)
         self._plot_toolbar.on_reset_robust(self._on_reset_robust)
         self._plot_toolbar.on_reset_full(self._on_reset_full)
         self._plot_toolbar.on_export_png(self._on_export_png)
@@ -354,6 +352,8 @@ class MainWindow(QMainWindow):
 
     def _on_clear_gates(self) -> None:
         """Clear all gates."""
+        self._plot_widget.clear_gate_creation()
+        self._gate_editor.cancel_polygon()
         self._gate_editor.clear_gates()
         self._plot_widget.clear_gates()
         self._update_status("Gates cleared")
@@ -507,14 +507,17 @@ class MainWindow(QMainWindow):
         # Rectangle gate completion (drag release)
         if not dragging and rect_end_x is not None and rect_end_y is not None:
             self._create_rectangle_gate(data_x, data_y, rect_end_x, rect_end_y)
+            self._plot_widget.clear_gate_creation()
             return
 
         # Polygon vertex collection
         if self._gate_editor.is_collecting_polygon():
             if is_double_click:
-                # Double-click finishes the polygon
+                # Double-click marks the final vertex and finishes the polygon.
+                self._gate_editor.receive_polygon_vertex(data_x, data_y)
                 self._gate_editor.finish_polygon_gate()
-                self._plot_toolbar.set_tool_mode(TOOL_PAN)
+                self._plot_widget.clear_gate_creation()
+                self._update_status("Polygon gate completed")
             else:
                 # Single click adds a vertex
                 self._gate_editor.receive_polygon_vertex(data_x, data_y)
@@ -557,19 +560,29 @@ class MainWindow(QMainWindow):
 
     # -- plot toolbar handlers -----------------------------------------------
 
-    def _on_tool_mode_changed(self, mode: str) -> None:
-        """Handle tool mode change from plot toolbar."""
-        # Sync tool mode to plot widget
-        self._plot_widget.set_tool_mode(mode)
-        self._update_status(f"Tool: {mode}")
-        # If switching away from polygon mode, finish any in-progress polygon
-        if mode != TOOL_POLYGON_GATE and self._gate_editor.is_collecting_polygon():
-            self._gate_editor.cancel_polygon()
+    def _on_interactive_gate_requested(self, gate_type: str) -> bool:
+        """Start plot-based gate creation from the gate editor."""
+        if self._current_sample_id is None:
+            QMessageBox.information(
+                self,
+                "No sample",
+                "Load and select a sample before creating a gate.",
+            )
+            return False
 
-        # If switching to polygon mode, start collecting vertices
-        if mode == TOOL_POLYGON_GATE:
+        if gate_type == "rectangle":
+            self._gate_editor.cancel_polygon()
+            self._plot_widget.begin_gate_creation("rectangle")
+            self._update_status("Drag on the plot to create a rectangle gate.")
+            return True
+
+        if gate_type == "polygon":
+            self._plot_widget.begin_gate_creation("polygon")
             self._gate_editor.start_polygon_collection()
-            self._update_status("Click on plot to add polygon vertices. Switch to Pan to finish.")
+            self._update_status("Click polygon vertices on the plot. Double-click to finish.")
+            return True
+
+        return False
 
     def _on_reset_robust(self) -> None:
         """Reset viewport to robust auto-range."""
