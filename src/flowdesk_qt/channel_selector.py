@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -34,18 +35,44 @@ class ChannelSelector(QWidget):
 
     # -- public API ----------------------------------------------------------
 
-    def set_channels(self, channels: list[str]) -> None:
-        """Populate both combo boxes with *channels*."""
-        self._x_combo.clear()
-        self._y_combo.clear()
-        self._x_combo.addItems(channels)
-        self._y_combo.addItems(channels)
+    def set_channels(
+        self,
+        channels: list[str],
+        preserve_selection: bool = True,
+    ) -> tuple[bool, bool]:
+        """Populate both combo boxes with *channels*.
 
-        # Default to first two channels if available.
-        if len(channels) >= 1:
-            self._x_combo.setCurrentIndex(0)
-        if len(channels) >= 2:
-            self._y_combo.setCurrentIndex(1)
+        Returns ``(x_preserved, y_preserved)`` so callers can report when a
+        selection had to fall back because the new sample lacks that channel.
+        Axis transform selections are not changed.
+        """
+        prev_x = self.x_channel() if preserve_selection else ""
+        prev_y = self.y_channel() if preserve_selection else ""
+
+        with QSignalBlocker(self._x_combo), QSignalBlocker(self._y_combo):
+            self._x_combo.clear()
+            self._y_combo.clear()
+            self._x_combo.addItems(channels)
+            self._y_combo.addItems(channels)
+
+            x_preserved = False
+            y_preserved = False
+            if prev_x and prev_x in channels:
+                self._x_combo.setCurrentText(prev_x)
+                x_preserved = True
+            elif len(channels) >= 1:
+                self._x_combo.setCurrentIndex(0)
+
+            if prev_y and prev_y in channels:
+                self._y_combo.setCurrentText(prev_y)
+                y_preserved = True
+            elif len(channels) >= 2:
+                self._y_combo.setCurrentIndex(1)
+            elif len(channels) >= 1:
+                self._y_combo.setCurrentIndex(0)
+
+        self._on_any_changed()
+        return (x_preserved, y_preserved)
 
     def x_channel(self) -> str:
         """Return the currently selected X channel name."""
@@ -62,6 +89,13 @@ class ChannelSelector(QWidget):
     def y_index(self) -> int:
         """Return the index of the Y channel within the channel list."""
         return self._y_combo.currentIndex()
+
+    def set_selected_channels(self, x_channel: str, y_channel: str) -> None:
+        """Restore channel selections when the named channels are available."""
+        if self._x_combo.findText(x_channel) >= 0:
+            self._x_combo.setCurrentText(x_channel)
+        if self._y_combo.findText(y_channel) >= 0:
+            self._y_combo.setCurrentText(y_channel)
 
     # -- axis transform API --------------------------------------------------
 

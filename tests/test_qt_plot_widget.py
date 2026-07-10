@@ -17,10 +17,26 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from flowdesk_core.models import GateSpec  # noqa: E402
+from flowdesk_cli.run_project import run_project_command  # noqa: E402
+from flowdesk_core.execution_context import ExecutionContext  # noqa: E402
+from flowdesk_core.execution_report import ExecutionReport  # noqa: E402
+from flowdesk_core.fcs_io import FcsFileInfo, read_fcs_events, write_fcs_file  # noqa: E402
+from flowdesk_core.gating_strategy import (  # noqa: E402
+  GatingStrategyError,
+  evaluate_gating_strategy,
+)
+from flowdesk_core.models import (  # noqa: E402
+  ChannelSpec,
+  GateSpec,
+  GatingStrategySpec,
+  PopulationResult,
+)
+from flowdesk_core.pipeline_runner import PipelineRunner  # noqa: E402
 from flowdesk_qt.gate_editor import GateEditor  # noqa: E402
 from flowdesk_qt.main_window import MainWindow  # noqa: E402
 from flowdesk_qt.plot_widget import PlotWidget  # noqa: E402
+from flowdesk_qt.sample_browser import SampleBrowser  # noqa: E402
+from flowdesk_storage.project import load_project  # noqa: E402
 
 
 def _app() -> QApplication:
@@ -28,6 +44,22 @@ def _app() -> QApplication:
   if app is None:
     app = QApplication([])
   return app
+
+
+def _fcs_info(channels: tuple[str, ...] = ("FSC-A", "SSC-A")) -> FcsFileInfo:
+  return FcsFileInfo(
+    fcs_version="3.1",
+    instrument="",
+    date="",
+    sample="sample",
+    event_count=10,
+    channel_count=len(channels),
+    channels=tuple(
+      ChannelSpec(id=f"ch_{idx}", name=name)
+      for idx, name in enumerate(channels)
+    ),
+    metadata={},
+  )
 
 
 def test_plot_widget_exports_png(tmp_path: Path) -> None:
@@ -139,12 +171,23 @@ def test_rectangle_gate_creation_captures_drag_until_finish() -> None:
     start_event = FakeDragEvent((1.0, 2.0), start=True, finish=False)
     finish_event = FakeDragEvent((5.0, 8.0), start=False, finish=True)
     widget._on_mouse_drag(start_event)
+    move_event = FakeDragEvent((3.0, 4.0), start=False, finish=False)
+    widget._on_mouse_drag(move_event)
+    assert widget._preview_item is not None
     widget._on_mouse_drag(finish_event)
 
     assert default_calls == []
     assert start_event.accepted is True
+    assert move_event.accepted is True
     assert finish_event.accepted is True
+    assert widget._preview_item is None
     assert gate_calls == [
+      {
+        "x": 3.0,
+        "y": 4.0,
+        "double": False,
+        "dragging": True,
+      },
       {
         "x": 1.0,
         "y": 2.0,
@@ -346,4 +389,333 @@ def test_gate_editor_defined_gate_item_rename_updates_gate_name() -> None:
   finally:
     editor.close()
     editor.deleteLater()
+    app.processEvents()
+
+
+def test_sample_browser_skips_duplicate_path_and_releases_on_remove(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  try:
+    path = tmp_path / "a.fcs"
+    path.write_text("not real fcs")
+    monkeypatch.setattr("flowdesk_qt.sample_browser.read_fcs_info", lambda _path: _fcs_info())
+
+    assert browser.add_samples_from_paths([str(path)]) == 1
+    assert browser.add_samples_from_paths([str(path)]) == 0
+    assert len(browser.samples()) == 1
+
+    browser._list_widget.setCurrentRow(0)
+    removed = browser.remove_selected_sample()
+    assert removed is not None
+    assert browser.add_samples_from_paths([str(path)]) == 1
+  finally:
+    browser.close()
+    browser.deleteLater()
+    app.processEvents()
+
+
+def test_sample_browser_same_stem_different_paths_get_unique_ids(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  try:
+    p1 = tmp_path / "one" / "same.fcs"
+    p2 = tmp_path / "two" / "same.fcs"
+    p1.parent.mkdir()
+    p2.parent.mkdir()
+    p1.write_text("a")
+    p2.write_text("b")
+    monkeypatch.setattr("flowdesk_qt.sample_browser.read_fcs_info", lambda _path: _fcs_info())
+
+    assert browser.add_samples_from_paths([str(p1), str(p2)]) == 2
+    ids = [sample.id for sample in browser.samples()]
+    assert len(set(ids)) == 2
+    assert all(sample.name == "same" for sample in browser.samples())
+  finally:
+    browser.close()
+    browser.deleteLater()
+    app.processEvents()
+
+
+def test_channel_selection_preserved_when_sample_channels_match() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    info = _fcs_info(("A", "B", "C"))
+    sample1 = type("Sample", (), {"id": "s1", "name": "s1", "info": info, "path": ""})()
+    sample2 = type("Sample", (), {"id": "s2", "name": "s2", "info": info, "path": ""})()
+    window._event_data = {
+      "s1": np.ones((3, 3), dtype=np.float64),
+      "s2": np.ones((3, 3), dtype=np.float64),
+    }
+
+    window._on_sample_selected(sample1)
+    window._channel_selector._x_combo.setCurrentText("B")
+    window._channel_selector._y_combo.setCurrentText("C")
+    window._on_sample_selected(sample2)
+
+    assert window._channel_selector.x_channel() == "B"
+    assert window._channel_selector.y_channel() == "C"
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_manual_view_range_survives_replot() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    x = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    y = np.array([4.0, 5.0, 6.0], dtype=np.float64)
+    widget.plot_events(x, y)
+    widget.set_manual_view_range((10.0, 20.0), (30.0, 40.0))
+    widget.plot_events(x + 100.0, y + 100.0)
+
+    assert widget.range_mode() == "manual"
+    assert widget.view_range() == ((10.0, 20.0), (30.0, 40.0))
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_gate_geometry_change_marks_population_results_stale() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    report = ExecutionReport(
+      project_id="p1",
+      execution_profile_id="default",
+      pipeline_version="0.1",
+      status="success",
+      population_results=(
+        PopulationResult("s1", "all_events", 4, None, 1.0),
+      ),
+    )
+    window._population_tree.set_report(report)
+    window._results_stale = False
+    gate = GateSpec(
+      id="gate-1",
+      name="gate",
+      gate_type="rectangle",
+      x_parameter="FSC-A",
+      y_parameter="SSC-A",
+      thresholds={"x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0},
+    )
+    window._gate_editor.add_gate(gate)
+    window._results_stale = False
+    window._population_tree.set_report(report)
+
+    updated = GateSpec(
+      id="gate-1",
+      name="gate",
+      gate_type="rectangle",
+      x_parameter="FSC-A",
+      y_parameter="SSC-A",
+      thresholds={"x_min": 1.0, "x_max": 2.0, "y_min": 1.0, "y_max": 2.0},
+    )
+    window._on_gate_geometry_changed(0, updated)
+
+    assert window._gate_editor.gates()[0].thresholds["x_min"] == 1.0
+    assert window._results_stale is True
+    assert window._population_tree.last_report() is None
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_population_results_export_uses_core_export(tmp_path: Path) -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    report = ExecutionReport(
+      project_id="p1",
+      execution_profile_id="default",
+      pipeline_version="0.1",
+      status="success",
+      population_results=(
+        PopulationResult("s1", "gate-1", 2, 0.5, 0.5),
+      ),
+    )
+    window._population_tree.set_report(report)
+    window._results_stale = False
+    out = tmp_path / "results.tsv"
+
+    window._export_population_results_to_path(out)
+
+    assert out.read_text().splitlines() == [
+      "sample_id\tpopulation_id\tmetric\tvalue",
+      "s1\tgate-1\tevent_count\t2",
+      "s1\tgate-1\tfrequency_of_parent\t0.5",
+      "s1\tgate-1\tfrequency_of_total\t0.5",
+    ]
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_boolean_gate_runs_through_gating_strategy_without_parameter() -> None:
+  data = np.array(
+    [
+      [1.0, 1.0],
+      [2.0, 2.0],
+      [3.0, 3.0],
+      [4.0, 4.0],
+    ],
+    dtype=np.float64,
+  )
+  gate_a = GateSpec(
+    id="a",
+    name="a",
+    gate_type="range",
+    parent_population_id="all_events",
+    x_parameter="FSC-A",
+    thresholds={"min": 2.0},
+  )
+  gate_b = GateSpec(
+    id="b",
+    name="b",
+    gate_type="range",
+    parent_population_id="all_events",
+    x_parameter="SSC-A",
+    thresholds={"max": 3.0},
+  )
+  gate_and = GateSpec(
+    id="a_and_b",
+    name="a_and_b",
+    gate_type="boolean",
+    parent_population_id="all_events",
+    thresholds={"operation": "and", "source_ids": ["a", "b"]},
+  )
+
+  results = evaluate_gating_strategy(
+    GatingStrategySpec(id="s", name="s", gates=(gate_a, gate_b, gate_and)),
+    data,
+    ["FSC-A", "SSC-A"],
+  )
+
+  counts = {result.population_id: result.event_count for result in results}
+  assert counts["a_and_b"] == 2
+
+
+def test_gate_editor_rejects_invalid_dependencies_and_referenced_delete(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  app = _app()
+  editor = GateEditor()
+  warnings: list[str] = []
+  monkeypatch.setattr(
+    "flowdesk_qt.gate_editor.QMessageBox.warning",
+    lambda _parent, _title, message: warnings.append(message),
+  )
+  parent = GateSpec(
+    id="parent",
+    name="parent",
+    gate_type="range",
+    parent_population_id="all_events",
+    x_parameter="x",
+    thresholds={"min": 0.0},
+  )
+  child = GateSpec(
+    id="child",
+    name="child",
+    gate_type="range",
+    parent_population_id="parent",
+    x_parameter="x",
+    thresholds={"min": 1.0},
+  )
+  try:
+    editor.set_gates([parent, child])
+    editor._list_widget.setCurrentRow(0)
+    editor._delete_selected_gate()
+    assert [gate.id for gate in editor.gates()] == ["parent", "child"]
+    assert "referenced by: child" in warnings[0]
+
+    invalid = GateSpec(
+      id="invalid",
+      name="invalid",
+      gate_type="boolean",
+      thresholds={"operation": "not", "source_ids": ["missing"]},
+    )
+    with pytest.raises(GatingStrategyError, match="unknown source"):
+      editor.set_gates([invalid])
+  finally:
+    editor.close()
+    editor.deleteLater()
+    app.processEvents()
+
+
+def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> None:
+  app = _app()
+  fcs_path = tmp_path / "sample.fcs"
+  events = np.array([[0.0, 1.0], [2.0, 1.0], [3.0, 1.0]], dtype=np.float64)
+  write_fcs_file(fcs_path, events, ["X", "Y"])
+  project_path = tmp_path / "saved.flowdesk"
+
+  window = MainWindow()
+  reloaded_window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(fcs_path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    assert window._sample_browser.select_sample(sample.id)
+    window._channel_selector.set_x_transform("asinh")
+    gate = GateSpec(
+      id="positive",
+      name="positive",
+      gate_type="range",
+      parent_population_id="all_events",
+      x_parameter="X",
+      thresholds={"min": 1.0},
+    )
+    window._gate_editor.set_gates([gate])
+    gui_manifest = window._build_project_manifest()
+    gui_report = PipelineRunner(gui_manifest).run(
+      ExecutionContext(),
+      {sample.id: window._event_data[sample.id]},
+      ["X", "Y"],
+    )
+
+    window._save_project_to_path(project_path)
+    saved = load_project(project_path)
+    assert saved["transforms"] == []
+    assert saved["plot_display_settings"]["x_scale"] == "asinh"
+    assert isinstance(
+      saved["gating_strategies_data"]["default_strategy"]["gates"][0], dict
+    )
+
+    reloaded_window._load_project_from_path(project_path)
+    assert [gate.id for gate in reloaded_window._gate_editor.gates()] == ["positive"]
+
+    info, headless_events = read_fcs_events(fcs_path)
+    headless_report = PipelineRunner(saved).run(
+      ExecutionContext(),
+      {sample.id: headless_events},
+      [channel.name for channel in info.channels],
+    )
+    gui_counts = {
+      result.population_id: result.event_count for result in gui_report.population_results
+    }
+    headless_counts = {
+      result.population_id: result.event_count
+      for result in headless_report.population_results
+    }
+    assert headless_counts == gui_counts
+
+    output_path = tmp_path / "cli-results.tsv"
+    assert run_project_command(str(project_path), output=str(output_path)) == 0
+    output_text = output_path.read_text(encoding="utf-8")
+    assert f"{sample.id}\tpositive\t2\t" in output_text
+  finally:
+    window.close()
+    reloaded_window.close()
+    window.deleteLater()
+    reloaded_window.deleteLater()
     app.processEvents()

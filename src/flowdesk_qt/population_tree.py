@@ -32,6 +32,7 @@ class PopulationTree(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._last_report: ExecutionReport | None = None
+        self._population_parents: dict[str, str | None] = {}
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -48,6 +49,10 @@ class PopulationTree(QWidget):
         """Return the last loaded report."""
         return self._last_report
 
+    def set_population_parents(self, parents: dict[str, str | None]) -> None:
+        """Set display-only hierarchy metadata from the active gate strategy."""
+        self._population_parents = dict(parents)
+
     def clear(self) -> None:
         """Clear all displayed data."""
         self._last_report = None
@@ -59,24 +64,39 @@ class PopulationTree(QWidget):
     def _populate_table(self, results: tuple[PopulationResult, ...]) -> None:
         self._table.setRowCount(len(results))
         for row, r in enumerate(results):
-            self._table.setItem(row, 0, QTableWidgetItem(r.population_id))
-            self._table.setItem(row, 1, QTableWidgetItem(r.sample_id))
-            self._table.setItem(row, 2, QTableWidgetItem(str(r.event_count)))
+            parent_id = self._population_parents.get(r.population_id)
+            depth = self._population_depth(r.population_id)
+            label = f"{'  ' * depth}{r.population_id}"
+            self._table.setItem(row, 0, QTableWidgetItem(label))
+            self._table.setItem(row, 1, QTableWidgetItem(parent_id or "-"))
+            self._table.setItem(row, 2, QTableWidgetItem(r.sample_id))
+            self._table.setItem(row, 3, QTableWidgetItem(str(r.event_count)))
             freq_parent = (
                 f"{r.frequency_of_parent:.4f}" if r.frequency_of_parent is not None else "-"
             )
             freq_total = f"{r.frequency_of_total:.4f}" if r.frequency_of_total is not None else "-"
-            self._table.setItem(row, 3, QTableWidgetItem(freq_parent))
-            self._table.setItem(row, 4, QTableWidgetItem(freq_total))
+            self._table.setItem(row, 4, QTableWidgetItem(freq_parent))
+            self._table.setItem(row, 5, QTableWidgetItem(freq_total))
+
+    def _population_depth(self, population_id: str) -> int:
+        depth = 0
+        seen = {population_id}
+        parent_id = self._population_parents.get(population_id)
+        while parent_id and parent_id != "all_events" and parent_id not in seen:
+            depth += 1
+            seen.add(parent_id)
+            parent_id = self._population_parents.get(parent_id)
+        return depth + (1 if self._population_parents.get(population_id) else 0)
 
     # -- UI construction -----------------------------------------------------
 
     def _build_ui(self) -> None:
         self._table = QTableWidget()
-        self._table.setColumnCount(5)
+        self._table.setColumnCount(6)
         self._table.setHorizontalHeaderLabels(
             [
                 "Population",
+                "Parent",
                 "Sample",
                 "Events",
                 "Freq. of Parent",

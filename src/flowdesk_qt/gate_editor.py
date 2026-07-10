@@ -25,13 +25,15 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from flowdesk_core.models import GateSpec
+from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
+from flowdesk_core.models import GateSpec, GatingStrategySpec
 
 # ---------------------------------------------------------------------------
 # Gate creation dialog
@@ -46,6 +48,7 @@ class _GateDialog(QDialog):
         gate_type: str,
         x_channel: str,
         y_channel: str,
+        available_populations: list[tuple[str, str]] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -53,6 +56,7 @@ class _GateDialog(QDialog):
         self._gate_type = gate_type
         self._x_channel = x_channel
         self._y_channel = y_channel
+        self._available_populations = available_populations or []
         self._name: str = ""
         self._thresholds: dict[str, Any] = {}
         self._coordinates: list[tuple[float, float]] = []
@@ -119,6 +123,18 @@ class _GateDialog(QDialog):
             info.setWordWrap(True)
             layout.addRow(info)
 
+        elif self._gate_type == "boolean":
+            self._operation_combo = QComboBox()
+            self._operation_combo.addItems(["and", "or", "not"])
+            self._source_list = QListWidget()
+            self._source_list.setSelectionMode(QAbstractItemView.MultiSelection)
+            for pop_id, label in self._available_populations:
+                item = QListWidgetItem(f"{label} [{pop_id}]")
+                item.setData(Qt.UserRole, pop_id)
+                self._source_list.addItem(item)
+            layout.addRow("Operation:", self._operation_combo)
+            layout.addRow("Source populations:", self._source_list)
+
         # Buttons
         btn_layout = QHBoxLayout()
         ok_btn = QPushButton("OK")
@@ -148,6 +164,14 @@ class _GateDialog(QDialog):
         elif self._gate_type == "range":
             self._thresholds["min"] = self._r_min.value()
             self._thresholds["max"] = self._r_max.value()
+
+        elif self._gate_type == "boolean":
+            source_ids = [
+                item.data(Qt.UserRole)
+                for item in self._source_list.selectedItems()
+            ]
+            self._thresholds["operation"] = self._operation_combo.currentText()
+            self._thresholds["source_ids"] = source_ids
 
     def _on_ok(self) -> None:
         self._collect_ok_values()
@@ -186,6 +210,13 @@ class GateEditor(QWidget):
     def set_parent_population(self, population_id: str) -> None:
         """Set the parent population id for new gates."""
         self._parent_population_id = population_id
+        idx = self._parent_combo.findData(population_id)
+        if idx >= 0:
+            self._parent_combo.setCurrentIndex(idx)
+
+    def parent_population(self) -> str:
+        """Return the parent population id for new gates."""
+        return self._parent_population_id
 
     def gates(self) -> list[GateSpec]:
         """Return all defined gates."""
@@ -193,8 +224,11 @@ class GateEditor(QWidget):
 
     def add_gate(self, gate: GateSpec) -> None:
         """Add a gate programmatically."""
-        self._gates.append(gate)
+        candidate = [*self._gates, gate]
+        self._validate_gates(candidate)
+        self._gates = candidate
         self._add_gate_list_item(gate)
+        self._refresh_parent_population_combo()
         self._status_label.setText("Ready")
         self._emit_gates_changed()
 
@@ -202,7 +236,10 @@ class GateEditor(QWidget):
         """Replace an existing gate definition and refresh the list label."""
         if index < 0 or index >= len(self._gates):
             return
-        self._gates[index] = gate
+        candidate = list(self._gates)
+        candidate[index] = gate
+        self._validate_gates(candidate)
+        self._gates = candidate
         item = self._list_widget.item(index)
         if item is not None:
             self._updating_list_item = True
@@ -210,6 +247,7 @@ class GateEditor(QWidget):
                 item.setText(self._gate_label(gate))
             finally:
                 self._updating_list_item = False
+        self._refresh_parent_population_combo()
         if notify:
             self._emit_gates_changed()
 
@@ -217,7 +255,19 @@ class GateEditor(QWidget):
         """Remove all gates."""
         self._gates.clear()
         self._list_widget.clear()
+        self._refresh_parent_population_combo()
         self._emit_gates_changed()
+
+    def set_gates(self, gates: list[GateSpec], notify: bool = True) -> None:
+        """Replace all gates after validating their complete dependency graph."""
+        self._validate_gates(gates)
+        self._gates = list(gates)
+        self._list_widget.clear()
+        for gate in self._gates:
+            self._add_gate_list_item(gate)
+        self._refresh_parent_population_combo()
+        if notify:
+            self._emit_gates_changed()
 
     def receive_polygon_vertex(self, data_x: float, data_y: float) -> None:
         """Add a vertex to the in-progress polygon gate.
@@ -259,6 +309,7 @@ class GateEditor(QWidget):
         )
         self._gates.append(gate)
         self._add_gate_list_item(gate)
+        self._refresh_parent_population_combo()
         self._cancel_polygon()
         self._emit_gates_changed()
 
@@ -328,11 +379,38 @@ class GateEditor(QWidget):
     def _next_gate_id(self) -> str:
         return f"gate_{uuid.uuid4().hex[:8]}"
 
+    @staticmethod
+    def _validate_gates(gates: list[GateSpec]) -> None:
+        ordered_gates(
+            GatingStrategySpec(id="gui_strategy", name="GUI Strategy", gates=tuple(gates))
+        )
+
+    def _available_populations(self) -> list[tuple[str, str]]:
+        return [("all_events", "All Events")] + [
+            (gate.id, gate.name) for gate in self._gates
+        ]
+
+    def _refresh_parent_population_combo(self) -> None:
+        current = self._parent_population_id
+        self._parent_combo.blockSignals(True)
+        try:
+            self._parent_combo.clear()
+            for pop_id, label in self._available_populations():
+                self._parent_combo.addItem(label, pop_id)
+            idx = self._parent_combo.findData(current)
+            if idx < 0:
+                idx = 0
+            self._parent_combo.setCurrentIndex(idx)
+            self._parent_population_id = self._parent_combo.currentData()
+        finally:
+            self._parent_combo.blockSignals(False)
+
     def _create_gate_dialog(self) -> None:
         """Show gate creation dialog."""
         gate_type = self._type_combo.currentText()
         x_ch = self._x_channel or "X"
         y_ch = self._y_channel or "Y"
+        self._parent_population_id = self._parent_combo.currentData() or "all_events"
 
         if gate_type in {"rectangle", "polygon"}:
             if not self._emit_interactive_gate_requested(gate_type):
@@ -344,12 +422,29 @@ class GateEditor(QWidget):
                 self._status_label.setText("Click plot vertices; double-click to finish...")
             return
 
-        dlg = _GateDialog(gate_type, x_ch, y_ch, self)
+        dlg = _GateDialog(
+            gate_type,
+            x_ch,
+            y_ch,
+            self._available_populations(),
+            self,
+        )
         if dlg.exec() != QDialog.Accepted:
             return
 
         name = dlg.name()
         thresholds = dlg.thresholds()
+        if gate_type == "boolean":
+            source_ids = thresholds.get("source_ids", [])
+            operation = thresholds.get("operation")
+            min_sources = 1 if operation == "not" else 2
+            if len(source_ids) < min_sources:
+                QMessageBox.warning(
+                    self,
+                    "Boolean gate incomplete",
+                    "Select enough source populations for the boolean operation.",
+                )
+                return
         gate_id = self._next_gate_id()
 
         gate = GateSpec(
@@ -357,23 +452,45 @@ class GateEditor(QWidget):
             name=name,
             gate_type=gate_type,
             parent_population_id=self._parent_population_id,
-            x_parameter=self._x_channel,
-            y_parameter=self._y_channel,
+            x_parameter=self._x_channel if gate_type != "boolean" else None,
+            y_parameter=self._y_channel if gate_type not in {"range", "boolean"} else None,
             thresholds=thresholds,
         )
+        try:
+            self._validate_gates([*self._gates, gate])
+        except GatingStrategyError as exc:
+            QMessageBox.warning(self, "Invalid gate", str(exc))
+            return
 
         self._gates.append(gate)
         self._add_gate_list_item(gate)
+        self._refresh_parent_population_combo()
         self._emit_gates_changed()
 
     def _delete_selected_gate(self) -> None:
         idx = self._list_widget.currentRow()
         if idx < 0:
             return
-        if idx < len(self._gates):
-            self._gates.pop(idx)
+        if idx >= len(self._gates):
+            return
+        gate_id = self._gates[idx].id
+        dependents = [
+            gate.id
+            for gate in self._gates
+            if gate.parent_population_id == gate_id
+            or gate_id in gate.thresholds.get("source_ids", [])
+        ]
+        if dependents:
+            QMessageBox.warning(
+                self,
+                "Gate is referenced",
+                f"Cannot delete {gate_id!r}; referenced by: {', '.join(dependents)}",
+            )
+            return
+        self._gates.pop(idx)
         item = self._list_widget.takeItem(idx)
         del item  # free Qt object
+        self._refresh_parent_population_combo()
         self._emit_gates_changed()
 
     def _on_list_selection_changed(self) -> None:
@@ -408,6 +525,7 @@ class GateEditor(QWidget):
             item.setText(self._gate_label(updated_gate))
         finally:
             self._updating_list_item = False
+        self._refresh_parent_population_combo()
         self._emit_gates_changed()
 
     def _add_gate_list_item(self, gate: GateSpec) -> None:
@@ -437,7 +555,16 @@ class GateEditor(QWidget):
 
         # Gate type selector
         self._type_combo = QComboBox()
-        self._type_combo.addItems(["rectangle", "range", "polygon"])
+        self._type_combo.addItems(["rectangle", "range", "polygon", "boolean"])
+
+        self._parent_combo = QComboBox()
+        self._parent_combo.currentIndexChanged.connect(
+            lambda *_args: setattr(
+                self,
+                "_parent_population_id",
+                self._parent_combo.currentData() or "all_events",
+            )
+        )
 
         # Buttons
         self._btn_create = QPushButton("Create Gate")
@@ -465,6 +592,8 @@ class GateEditor(QWidget):
 
         box_layout.addWidget(QLabel("Gate type:"))
         box_layout.addWidget(self._type_combo)
+        box_layout.addWidget(QLabel("Parent population:"))
+        box_layout.addWidget(self._parent_combo)
         box_layout.addLayout(btn_row)
         box_layout.addWidget(QLabel("Defined gates:"))
         box_layout.addWidget(self._list_widget)
@@ -472,3 +601,4 @@ class GateEditor(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(box)
+        self._refresh_parent_population_combo()

@@ -43,6 +43,11 @@ def save_project(
   manifest["updated_at"] = now_iso()
   write_json(manifest_path, manifest)
 
+  strategies = manifest.get("gating_strategies_data", {})
+  if len(strategies) == 1:
+    strategy = next(iter(strategies.values()))
+    write_json(project_path / "gates" / "gating_strategy.json", strategy)
+
 
 def load_gating_strategy(
   project_path: str | Path,

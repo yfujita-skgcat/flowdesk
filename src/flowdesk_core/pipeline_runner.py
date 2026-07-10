@@ -29,6 +29,7 @@ from flowdesk_core.gating_strategy import (
 from flowdesk_core.models import (
   CompensationMatrixSpec,
   DerivedParameterSpec,
+  GateSpec,
   GatingStrategySpec,
   PopulationResult,
   TransformSpec,
@@ -182,10 +183,9 @@ class PipelineRunner:
             gating_strategy_id, transformed, channel_names, sid
           )
         except GatingStrategyError as exc:
-          messages.append(f"sample={sid} gating_error={exc}")
-          pop_results = self._fallback_root_population(
-            sid, int(transformed.shape[0])
-          )
+          raise PipelineError(
+            f"invalid gating strategy {gating_strategy_id!r}: {exc}"
+          ) from exc
       else:
         pop_results = self._fallback_root_population(
           sid, int(transformed.shape[0])
@@ -337,6 +337,9 @@ class PipelineRunner:
           sample_id, int(data.shape[0])
         )
 
+    if isinstance(strat, Mapping):
+      strat = self._strategy_from_mapping(strat)
+
     results = evaluate_gating_strategy(strat, data, channel_names)
 
     # Attach sample_id to results (frozen dataclass, so rebuild).
@@ -447,3 +450,30 @@ class PipelineRunner:
     # This is intentionally minimal; full strategy loading is handled
     # by the storage layer.
     return None
+
+  @staticmethod
+  def _strategy_from_mapping(data: Mapping[str, Any]) -> GatingStrategySpec:
+    """Build the core strategy model from JSON-compatible project data."""
+    gates = tuple(
+      GateSpec(
+        id=str(gate["id"]),
+        name=str(gate.get("name", gate["id"])),
+        gate_type=gate["gate_type"],
+        parent_population_id=gate.get("parent_population_id"),
+        x_parameter=gate.get("x_parameter"),
+        y_parameter=gate.get("y_parameter"),
+        transform_id=gate.get("transform_id"),
+        compensation_id=gate.get("compensation_id"),
+        coordinates=tuple(tuple(point) for point in gate.get("coordinates", ())),
+        thresholds=dict(gate.get("thresholds", {})),
+        notes=str(gate.get("notes", "")),
+      )
+      for gate in data.get("gates", ())
+    )
+    return GatingStrategySpec(
+      id=str(data["id"]),
+      name=str(data.get("name", data["id"])),
+      gates=gates,
+      root_population_id=str(data.get("root_population_id", "all_events")),
+      notes=str(data.get("notes", "")),
+    )

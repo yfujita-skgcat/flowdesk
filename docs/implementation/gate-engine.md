@@ -18,6 +18,9 @@ Implement reproducible gate membership for rectangle, range, polygon, and boolea
 - Keep gate evaluation GUI-independent.
 - Use explicit boundary semantics. For example, rectangle min/max boundaries are inclusive unless documented otherwise.
 - Boolean gates must reference named populations or gate ids, not GUI objects.
+- Validate unique ids, parent/source existence, boolean arity, and dependency cycles
+  before membership evaluation. Evaluate in a stable topological order rather than
+  requiring storage or GUI list order to encode dependencies.
 - Polygon implementation must handle points on edges consistently.
 
 ## Required Behavior
@@ -35,6 +38,8 @@ Implement reproducible gate membership for rectangle, range, polygon, and boolea
 - Range gate membership works on one parameter.
 - Polygon membership has inside, outside, edge, and vertex cases.
 - Boolean gate combines masks correctly.
+- Invalid parent/source references and dependency cycles raise clear errors.
+- Boolean gates are evaluated after their sources even when stored earlier.
 - Parent-child masking produces expected child counts.
 
 ## Acceptance Criteria

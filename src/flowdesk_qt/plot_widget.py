@@ -36,6 +36,7 @@ from flowdesk_qt.plot_style import PlotStyleSettings
 
 AxisTransform = Literal["linear", "log10", "asinh"]
 InteractiveGateType = Literal["rectangle", "polygon"]
+RangeMode = Literal["robust_auto", "full_auto", "manual"]
 
 # ---------------------------------------------------------------------------
 # PlotWidget
@@ -53,6 +54,7 @@ class PlotWidget(QWidget):
         super().__init__(parent)
         self._scatter: ScatterPlotItem | None = None
         self._gate_items: list[Any] = []
+        self._preview_item: Any | None = None
         self._gate_geometry_callbacks: list[Any] = []
         self._x_label: str = ""
         self._y_label: str = ""
@@ -66,6 +68,10 @@ class PlotWidget(QWidget):
         # Cached raw data for range reset operations.
         self._cached_x: NDArray[np.float64] | None = None
         self._cached_y: NDArray[np.float64] | None = None
+        self._range_mode: RangeMode = "robust_auto"
+        self._manual_view_range: tuple[tuple[float, float], tuple[float, float]] | None = None
+        self._setting_view_range = False
+        self._polygon_preview_vertices: list[tuple[float, float]] = []
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -99,6 +105,7 @@ class PlotWidget(QWidget):
 
     def set_robust_range(self) -> None:
         """Reset viewport to robust auto-range (percentile-based)."""
+        self._range_mode = "robust_auto"
         self._auto_range()
 
     def set_full_range(self) -> None:
@@ -106,7 +113,36 @@ class PlotWidget(QWidget):
 
         Uses the cached raw data from the last plot_events call.
         """
+        self._range_mode = "full_auto"
         self._set_full_range_internal()
+
+    def set_manual_view_range(
+        self,
+        x_range: tuple[float, float],
+        y_range: tuple[float, float],
+    ) -> None:
+        """Set and remember a display-only manual ViewBox range."""
+        self._range_mode = "manual"
+        self._manual_view_range = (x_range, y_range)
+        self._apply_manual_range()
+
+    def view_range(self) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """Return the current ViewBox range as ``((x_min, x_max), (y_min, y_max))``."""
+        vb = self._view_box()
+        if vb is None:
+            return None
+        try:
+            x_range, y_range = vb.viewRange()
+            return (
+                (float(x_range[0]), float(x_range[1])),
+                (float(y_range[0]), float(y_range[1])),
+            )
+        except Exception:
+            return None
+
+    def range_mode(self) -> RangeMode:
+        """Return the current viewport range mode."""
+        return self._range_mode
 
     def set_axis_transforms(
         self,
@@ -172,14 +208,22 @@ class PlotWidget(QWidget):
 
         self._update_labels()
         self._update_log_mode()
-        self._auto_range()
+        if self._range_mode == "manual":
+            self._apply_manual_range()
+        elif self._range_mode == "full_auto":
+            self._set_full_range_internal()
+        else:
+            self._auto_range()
 
     def clear_plot(self) -> None:
         """Remove all data and gate overlays."""
         self._clear_scatter()
         self._clear_gates()
+        self._clear_preview()
         self._x_label = ""
         self._y_label = ""
+        self._cached_x = None
+        self._cached_y = None
         self._update_labels()
 
     def add_gate_overlay(self, gate: GateSpec, gate_index: int | None = None) -> None:
@@ -319,11 +363,18 @@ class PlotWidget(QWidget):
             raise ValueError(f"unsupported interactive gate type: {gate_type}")
         self._active_gate_creation = gate_type
         self._drag_start = None
+        self._clear_preview()
 
     def clear_gate_creation(self) -> None:
         """Return plot mouse handling to pyqtgraph defaults."""
         self._active_gate_creation = None
         self._drag_start = None
+        self._clear_preview()
+
+    def add_polygon_preview_vertex(self, data_x: float, data_y: float) -> None:
+        """Add a display-only vertex to the in-progress polygon preview."""
+        self._polygon_preview_vertices.append((data_x, data_y))
+        self._update_polygon_preview()
 
     # -- callback storage (initialised in _build_ui) -------------------------
     # These are populated in _build_ui to avoid forward-reference issues.
@@ -581,6 +632,65 @@ class PlotWidget(QWidget):
                 pass
         self._gate_items.clear()
 
+    def _clear_preview(self) -> None:
+        if self._preview_item is not None:
+            try:
+                self._plot_item.removeItem(self._preview_item)
+            except Exception:
+                pass
+        self._preview_item = None
+        self._polygon_preview_vertices.clear()
+
+    def _set_preview_item(self, item: Any | None) -> None:
+        if self._preview_item is not None:
+            try:
+                self._plot_item.removeItem(self._preview_item)
+            except Exception:
+                pass
+        self._preview_item = item
+        if item is not None:
+            self._plot_item.addItem(item)
+
+    def _update_rectangle_preview(
+        self,
+        start: tuple[float, float],
+        end: tuple[float, float],
+    ) -> None:
+        from pyqtgraph import RectROI, mkPen  # type: ignore[attr-defined]
+
+        x_min = min(start[0], end[0])
+        y_min = min(start[1], end[1])
+        width = abs(end[0] - start[0])
+        height = abs(end[1] - start[1])
+        if width <= 0 or height <= 0:
+            return
+        rect = RectROI(
+            [x_min, y_min],
+            [width, height],
+            pen=mkPen(color="#ffffff", width=1, style=Qt.DotLine),
+            movable=False,
+            removable=False,
+        )
+        self._set_preview_item(rect)
+
+    def _update_polygon_preview(self) -> None:
+        from pyqtgraph import PlotDataItem, mkPen  # type: ignore[attr-defined]
+
+        if not self._polygon_preview_vertices:
+            self._clear_preview()
+            return
+        x_vals = [p[0] for p in self._polygon_preview_vertices]
+        y_vals = [p[1] for p in self._polygon_preview_vertices]
+        item = PlotDataItem(
+            x_vals,
+            y_vals,
+            pen=mkPen(color="#ffffff", width=1, style=Qt.DotLine),
+            symbol="o",
+            symbolSize=5,
+            symbolBrush=QColor("#ffffff"),
+        )
+        self._set_preview_item(item)
+
     def _update_labels(self) -> None:
         # setLabel lives on PlotItem, not on ViewBox.
         self._plot_item.setLabel("bottom", self._x_label)
@@ -675,10 +785,13 @@ class PlotWidget(QWidget):
             x_low, x_high = self._robust_range_for_axis(x_arr, self._x_transform)
             y_low, y_high = self._robust_range_for_axis(y_arr, self._y_transform)
 
-            vb.setXRange(x_low, x_high, padding=0.02)
-            vb.setYRange(y_low, y_high, padding=0.02)
+            self._set_view_ranges(vb, (x_low, x_high), (y_low, y_high), padding=0.02)
         else:
-            vb.autoRange(padding=0.02)
+            self._setting_view_range = True
+            try:
+                vb.autoRange(padding=0.02)
+            finally:
+                self._setting_view_range = False
 
     def _set_full_range_internal(self) -> None:
         """Reset viewport to full data range using all finite display points.
@@ -700,8 +813,37 @@ class PlotWidget(QWidget):
         x_low, x_high = self._full_range_for_axis(x_arr, self._x_transform)
         y_low, y_high = self._full_range_for_axis(y_arr, self._y_transform)
 
-        vb.setXRange(x_low, x_high, padding=0.02)
-        vb.setYRange(y_low, y_high, padding=0.02)
+        self._set_view_ranges(vb, (x_low, x_high), (y_low, y_high), padding=0.02)
+
+    def _apply_manual_range(self) -> None:
+        vb = self._view_box()
+        if vb is None or self._manual_view_range is None:
+            return
+        x_range, y_range = self._manual_view_range
+        self._set_view_ranges(vb, x_range, y_range, padding=0.0)
+
+    def _set_view_ranges(
+        self,
+        vb: ViewBox,
+        x_range: tuple[float, float],
+        y_range: tuple[float, float],
+        padding: float,
+    ) -> None:
+        self._setting_view_range = True
+        try:
+            vb.setXRange(x_range[0], x_range[1], padding=padding)
+            vb.setYRange(y_range[0], y_range[1], padding=padding)
+        finally:
+            self._setting_view_range = False
+
+    def _on_view_range_changed(self, *_args: Any) -> None:
+        if self._setting_view_range:
+            return
+        current = self.view_range()
+        if current is None:
+            return
+        self._range_mode = "manual"
+        self._manual_view_range = current
 
     def _full_range_for_axis(
         self,
@@ -823,7 +965,10 @@ class PlotWidget(QWidget):
                     except Exception:
                         pass
             self._drag_start = None
+            self._clear_preview()
         else:
+            if self._drag_start is not None:
+                self._update_rectangle_preview(self._drag_start, data_pos)
             # During drag, notify callbacks with current drag state
             for cb in self._click_callbacks:
                 try:
@@ -860,6 +1005,7 @@ class PlotWidget(QWidget):
             self._default_mouse_click_event = vb.mouseClickEvent
             self._default_mouse_drag_event = vb.mouseDragEvent
             vb.mouseDragEvent = self._on_mouse_drag  # type: ignore[assignment]
+            vb.sigRangeChanged.connect(self._on_view_range_changed)
 
         self._glw.scene().sigMouseClicked.connect(self._on_scene_mouse_click)
 

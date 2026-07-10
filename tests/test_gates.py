@@ -14,6 +14,7 @@ from flowdesk_core.gates import (
 from flowdesk_core.gating_strategy import (
   GatingStrategyError,
   evaluate_gating_strategy,
+  ordered_gates,
 )
 from flowdesk_core.models import GateSpec, GatingStrategySpec
 
@@ -428,3 +429,66 @@ def test_gating_strategy_unknown_parent_raises() -> None:
   data = np.array([[0.5, 0.5]], dtype=np.float64)
   with pytest.raises(GatingStrategyError, match="unknown parent"):
     evaluate_gating_strategy(strategy, data, ["x", "y"])
+
+
+def test_gating_strategy_orders_boolean_gate_after_sources() -> None:
+  source = GateSpec(
+    id="source",
+    name="source",
+    gate_type="range",
+    parent_population_id="all_events",
+    x_parameter="x",
+    thresholds={"min": 1.0},
+  )
+  boolean = GateSpec(
+    id="not_source",
+    name="not source",
+    gate_type="boolean",
+    parent_population_id="all_events",
+    thresholds={"operation": "not", "source_ids": ["source"]},
+  )
+  strategy = GatingStrategySpec(id="s", name="s", gates=(boolean, source))
+
+  assert [gate.id for gate in ordered_gates(strategy)] == ["source", "not_source"]
+  results = evaluate_gating_strategy(
+    strategy,
+    np.array([[0.0], [2.0]], dtype=np.float64),
+    ["x"],
+  )
+  assert {result.population_id: result.event_count for result in results} == {
+    "all_events": 2,
+    "source": 1,
+    "not_source": 1,
+  }
+
+
+def test_gating_strategy_rejects_unknown_boolean_source() -> None:
+  gate = GateSpec(
+    id="bad",
+    name="bad",
+    gate_type="boolean",
+    thresholds={"operation": "not", "source_ids": ["missing"]},
+  )
+  with pytest.raises(GatingStrategyError, match="unknown source"):
+    ordered_gates(GatingStrategySpec(id="s", name="s", gates=(gate,)))
+
+
+def test_gating_strategy_rejects_dependency_cycle() -> None:
+  gate_a = GateSpec(
+    id="a",
+    name="a",
+    gate_type="range",
+    parent_population_id="b",
+    x_parameter="x",
+    thresholds={"min": 0.0},
+  )
+  gate_b = GateSpec(
+    id="b",
+    name="b",
+    gate_type="range",
+    parent_population_id="a",
+    x_parameter="x",
+    thresholds={"min": 0.0},
+  )
+  with pytest.raises(GatingStrategyError, match="cycle"):
+    ordered_gates(GatingStrategySpec(id="s", name="s", gates=(gate_a, gate_b)))

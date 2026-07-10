@@ -18,6 +18,88 @@ class GatingStrategyError(FlowdeskError):
   """Raised when a gating strategy cannot be evaluated."""
 
 
+def ordered_gates(strategy: GatingStrategySpec) -> tuple[GateSpec, ...]:
+  """Validate *strategy* and return gates in dependency order.
+
+  Parent populations and boolean sources are dependencies. The original gate
+  order is retained whenever two gates are otherwise independent.
+  """
+  gate_by_id: dict[str, GateSpec] = {}
+  original_order: dict[str, int] = {}
+  for index, gate in enumerate(strategy.gates):
+    if not gate.id:
+      raise GatingStrategyError("gate id must not be empty")
+    if gate.id == strategy.root_population_id:
+      raise GatingStrategyError(
+        f"gate id conflicts with root population: {gate.id!r}"
+      )
+    if gate.id in gate_by_id:
+      raise GatingStrategyError(f"duplicate gate id: {gate.id!r}")
+    gate_by_id[gate.id] = gate
+    original_order[gate.id] = index
+
+  dependencies: dict[str, set[str]] = {}
+  for gate in strategy.gates:
+    gate_dependencies: set[str] = set()
+    parent_id = gate.parent_population_id
+    if parent_id and parent_id != strategy.root_population_id:
+      if parent_id not in gate_by_id:
+        raise GatingStrategyError(
+          f"gate {gate.id!r} references unknown parent population: {parent_id!r}"
+        )
+      gate_dependencies.add(parent_id)
+
+    if gate.gate_type == "boolean":
+      operation = gate.thresholds.get("operation")
+      if operation not in {"and", "or", "not"}:
+        raise GatingStrategyError(
+          f"boolean gate {gate.id!r} has invalid operation: {operation!r}"
+        )
+      source_ids = gate.thresholds.get("source_ids")
+      if not isinstance(source_ids, (list, tuple)):
+        raise GatingStrategyError(
+          f"boolean gate {gate.id!r} source_ids must be an array"
+        )
+      required_count = 1 if operation == "not" else 2
+      if len(source_ids) < required_count:
+        raise GatingStrategyError(
+          f"boolean gate {gate.id!r} requires at least {required_count} source id(s)"
+        )
+      if operation == "not" and len(source_ids) != 1:
+        raise GatingStrategyError(
+          f"boolean NOT gate {gate.id!r} requires exactly one source id"
+        )
+      for source_id in source_ids:
+        if source_id == strategy.root_population_id:
+          continue
+        if source_id not in gate_by_id:
+          raise GatingStrategyError(
+            f"boolean gate {gate.id!r} references unknown source: {source_id!r}"
+          )
+        gate_dependencies.add(source_id)
+    dependencies[gate.id] = gate_dependencies
+
+  remaining = {gate_id: set(deps) for gate_id, deps in dependencies.items()}
+  result: list[GateSpec] = []
+  while remaining:
+    ready = sorted(
+      (gate_id for gate_id, deps in remaining.items() if not deps),
+      key=original_order.__getitem__,
+    )
+    if not ready:
+      cycle_ids = sorted(remaining, key=original_order.__getitem__)
+      raise GatingStrategyError(
+        f"gate dependency cycle detected: {', '.join(cycle_ids)}"
+      )
+    for gate_id in ready:
+      result.append(gate_by_id[gate_id])
+      del remaining[gate_id]
+    for deps in remaining.values():
+      deps.difference_update(ready)
+
+  return tuple(result)
+
+
 def evaluate_gating_strategy(
   strategy: GatingStrategySpec,
   data: NDArray[np.float64],
@@ -25,7 +107,7 @@ def evaluate_gating_strategy(
 ) -> list[PopulationResult]:
   """Evaluate a gating strategy on event data.
 
-  Gates are evaluated in the order they appear in ``strategy.gates``.
+  Gates are validated and evaluated in dependency order.
   The root population (``strategy.root_population_id``) contains all events.
 
   Args:
@@ -53,16 +135,20 @@ def evaluate_gating_strategy(
   # Track results.
   results: list[PopulationResult] = []
 
-  for gate in strategy.gates:
-    # Resolve x/y values from data.
-    x_vals = _get_column(gate.x_parameter, data, channel_names)
-    y_vals = _get_column(gate.y_parameter, data, channel_names)
+  for gate in ordered_gates(strategy):
+    if gate.gate_type == "boolean":
+      x_vals = np.zeros(n_events, dtype=np.float64)
+      y_vals = None
+    else:
+      # Resolve x/y values from data.
+      x_vals = _get_column(gate.x_parameter, data, channel_names)
+      y_vals = _get_column(gate.y_parameter, data, channel_names)
 
-    # x_vals is required for all gate types.
-    if x_vals is None:
-      raise GatingStrategyError(
-        f"gate {gate.id!r} has no x_parameter defined"
-      )
+      # x_vals is required for non-boolean gate types.
+      if x_vals is None:
+        raise GatingStrategyError(
+          f"gate {gate.id!r} has no x_parameter defined"
+        )
 
     # Evaluate the gate.
     gate_mask = evaluate_gate(gate, x_vals, y_vals, population_masks)
