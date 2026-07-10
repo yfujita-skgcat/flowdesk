@@ -1,8 +1,5 @@
-- ゲートを作成後 Run Pipeline をクリックしたら統計量がPopulation Results に出てくるが、その後にゲートを移動しても値が変わらない.
-- Add FCS Files.. でFCSを追加したのち、除外する方法がない。
-- 同じFCSを繰り返し追加できてしまう。この仕様に意味があるなら残してよいが、 もし意味がないなら、追加済みのFCSは除外するようにしてほしい。
-- ゲート作成時に、ゲート確定前のゲートの形を決めているときにその形が表示されるようにしてほしい。
-- Samples の選択を変更すると、毎回X axis, Y axis の設定がリセットされる。選択を変更しても、前回の設定を保持するようにしてほしい。
-- X axis, Y axis の範囲がmanual 設定の場合に、Samples の選択を変更すると、範囲が毎回違う。通常、複数のFCS sample 間で同じ範囲を使用することが多いので、Samples の選択を変更しても、前回の範囲設定を保持するようにしてほしい。(ただし、理由があるならそれを説明する).
-- Population Results を export できるようにしてほしい。
-- gate hierarchy の方法がわからない。gate A かつ gate B のような条件で gate を作成したいが、どうすればよいかわからない。未実装ならば、実装方針、計画を建てる。
+- Population Results の Population に表示されるgate名がDefined gates の名称と一致せずわかりにくいので、Population Results の Population に表示されるgate名を Defined gates の名称と一致させるように修正する
+- Freq. of Parent や Freq. of Total は % of Parent, % of Total と表記するように修正する
+- 表示プロットを特定のgateのみに絞り込む機能を追加する (FSC-A, SSC-A でゲートしたものについて、FSC-A, FL1-A で展開する、など).
+- 縦軸に count を選ぶと、ヒストグラムで表示できるようにする。
+- 2D プロットの上と右にヒストグラムを表示するモードを追加する。

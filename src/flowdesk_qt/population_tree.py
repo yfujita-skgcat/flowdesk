@@ -8,6 +8,7 @@ This widget contains NO scientific execution logic.
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QGroupBox,
     QHeaderView,
@@ -34,6 +35,7 @@ class PopulationTree(QWidget):
         self.setObjectName("populationTree")
         self._last_report: ExecutionReport | None = None
         self._population_parents: dict[str, str | None] = {}
+        self._population_names: dict[str, str] = {}
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -54,9 +56,33 @@ class PopulationTree(QWidget):
         """Set display-only hierarchy metadata from the active gate strategy."""
         self._population_parents = dict(parents)
 
+    def set_population_names(self, names: dict[str, str]) -> None:
+        """Set display names for population IDs.
+
+        Maps internal population IDs (e.g. ``gate_ab12``) to human-readable
+        display names (e.g. ``CD45 positive``).  The root population
+        ``all_events`` should map to ``All Events``.
+        """
+        self._population_names = dict(names)
+
+    def get_selected_population_id(self) -> str | None:
+        """Return the population ID of the currently selected row.
+
+        Returns ``None`` if no row is selected.
+        """
+        selected = self._table.selectedItems()
+        if not selected:
+            return None
+        row = self._table.row(selected[0])
+        item = self._table.item(row, 0)
+        if item is None:
+            return None
+        return item.data(Qt.UserRole)
+
     def clear(self) -> None:
         """Clear all displayed data."""
         self._last_report = None
+        self._population_names.clear()
         self._table.setRowCount(0)
         self._status_label.setText("No execution results")
 
@@ -67,9 +93,20 @@ class PopulationTree(QWidget):
         for row, r in enumerate(results):
             parent_id = self._population_parents.get(r.population_id)
             depth = self._population_depth(r.population_id)
-            label = f"{'  ' * depth}{r.population_id}"
-            self._table.setItem(row, 0, QTableWidgetItem(label))
-            self._table.setItem(row, 1, QTableWidgetItem(parent_id or "-"))
+            display_name = self._population_names.get(
+                r.population_id, r.population_id
+            )
+            label = f"{'  ' * depth}{display_name}"
+            pop_item = QTableWidgetItem(label)
+            pop_item.setData(Qt.UserRole, r.population_id)
+            self._table.setItem(row, 0, pop_item)
+
+            parent_display = self._population_names.get(parent_id, parent_id or "-")
+            parent_item = QTableWidgetItem(parent_display)
+            if parent_id is not None:
+                parent_item.setData(Qt.UserRole, parent_id)
+            self._table.setItem(row, 1, parent_item)
+
             self._table.setItem(row, 2, QTableWidgetItem(r.sample_id))
             self._table.setItem(row, 3, QTableWidgetItem(str(r.event_count)))
             freq_parent = (
@@ -101,8 +138,8 @@ class PopulationTree(QWidget):
                 "Parent",
                 "Sample",
                 "Events",
-                "Freq. of Parent",
-                "Freq. of Total",
+                "% of Parent",
+                "% of Total",
             ]
         )
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)

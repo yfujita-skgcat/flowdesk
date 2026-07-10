@@ -610,6 +610,7 @@ class MainWindow(QMainWindow):
 
         report = worker._report
         if report is not None:
+            self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
             self._results_stale = False
             self._update_status(f"Pipeline complete: {report.summary}")
@@ -752,6 +753,12 @@ class MainWindow(QMainWindow):
             {gate.id: gate.parent_population_id for gate in self._gate_editor.gates()}
         )
         return parents
+
+    def _population_name_map(self) -> dict[str, str]:
+        """Build a mapping from population ID to human-readable display name."""
+        names = {"all_events": "All Events"}
+        names.update({gate.id: gate.name for gate in self._gate_editor.gates()})
+        return names
 
     # -- plot mouse handlers -------------------------------------------------
 
