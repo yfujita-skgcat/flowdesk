@@ -27,3 +27,4 @@ Recommended implementation order:
 11. `qt-interactive-plot-controls.md`
 12. `qt-gui-debugging.md`
 13. `performance-and-review.md`
+14. `population-filtering-and-histograms.md`

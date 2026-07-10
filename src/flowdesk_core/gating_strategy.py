@@ -11,7 +11,17 @@ from numpy.typing import NDArray
 
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.gates import apply_parent_mask, evaluate_gate
-from flowdesk_core.models import GateSpec, GatingStrategySpec, PopulationResult
+from flowdesk_core.models import (
+  GateSpec,
+  GatingStrategySpec,
+  PopulationResult,
+)
+
+# ---------------------------------------------------------------------------
+# Type alias for membership masks dict
+# ---------------------------------------------------------------------------
+
+PopulationMaskDict = dict[str, NDArray[np.bool_]]
 
 
 class GatingStrategyError(FlowdeskError):
@@ -214,6 +224,67 @@ def evaluate_gating_strategy(
     )
 
   return final_results
+
+
+def evaluate_gating_strategy_with_membership(
+  strategy: GatingStrategySpec,
+  data: NDArray[np.float64],
+  channel_names: list[str],
+) -> tuple[list[PopulationResult], PopulationMaskDict]:
+  """Evaluate a gating strategy and return both results and membership masks.
+
+  This is the membership-aware variant of ``evaluate_gating_strategy``.
+  The returned masks are full-length boolean arrays aligned with the input
+  event data, made read-only before being returned.
+
+  Args:
+    strategy: Gating strategy with gates and hierarchy.
+    data: 2-D array of shape ``(n_events, n_channels)``.
+    channel_names: Column names aligned with ``data`` columns.
+
+  Returns:
+    A tuple of:
+      - List of ``PopulationResult`` for each population (including root).
+      - Dict mapping population IDs to read-only boolean membership masks.
+  """
+  population_results = evaluate_gating_strategy(
+    strategy, data, channel_names
+  )
+
+  # Rebuild the same population masks to return alongside results.
+  n_events = data.shape[0]
+  population_masks: PopulationMaskDict = {}
+
+  # Root population: all events.
+  root_mask = np.ones(n_events, dtype=np.bool_)
+  population_masks[strategy.root_population_id] = root_mask
+
+  for gate in ordered_gates(strategy):
+    if gate.gate_type == "boolean":
+      x_vals = np.zeros(n_events, dtype=np.float64)
+      y_vals = None
+    else:
+      x_vals = _get_column(gate.x_parameter, data, channel_names)
+      y_vals = _get_column(gate.y_parameter, data, channel_names)
+
+    gate_mask = evaluate_gate(gate, x_vals, y_vals, population_masks)
+
+    parent_id = gate.parent_population_id
+    if parent_id is not None:
+      if parent_id not in population_masks:
+        raise GatingStrategyError(
+          f"gate {gate.id!r} references unknown parent population: "
+          f"{parent_id!r}"
+        )
+      gate_mask = apply_parent_mask(gate_mask, population_masks[parent_id])
+
+    population_masks[gate.id] = gate_mask
+
+  # Make masks read-only before returning.
+  for pop_id in population_masks:
+    population_masks[pop_id].setflags(write=False)
+
+  return population_results, population_masks
 
 
 def _get_column(

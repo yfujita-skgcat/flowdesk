@@ -427,3 +427,166 @@ def test_export_records_from_pipeline() -> None:
     list(report.population_results)
   )
   assert len(records) >= 3  # at least root population x 3 metrics
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: PopulationMembership in ExecutionReport
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_membership_present_in_report() -> None:
+  """ExecutionReport contains population_membership when event data is supplied."""
+  event_data, channels = _make_event_data(n_events=50)
+  project = _make_project(samples=[{"id": "s1"}])
+
+  report = run_project_pipeline(
+    project,
+    event_data=event_data,
+    channel_names=channels,
+  )
+
+  assert len(report.population_membership) >= 1
+  # Root membership for s1
+  root_mem = report.population_membership[0]
+  assert root_mem.sample_id == "s1"
+  assert root_mem.population_id == "all_events"
+  assert root_mem.event_count == 50
+  assert root_mem.mask.shape == (50,)
+  assert root_mem.mask.dtype == np.bool_
+  assert root_mem.mask.all()
+
+
+def test_pipeline_membership_masks_are_readonly() -> None:
+  """Membership masks in ExecutionReport are read-only."""
+  event_data, channels = _make_event_data(n_events=30)
+  project = _make_project(samples=[{"id": "s1"}])
+
+  report = run_project_pipeline(
+    project,
+    event_data=event_data,
+    channel_names=channels,
+  )
+
+  for mem in report.population_membership:
+    assert not mem.mask.flags["WRITEABLE"]
+    with pytest.raises(ValueError, match="read-only"):
+      mem.mask[0] = False
+
+
+def test_pipeline_membership_event_count_consistency() -> None:
+  """PopulationResult.event_count matches PopulationMembership.mask.sum()."""
+  event_data, channels = _make_event_data(n_events=100)
+  project = _make_project(samples=[{"id": "s1"}])
+
+  report = run_project_pipeline(
+    project,
+    event_data=event_data,
+    channel_names=channels,
+  )
+
+  for result in report.population_results:
+    matching_memberships = [
+      m for m in report.population_membership
+      if m.sample_id == result.sample_id
+      and m.population_id == result.population_id
+    ]
+    assert len(matching_memberships) == 1
+    assert result.event_count == matching_memberships[0].event_count
+    assert result.event_count == int(matching_memberships[0].mask.sum())
+
+
+def test_pipeline_membership_multiple_samples_no_mixing() -> None:
+  """Membership masks for different samples do not mix sample IDs."""
+  data_s1 = np.random.rand(30, 3).astype(np.float64)
+  data_s2 = np.random.rand(40, 3).astype(np.float64)
+  project = _make_project(
+    samples=[{"id": "s1"}, {"id": "s2"}],
+  )
+
+  report = run_project_pipeline(
+    project,
+    event_data={"s1": data_s1, "s2": data_s2},
+    channel_names=["A", "B", "C"],
+  )
+
+  s1_memberships = [m for m in report.population_membership if m.sample_id == "s1"]
+  s2_memberships = [m for m in report.population_membership if m.sample_id == "s2"]
+
+  assert len(s1_memberships) >= 1
+  assert len(s2_memberships) >= 1
+
+  # s1 root mask length matches s1 event count
+  assert s1_memberships[0].mask.shape[0] == 30
+  assert s2_memberships[0].mask.shape[0] == 40
+
+  # No s1 membership has s2 sample_id and vice versa
+  for m in s1_memberships:
+    assert m.sample_id == "s1"
+  for m in s2_memberships:
+    assert m.sample_id == "s2"
+
+
+def test_pipeline_membership_with_gating_strategy() -> None:
+  """Membership masks are produced when a gating strategy is configured."""
+  from flowdesk_core.models import GateSpec, GatingStrategySpec
+
+  event_data, channels = _make_event_data(n_events=100)
+  strategy = GatingStrategySpec(
+    id="test_gating",
+    name="Test Gating",
+    gates=(
+      GateSpec(
+        id="live_gate",
+        name="Live cells",
+        gate_type="rectangle",
+        parent_population_id="all_events",
+        x_parameter="FSC-H",
+        y_parameter="SSC-H",
+        thresholds={
+          "x_min": 0.0, "x_max": 500.0,
+          "y_min": 0.0, "y_max": 500.0,
+        },
+      ),
+    ),
+  )
+
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    execution_profiles=[
+      {
+        "id": "default",
+        "name": "Default",
+        "gating_strategy_id": "test_gating",
+      }
+    ],
+    gating_strategies_data={"test_gating": strategy},
+  )
+
+  report = run_project_pipeline(
+    project,
+    event_data=event_data,
+    channel_names=channels,
+  )
+
+  # Should have root + live_gate membership
+  pop_ids = {m.population_id for m in report.population_membership}
+  assert "all_events" in pop_ids
+  assert "live_gate" in pop_ids
+
+  # Verify consistency: event_count from result matches membership
+  live_result = next(
+      r for r in report.population_results
+      if r.population_id == "live_gate"
+  )
+  live_membership = next(
+      m for m in report.population_membership
+      if m.population_id == "live_gate"
+  )
+  assert live_result.event_count == live_membership.event_count
+
+
+def test_pipeline_membership_placeholder_mode_empty() -> None:
+  """Placeholder mode (no event data) produces empty membership."""
+  project = _make_project()
+  report = run_project_pipeline(project)
+  assert len(report.population_membership) == 0

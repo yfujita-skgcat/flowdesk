@@ -114,7 +114,7 @@ Phase 1確認コマンド:
 .direnv/python-3.12.13/bin/ruff check src tests
 ```
 
-## Phase 2: Population membershipをheadless pipelineの正式な結果として取得可能にする
+## Phase 2: Population membershipをheadless pipelineの正式な結果として取得可能にする [実装済み]
 
 このPhaseはPhase 3の表示絞り込みに必要です。GUIでgateを再評価してはいけません。
 

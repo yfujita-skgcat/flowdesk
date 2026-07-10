@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+import numpy as np
+from numpy.typing import NDArray
+
 SourceStage = Literal["raw", "compensated", "transformed"]
 GateType = Literal["rectangle", "polygon", "range", "boolean"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported"]
@@ -115,6 +118,29 @@ class PopulationResult:
   event_count: int
   frequency_of_parent: float | None
   frequency_of_total: float | None
+
+
+@dataclass(frozen=True)
+class PopulationMembership:
+  """Read-only boolean membership mask for a population in a sample.
+
+  The ``mask`` is a full-length boolean array aligned with the original event
+  data.  It is made immutable before being returned so that external code
+  cannot accidentally modify the gating result.
+  """
+
+  sample_id: str
+  population_id: str
+  mask: NDArray[np.bool_]
+
+  def __post_init__(self) -> None:
+    # Ensure the mask is read-only (immutable) after construction.
+    self.mask.setflags(write=False)
+
+  @property
+  def event_count(self) -> int:
+    """Number of events in this population (mask.sum())."""
+    return int(self.mask.sum())
 
 
 @dataclass(frozen=True)

@@ -24,13 +24,14 @@ from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.gating_strategy import (
   GatingStrategyError,
-  evaluate_gating_strategy,
+  evaluate_gating_strategy_with_membership,
 )
 from flowdesk_core.models import (
   CompensationMatrixSpec,
   DerivedParameterSpec,
   GateSpec,
   GatingStrategySpec,
+  PopulationMembership,
   PopulationResult,
   TransformSpec,
 )
@@ -149,6 +150,7 @@ class PipelineRunner:
     selected_samples = self._resolve_samples(samples, sample_selector)
 
     all_population_results: list[PopulationResult] = []
+    all_population_membership: list[PopulationMembership] = []
     input_files: list[dict[str, Any]] = []
 
     for sample_meta in selected_samples:
@@ -179,7 +181,7 @@ class PipelineRunner:
       # --- Step 4: Gating ---
       if gating_strategy_id is not None:
         try:
-          pop_results = self._step_gating(
+          pop_results, pop_membership = self._step_gating(
             gating_strategy_id, transformed, channel_names, sid
           )
         except GatingStrategyError as exc:
@@ -190,10 +192,15 @@ class PipelineRunner:
         pop_results = self._fallback_root_population(
           sid, int(transformed.shape[0])
         )
+        pop_membership = self._fallback_root_membership(
+          sid, int(transformed.shape[0])
+        )
 
       all_population_results.extend(pop_results)
+      all_population_membership.extend(pop_membership)
 
     population_tuple = tuple(all_population_results)
+    membership_tuple = tuple(all_population_membership)
     status = (
       "success" if population_tuple else "no_data_processed"
     )
@@ -204,6 +211,7 @@ class PipelineRunner:
       pipeline_version=str(self._project.get("pipeline_version", "0.1")),
       status=status,
       population_results=population_tuple,
+      population_membership=membership_tuple,
       input_files=tuple(input_files),
       messages=tuple(messages),
     )
@@ -325,27 +333,35 @@ class PipelineRunner:
     data: NDArray[np.float64],
     channel_names: list[str],
     sample_id: str,
-  ) -> list[PopulationResult]:
-    """Evaluate the gating strategy on transformed data."""
+  ) -> tuple[list[PopulationResult], list[PopulationMembership]]:
+    """Evaluate the gating strategy on transformed data.
+
+    Returns:
+      A tuple of (population_results, population_membership) where membership
+      carries read-only boolean masks aligned with the input event data.
+    """
     strategy_dict = self._project.get("gating_strategies_data", {})
     strat = strategy_dict.get(strategy_id)
     if strat is None:
       # Try to build a minimal strategy from manifest.
       strat = self._build_strategy_from_manifest(strategy_id)
       if strat is None:
-        return self._fallback_root_population(
-          sample_id, int(data.shape[0])
+        return (
+          self._fallback_root_population(sample_id, int(data.shape[0])),
+          self._fallback_root_membership(sample_id, int(data.shape[0])),
         )
 
     if isinstance(strat, Mapping):
       strat = self._strategy_from_mapping(strat)
 
-    results = evaluate_gating_strategy(strat, data, channel_names)
+    results, masks = evaluate_gating_strategy_with_membership(
+      strat, data, channel_names
+    )
 
     # Attach sample_id to results (frozen dataclass, so rebuild).
-    tagged: list[PopulationResult] = []
+    tagged_results: list[PopulationResult] = []
     for r in results:
-      tagged.append(
+      tagged_results.append(
         PopulationResult(
           sample_id=sample_id,
           population_id=r.population_id,
@@ -354,7 +370,19 @@ class PipelineRunner:
           frequency_of_total=r.frequency_of_total,
         )
       )
-    return tagged
+
+    # Build PopulationMembership entries from read-only masks.
+    tagged_membership: list[PopulationMembership] = []
+    for pop_id, mask in masks.items():
+      tagged_membership.append(
+        PopulationMembership(
+          sample_id=sample_id,
+          population_id=pop_id,
+          mask=mask,
+        )
+      )
+
+    return tagged_results, tagged_membership
 
   # ------------------------------------------------------------------
   # Placeholder mode (backward compatibility)
@@ -439,6 +467,20 @@ class PipelineRunner:
         event_count=n_events,
         frequency_of_parent=None,
         frequency_of_total=1.0,
+      )
+    ]
+
+  @staticmethod
+  def _fallback_root_membership(
+    sample_id: str, n_events: int
+  ) -> list[PopulationMembership]:
+    mask = np.ones(n_events, dtype=np.bool_)
+    mask.setflags(write=False)
+    return [
+      PopulationMembership(
+        sample_id=sample_id,
+        population_id="all_events",
+        mask=mask,
       )
     ]
 

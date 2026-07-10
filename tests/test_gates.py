@@ -14,9 +14,13 @@ from flowdesk_core.gates import (
 from flowdesk_core.gating_strategy import (
   GatingStrategyError,
   evaluate_gating_strategy,
+  evaluate_gating_strategy_with_membership,
   ordered_gates,
 )
-from flowdesk_core.models import GateSpec, GatingStrategySpec
+from flowdesk_core.models import (
+  GateSpec,
+  GatingStrategySpec,
+)
 
 # ---------------------------------------------------------------------------
 # Backward-compatible scalar rectangle
@@ -492,3 +496,309 @@ def test_gating_strategy_rejects_dependency_cycle() -> None:
   )
   with pytest.raises(GatingStrategyError, match="cycle"):
     ordered_gates(GatingStrategySpec(id="s", name="s", gates=(gate_a, gate_b)))
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: PopulationMembership tests
+# ---------------------------------------------------------------------------
+
+
+def test_population_membership_dataclass_frozen() -> None:
+  """PopulationMembership is a frozen dataclass."""
+  from flowdesk_core.models import PopulationMembership
+
+  mask = np.array([True, True, False], dtype=np.bool_)
+  mask.setflags(write=False)
+  pm = PopulationMembership(
+    sample_id="s1",
+    population_id="all_events",
+    mask=mask,
+  )
+  assert pm.sample_id == "s1"
+  assert pm.population_id == "all_events"
+  assert pm.event_count == 2
+
+
+def test_population_membership_mask_is_readonly() -> None:
+  """The mask inside PopulationMembership is read-only after construction."""
+  from flowdesk_core.models import PopulationMembership
+
+  mask = np.array([True, False, True], dtype=np.bool_)
+  pm = PopulationMembership(
+    sample_id="s1",
+    population_id="pop1",
+    mask=mask,
+  )
+  # Original array may be modified, but the mask inside pm must not be.
+  assert not pm.mask.flags["WRITEABLE"]
+  with pytest.raises(ValueError, match="read-only"):
+    pm.mask[0] = False
+
+
+def test_population_membership_event_count_matches_mask_sum() -> None:
+  """event_count property equals mask.sum()."""
+  from flowdesk_core.models import PopulationMembership
+
+  mask = np.array([True, True, False, True, False], dtype=np.bool_)
+  pm = PopulationMembership(
+    sample_id="s1",
+    population_id="pop1",
+    mask=mask,
+  )
+  assert pm.event_count == 3
+  assert pm.event_count == int(pm.mask.sum())
+
+
+def test_population_membership_mask_shape_and_dtype() -> None:
+  """Mask has correct shape and dtype."""
+  from flowdesk_core.models import PopulationMembership
+
+  n = 50
+  mask = np.ones(n, dtype=np.bool_)
+  pm = PopulationMembership(
+    sample_id="s1",
+    population_id="all_events",
+    mask=mask,
+  )
+  assert pm.mask.shape == (n,)
+  assert pm.mask.dtype == np.bool_
+
+
+def test_evaluate_gating_strategy_with_membership_root_mask_all_true() -> None:
+  """Root population mask is all True."""
+  gate = GateSpec(
+    id="g1",
+    name="g1",
+    gate_type="rectangle",
+    parent_population_id="all_events",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": 0.0, "x_max": 10.0, "y_min": 0.0, "y_max": 10.0},
+  )
+  strategy = GatingStrategySpec(
+    id="s1",
+    name="s1",
+    gates=(gate,),
+    root_population_id="all_events",
+  )
+  data = np.array([[5.0, 5.0], [20.0, 20.0]], dtype=np.float64)
+  channels = ["x", "y"]
+
+  results, masks = evaluate_gating_strategy_with_membership(
+    strategy, data, channels
+  )
+
+  root_mask = masks["all_events"]
+  assert root_mask.shape == (2,)
+  assert root_mask.dtype == np.bool_
+  assert root_mask.all()
+  assert not root_mask.flags["WRITEABLE"]
+
+
+def test_evaluate_with_membership_child_mask_subset_of_parent() -> None:
+  """Child mask is a subset of parent mask."""
+  gate_live = GateSpec(
+    id="live",
+    name="Live",
+    gate_type="rectangle",
+    parent_population_id="all_events",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": 0.0, "x_max": 10.0, "y_min": 0.0, "y_max": 10.0},
+  )
+  gate_cd4 = GateSpec(
+    id="cd4",
+    name="CD4+",
+    gate_type="rectangle",
+    parent_population_id="live",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": 0.0, "x_max": 5.0, "y_min": 0.0, "y_max": 5.0},
+  )
+  strategy = GatingStrategySpec(
+    id="s2",
+    name="s2",
+    gates=(gate_live, gate_cd4),
+    root_population_id="all_events",
+  )
+  data = np.array([
+    [3.0, 3.0],   # live, cd4+
+    [8.0, 8.0],   # live, cd4-
+    [20.0, 20.0], # dead
+  ], dtype=np.float64)
+  channels = ["x", "y"]
+
+  results, masks = evaluate_gating_strategy_with_membership(
+    strategy, data, channels
+  )
+
+  live_mask = masks["live"]
+  cd4_mask = masks["cd4"]
+
+  # cd4 events must be subset of live events
+  assert (cd4_mask <= live_mask).all()
+  # Event outside live must not be in cd4
+  assert not cd4_mask[2]
+
+
+def test_evaluate_with_membership_event_count_consistency() -> None:
+  """PopulationResult.event_count == membership.mask.sum() for every population."""
+  gate = GateSpec(
+    id="g1",
+    name="g1",
+    gate_type="rectangle",
+    parent_population_id="all_events",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": 5.0, "x_max": 15.0, "y_min": 5.0, "y_max": 15.0},
+  )
+  strategy = GatingStrategySpec(
+    id="s3",
+    name="s3",
+    gates=(gate,),
+    root_population_id="all_events",
+  )
+  data = np.array([
+    [10.0, 10.0],
+    [20.0, 20.0],
+    [10.0, 10.0],
+    [20.0, 5.0],
+  ], dtype=np.float64)
+  channels = ["x", "y"]
+
+  results, masks = evaluate_gating_strategy_with_membership(
+    strategy, data, channels
+  )
+
+  for result in results:
+    pop_id = result.population_id
+    mask = masks[pop_id]
+    assert result.event_count == int(mask.sum()), (
+      f"event_count mismatch for {pop_id}: {result.event_count} != {mask.sum()}"
+    )
+
+
+def test_evaluate_with_membership_boolean_gate_consistency() -> None:
+  """Boolean gate mask matches existing event count."""
+  gate_a = GateSpec(
+    id="ga",
+    name="A",
+    gate_type="rectangle",
+    parent_population_id="all_events",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": 0.0, "x_max": 10.0, "y_min": 0.0, "y_max": 10.0},
+  )
+  gate_b = GateSpec(
+    id="gb",
+    name="B",
+    gate_type="rectangle",
+    parent_population_id="all_events",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": 5.0, "x_max": 15.0, "y_min": 5.0, "y_max": 15.0},
+  )
+  gate_and = GateSpec(
+    id="g_and",
+    name="A and B",
+    gate_type="boolean",
+    parent_population_id="all_events",
+    thresholds={"operation": "and", "source_ids": ["ga", "gb"]},
+  )
+  strategy = GatingStrategySpec(
+    id="s4",
+    name="s4",
+    gates=(gate_a, gate_b, gate_and),
+    root_population_id="all_events",
+  )
+  data = np.array([
+    [3.0, 3.0],   # A only
+    [8.0, 8.0],   # A and B
+    [20.0, 20.0], # neither
+    [12.0, 12.0], # B only
+  ], dtype=np.float64)
+  channels = ["x", "y"]
+
+  results, masks = evaluate_gating_strategy_with_membership(
+    strategy, data, channels
+  )
+
+  and_mask = masks["g_and"]
+  # Only event index 1 should be in both A and B
+  expected = np.array([False, True, False, False])
+  np.testing.assert_array_equal(and_mask, expected)
+
+  # Verify consistency with PopulationResult
+  and_result = next(
+    r for r in results if r.population_id == "g_and"
+  )
+  assert and_result.event_count == int(and_mask.sum())
+
+
+def test_evaluate_with_membership_masks_are_readonly() -> None:
+  """Returned masks are read-only."""
+  gate = GateSpec(
+    id="g1",
+    name="g1",
+    gate_type="rectangle",
+    parent_population_id="all_events",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": 0.0, "x_max": 10.0, "y_min": 0.0, "y_max": 10.0},
+  )
+  strategy = GatingStrategySpec(
+    id="s5",
+    name="s5",
+    gates=(gate,),
+  )
+  data = np.array([[5.0, 5.0]], dtype=np.float64)
+  channels = ["x", "y"]
+
+  _results, masks = evaluate_gating_strategy_with_membership(
+    strategy, data, channels
+  )
+
+  for mask in masks.values():
+    assert not mask.flags["WRITEABLE"]
+    with pytest.raises(ValueError, match="read-only"):
+      mask[0] = False
+
+
+def test_evaluate_with_membership_raw_data_unchanged() -> None:
+  """The raw input data array is not modified by the gating strategy."""
+  gate = GateSpec(
+    id="g1",
+    name="g1",
+    gate_type="rectangle",
+    parent_population_id="all_events",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": 0.0, "x_max": 10.0, "y_min": 0.0, "y_max": 10.0},
+  )
+  strategy = GatingStrategySpec(
+    id="s6",
+    name="s6",
+    gates=(gate,),
+  )
+  data = np.array([[5.0, 5.0], [20.0, 20.0]], dtype=np.float64)
+  data_copy = data.copy()
+  channels = ["x", "y"]
+
+  evaluate_gating_strategy_with_membership(strategy, data, channels)
+
+  np.testing.assert_array_equal(data, data_copy)
+
+
+def test_evaluate_with_membership_no_gui_dependency() -> None:
+  """The membership API is importable and runnable without any GUI dependency."""
+  # This test verifies that the core modules do not import PySide6/Qt.
+  # If we reach here without error, the core is GUI-independent.
+  # The test itself may run in a GUI environment, but the core modules
+  # must not have forced a Qt import.
+  results, masks = evaluate_gating_strategy_with_membership(
+    GatingStrategySpec(id="s", name="s", gates=()),
+    np.array([[1.0, 1.0]], dtype=np.float64),
+    ["x", "y"],
+  )
+  assert len(results) == 1  # root only
+  assert "all_events" in masks

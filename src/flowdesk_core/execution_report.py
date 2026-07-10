@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from flowdesk_core.models import PopulationResult
+from flowdesk_core.models import PopulationMembership, PopulationResult
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,9 @@ class ExecutionReport:
   pipeline_version: str
   status: str
   population_results: tuple[PopulationResult, ...] = field(default_factory=tuple)
+  population_membership: tuple[PopulationMembership, ...] = field(
+    default_factory=tuple
+  )
   input_files: tuple[dict[str, Any], ...] = field(default_factory=tuple)
   messages: tuple[str, ...] = field(default_factory=tuple)
 
