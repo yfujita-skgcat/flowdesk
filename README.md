@@ -32,7 +32,7 @@ python -m pip install -e '.[dev]'
 Optional groups:
 
 ```bash
-python -m pip install -e '.[io,gui,dev]'
+python -m pip install -e '.[io,gui,dev,gui-test]'
 ```
 
 ## Tests
@@ -98,6 +98,19 @@ python -m flowdesk_qt
 # Launch and auto-load FCS files from a directory
 python -m flowdesk_qt --data-dir data/
 ```
+
+### GUI Testing and Debugging
+
+```bash
+./tools/run-gui-tests.sh
+./tools/run-single-gui-test.sh tests/gui/test_gui_workflow.py::test_load_gate_run_and_match_headless
+make test-all
+./tools/run-gui-debug.sh --data-dir data/
+```
+
+GUI tests use the offscreen Qt backend by default. For X11-specific behavior, use
+`FLOWDESK_GUI_BACKEND=xvfb ./tools/run-gui-tests.sh`. Failure artifacts and run
+metadata are written under `artifacts/gui/<run-id>/`.
 
 ### GUI Layout
 

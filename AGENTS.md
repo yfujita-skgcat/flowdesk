@@ -44,7 +44,23 @@ Any feature that affects analysis results must be represented in the project fil
 
 Before adding GUI behavior, ensure the same behavior can be represented in the core project model and executed by the headless pipeline runner.
 
+## GUI Debugging
+
+Flowdesk GUI uses PySide6 and pyqtgraph.
+
+```bash
+./tools/run-gui-tests.sh
+./tools/run-single-gui-test.sh <pytest-node-id>
+make test-all
+```
+
+- Use stable Qt object names instead of screen coordinates.
+- GUI tests run with strict callback exception handling.
+- Do not leave a QThread running at test shutdown.
+- Inspect screenshots, application logs, and UI state under `artifacts/gui/`.
+- GUI population counts must match headless `PipelineRunner` results.
+- Never use display-downsampled data for scientific results or weaken assertions.
+
 ## Implementation Guides
 
 Before implementing a feature, read the matching guide under `docs/implementation/`. Each guide defines target files, implementation rules, required tests, and acceptance criteria. If no guide exists for the task, add or update one before writing production code.
-

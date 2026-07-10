@@ -16,6 +16,7 @@ dependencies = []
 io = ["flowio", "flowkit"]
 gui = ["PySide6", "pyqtgraph", "datashader"]
 dev = ["pytest", "ruff", "mypy"]
+gui-test = ["pytest-qt"]
 
 [project.scripts]
 flowdesk = "flowdesk_cli.main:main"
@@ -28,6 +29,11 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra"
+markers = [
+  "gui: tests requiring PySide6 or pyqtgraph",
+  "gui_e2e: end-to-end tests spanning MainWindow and PipelineRunner",
+  "real_fcs: tests using external FCS files under data/",
+]
 
 [tool.ruff]
 line-length = 100

@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from flowdesk_qt.diagnostics import invoke_callback
+
 AxisTransform = Literal["linear", "log10", "asinh"]
 
 _TRANSFORM_OPTIONS: list[AxisTransform] = ["linear", "log10", "asinh"]
@@ -134,22 +136,24 @@ class ChannelSelector(QWidget):
         x = self.x_channel()
         y = self.y_channel()
         for cb in self._change_callbacks:
-            try:
-                cb(x, y)
-            except Exception:
-                pass
+            invoke_callback(cb, x, y)
 
     # -- UI construction -----------------------------------------------------
 
     def _build_ui(self) -> None:
         self._change_callbacks = []
+        self.setObjectName("channelSelector")
 
         self._x_combo = QComboBox()
+        self._x_combo.setObjectName("xChannelCombo")
         self._y_combo = QComboBox()
+        self._y_combo.setObjectName("yChannelCombo")
 
         self._x_transform_combo = QComboBox()
+        self._x_transform_combo.setObjectName("xTransformCombo")
         self._x_transform_combo.addItems(_TRANSFORM_OPTIONS)
         self._y_transform_combo = QComboBox()
+        self._y_transform_combo.setObjectName("yTransformCombo")
         self._y_transform_combo.addItems(_TRANSFORM_OPTIONS)
 
         # Connect all change sources to the same callback.

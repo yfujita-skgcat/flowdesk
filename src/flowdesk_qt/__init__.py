@@ -10,10 +10,15 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
+from flowdesk_qt.diagnostics import configure_gui_logging, default_run_id, install_exception_hook
 from flowdesk_qt.main_window import MainWindow
 
 
-def run_app(data_dir: str | Path | None = None) -> int:
+def run_app(
+    data_dir: str | Path | None = None,
+    debug_artifacts_dir: str | Path | None = None,
+    log_level: str = "INFO",
+) -> int:
     """Launch the Flowdesk Qt application.
 
     Args:
@@ -22,6 +27,12 @@ def run_app(data_dir: str | Path | None = None) -> int:
     Returns:
       Application exit code.
     """
+    artifacts_dir = Path(
+        debug_artifacts_dir or Path("artifacts/gui") / default_run_id()
+    )
+    configure_gui_logging(artifacts_dir, log_level)
+    install_exception_hook()
+
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
@@ -55,9 +66,16 @@ def main() -> None:
         default=None,
         help="Directory containing FCS files to load on startup",
     )
+    parser.add_argument("--debug-artifacts-dir", default=None)
+    parser.add_argument("--log-level", default="INFO")
+    parser.add_argument("--test-mode", action="store_true")
 
     args = parser.parse_args()
-    exit_code = run_app(data_dir=args.data_dir)
+    exit_code = run_app(
+        data_dir=args.data_dir,
+        debug_artifacts_dir=args.debug_artifacts_dir,
+        log_level=args.log_level,
+    )
     sys.exit(exit_code)
 
 

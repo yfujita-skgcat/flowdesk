@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.fcs_io import FcsFileInfo, FcsIoError, read_fcs_info
+from flowdesk_qt.diagnostics import invoke_callback
 
 # ---------------------------------------------------------------------------
 # Per-sample metadata model (GUI-side only, no scientific logic)
@@ -159,10 +160,7 @@ class SampleBrowser(QWidget):
 
         # Notify callbacks about removal.
         for cb in self._removed_callbacks:
-            try:
-                cb(removed)
-            except Exception:
-                pass
+            invoke_callback(cb, removed)
 
         return removed
 
@@ -226,10 +224,7 @@ class SampleBrowser(QWidget):
         self._populate_channel_table(sample.info)
 
         for cb in self._selection_callbacks:
-            try:
-                cb(sample)
-            except Exception:
-                pass
+            invoke_callback(cb, sample)
 
     def _populate_channel_table(self, info: FcsFileInfo) -> None:
         self._channel_table.setRowCount(len(info.channels))
@@ -247,12 +242,15 @@ class SampleBrowser(QWidget):
     def _build_ui(self) -> None:
         self._selection_callbacks: list[Any] = []
         self._removed_callbacks: list[Any] = []
+        self.setObjectName("sampleBrowser")
 
         self._list_widget = QListWidget()
+        self._list_widget.setObjectName("sampleList")
         self._list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
         self._list_widget.currentRowChanged.connect(self._on_list_selection_changed)
 
         self._channel_table = QTableWidget()
+        self._channel_table.setObjectName("channelMetadataTable")
         self._channel_table.setColumnCount(4)
         self._channel_table.setHorizontalHeaderLabels(
             [
@@ -265,9 +263,11 @@ class SampleBrowser(QWidget):
         self._channel_table.setEditTriggers(QTableWidget.NoEditTriggers)
 
         self._btn_add = QPushButton("Add FCS Files...")
+        self._btn_add.setObjectName("addFcsFilesButton")
         self._btn_add.clicked.connect(self._on_add_files)
 
         self._btn_remove = QPushButton("Remove Selected")
+        self._btn_remove.setObjectName("removeSampleButton")
         self._btn_remove.clicked.connect(self._on_remove_selected)
 
         splitter = QSplitter(Qt.Horizontal)

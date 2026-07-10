@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from flowdesk_core.models import GateSpec
 from flowdesk_core.transforms import TransformError
+from flowdesk_qt.diagnostics import invoke_callback
 from flowdesk_qt.plot_style import PlotStyleSettings
 
 AxisTransform = Literal["linear", "log10", "asinh"]
@@ -52,6 +53,7 @@ class PlotWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("plotWidget")
         self._scatter: ScatterPlotItem | None = None
         self._gate_items: list[Any] = []
         self._preview_item: Any | None = None
@@ -576,10 +578,7 @@ class PlotWidget(QWidget):
         if updated_gate is None:
             return
         for cb in self._gate_geometry_callbacks:
-            try:
-                cb(gate_index, updated_gate)
-            except Exception:
-                pass
+            invoke_callback(cb, gate_index, updated_gate)
 
     def _gate_from_item(self, gate: GateSpec, item: Any) -> GateSpec | None:
         if gate.gate_type == "rectangle":
@@ -924,10 +923,7 @@ class PlotWidget(QWidget):
             is_double = False
 
         for cb in self._click_callbacks:
-            try:
-                cb(data_pos[0], data_pos[1], is_double)
-            except Exception:
-                pass
+            invoke_callback(cb, data_pos[0], data_pos[1], is_double)
 
         event.accept()
 
@@ -951,19 +947,15 @@ class PlotWidget(QWidget):
         elif event.isFinish():
             if self._drag_start is not None:
                 for cb in self._click_callbacks:
-                    try:
-                        cb(
-                            self._drag_start[0],
-                            self._drag_start[1],
-                            False,
-                            dragging=False,
-                            rect_end_x=data_pos[0],
-                            rect_end_y=data_pos[1],
-                        )
-                    except TypeError:
-                        pass
-                    except Exception:
-                        pass
+                    invoke_callback(
+                        cb,
+                        self._drag_start[0],
+                        self._drag_start[1],
+                        False,
+                        dragging=False,
+                        rect_end_x=data_pos[0],
+                        rect_end_y=data_pos[1],
+                    )
             self._drag_start = None
             self._clear_preview()
         else:
@@ -971,13 +963,9 @@ class PlotWidget(QWidget):
                 self._update_rectangle_preview(self._drag_start, data_pos)
             # During drag, notify callbacks with current drag state
             for cb in self._click_callbacks:
-                try:
-                    cb(data_pos[0], data_pos[1], False, dragging=True)
-                except TypeError:
-                    # Callback doesn't support dragging kwarg
-                    pass
-                except Exception:
-                    pass
+                invoke_callback(
+                    cb, data_pos[0], data_pos[1], False, dragging=True
+                )
 
         event.accept()
 
@@ -989,6 +977,7 @@ class PlotWidget(QWidget):
 
         # Create the pyqtgraph layout widget.
         self._glw = GraphicsLayoutWidget()
+        self._glw.setObjectName("plotGraphicsLayout")
         self._glw.setWindowTitle("")
 
         # addPlot() returns a PlotItem with .plot(), .vb, etc.

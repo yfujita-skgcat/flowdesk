@@ -25,4 +25,5 @@ Recommended implementation order:
 9. `export-and-cli.md`
 10. `qt-integration.md`
 11. `qt-interactive-plot-controls.md`
-12. `performance-and-review.md`
+12. `qt-gui-debugging.md`
+13. `performance-and-review.md`

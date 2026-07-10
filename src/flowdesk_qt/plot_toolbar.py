@@ -8,13 +8,12 @@ gate creation is in progress.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtWidgets import QToolBar, QToolButton, QWidget
 
-logger = logging.getLogger(__name__)
+from flowdesk_qt.diagnostics import invoke_callback
 
 
 class PlotToolbar(QToolBar):
@@ -28,6 +27,7 @@ class PlotToolbar(QToolBar):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__("Plot Tools", parent)
+        self.setObjectName("plotToolbar")
         self.setMovable(False)
         self._callbacks: dict[str, list[Callable]] = {
             "reset_robust": [],
@@ -50,10 +50,7 @@ class PlotToolbar(QToolBar):
 
     def _emit(self, key: str, *args: Any) -> None:
         for cb in self._callbacks.get(key, []):
-            try:
-                cb(*args)
-            except Exception as exc:
-                logger.error("Toolbar callback error: %s", exc)
+            invoke_callback(cb, *args)
 
     def _on_reset_robust_clicked(self) -> None:
         self._emit("reset_robust")
@@ -66,12 +63,14 @@ class PlotToolbar(QToolBar):
 
     def _build_toolbar(self) -> None:
         btn_robust = QToolButton()
+        btn_robust.setObjectName("resetRobustRangeButton")
         btn_robust.setText("Reset Robust Range")
         btn_robust.setToolTip("Reset viewport to robust auto-range (0.5%-99.5% percentiles)")
         btn_robust.clicked.connect(self._on_reset_robust_clicked)
         self.addWidget(btn_robust)
 
         btn_full = QToolButton()
+        btn_full.setObjectName("resetFullRangeButton")
         btn_full.setText("Reset Full Range")
         btn_full.setToolTip("Reset viewport to full data range")
         btn_full.clicked.connect(self._on_reset_full_clicked)
@@ -80,6 +79,7 @@ class PlotToolbar(QToolBar):
         self.addSeparator()
 
         btn_export = QToolButton()
+        btn_export.setObjectName("exportPngButton")
         btn_export.setText("Export PNG")
         btn_export.setToolTip("Export current plot view to PNG")
         btn_export.clicked.connect(self._on_export_clicked)

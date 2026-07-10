@@ -31,6 +31,7 @@ class PopulationTree(QWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
+        self.setObjectName("populationTree")
         self._last_report: ExecutionReport | None = None
         self._population_parents: dict[str, str | None] = {}
         self._build_ui()
@@ -92,6 +93,7 @@ class PopulationTree(QWidget):
 
     def _build_ui(self) -> None:
         self._table = QTableWidget()
+        self._table.setObjectName("populationResultsTable")
         self._table.setColumnCount(6)
         self._table.setHorizontalHeaderLabels(
             [
@@ -107,6 +109,7 @@ class PopulationTree(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         self._status_label = QLabel("No execution results")
+        self._status_label.setObjectName("populationStatusLabel")
 
         box = QGroupBox("Population Results")
         box_layout = QVBoxLayout(box)

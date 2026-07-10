@@ -12,3 +12,4 @@ dist/
 *.lmd
 *.flowdesk/cache/
 *.flowdesk/exports/
+artifacts/

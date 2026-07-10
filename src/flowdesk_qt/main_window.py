@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 from PySide6.QtCore import Qt, QThread
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
@@ -94,6 +94,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+        self.setObjectName("flowdeskMainWindow")
         self.setWindowTitle("Flowdesk")
         self.resize(1400, 900)
 
@@ -118,6 +119,68 @@ class MainWindow(QMainWindow):
         """Load FCS samples from a directory."""
         return self._sample_browser.add_samples_from_directory(directory)
 
+    def debug_state(self) -> dict[str, object]:
+        """Return JSON-serializable GUI state without raw event arrays."""
+        worker = self._worker
+        report = self._population_tree.last_report()
+        worker_error = None if worker is None else worker._error
+        return {
+            "application": {"name": "Flowdesk", "version": "0.1.0"},
+            "window": {
+                "title": self.windowTitle(),
+                "visible": self.isVisible(),
+                "enabled": self.isEnabled(),
+            },
+            "project": {
+                "id": self._project_id,
+                "path": None if self._project_path is None else str(self._project_path),
+            },
+            "current_sample_id": self._current_sample_id,
+            "samples": [
+                {
+                    "id": sample.id,
+                    "name": sample.name,
+                    "path": sample.path,
+                    "event_count": sample.info.event_count,
+                    "channel_count": sample.info.channel_count,
+                }
+                for sample in self._sample_browser.samples()
+            ],
+            "axes": {
+                "x_channel": self._channel_selector.x_channel(),
+                "y_channel": self._channel_selector.y_channel(),
+                "x_transform": self._channel_selector.x_transform(),
+                "y_transform": self._channel_selector.y_transform(),
+            },
+            "plot": {
+                "range_mode": self._plot_widget.range_mode(),
+                "view_range": self._plot_widget.view_range(),
+                "active_gate_creation": self._plot_widget._active_gate_creation,
+            },
+            "gates": [asdict(gate) for gate in self._gate_editor.gates()],
+            "gate_editor": {
+                "selected_row": self._gate_editor._list_widget.currentRow(),
+                "status": self._gate_editor._status_label.text(),
+            },
+            "pipeline": {
+                "worker_present": worker is not None,
+                "running": worker is not None and worker.isRunning(),
+                "error_type": None if worker_error is None else type(worker_error).__name__,
+                "error_message": None if worker_error is None else str(worker_error),
+            },
+            "population_report": {
+                "status": None if report is None else report.status,
+                "counts": {}
+                if report is None
+                else {
+                    result.population_id: result.event_count
+                    for result in report.population_results
+                },
+            },
+            "results_stale": self._results_stale,
+            "status": self.statusBar().currentMessage(),
+        }
+
     # -- menu ----------------------------------------------------------------
 
     def _build_menu(self) -> None:
@@ -126,52 +189,60 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = menubar.addMenu("&File")
 
-        action_open_dir = QAction("&Open Directory...", self)
-        action_open_dir.setShortcut(QKeySequence.Open)
-        action_open_dir.triggered.connect(self._on_open_directory)
-        file_menu.addAction(action_open_dir)
+        self.action_open_directory = QAction("&Open Directory...", self)
+        self.action_open_directory.setObjectName("actionOpenDirectory")
+        self.action_open_directory.setShortcut(QKeySequence.Open)
+        self.action_open_directory.triggered.connect(self._on_open_directory)
+        file_menu.addAction(self.action_open_directory)
 
-        action_open_files = QAction("Open &Files...", self)
-        action_open_files.setShortcut(QKeySequence("Ctrl+Shift+O"))
-        action_open_files.triggered.connect(self._on_open_files)
-        file_menu.addAction(action_open_files)
+        self.action_open_files = QAction("Open &Files...", self)
+        self.action_open_files.setObjectName("actionOpenFiles")
+        self.action_open_files.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        self.action_open_files.triggered.connect(self._on_open_files)
+        file_menu.addAction(self.action_open_files)
 
-        action_open_project = QAction("Open &Project...", self)
-        action_open_project.triggered.connect(self._on_open_project)
-        file_menu.addAction(action_open_project)
+        self.action_open_project = QAction("Open &Project...", self)
+        self.action_open_project.setObjectName("actionOpenProject")
+        self.action_open_project.triggered.connect(self._on_open_project)
+        file_menu.addAction(self.action_open_project)
 
-        action_save_project = QAction("&Save Project...", self)
-        action_save_project.setShortcut(QKeySequence.Save)
-        action_save_project.triggered.connect(self._on_save_project)
-        file_menu.addAction(action_save_project)
-
-        file_menu.addSeparator()
-
-        action_export_results = QAction("Export Population &Results...", self)
-        action_export_results.triggered.connect(self._on_export_population_results)
-        file_menu.addAction(action_export_results)
+        self.action_save_project = QAction("&Save Project...", self)
+        self.action_save_project.setObjectName("actionSaveProject")
+        self.action_save_project.setShortcut(QKeySequence.Save)
+        self.action_save_project.triggered.connect(self._on_save_project)
+        file_menu.addAction(self.action_save_project)
 
         file_menu.addSeparator()
 
-        action_quit = QAction("E&xit", self)
-        action_quit.setShortcut(QKeySequence.Quit)
-        action_quit.triggered.connect(self.close)
-        file_menu.addAction(action_quit)
+        self.action_export_results = QAction("Export Population &Results...", self)
+        self.action_export_results.setObjectName("actionExportResults")
+        self.action_export_results.triggered.connect(self._on_export_population_results)
+        file_menu.addAction(self.action_export_results)
+
+        file_menu.addSeparator()
+
+        self.action_quit = QAction("E&xit", self)
+        self.action_quit.setObjectName("actionQuit")
+        self.action_quit.setShortcut(QKeySequence.Quit)
+        self.action_quit.triggered.connect(self.close)
+        file_menu.addAction(self.action_quit)
 
         # Analysis menu
         analysis_menu = menubar.addMenu("&Analysis")
 
-        action_run = QAction("&Run Pipeline", self)
-        action_run.setShortcut(QKeySequence("Ctrl+R"))
-        action_run.triggered.connect(self._on_run_pipeline)
-        analysis_menu.addAction(action_run)
+        self.action_run_pipeline = QAction("&Run Pipeline", self)
+        self.action_run_pipeline.setObjectName("actionRunPipeline")
+        self.action_run_pipeline.setShortcut(QKeySequence("Ctrl+R"))
+        self.action_run_pipeline.triggered.connect(self._on_run_pipeline)
+        analysis_menu.addAction(self.action_run_pipeline)
 
         analysis_menu.addSeparator()
 
-        action_clear_gates = QAction("Clear &Gates", self)
-        action_clear_gates.setShortcut(QKeySequence("Ctrl+G"))
-        action_clear_gates.triggered.connect(self._on_clear_gates)
-        analysis_menu.addAction(action_clear_gates)
+        self.action_clear_gates = QAction("Clear &Gates", self)
+        self.action_clear_gates.setObjectName("actionClearGates")
+        self.action_clear_gates.setShortcut(QKeySequence("Ctrl+G"))
+        self.action_clear_gates.triggered.connect(self._on_clear_gates)
+        analysis_menu.addAction(self.action_clear_gates)
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -183,6 +254,7 @@ class MainWindow(QMainWindow):
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main Toolbar")
+        toolbar.setObjectName("mainToolbar")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
@@ -223,18 +295,21 @@ class MainWindow(QMainWindow):
 
         # --- Assemble with splitters ---
         splitter1 = QSplitter(Qt.Horizontal)
+        splitter1.setObjectName("mainContentSplitter")
         splitter1.addWidget(self._sample_browser)
         splitter1.addWidget(center_widget)
         splitter1.setStretchFactor(0, 1)
         splitter1.setStretchFactor(1, 3)
 
         splitter2 = QSplitter(Qt.Horizontal)
+        splitter2.setObjectName("mainOuterSplitter")
         splitter2.addWidget(splitter1)
         splitter2.addWidget(right_widget)
         splitter2.setStretchFactor(0, 4)
         splitter2.setStretchFactor(1, 2)
 
         self.setCentralWidget(splitter2)
+        self.statusBar().setObjectName("mainStatusBar")
 
     def _create_center_pane(self) -> QWidget:
         from PySide6.QtWidgets import QVBoxLayout, QWidget
@@ -524,15 +599,16 @@ class MainWindow(QMainWindow):
         if self._worker is None:
             return
 
-        if self._worker._error is not None:
-            exc = self._worker._error
+        worker = self._worker
+        if worker._error is not None:
+            exc = worker._error
             logger.error("Pipeline execution failed: %s", exc)
             self._update_status(f"Pipeline error: {exc}")
             QMessageBox.critical(self, "Pipeline Error", str(exc))
-            self._worker = None
+            self._release_pipeline_worker(worker)
             return
 
-        report = self._worker._report
+        report = worker._report
         if report is not None:
             self._population_tree.set_report(report)
             self._results_stale = False
@@ -540,7 +616,26 @@ class MainWindow(QMainWindow):
         else:
             self._update_status("Pipeline finished with no report")
 
-        self._worker = None
+        self._release_pipeline_worker(worker)
+
+    def _release_pipeline_worker(self, worker: _PipelineWorker) -> None:
+        """Disconnect and schedule a completed worker for Qt-owned deletion."""
+        try:
+            worker.finished.disconnect(self._on_pipeline_finished)
+        except (RuntimeError, TypeError):
+            pass
+        if self._worker is worker:
+            self._worker = None
+        worker.deleteLater()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Do not destroy the window while its pipeline thread is running."""
+        worker = self._worker
+        if worker is not None and worker.isRunning():
+            worker.wait()
+        if worker is not None:
+            self._release_pipeline_worker(worker)
+        super().closeEvent(event)
 
     # -- file handling -------------------------------------------------------
 

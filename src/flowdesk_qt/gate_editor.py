@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
 from flowdesk_core.models import GateSpec, GatingStrategySpec
+from flowdesk_qt.diagnostics import invoke_callback
 
 # ---------------------------------------------------------------------------
 # Gate creation dialog
@@ -356,19 +357,13 @@ class GateEditor(QWidget):
     def _emit_gates_changed(self) -> None:
         """Notify all gates-changed callbacks."""
         for cb in self._gates_changed_callbacks:
-            try:
-                cb()
-            except Exception:
-                pass
+            invoke_callback(cb)
 
     def _emit_interactive_gate_requested(self, gate_type: str) -> bool:
         accepted = False
         for cb in self._interactive_gate_callbacks:
-            try:
-                if cb(gate_type):
-                    accepted = True
-            except Exception:
-                pass
+            if invoke_callback(cb, gate_type):
+                accepted = True
         return accepted
 
     def _cancel_polygon(self) -> None:
@@ -496,10 +491,7 @@ class GateEditor(QWidget):
     def _on_list_selection_changed(self) -> None:
         idx = self._list_widget.currentRow()
         for cb in self._gate_selected_callbacks:
-            try:
-                cb(idx)
-            except Exception:
-                pass
+            invoke_callback(cb, idx)
 
     def _on_item_changed(self, item) -> None:
         if self._updating_list_item:
@@ -552,12 +544,15 @@ class GateEditor(QWidget):
         self._gates_changed_callbacks: list[Any] = []
         self._interactive_gate_callbacks: list[Any] = []
         self._updating_list_item = False
+        self.setObjectName("gateEditor")
 
         # Gate type selector
         self._type_combo = QComboBox()
+        self._type_combo.setObjectName("gateTypeCombo")
         self._type_combo.addItems(["rectangle", "range", "polygon", "boolean"])
 
         self._parent_combo = QComboBox()
+        self._parent_combo.setObjectName("parentPopulationCombo")
         self._parent_combo.currentIndexChanged.connect(
             lambda *_args: setattr(
                 self,
@@ -568,19 +563,23 @@ class GateEditor(QWidget):
 
         # Buttons
         self._btn_create = QPushButton("Create Gate")
+        self._btn_create.setObjectName("createGateButton")
         self._btn_create.clicked.connect(self._create_gate_dialog)
 
         self._btn_delete = QPushButton("Delete Selected")
+        self._btn_delete.setObjectName("deleteGateButton")
         self._btn_delete.clicked.connect(self._delete_selected_gate)
 
         # Gate list
         self._list_widget = QListWidget()
+        self._list_widget.setObjectName("gateList")
         self._list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
         self._list_widget.currentRowChanged.connect(self._on_list_selection_changed)
         self._list_widget.itemChanged.connect(self._on_item_changed)
 
         # Status
         self._status_label = QLabel("Ready")
+        self._status_label.setObjectName("gateStatusLabel")
 
         # Layout
         box = QGroupBox("Gates")
