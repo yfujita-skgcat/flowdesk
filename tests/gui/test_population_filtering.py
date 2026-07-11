@@ -6,6 +6,7 @@ the scatter plot to only display events belonging to that population.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -14,7 +15,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import GateSpec
-from flowdesk_qt.channel_selector import COUNT_CHANNEL, COUNT_DISPLAY
+from flowdesk_qt.channel_selector import COUNT_CHANNEL
 from flowdesk_qt.main_window import MainWindow
 
 pytestmark = [pytest.mark.gui, pytest.mark.gui_e2e]
@@ -386,7 +387,7 @@ def test_downsampling_does_not_change_headless_count(
                 assert r.event_count == headless_count
                 break
         else:
-            assert False, "rect population not found in new report"
+            raise AssertionError("rect population not found in new report")
     finally:
         window.close()
         window.deleteLater()
@@ -904,6 +905,59 @@ def test_marginal_histograms_persist_in_debug_state(
 
         debug_state = window.debug_state()
         assert debug_state["plot"]["marginal_enabled"] is False
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_histogram_log10_excludes_nonpositive_once(
+    qapp,
+    gui_artifact_widgets: list[object],
+) -> None:
+    """Log histogram keeps every finite positive event and remains JSON-safe."""
+    window = MainWindow()
+    gui_artifact_widgets.append(window)
+    try:
+        plot = window._plot_widget
+        plot.set_axis_transforms("log10", "linear")
+        plot.plot_histogram(
+            np.array([-1.0, 0.0, 0.1, 1.0, 10.0, np.nan]),
+            x_label="X",
+        )
+        heights = np.asarray(plot._histogram_item.opts["height"])
+        assert int(heights.sum()) == 3
+        assert plot.display_state()["excluded_event_count"] == 3
+        json.dumps(window.debug_state())
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+def test_marginal_control_and_right_histogram_orientation(
+    qapp,
+    gui_artifact_widgets: list[object],
+) -> None:
+    """Marginal control is stable and the right histogram extends horizontally."""
+    window = MainWindow()
+    gui_artifact_widgets.append(window)
+    try:
+        button = window._plot_toolbar._marginal_checkbox
+        assert button.objectName() == "toggleMarginalHistogramsButton"
+        window._plot_widget.set_marginal_enabled(True)
+        window._plot_widget.plot_events(
+            np.array([1.0, 2.0, 3.0]),
+            np.array([4.0, 5.0, 6.0]),
+        )
+        opts = window._plot_widget._marginal_y_item.opts
+        assert "y" in opts
+        assert "width" in opts
+        assert np.asarray(opts["width"]).sum() == 3
+
+        window._plot_widget.plot_histogram(np.array([1.0, 2.0, 3.0]))
+        assert window._plot_widget._marginal_x_plot is None
+        assert window._plot_widget._marginal_y_plot is None
     finally:
         window.close()
         window.deleteLater()

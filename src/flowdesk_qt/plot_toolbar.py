@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtWidgets import QCheckBox, QToolBar, QToolButton, QWidget
+from PySide6.QtWidgets import QToolBar, QToolButton, QWidget
 
 from flowdesk_qt.diagnostics import invoke_callback
 
@@ -48,6 +48,10 @@ class PlotToolbar(QToolBar):
         self._marginal_enabled = enabled
         if hasattr(self, "_marginal_checkbox"):
             self._marginal_checkbox.setChecked(enabled)
+
+    def set_marginal_available(self, available: bool) -> None:
+        """Disable the control while a 1D histogram is displayed."""
+        self._marginal_checkbox.setEnabled(available)
 
     def on_reset_robust(self, callback: Callable[[], None]) -> None:
         """Register callback for reset to robust auto-range."""
@@ -108,16 +112,10 @@ class PlotToolbar(QToolBar):
 
         self.addSeparator()
 
-        self._marginal_checkbox = QCheckBox("Marginal Histograms")
-        self._marginal_checkbox.setObjectName("marginalHistogramsCheckbox")
+        self._marginal_checkbox = QToolButton()
+        self._marginal_checkbox.setText("Marginals")
+        self._marginal_checkbox.setCheckable(True)
+        self._marginal_checkbox.setObjectName("toggleMarginalHistogramsButton")
         self._marginal_checkbox.setToolTip("Toggle marginal histograms on X and Y axes")
-        self._marginal_checkbox.stateChanged.connect(
-            lambda state: self._on_marginal_toggled(bool(state))
-        )
-        checkbox_wrapper = QWidget()
-        from PySide6.QtWidgets import QHBoxLayout
-
-        wrapper_layout = QHBoxLayout(checkbox_wrapper)
-        wrapper_layout.setContentsMargins(0, 0, 0, 0)
-        wrapper_layout.addWidget(self._marginal_checkbox)
-        self.addWidget(checkbox_wrapper)
+        self._marginal_checkbox.toggled.connect(self._on_marginal_toggled)
+        self.addWidget(self._marginal_checkbox)

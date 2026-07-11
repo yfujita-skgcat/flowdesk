@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
                 "range_mode": self._plot_widget.range_mode(),
                 "view_range": self._plot_widget.view_range(),
                 "active_gate_creation": self._plot_widget._active_gate_creation,
-                "marginal_enabled": self._plot_widget.is_marginal_enabled(),
+                **self._plot_widget.display_state(),
             },
             "gates": [asdict(gate) for gate in self._gate_editor.gates()],
             "gate_editor": {
@@ -182,6 +182,17 @@ class MainWindow(QMainWindow):
             },
             "population_filter": {
                 "selected_population_id": self._selected_population_id,
+                "memberships": []
+                if report is None
+                else [
+                    {
+                        "sample_id": membership.sample_id,
+                        "population_id": membership.population_id,
+                        "mask_length": int(membership.mask.size),
+                        "event_count": membership.event_count,
+                    }
+                    for membership in report.population_membership
+                ],
             },
             "results_stale": self._results_stale,
             "status": self.statusBar().currentMessage(),
@@ -386,6 +397,9 @@ class MainWindow(QMainWindow):
         previous_x = self._channel_selector.x_channel()
         previous_y = self._channel_selector.y_channel()
         self._current_sample_id = sample.id
+        report = self._population_tree.last_report()
+        if report is not None and not self._results_stale:
+            self._validate_population_selection(report)
         self._channel_names = [ch.name for ch in sample.info.channels]
         x_preserved, y_preserved = self._channel_selector.set_channels(self._channel_names)
 
@@ -449,6 +463,8 @@ class MainWindow(QMainWindow):
 
         This is a display-only change; it does not modify gates or analysis state.
         """
+        if sample_id and sample_id != self._current_sample_id:
+            self._sample_browser.select_sample(sample_id)
         self._selected_population_id = population_id
         self._replot()
 
@@ -479,6 +495,7 @@ class MainWindow(QMainWindow):
 
         # Determine if we are in histogram (Count) mode.
         is_histogram = self._channel_selector.is_count_mode()
+        self._plot_toolbar.set_marginal_available(not is_histogram)
 
         if is_histogram:
             # 1D histogram: only X channel data is needed.
@@ -965,6 +982,13 @@ class MainWindow(QMainWindow):
                 self,
                 "No sample",
                 "Load and select a sample before creating a gate.",
+            )
+            return False
+
+        if self._channel_selector.is_count_mode():
+            self._update_status(
+                "2D gate creation is unavailable while Y is Count; "
+                "select a channel for Y first."
             )
             return False
 

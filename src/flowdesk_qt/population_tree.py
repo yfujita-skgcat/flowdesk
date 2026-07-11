@@ -82,6 +82,14 @@ class PopulationTree(QWidget):
             return None
         return item.data(Qt.UserRole)
 
+    def get_selected_sample_id(self) -> str | None:
+        """Return the sample ID stored on the selected population row."""
+        selected = self._table.selectedItems()
+        if not selected:
+            return None
+        item = self._table.item(self._table.row(selected[0]), 0)
+        return None if item is None else item.data(Qt.UserRole + 1)
+
     def on_population_selected(
         self,
         callback: Callable[[str, str], None],
@@ -122,6 +130,7 @@ class PopulationTree(QWidget):
             label = f"{'  ' * depth}{display_name}"
             pop_item = QTableWidgetItem(label)
             pop_item.setData(Qt.UserRole, r.population_id)
+            pop_item.setData(Qt.UserRole + 1, r.sample_id)
             self._table.setItem(row, 0, pop_item)
 
             parent_display = self._population_names.get(parent_id, parent_id or "-")
@@ -143,7 +152,7 @@ class PopulationTree(QWidget):
         population_id = self.get_selected_population_id()
         if population_id is None:
             return
-        sample_id = self.get_current_sample_id() or ""
+        sample_id = self.get_selected_sample_id() or ""
         for cb in self._selection_callbacks:
             invoke_callback(cb, population_id, sample_id)
 

@@ -78,6 +78,7 @@ class PlotWidget(QWidget):
         self._is_histogram_mode: bool = False
         self._histogram_item: Any | None = None
         self._histogram_bins: int = 60
+        self._excluded_event_count: int = 0
         # Marginal histogram state (display-only).
         self._marginal_enabled: bool = False
         self._marginal_x_item: Any | None = None
@@ -180,6 +181,18 @@ class PlotWidget(QWidget):
         """Return whether marginal histograms are currently enabled."""
         return self._marginal_enabled
 
+    def display_state(self) -> dict[str, object]:
+        """Return compact, JSON-safe plot state without event arrays."""
+        return {
+            "mode": "histogram" if self._is_histogram_mode else "scatter",
+            "histogram_bins": self._histogram_bins,
+            "excluded_event_count": self._excluded_event_count,
+            "marginal_enabled": self._marginal_enabled,
+            "marginal_visible": (
+                self._marginal_enabled and not self._is_histogram_mode
+            ),
+        }
+
     def plot_events(
         self,
         x_data: NDArray[np.float64],
@@ -221,7 +234,12 @@ class PlotWidget(QWidget):
             y_plot = y_plot[::step]
 
         # Remove NaN/Inf for plotting safety (does not affect analysis data).
-        valid = ~np.isnan(x_plot) & ~np.isnan(y_plot) & np.isfinite(x_plot) & np.isfinite(y_plot)
+        valid = np.isfinite(x_plot) & np.isfinite(y_plot)
+        if self._x_transform == "log10":
+            valid &= x_plot > 0
+        if self._y_transform == "log10":
+            valid &= y_plot > 0
+        self._excluded_event_count = int(len(x_plot) - np.count_nonzero(valid))
         x_plot = x_plot[valid]
         y_plot = y_plot[valid]
 
@@ -275,19 +293,19 @@ class PlotWidget(QWidget):
         values_plot = self._apply_transform(values, self._x_transform)
 
         # Remove NaN/Inf for plotting safety.
-        valid = ~np.isnan(values_plot) & np.isfinite(values_plot)
-        values_plot = values_plot[valid]
-
-        # For log10, also exclude non-positive values.
+        valid = np.isfinite(values_plot)
         if self._x_transform == "log10":
-            positive_mask = values_plot > 0
-            values_plot = values_plot[positive_mask]
+            valid &= values_plot > 0
+        self._excluded_event_count = int(len(values_plot) - np.count_nonzero(valid))
+        values_plot = values_plot[valid]
 
         if len(values_plot) == 0:
             self._clear_histogram()
             self._clear_scatter()
+            self._clear_marginal_histograms()
             self._is_histogram_mode = True
             self._update_labels()
+            self._update_log_mode()
             return
 
         # Compute histogram (display-only).
@@ -295,14 +313,10 @@ class PlotWidget(QWidget):
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
         bin_widths = bin_edges[1:] - bin_edges[:-1]
 
-        # For log10 axis, convert bin edges/centers to log10 space.
-        if self._x_transform == "log10":
-            bin_centers = np.log10(bin_centers)
-            bin_widths = np.log10(bin_edges[1:]) - np.log10(bin_edges[:-1])
-
         self._is_histogram_mode = True
         self._clear_scatter()
         self._clear_histogram()
+        self._clear_marginal_histograms()
 
         # Use pyqtgraph BarGraphItem for the histogram display.
         from pyqtgraph import BarGraphItem  # type: ignore[attr-defined]
@@ -1108,12 +1122,10 @@ class PlotWidget(QWidget):
 
         marginal_x = np.asarray(self._cached_marginal_x, dtype=np.float64)
         values_plot = self._apply_transform(marginal_x, self._x_transform)
-        valid = ~np.isnan(values_plot) & np.isfinite(values_plot)
-        values_plot = values_plot[valid]
-
+        valid = np.isfinite(values_plot)
         if self._x_transform == "log10":
-            positive_mask = values_plot > 0
-            values_plot = values_plot[positive_mask]
+            valid &= values_plot > 0
+        values_plot = values_plot[valid]
 
         if len(values_plot) == 0:
             self._clear_marginal_x()
@@ -1122,10 +1134,6 @@ class PlotWidget(QWidget):
         counts, bin_edges = np.histogram(values_plot, bins=self._histogram_bins)
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
         bin_widths = bin_edges[1:] - bin_edges[:-1]
-
-        if self._x_transform == "log10":
-            bin_centers = np.log10(bin_centers)
-            bin_widths = np.log10(bin_edges[1:]) - np.log10(bin_edges[:-1])
 
         from pyqtgraph import BarGraphItem  # type: ignore[attr-defined]
 
@@ -1137,6 +1145,9 @@ class PlotWidget(QWidget):
             brush=self._make_brush(self._style.dot_color, self._style.dot_opacity),
         )
         if self._marginal_x_plot is not None:
+            self._marginal_x_plot.setLogMode(
+                x=self._x_transform == "log10", y=False
+            )
             self._marginal_x_plot.addItem(self._marginal_x_item)
 
     def _render_marginal_y(self) -> None:
@@ -1146,12 +1157,10 @@ class PlotWidget(QWidget):
 
         marginal_y = np.asarray(self._cached_marginal_y, dtype=np.float64)
         values_plot = self._apply_transform(marginal_y, self._y_transform)
-        valid = ~np.isnan(values_plot) & np.isfinite(values_plot)
-        values_plot = values_plot[valid]
-
+        valid = np.isfinite(values_plot)
         if self._y_transform == "log10":
-            positive_mask = values_plot > 0
-            values_plot = values_plot[positive_mask]
+            valid &= values_plot > 0
+        values_plot = values_plot[valid]
 
         if len(values_plot) == 0:
             self._clear_marginal_y()
@@ -1161,20 +1170,20 @@ class PlotWidget(QWidget):
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
         bin_widths = bin_edges[1:] - bin_edges[:-1]
 
-        if self._y_transform == "log10":
-            bin_centers = np.log10(bin_centers)
-            bin_widths = np.log10(bin_edges[1:]) - np.log10(bin_edges[:-1])
-
         from pyqtgraph import BarGraphItem  # type: ignore[attr-defined]
 
         self._clear_marginal_y()
         self._marginal_y_item = BarGraphItem(
-            x=bin_centers,
-            height=counts,
-            width=bin_widths,
+            x0=0,
+            y=bin_centers,
+            height=bin_widths,
+            width=counts,
             brush=self._make_brush(self._style.dot_color, self._style.dot_opacity),
         )
         if self._marginal_y_plot is not None:
+            self._marginal_y_plot.setLogMode(
+                x=False, y=self._y_transform == "log10"
+            )
             self._marginal_y_plot.addItem(self._marginal_y_item)
 
     def _clear_marginal_histograms(self) -> None:
@@ -1227,8 +1236,6 @@ class PlotWidget(QWidget):
 
         self._marginal_x_plot = self._glw.addPlot(
             row=0, col=0,
-            label="X",
-            lockAspect=True,
         )
         self._marginal_x_plot.showAxis("bottom", False)
         self._marginal_x_plot.showAxis("left", False)
@@ -1238,8 +1245,6 @@ class PlotWidget(QWidget):
         # Marginal Y plot on the right of the main plot.
         self._marginal_y_plot = self._glw.addPlot(
             row=1, col=1,
-            label="Y",
-            lockAspect=True,
         )
         self._marginal_y_plot.showAxis("bottom", False)
         self._marginal_y_plot.showAxis("left", False)

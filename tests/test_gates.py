@@ -531,6 +531,8 @@ def test_population_membership_mask_is_readonly() -> None:
   )
   # Original array may be modified, but the mask inside pm must not be.
   assert not pm.mask.flags["WRITEABLE"]
+  mask[0] = False
+  assert bool(pm.mask[0]) is True
   with pytest.raises(ValueError, match="read-only"):
     pm.mask[0] = False
 

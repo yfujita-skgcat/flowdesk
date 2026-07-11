@@ -134,8 +134,9 @@ class PopulationMembership:
   mask: NDArray[np.bool_]
 
   def __post_init__(self) -> None:
-    # Ensure the mask is read-only (immutable) after construction.
-    self.mask.setflags(write=False)
+    mask = np.array(self.mask, dtype=np.bool_, copy=True)
+    mask.setflags(write=False)
+    object.__setattr__(self, "mask", mask)
 
   @property
   def event_count(self) -> int:
