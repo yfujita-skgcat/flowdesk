@@ -8,6 +8,8 @@ This widget contains NO scientific execution logic.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QGroupBox,
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import PopulationResult
+from flowdesk_qt.diagnostics import invoke_callback
 
 # ---------------------------------------------------------------------------
 # PopulationTree widget
@@ -79,6 +82,26 @@ class PopulationTree(QWidget):
             return None
         return item.data(Qt.UserRole)
 
+    def on_population_selected(
+        self,
+        callback: Callable[[str, str], None],
+    ) -> None:
+        """Register a callback for population selection changes.
+
+        The callback receives ``(population_id: str, sample_id: str)``.
+        When no row is selected the callback is *not* invoked.
+        """
+        self._selection_callbacks.append(callback)
+
+    def get_current_sample_id(self) -> str | None:
+        """Return the sample_id associated with the current report data."""
+        if self._last_report is None:
+            return None
+        results = self._last_report.population_results
+        if not results:
+            return None
+        return results[0].sample_id
+
     def clear(self) -> None:
         """Clear all displayed data."""
         self._last_report = None
@@ -116,6 +139,14 @@ class PopulationTree(QWidget):
             self._table.setItem(row, 4, QTableWidgetItem(freq_parent))
             self._table.setItem(row, 5, QTableWidgetItem(freq_total))
 
+    def _on_selection_changed(self) -> None:
+        population_id = self.get_selected_population_id()
+        if population_id is None:
+            return
+        sample_id = self.get_current_sample_id() or ""
+        for cb in self._selection_callbacks:
+            invoke_callback(cb, population_id, sample_id)
+
     def _population_depth(self, population_id: str) -> int:
         depth = 0
         seen = {population_id}
@@ -129,6 +160,8 @@ class PopulationTree(QWidget):
     # -- UI construction -----------------------------------------------------
 
     def _build_ui(self) -> None:
+        self._selection_callbacks: list[Callable[[str, str], None]] = []
+
         self._table = QTableWidget()
         self._table.setObjectName("populationResultsTable")
         self._table.setColumnCount(6)
@@ -144,6 +177,7 @@ class PopulationTree(QWidget):
         )
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
 
         self._status_label = QLabel("No execution results")
         self._status_label.setObjectName("populationStatusLabel")

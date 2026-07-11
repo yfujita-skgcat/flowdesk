@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtWidgets import QToolBar, QToolButton, QWidget
+from PySide6.QtWidgets import QCheckBox, QToolBar, QToolButton, QWidget
 
 from flowdesk_qt.diagnostics import invoke_callback
 
@@ -23,6 +23,7 @@ class PlotToolbar(QToolBar):
       on_reset_robust()
       on_reset_full()
       on_export_png()
+      on_marginal_toggled(enabled: bool)
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -33,8 +34,20 @@ class PlotToolbar(QToolBar):
             "reset_robust": [],
             "reset_full": [],
             "export_png": [],
+            "marginal_toggled": [],
         }
+        self._marginal_enabled: bool = False
         self._build_toolbar()
+
+    def is_marginal_enabled(self) -> bool:
+        """Return whether marginal histograms are currently enabled."""
+        return self._marginal_enabled
+
+    def set_marginal_enabled(self, enabled: bool) -> None:
+        """Programmatically enable or disable marginal histograms."""
+        self._marginal_enabled = enabled
+        if hasattr(self, "_marginal_checkbox"):
+            self._marginal_checkbox.setChecked(enabled)
 
     def on_reset_robust(self, callback: Callable[[], None]) -> None:
         """Register callback for reset to robust auto-range."""
@@ -48,6 +61,10 @@ class PlotToolbar(QToolBar):
         """Register callback for PNG export request."""
         self._callbacks["export_png"].append(callback)
 
+    def on_marginal_toggled(self, callback: Callable[[bool], None]) -> None:
+        """Register callback for marginal histogram toggle."""
+        self._callbacks["marginal_toggled"].append(callback)
+
     def _emit(self, key: str, *args: Any) -> None:
         for cb in self._callbacks.get(key, []):
             invoke_callback(cb, *args)
@@ -60,6 +77,10 @@ class PlotToolbar(QToolBar):
 
     def _on_export_clicked(self) -> None:
         self._emit("export_png")
+
+    def _on_marginal_toggled(self, checked: bool) -> None:
+        self._marginal_enabled = checked
+        self._emit("marginal_toggled", checked)
 
     def _build_toolbar(self) -> None:
         btn_robust = QToolButton()
@@ -84,3 +105,19 @@ class PlotToolbar(QToolBar):
         btn_export.setToolTip("Export current plot view to PNG")
         btn_export.clicked.connect(self._on_export_clicked)
         self.addWidget(btn_export)
+
+        self.addSeparator()
+
+        self._marginal_checkbox = QCheckBox("Marginal Histograms")
+        self._marginal_checkbox.setObjectName("marginalHistogramsCheckbox")
+        self._marginal_checkbox.setToolTip("Toggle marginal histograms on X and Y axes")
+        self._marginal_checkbox.stateChanged.connect(
+            lambda state: self._on_marginal_toggled(bool(state))
+        )
+        checkbox_wrapper = QWidget()
+        from PySide6.QtWidgets import QHBoxLayout
+
+        wrapper_layout = QHBoxLayout(checkbox_wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.addWidget(self._marginal_checkbox)
+        self.addWidget(checkbox_wrapper)

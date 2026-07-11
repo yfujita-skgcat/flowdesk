@@ -24,6 +24,11 @@ AxisTransform = Literal["linear", "log10", "asinh"]
 
 _TRANSFORM_OPTIONS: list[AxisTransform] = ["linear", "log10", "asinh"]
 
+# Sentinel value for histogram mode. This string must not collide with any real
+# FCS channel name (which are user-provided and typically short).
+COUNT_CHANNEL = "__count__"
+COUNT_DISPLAY = "Count"
+
 
 class ChannelSelector(QWidget):
     """Two-combo-box widget for X/Y channel selection with axis transforms.
@@ -44,6 +49,9 @@ class ChannelSelector(QWidget):
     ) -> tuple[bool, bool]:
         """Populate both combo boxes with *channels*.
 
+        The Y axis combo also includes the display-only ``Count`` option,
+        which switches the plot to 1D histogram mode.
+
         Returns ``(x_preserved, y_preserved)`` so callers can report when a
         selection had to fall back because the new sample lacks that channel.
         Axis transform selections are not changed.
@@ -55,7 +63,9 @@ class ChannelSelector(QWidget):
             self._x_combo.clear()
             self._y_combo.clear()
             self._x_combo.addItems(channels)
+            # Y axis gets real channels plus the Count sentinel.
             self._y_combo.addItems(channels)
+            self._y_combo.addItem(COUNT_DISPLAY, COUNT_CHANNEL)
 
             x_preserved = False
             y_preserved = False
@@ -67,6 +77,10 @@ class ChannelSelector(QWidget):
 
             if prev_y and prev_y in channels:
                 self._y_combo.setCurrentText(prev_y)
+                y_preserved = True
+            elif prev_y == COUNT_CHANNEL:
+                # Preserve Count selection across sample switch.
+                self._y_combo.setCurrentIndex(len(channels))
                 y_preserved = True
             elif len(channels) >= 2:
                 self._y_combo.setCurrentIndex(1)
@@ -81,8 +95,16 @@ class ChannelSelector(QWidget):
         return self._x_combo.currentText()
 
     def y_channel(self) -> str:
-        """Return the currently selected Y channel name."""
+        """Return the currently selected Y channel name (display label)."""
         return self._y_combo.currentText()
+
+    def y_channel_id(self) -> str:
+        """Return the internal ID of the Y selection (may be COUNT_CHANNEL)."""
+        return self._y_combo.currentData() or self._y_combo.currentText()
+
+    def is_count_mode(self) -> bool:
+        """Return True when Y axis is set to the Count (histogram) option."""
+        return self.y_channel_id() == COUNT_CHANNEL
 
     def x_index(self) -> int:
         """Return the index of the X channel within the channel list."""
@@ -93,10 +115,19 @@ class ChannelSelector(QWidget):
         return self._y_combo.currentIndex()
 
     def set_selected_channels(self, x_channel: str, y_channel: str) -> None:
-        """Restore channel selections when the named channels are available."""
+        """Restore channel selections when the named channels are available.
+
+        If ``y_channel`` is ``COUNT_CHANNEL``, the Count option is selected.
+        """
         if self._x_combo.findText(x_channel) >= 0:
             self._x_combo.setCurrentText(x_channel)
-        if self._y_combo.findText(y_channel) >= 0:
+        if y_channel == COUNT_CHANNEL:
+            # Find the Count sentinel by its user data.
+            for i in range(self._y_combo.count()):
+                if self._y_combo.itemData(i) == COUNT_CHANNEL:
+                    self._y_combo.setCurrentIndex(i)
+                    break
+        elif self._y_combo.findText(y_channel) >= 0:
             self._y_combo.setCurrentText(y_channel)
 
     # -- axis transform API --------------------------------------------------
@@ -121,6 +152,13 @@ class ChannelSelector(QWidget):
         if idx >= 0:
             self._y_transform_combo.setCurrentIndex(idx)
 
+    def set_y_transform_disabled(self, disabled: bool) -> None:
+        """Enable or disable the Y transform combo box.
+
+        When disabled (histogram mode), the Y transform has no effect.
+        """
+        self._y_transform_combo.setEnabled(not disabled)
+
     # -- signals (callback-based) --------------------------------------------
 
     def on_channel_changed(self, callback) -> None:
@@ -135,6 +173,8 @@ class ChannelSelector(QWidget):
     def _on_any_changed(self) -> None:
         x = self.x_channel()
         y = self.y_channel()
+        # Disable Y transform when in histogram (Count) mode.
+        self._y_transform_combo.setEnabled(not self.is_count_mode())
         for cb in self._change_callbacks:
             invoke_callback(cb, x, y)
 

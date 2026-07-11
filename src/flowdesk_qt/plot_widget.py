@@ -74,6 +74,18 @@ class PlotWidget(QWidget):
         self._manual_view_range: tuple[tuple[float, float], tuple[float, float]] | None = None
         self._setting_view_range = False
         self._polygon_preview_vertices: list[tuple[float, float]] = []
+        # Histogram mode state (display-only).
+        self._is_histogram_mode: bool = False
+        self._histogram_item: Any | None = None
+        self._histogram_bins: int = 60
+        # Marginal histogram state (display-only).
+        self._marginal_enabled: bool = False
+        self._marginal_x_item: Any | None = None
+        self._marginal_y_item: Any | None = None
+        self._marginal_x_plot: Any | None = None
+        self._marginal_y_plot: Any | None = None
+        self._cached_marginal_x: NDArray[np.float64] | None = None
+        self._cached_marginal_y: NDArray[np.float64] | None = None
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -160,12 +172,22 @@ class PlotWidget(QWidget):
         self._x_transform = x_transform
         self._y_transform = y_transform
 
+    def set_marginal_enabled(self, enabled: bool) -> None:
+        """Enable or disable marginal histograms on X and Y axes."""
+        self._marginal_enabled = enabled
+
+    def is_marginal_enabled(self) -> bool:
+        """Return whether marginal histograms are currently enabled."""
+        return self._marginal_enabled
+
     def plot_events(
         self,
         x_data: NDArray[np.float64],
         y_data: NDArray[np.float64],
         x_label: str = "",
         y_label: str = "",
+        marginal_x_data: NDArray[np.float64] | None = None,
+        marginal_y_data: NDArray[np.float64] | None = None,
     ) -> None:
         """Render a scatter plot.
 
@@ -174,6 +196,8 @@ class PlotWidget(QWidget):
           y_data: Y values (full resolution).
           x_label: X axis label.
           y_label: Y axis label.
+          marginal_x_data: X data for marginal histogram (optional, defaults to x_data).
+          marginal_y_data: Y data for marginal histogram (optional, defaults to y_data).
         """
         self._x_label = x_label
         self._y_label = y_label
@@ -181,6 +205,10 @@ class PlotWidget(QWidget):
         # Cache raw data for range reset operations.
         self._cached_x = x_data
         self._cached_y = y_data
+
+        # Cache marginal data for histogram updates.
+        self._cached_marginal_x = marginal_x_data if marginal_x_data is not None else x_data
+        self._cached_marginal_y = marginal_y_data if marginal_y_data is not None else y_data
 
         # Apply axis transforms (display only).
         x_plot = self._apply_transform(x_data, self._x_transform)
@@ -197,6 +225,8 @@ class PlotWidget(QWidget):
         x_plot = x_plot[valid]
         y_plot = y_plot[valid]
 
+        self._is_histogram_mode = False
+        self._clear_histogram()
         self._clear_scatter()
         self._scatter = self._plot_item.plot(
             x_plot,
@@ -217,15 +247,98 @@ class PlotWidget(QWidget):
         else:
             self._auto_range()
 
+        # Update marginal histograms if enabled.
+        self._update_marginal_histograms()
+
+    def plot_histogram(
+        self,
+        values: NDArray[np.float64],
+        x_label: str = "",
+        num_bins: int | None = None,
+    ) -> None:
+        """Render a 1D histogram.
+
+        This is a display-only operation.  Bin counts do NOT affect gate
+        membership, population statistics, or any analytical result.
+
+        Args:
+          values: 1-D values (full resolution, population-filtered).
+          x_label: X axis label.
+          num_bins: Number of histogram bins (default 60).
+        """
+        self._x_label = x_label
+        self._y_label = "Count"
+
+        n_bins = num_bins if num_bins is not None else self._histogram_bins
+
+        # Apply X axis transform to display coordinates.
+        values_plot = self._apply_transform(values, self._x_transform)
+
+        # Remove NaN/Inf for plotting safety.
+        valid = ~np.isnan(values_plot) & np.isfinite(values_plot)
+        values_plot = values_plot[valid]
+
+        # For log10, also exclude non-positive values.
+        if self._x_transform == "log10":
+            positive_mask = values_plot > 0
+            values_plot = values_plot[positive_mask]
+
+        if len(values_plot) == 0:
+            self._clear_histogram()
+            self._clear_scatter()
+            self._is_histogram_mode = True
+            self._update_labels()
+            return
+
+        # Compute histogram (display-only).
+        counts, bin_edges = np.histogram(values_plot, bins=n_bins)
+        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+        bin_widths = bin_edges[1:] - bin_edges[:-1]
+
+        # For log10 axis, convert bin edges/centers to log10 space.
+        if self._x_transform == "log10":
+            bin_centers = np.log10(bin_centers)
+            bin_widths = np.log10(bin_edges[1:]) - np.log10(bin_edges[:-1])
+
+        self._is_histogram_mode = True
+        self._clear_scatter()
+        self._clear_histogram()
+
+        # Use pyqtgraph BarGraphItem for the histogram display.
+        from pyqtgraph import BarGraphItem  # type: ignore[attr-defined]
+
+        self._histogram_item = BarGraphItem(
+            x=bin_centers,
+            height=counts,
+            width=bin_widths,
+            brush=self._make_brush(self._style.dot_color, self._style.dot_opacity),
+        )
+
+        self._plot_item.addItem(self._histogram_item)
+
+        self._update_labels()
+        self._update_log_mode()
+        if self._range_mode == "manual":
+            self._apply_manual_range()
+        elif self._range_mode == "full_auto":
+            self._set_full_range_internal()
+        else:
+            self._auto_range()
+
     def clear_plot(self) -> None:
         """Remove all data and gate overlays."""
         self._clear_scatter()
+        self._clear_histogram()
+        self._clear_marginal_histograms()
         self._clear_gates()
         self._clear_preview()
         self._x_label = ""
         self._y_label = ""
         self._cached_x = None
         self._cached_y = None
+        self._cached_marginal_x = None
+        self._cached_marginal_y = None
+        self._is_histogram_mode = False
         self._update_labels()
 
     def add_gate_overlay(self, gate: GateSpec, gate_index: int | None = None) -> None:
@@ -623,6 +736,14 @@ class PlotWidget(QWidget):
                 pass
             self._scatter = None
 
+    def _clear_histogram(self) -> None:
+        if self._histogram_item is not None:
+            try:
+                self._plot_item.removeItem(self._histogram_item)
+            except Exception:
+                pass
+            self._histogram_item = None
+
     def _clear_gates(self) -> None:
         for item in self._gate_items:
             try:
@@ -968,6 +1089,170 @@ class PlotWidget(QWidget):
                 )
 
         event.accept()
+
+    # -- marginal histograms (private) ---------------------------------------
+
+    def _update_marginal_histograms(self) -> None:
+        """Update marginal histograms if enabled, clear them otherwise."""
+        if self._marginal_enabled:
+            self._setup_marginal_plots()
+            self._render_marginal_x()
+            self._render_marginal_y()
+        else:
+            self._clear_marginal_histograms()
+
+    def _render_marginal_x(self) -> None:
+        """Render the top marginal histogram for the X axis."""
+        if self._cached_marginal_x is None:
+            return
+
+        marginal_x = np.asarray(self._cached_marginal_x, dtype=np.float64)
+        values_plot = self._apply_transform(marginal_x, self._x_transform)
+        valid = ~np.isnan(values_plot) & np.isfinite(values_plot)
+        values_plot = values_plot[valid]
+
+        if self._x_transform == "log10":
+            positive_mask = values_plot > 0
+            values_plot = values_plot[positive_mask]
+
+        if len(values_plot) == 0:
+            self._clear_marginal_x()
+            return
+
+        counts, bin_edges = np.histogram(values_plot, bins=self._histogram_bins)
+        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+        bin_widths = bin_edges[1:] - bin_edges[:-1]
+
+        if self._x_transform == "log10":
+            bin_centers = np.log10(bin_centers)
+            bin_widths = np.log10(bin_edges[1:]) - np.log10(bin_edges[:-1])
+
+        from pyqtgraph import BarGraphItem  # type: ignore[attr-defined]
+
+        self._clear_marginal_x()
+        self._marginal_x_item = BarGraphItem(
+            x=bin_centers,
+            height=counts,
+            width=bin_widths,
+            brush=self._make_brush(self._style.dot_color, self._style.dot_opacity),
+        )
+        if self._marginal_x_plot is not None:
+            self._marginal_x_plot.addItem(self._marginal_x_item)
+
+    def _render_marginal_y(self) -> None:
+        """Render the right marginal histogram for the Y axis."""
+        if self._cached_marginal_y is None:
+            return
+
+        marginal_y = np.asarray(self._cached_marginal_y, dtype=np.float64)
+        values_plot = self._apply_transform(marginal_y, self._y_transform)
+        valid = ~np.isnan(values_plot) & np.isfinite(values_plot)
+        values_plot = values_plot[valid]
+
+        if self._y_transform == "log10":
+            positive_mask = values_plot > 0
+            values_plot = values_plot[positive_mask]
+
+        if len(values_plot) == 0:
+            self._clear_marginal_y()
+            return
+
+        counts, bin_edges = np.histogram(values_plot, bins=self._histogram_bins)
+        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+        bin_widths = bin_edges[1:] - bin_edges[:-1]
+
+        if self._y_transform == "log10":
+            bin_centers = np.log10(bin_centers)
+            bin_widths = np.log10(bin_edges[1:]) - np.log10(bin_edges[:-1])
+
+        from pyqtgraph import BarGraphItem  # type: ignore[attr-defined]
+
+        self._clear_marginal_y()
+        self._marginal_y_item = BarGraphItem(
+            x=bin_centers,
+            height=counts,
+            width=bin_widths,
+            brush=self._make_brush(self._style.dot_color, self._style.dot_opacity),
+        )
+        if self._marginal_y_plot is not None:
+            self._marginal_y_plot.addItem(self._marginal_y_item)
+
+    def _clear_marginal_histograms(self) -> None:
+        """Remove marginal histogram plots and their items."""
+        self._clear_marginal_x()
+        self._clear_marginal_y()
+        if self._marginal_x_plot is not None:
+            try:
+                self._glw.removeItem(self._marginal_x_plot)
+            except Exception:
+                pass
+            self._marginal_x_plot = None
+        if self._marginal_y_plot is not None:
+            try:
+                self._glw.removeItem(self._marginal_y_plot)
+            except Exception:
+                pass
+            self._marginal_y_plot = None
+
+    def _clear_marginal_x(self) -> None:
+        if self._marginal_x_item is not None:
+            try:
+                if self._marginal_x_plot is not None:
+                    self._marginal_x_plot.removeItem(self._marginal_x_item)
+            except Exception:
+                pass
+            self._marginal_x_item = None
+
+    def _clear_marginal_y(self) -> None:
+        if self._marginal_y_item is not None:
+            try:
+                if self._marginal_y_plot is not None:
+                    self._marginal_y_plot.removeItem(self._marginal_y_item)
+            except Exception:
+                pass
+            self._marginal_y_item = None
+
+    def _setup_marginal_plots(self) -> None:
+        """Create marginal histogram sub-plots if they don't already exist.
+
+        Layout:
+          marginal_x (top)
+          main plot  (center)
+          marginal_y (right)
+        """
+        if self._marginal_x_plot is not None and self._marginal_y_plot is not None:
+            return
+
+        main_vb = self._view_box()
+
+        self._marginal_x_plot = self._glw.addPlot(
+            row=0, col=0,
+            label="X",
+            lockAspect=True,
+        )
+        self._marginal_x_plot.showAxis("bottom", False)
+        self._marginal_x_plot.showAxis("left", False)
+        self._marginal_x_plot.showAxis("right", False)
+        self._marginal_x_plot.hideButtons()
+
+        # Marginal Y plot on the right of the main plot.
+        self._marginal_y_plot = self._glw.addPlot(
+            row=1, col=1,
+            label="Y",
+            lockAspect=True,
+        )
+        self._marginal_y_plot.showAxis("bottom", False)
+        self._marginal_y_plot.showAxis("left", False)
+        self._marginal_y_plot.showAxis("top", False)
+        self._marginal_y_plot.hideButtons()
+
+        # Link ViewBoxes for synchronized pan/zoom.
+        if main_vb is not None:
+            try:
+                self._marginal_x_plot.vb.setXLink(main_vb)
+                self._marginal_y_plot.vb.setYLink(main_vb)
+            except Exception:
+                pass
 
     # -- UI construction -----------------------------------------------------
 

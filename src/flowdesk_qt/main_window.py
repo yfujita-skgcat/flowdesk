@@ -106,6 +106,8 @@ class MainWindow(QMainWindow):
         self._results_stale = False
         self._project_id = "flowdesk_session"
         self._project_path: Path | None = None
+        # Display-only: selected population for plot filtering.
+        self._selected_population_id: str = "all_events"
 
         self._build_menu()
         self._build_toolbar()
@@ -156,6 +158,7 @@ class MainWindow(QMainWindow):
                 "range_mode": self._plot_widget.range_mode(),
                 "view_range": self._plot_widget.view_range(),
                 "active_gate_creation": self._plot_widget._active_gate_creation,
+                "marginal_enabled": self._plot_widget.is_marginal_enabled(),
             },
             "gates": [asdict(gate) for gate in self._gate_editor.gates()],
             "gate_editor": {
@@ -176,6 +179,9 @@ class MainWindow(QMainWindow):
                     result.population_id: result.event_count
                     for result in report.population_results
                 },
+            },
+            "population_filter": {
+                "selected_population_id": self._selected_population_id,
             },
             "results_stale": self._results_stale,
             "status": self.statusBar().currentMessage(),
@@ -364,6 +370,10 @@ class MainWindow(QMainWindow):
         self._plot_toolbar.on_reset_robust(self._on_reset_robust)
         self._plot_toolbar.on_reset_full(self._on_reset_full)
         self._plot_toolbar.on_export_png(self._on_export_png)
+        self._plot_toolbar.on_marginal_toggled(self._on_marginal_toggled)
+
+        # Population selection (display-only filter)
+        self._population_tree.on_population_selected(self._on_population_selected)
 
         # Connect plot mouse events to gate creation
         self._plot_widget.on_mouse_clicked(self._on_plot_mouse_clicked)
@@ -434,8 +444,20 @@ class MainWindow(QMainWindow):
         """Called when X or Y channel selection changes."""
         self._replot()
 
+    def _on_population_selected(self, population_id: str, sample_id: str) -> None:
+        """Called when the user selects a population in the results table.
+
+        This is a display-only change; it does not modify gates or analysis state.
+        """
+        self._selected_population_id = population_id
+        self._replot()
+
     def _replot(self) -> None:
-        """Replot the current sample with current channel selection and axis transforms."""
+        """Replot the current sample with current channel selection and axis transforms.
+
+        When Y channel is set to the Count option, renders a 1D histogram instead
+        of a 2D scatter plot (Phase 4).
+        """
         if self._current_sample_id is None:
             return
 
@@ -450,26 +472,59 @@ class MainWindow(QMainWindow):
         self._gate_editor.set_plot_channels(x_name, y_name)
 
         x_idx = self._get_channel_index(x_name)
-        y_idx = self._get_channel_index(y_name)
-
-        if x_idx < 0 or y_idx < 0:
+        if x_idx < 0:
             return
 
         x_data = data[:, x_idx]
-        y_data = data[:, y_idx]
 
-        # Apply axis transform settings to the plot widget.
-        x_transform = self._channel_selector.x_transform()
-        y_transform = self._channel_selector.y_transform()
-        self._plot_widget.set_axis_transforms(x_transform, y_transform)
+        # Determine if we are in histogram (Count) mode.
+        is_histogram = self._channel_selector.is_count_mode()
 
-        self._plot_widget.plot_events(x_data, y_data, x_label=x_name, y_label=y_name)
+        if is_histogram:
+            # 1D histogram: only X channel data is needed.
+            x_data, _ = self._apply_population_filter(x_data, x_data)
 
-        # Refresh gate overlays
-        self._plot_widget.clear_gates()
-        for idx, gate in enumerate(self._gate_editor.gates()):
-            if gate.x_parameter == x_name and gate.y_parameter == y_name:
-                self._plot_widget.add_gate_overlay(gate, idx)
+            x_transform = self._channel_selector.x_transform()
+            self._plot_widget.set_axis_transforms(x_transform, "linear")
+            self._plot_widget.plot_histogram(x_data, x_label=x_name)
+
+            # No 2D gate overlays in histogram mode.
+            self._plot_widget.clear_gates()
+        else:
+            # 2D scatter plot.
+            y_id = self._channel_selector.y_channel_id()
+            y_idx = self._get_channel_index(y_id)
+
+            if y_idx < 0:
+                return
+
+            y_data = data[:, y_idx]
+
+            # Apply population membership mask (display filter, Phase 3).
+            x_data, y_data = self._apply_population_filter(x_data, y_data)
+
+            # For marginal histograms, use unfiltered data (or population-filtered if preferred).
+            # Use the same filtered data for marginal histograms.
+            marginal_x = x_data
+            marginal_y = y_data
+
+            # Apply axis transform settings to the plot widget.
+            x_transform = self._channel_selector.x_transform()
+            y_transform = self._channel_selector.y_transform()
+            self._plot_widget.set_axis_transforms(x_transform, y_transform)
+
+            self._plot_widget.plot_events(
+                x_data, y_data,
+                x_label=x_name, y_label=y_id,
+                marginal_x_data=marginal_x,
+                marginal_y_data=marginal_y,
+            )
+
+            # Refresh gate overlays
+            self._plot_widget.clear_gates()
+            for idx, gate in enumerate(self._gate_editor.gates()):
+                if gate.x_parameter == x_name and gate.y_parameter == y_id:
+                    self._plot_widget.add_gate_overlay(gate, idx)
 
     def _get_channel_index(self, channel_name: str) -> int:
         """Get the column index for a channel name."""
@@ -477,6 +532,51 @@ class MainWindow(QMainWindow):
             return self._channel_names.index(channel_name)
         except (ValueError, AttributeError):
             return -1
+
+    def _get_population_mask(self) -> NDArray[np.bool_] | None:
+        """Return the membership boolean mask for the current sample and selected population.
+
+        Returns ``None`` when no valid membership data is available (stale results,
+        no report, or missing population/sample).  In that case the caller should
+        fall back to displaying all events.
+        """
+        report = self._population_tree.last_report()
+        if report is None:
+            return None
+        if self._results_stale:
+            return None
+        if not hasattr(report, "population_membership") or not report.population_membership:
+            return None
+
+        sample_id = self._current_sample_id
+        population_id = self._selected_population_id
+
+        # all_events is always valid: no filter needed
+        if population_id == "all_events":
+            return None
+
+        # Find matching membership entry for (sample_id, population_id)
+        for membership in report.population_membership:
+            if membership.sample_id == sample_id and membership.population_id == population_id:
+                return membership.mask
+
+        # Selected population does not exist for this sample; fall back to all events
+        return None
+
+    def _apply_population_filter(
+        self,
+        x_data: NDArray[np.float64],
+        y_data: NDArray[np.float64],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Apply the currently selected population membership mask to X/Y data.
+
+        If no valid mask is available, the original data is returned unchanged.
+        """
+        mask = self._get_population_mask()
+        if mask is None:
+            return x_data, y_data
+
+        return x_data[mask], y_data[mask]
 
     # -- gate handling -------------------------------------------------------
 
@@ -589,6 +689,7 @@ class MainWindow(QMainWindow):
                 "y_channel": self._channel_selector.y_channel(),
                 "x_scale": self._channel_selector.x_transform(),
                 "y_scale": self._channel_selector.y_transform(),
+                "marginal_enabled": self._plot_widget.is_marginal_enabled(),
             },
         }
 
@@ -613,7 +714,10 @@ class MainWindow(QMainWindow):
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
             self._results_stale = False
+            self._validate_population_selection(report)
             self._update_status(f"Pipeline complete: {report.summary}")
+            # Replot to apply the now-valid population membership mask.
+            self._replot()
         else:
             self._update_status("Pipeline finished with no report")
 
@@ -732,6 +836,9 @@ class MainWindow(QMainWindow):
         display = manifest.get("plot_display_settings", {})
         self._channel_selector.set_x_transform(display.get("x_scale", "linear"))
         self._channel_selector.set_y_transform(display.get("y_scale", "linear"))
+        marginal = bool(display.get("marginal_enabled", False))
+        self._plot_widget.set_marginal_enabled(marginal)
+        self._plot_toolbar.set_marginal_enabled(marginal)
 
         selected_id = display.get("selected_sample_id")
         if selected_id is None and resolved_samples:
@@ -759,6 +866,22 @@ class MainWindow(QMainWindow):
         names = {"all_events": "All Events"}
         names.update({gate.id: gate.name for gate in self._gate_editor.gates()})
         return names
+
+    def _validate_population_selection(self, report: Any) -> None:
+        """Ensure the currently selected population ID is valid for the current sample.
+
+        If the selected population does not exist in the new report data for the
+        current sample, fall back to ``all_events``.
+        """
+        if self._selected_population_id == "all_events":
+            return
+        population_ids = {
+            r.population_id
+            for r in report.population_results
+            if r.sample_id == self._current_sample_id
+        }
+        if self._selected_population_id not in population_ids:
+            self._selected_population_id = "all_events"
 
     # -- plot mouse handlers -------------------------------------------------
 
@@ -869,6 +992,13 @@ class MainWindow(QMainWindow):
         self._plot_widget.set_full_range()
         self._update_status("Viewport reset to full range")
 
+    def _on_marginal_toggled(self, enabled: bool) -> None:
+        """Handle marginal histogram toggle."""
+        self._plot_widget.set_marginal_enabled(enabled)
+        status = "Marginal histograms enabled" if enabled else "Marginal histograms disabled"
+        self._update_status(status)
+        self._replot()
+
     def _on_export_png(self) -> None:
         """Export current plot view to PNG."""
         path_str = QFileDialog.getSaveFileName(
@@ -939,6 +1069,7 @@ class MainWindow(QMainWindow):
     def _mark_results_stale(self, reason: str) -> None:
         self._results_stale = True
         self._population_tree.clear()
+        self._selected_population_id = "all_events"
         self._update_status(f"{reason} (results stale; rerun pipeline)")
 
     def _all_loaded_samples_share_channels(self) -> bool:
