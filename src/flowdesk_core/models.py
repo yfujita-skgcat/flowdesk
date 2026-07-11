@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 
 SourceStage = Literal["raw", "compensated", "transformed"]
 GateType = Literal["rectangle", "polygon", "range", "boolean"]
+GateAxisScale = Literal["linear", "log10", "asinh"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported"]
 
 
@@ -91,6 +92,8 @@ class GateSpec:
   parent_population_id: str | None = None
   x_parameter: str | None = None
   y_parameter: str | None = None
+  x_scale: GateAxisScale = "linear"
+  y_scale: GateAxisScale = "linear"
   transform_id: str | None = None
   compensation_id: str | None = None
   coordinates: tuple[tuple[float, float], ...] = field(default_factory=tuple)

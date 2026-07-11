@@ -19,6 +19,8 @@
           "parent_population_id": { "type": ["string", "null"] },
           "x_parameter": { "type": ["string", "null"] },
           "y_parameter": { "type": ["string", "null"] },
+          "x_scale": { "type": "string", "enum": ["linear", "log10", "asinh"], "default": "linear" },
+          "y_scale": { "type": "string", "enum": ["linear", "log10", "asinh"], "default": "linear" },
           "transform_id": { "type": ["string", "null"] },
           "compensation_id": { "type": ["string", "null"] },
           "coordinates": {},

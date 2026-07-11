@@ -791,6 +791,38 @@ def test_evaluate_with_membership_raw_data_unchanged() -> None:
   np.testing.assert_array_equal(data, data_copy)
 
 
+def test_polygon_gate_is_evaluated_in_its_stored_log_scales() -> None:
+  strategy = GatingStrategySpec(
+    id="log-gating",
+    name="Log gating",
+    gates=(
+      GateSpec(
+        id="log-poly",
+        name="Log polygon",
+        gate_type="polygon",
+        parent_population_id="all_events",
+        x_parameter="x",
+        y_parameter="y",
+        x_scale="log10",
+        y_scale="log10",
+        coordinates=((0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)),
+      ),
+    ),
+  )
+  data = np.array([
+    [1.0, 1.0], [10.0, 10.0], [100.0, 100.0],
+    [1000.0, 10.0], [0.0, 10.0],
+  ])
+
+  results, masks = evaluate_gating_strategy_with_membership(
+    strategy, data, ["x", "y"]
+  )
+
+  assert masks["log-poly"].tolist() == [True, True, True, False, False]
+  result = next(r for r in results if r.population_id == "log-poly")
+  assert result.event_count == 3
+
+
 def test_evaluate_with_membership_no_gui_dependency() -> None:
   """The membership API is importable and runnable without any GUI dependency."""
   # This test verifies that the core modules do not import PySide6/Qt.

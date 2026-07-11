@@ -196,6 +196,8 @@ class GateEditor(QWidget):
         self._gates: list[GateSpec] = []
         self._x_channel: str = ""
         self._y_channel: str = ""
+        self._x_scale: str = "linear"
+        self._y_scale: str = "linear"
         self._parent_population_id: str = "all_events"
         self._polygon_vertices: list[tuple[float, float]] = []
         self._collecting_polygon: bool = False
@@ -207,6 +209,11 @@ class GateEditor(QWidget):
         """Update the X/Y channel names used for new gates."""
         self._x_channel = x
         self._y_channel = y
+
+    def set_plot_scales(self, x_scale: str, y_scale: str) -> None:
+        """Set coordinate scales used by newly created gates."""
+        self._x_scale = x_scale
+        self._y_scale = y_scale
 
     def set_parent_population(self, population_id: str) -> None:
         """Set the parent population id for new gates."""
@@ -306,6 +313,8 @@ class GateEditor(QWidget):
             parent_population_id=self._parent_population_id,
             x_parameter=self._x_channel,
             y_parameter=self._y_channel,
+            x_scale=self._x_scale,
+            y_scale=self._y_scale,
             coordinates=coords,
         )
         self._gates.append(gate)
@@ -449,6 +458,8 @@ class GateEditor(QWidget):
             parent_population_id=self._parent_population_id,
             x_parameter=self._x_channel if gate_type != "boolean" else None,
             y_parameter=self._y_channel if gate_type not in {"range", "boolean"} else None,
+            x_scale=self._x_scale,
+            y_scale=self._y_scale,
             thresholds=thresholds,
         )
         try:

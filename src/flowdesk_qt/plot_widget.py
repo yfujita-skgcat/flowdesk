@@ -501,7 +501,7 @@ class PlotWidget(QWidget):
         self._clear_preview()
 
     def add_polygon_preview_vertex(self, data_x: float, data_y: float) -> None:
-        """Add a display-only vertex to the in-progress polygon preview."""
+        """Add a vertex in the current gate coordinate scale."""
         self._polygon_preview_vertices.append((data_x, data_y))
         self._update_polygon_preview()
 
@@ -650,6 +650,9 @@ class PlotWidget(QWidget):
     def _create_gate_item(self, gate: GateSpec, gate_index: int | None = None) -> Any:
         """Create a pyqtgraph geometry item for a gate."""
         from pyqtgraph import mkPen  # type: ignore[attr-defined]
+
+        if gate.x_scale != self._x_transform or gate.y_scale != self._y_transform:
+            return None
 
         pen = mkPen(color="y", width=2, style=Qt.DashLine)
 

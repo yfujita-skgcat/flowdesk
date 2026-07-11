@@ -486,6 +486,10 @@ class MainWindow(QMainWindow):
 
         # Sync gate editor with current channels
         self._gate_editor.set_plot_channels(x_name, y_name)
+        self._gate_editor.set_plot_scales(
+            self._channel_selector.x_transform(),
+            self._channel_selector.y_transform(),
+        )
 
         x_idx = self._get_channel_index(x_name)
         if x_idx < 0:
@@ -958,6 +962,8 @@ class MainWindow(QMainWindow):
             parent_population_id=self._gate_editor.parent_population(),
             x_parameter=x_name,
             y_parameter=y_name,
+            x_scale=self._channel_selector.x_transform(),
+            y_scale=self._channel_selector.y_transform(),
             thresholds={
                 "x_min": x_min,
                 "x_max": x_max,

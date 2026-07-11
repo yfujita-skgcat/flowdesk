@@ -21,6 +21,19 @@ with:
 
 Separate display state from analysis state.
 
+### Gate coordinate scales
+
+- A GUI-created geometric gate stores the X and Y axis scales in which its
+  coordinates were drawn (`linear`, `log10`, or `asinh`).
+- Headless gate evaluation transforms full-resolution parameter values into
+  those coordinate scales before applying the stored thresholds or polygon.
+- A gate overlay is displayed and editable only when the current X/Y display
+  scales match the gate coordinate scales. Changing display scale never
+  changes gate membership or rewrites gate coordinates.
+- This avoids approximating a transformed polygon with a different raw-space
+  polygon and keeps GUI-drawn straight edges identical to headless analysis.
+- Legacy gates without scale metadata are interpreted as linear/linear.
+
 - Analysis state changes results and must be represented in project data:
   gates, parent populations, compensation selection, analysis transforms, derived
   parameters, sample inclusion, and export settings.

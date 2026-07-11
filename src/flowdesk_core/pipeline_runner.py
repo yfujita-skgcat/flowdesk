@@ -504,6 +504,8 @@ class PipelineRunner:
         parent_population_id=gate.get("parent_population_id"),
         x_parameter=gate.get("x_parameter"),
         y_parameter=gate.get("y_parameter"),
+        x_scale=gate.get("x_scale", "linear"),
+        y_scale=gate.get("y_scale", "linear"),
         transform_id=gate.get("transform_id"),
         compensation_id=gate.get("compensation_id"),
         coordinates=tuple(tuple(point) for point in gate.get("coordinates", ())),

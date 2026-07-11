@@ -258,6 +258,125 @@ def test_polygon_gate_creation_uses_scene_click_and_double_click() -> None:
     app.processEvents()
 
 
+def test_log10_rectangle_drag_keeps_log_gate_coordinates() -> None:
+  app = _app()
+  widget = PlotWidget()
+  original_get_data_position = widget._get_data_position
+  try:
+    calls: list[dict[str, float | bool]] = []
+
+    class FakeDragEvent:
+      def __init__(
+        self,
+        data_pos: tuple[float, float],
+        *,
+        start: bool = False,
+        finish: bool = False,
+      ) -> None:
+        self.data_pos = data_pos
+        self._start = start
+        self._finish = finish
+
+      def isStart(self) -> bool:
+        return self._start
+
+      def isFinish(self) -> bool:
+        return self._finish
+
+      def accept(self) -> None:
+        pass
+
+    widget.set_axis_transforms("log10", "log10")
+    widget._get_data_position = lambda event: event.data_pos
+    widget.on_mouse_clicked(
+      lambda x, y, double, **kwargs: calls.append(
+        {"x": x, "y": y, "double": double, **kwargs}
+      )
+    )
+    widget.begin_gate_creation("rectangle")
+    widget._on_mouse_drag(FakeDragEvent((2.0, 3.0), start=True))
+    widget._on_mouse_drag(FakeDragEvent((4.0, 5.0), finish=True))
+
+    assert calls == [{
+      "x": 2.0, "y": 3.0, "double": False, "dragging": False,
+      "rect_end_x": 4.0, "rect_end_y": 5.0,
+    }]
+  finally:
+    widget._get_data_position = original_get_data_position
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_asinh_polygon_click_keeps_asinh_gate_coordinates() -> None:
+  app = _app()
+  widget = PlotWidget()
+  original_get_data_position = widget._get_data_position
+  try:
+    calls: list[tuple[float, float]] = []
+
+    class FakeClickEvent:
+      def button(self) -> Qt.MouseButton:
+        return Qt.LeftButton
+
+      def double(self) -> bool:
+        return False
+
+      def accept(self) -> None:
+        pass
+
+    widget.set_axis_transforms("asinh", "asinh")
+    widget._get_data_position = lambda _event: (np.arcsinh(12.0), np.arcsinh(-7.0))
+    widget.on_mouse_clicked(lambda x, y, _double: calls.append((x, y)))
+    widget.begin_gate_creation("polygon")
+    widget._on_scene_mouse_click(FakeClickEvent())
+
+    assert calls[0] == pytest.approx((np.arcsinh(12.0), np.arcsinh(-7.0)))
+  finally:
+    widget._get_data_position = original_get_data_position
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_log10_rectangle_overlay_edit_keeps_log_coordinates() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="gate-log",
+      name="log rectangle",
+      gate_type="rectangle",
+      x_parameter="X",
+      y_parameter="Y",
+      x_scale="log10",
+      y_scale="log10",
+      thresholds={
+        "x_min": 2.0, "x_max": 4.0, "y_min": 3.0, "y_max": 5.0,
+      },
+    )
+    updates: list[GateSpec] = []
+    widget.set_axis_transforms("log10", "log10")
+    widget.on_gate_geometry_changed(
+      lambda _index, updated: updates.append(updated)
+    )
+    widget.add_gate_overlay(gate, gate_index=0)
+
+    item = widget._gate_items[0]
+    state = item.saveState()
+    assert tuple(state["pos"]) == pytest.approx((2.0, 3.0))
+    assert tuple(state["size"]) == pytest.approx((2.0, 2.0))
+    item.setPos(3.0, 4.0)
+
+    assert updates[-1].thresholds == pytest.approx({
+      "x_min": 3.0, "x_max": 5.0, "y_min": 4.0, "y_max": 6.0,
+    })
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
 def test_main_window_polygon_create_gate_flow_finishes_on_double_click() -> None:
   app = _app()
   window = MainWindow()
@@ -321,6 +440,61 @@ def test_polygon_gate_overlay_uses_editable_polyline_roi() -> None:
     assert item.__class__.__name__ == "PolyLineROI"
     assert item.closed is True
     assert len(item.getHandles()) == 3
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_log_polygon_is_editable_only_on_matching_display_scale() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="gate-log",
+      name="log gate",
+      gate_type="polygon",
+      x_parameter="X",
+      y_parameter="Y",
+      x_scale="log10",
+      y_scale="log10",
+      coordinates=((2.0, 3.0), (4.0, 3.0), (3.0, 5.0)),
+    )
+    widget.set_axis_transforms("linear", "linear")
+    widget.add_gate_overlay(gate, gate_index=0)
+    assert widget._gate_items == []
+
+    widget.set_axis_transforms("log10", "log10")
+    widget.add_gate_overlay(gate, gate_index=0)
+    item = widget._gate_items[0]
+    assert item.__class__.__name__ == "PolyLineROI"
+    assert len(item.getHandles()) == 3
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_linear_polygon_is_hidden_on_log_display_without_rewrite() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="gate-linear",
+      name="linear gate",
+      gate_type="polygon",
+      x_parameter="X",
+      y_parameter="Y",
+      coordinates=((1.0, 1.0), (100.0, 20.0), (10.0, 100.0)),
+    )
+    widget.set_axis_transforms("log10", "asinh")
+    widget.add_gate_overlay(gate, gate_index=0)
+    assert widget._gate_items == []
+
+    widget.set_axis_transforms("linear", "linear")
+    widget.add_gate_overlay(gate, gate_index=0)
+    assert widget._gate_items[0].__class__.__name__ == "PolyLineROI"
+    assert gate.coordinates == ((1.0, 1.0), (100.0, 20.0), (10.0, 100.0))
   finally:
     widget.close()
     widget.deleteLater()

@@ -174,6 +174,9 @@ def evaluate_gating_strategy_with_membership(
         raise GatingStrategyError(
           f"gate {gate.id!r} has no x_parameter defined"
         )
+      x_vals = _apply_gate_axis_scale(x_vals, gate.x_scale)
+      if y_vals is not None:
+        y_vals = _apply_gate_axis_scale(y_vals, gate.y_scale)
 
     gate_mask = evaluate_gate(gate, x_vals, y_vals, population_masks)
 
@@ -214,6 +217,22 @@ def evaluate_gating_strategy_with_membership(
     mask.setflags(write=False)
 
   return population_results, population_masks
+
+
+def _apply_gate_axis_scale(
+  values: NDArray[np.float64], scale: str
+) -> NDArray[np.float64]:
+  """Return values in the coordinate scale stored by a geometric gate."""
+  if scale == "linear":
+    return values
+  if scale == "asinh":
+    return np.arcsinh(values)
+  if scale == "log10":
+    result = np.full(values.shape, np.nan, dtype=np.float64)
+    positive = values > 0
+    result[positive] = np.log10(values[positive])
+    return result
+  raise GatingStrategyError(f"unsupported gate axis scale: {scale!r}")
 
 
 def _get_column(
