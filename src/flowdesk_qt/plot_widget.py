@@ -56,6 +56,7 @@ class PlotWidget(QWidget):
         self.setObjectName("plotWidget")
         self._scatter: ScatterPlotItem | None = None
         self._gate_items: list[Any] = []
+        self._hidden_gate_reasons: list[str] = []
         self._preview_item: Any | None = None
         self._gate_geometry_callbacks: list[Any] = []
         self._x_label: str = ""
@@ -191,6 +192,7 @@ class PlotWidget(QWidget):
             "marginal_visible": (
                 self._marginal_enabled and not self._is_histogram_mode
             ),
+            "hidden_gate_reasons": list(self._hidden_gate_reasons),
         }
 
     def plot_events(
@@ -361,6 +363,11 @@ class PlotWidget(QWidget):
         if item is not None:
             self._plot_item.addItem(item)
             self._gate_items.append(item)
+        elif gate.x_scale != self._x_transform or gate.y_scale != self._y_transform:
+            self._hidden_gate_reasons.append(
+                f"{gate.name} [{gate.id}] exists on "
+                f"{gate.x_scale}/{gate.y_scale} axes"
+            )
 
     def add_gate_overlays(self, gates: list[GateSpec]) -> None:
         """Add multiple gate overlays."""
@@ -370,6 +377,7 @@ class PlotWidget(QWidget):
     def clear_gates(self) -> None:
         """Remove all gate overlays."""
         self._clear_gates()
+        self._hidden_gate_reasons.clear()
 
     def highlight_gate_index(self, index: int) -> None:
         """Highlight a gate overlay by index.
@@ -768,6 +776,7 @@ class PlotWidget(QWidget):
             except Exception:
                 pass
         self._gate_items.clear()
+        self._hidden_gate_reasons.clear()
 
     def _clear_preview(self) -> None:
         if self._preview_item is not None:

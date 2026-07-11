@@ -148,6 +148,97 @@ metadata are written under `artifacts/gui/<run-id>/`.
 | `Ctrl+G` | Clear all gates |
 | `Ctrl+Q` | Quit application |
 
+### Creating gates and population hierarchies
+
+Flowdesk evaluates gates as a parent-child population hierarchy. Gate
+membership is calculated by the GUI-independent pipeline against full event
+data; displayed/downsampled points are never used for population counts.
+
+#### Create the first gate
+
+1. Load one or more FCS files and select a sample in **Sample Browser**.
+2. Select the X and Y channels and their axis scales.
+3. In **Gate Editor**, select `rectangle`, `polygon`, or `range` as the gate
+   type.
+4. Set **Parent population** to `All Events`.
+5. Click **Create Gate**.
+6. For a rectangle, drag over the plot. For a polygon, click each vertex and
+   double-click the final vertex. A range gate is entered in its dialog.
+7. Run the pipeline with `Ctrl+R` or **Run Pipeline**.
+
+The resulting population appears in **Population Results**. Selecting its row
+filters the scatter plot or Count histogram to that population's full
+membership. Selecting `All Events` restores the unfiltered view.
+
+#### Create a child gate
+
+To create a hierarchy such as:
+
+```text
+All Events
+└─ Cells
+   └─ Singlets
+      └─ CD45+
+```
+
+create `Cells` with `All Events` as its parent. Then select `Cells` in the
+**Gate hierarchy** tree and click **Create Child Gate** to create `Singlets`.
+Select `Singlets` and repeat the operation to create `CD45+`. The creation
+context banner shows the fixed parent id, sample, channels, and scales before
+drawing. Run the pipeline again after gate changes.
+
+Selecting a row in **Population Results** changes the displayed population,
+but currently does not automatically change the **Parent population** combo.
+The parent must be selected explicitly through **Create Child Gate** or the
+**Parent population** combo in Gate Editor.
+
+Select a gate and click **Show Gate** to navigate to its channel pair and axis
+scales without changing analysis results. To change an existing parent, choose
+the new parent in the selected-gate parent control and click **Apply Parent**.
+Invalid self/descendant/cyclic relationships are rejected atomically.
+
+#### Axis scales and gate coordinates
+
+Each geometric gate records the X and Y scales in which it was created:
+`linear`, `log10`, or `asinh`. The headless pipeline applies those scales to
+full-resolution event values before evaluating the gate. This makes a polygon
+drawn with straight edges on a log/log plot reproducible outside the GUI.
+
+A gate overlay is shown and editable only when the current channel pair and
+axis scales match the gate definition. For example, a linear/linear gate is
+hidden after switching the view to linear/log10, but its definition and
+population membership are unchanged. Switch back to linear/linear to display
+and edit it again. Create a separate gate while viewing linear/log10 when that
+coordinate system is scientifically intended.
+
+#### Create Boolean gates
+
+Boolean gates combine existing populations without evaluating display points.
+
+1. Create the source gates and choose the intended **Parent population**.
+2. Select `boolean` in the **Gate type** combo.
+3. Click **Create Gate**.
+4. Select `and`, `or`, or `not` in the dialog.
+5. Select source populations from the hierarchy tree. Use Ctrl-click to select
+   multiple sources.
+6. Confirm the dialog and rerun the pipeline.
+
+Operations have the following meanings:
+
+- `AND`: events present in every selected source population.
+- `OR`: events present in at least one selected source population.
+- `NOT`: events absent from the selected source population.
+
+The Boolean result is also restricted to its selected parent population. For
+example, `Parent = Cells`, `Operation = NOT`, and `Source = CD45+` produces
+events inside `Cells` that are not in `CD45+`.
+
+Existing Boolean gates can be selected in the hierarchy and changed with
+**Edit Boolean**. Operations, source ids, axes/scales, counts, and frequencies
+are available from the hierarchy columns and tooltips. Drag-and-drop reparenting
+is intentionally not enabled; the validated **Apply Parent** operation prevents
+partial or cyclic graph updates.
+
 ## Architecture
 
 ```text
@@ -167,6 +258,6 @@ raw FCS events
 
 ## Current Status
 
-Implemented: core dataclasses, pipeline runner, FCS I/O, compensation, derived parameters, transforms, gates, population statistics, TSV/CSV export, CLI commands, and synthetic tests (237 tests passing). PySide6 GUI with sample browser, 2D scatter plots, gate editing, and pipeline execution. `mypy` and `ruff` checks pass for all source files.
+Implemented: core dataclasses, pipeline runner, FCS I/O, compensation, derived parameters, transforms, gates, population statistics, TSV/CSV export, CLI commands, and synthetic tests. PySide6 GUI with sample browser, scatter and histogram plots, hierarchy-tree and Boolean gate editing, population filtering, validated reparenting, and pipeline execution. The current suite has 325 passing tests, and `ruff` passes for all source and test files.
 
 Not yet implemented: complete FlowJo compatibility, full GatingML support, production GUI behavior, and large-file FCS rendering.

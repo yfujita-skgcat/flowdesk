@@ -376,6 +376,7 @@ class MainWindow(QMainWindow):
 
         # Interactive gate creation starts from the gate editor.
         self._gate_editor.on_interactive_gate_requested(self._on_interactive_gate_requested)
+        self._gate_editor.on_show_gate(self._on_show_gate)
 
         # Plot toolbar callbacks
         self._plot_toolbar.on_reset_robust(self._on_reset_robust)
@@ -397,6 +398,7 @@ class MainWindow(QMainWindow):
         previous_x = self._channel_selector.x_channel()
         previous_y = self._channel_selector.y_channel()
         self._current_sample_id = sample.id
+        self._gate_editor.set_current_sample_id(sample.id)
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
             self._validate_population_selection(report)
@@ -466,6 +468,8 @@ class MainWindow(QMainWindow):
         if sample_id and sample_id != self._current_sample_id:
             self._sample_browser.select_sample(sample_id)
         self._selected_population_id = population_id
+        if population_id != "all_events":
+            self._gate_editor.select_gate(population_id)
         self._replot()
 
     def _replot(self) -> None:
@@ -546,6 +550,9 @@ class MainWindow(QMainWindow):
             for idx, gate in enumerate(self._gate_editor.gates()):
                 if gate.x_parameter == x_name and gate.y_parameter == y_id:
                     self._plot_widget.add_gate_overlay(gate, idx)
+            self._gate_editor.set_overlay_status(
+                self._plot_widget.display_state()["hidden_gate_reasons"]
+            )
 
     def _get_channel_index(self, channel_name: str) -> int:
         """Get the column index for a channel name."""
@@ -605,6 +612,21 @@ class MainWindow(QMainWindow):
         """Called when a gate is selected in the gate editor."""
         # Highlight the selected gate overlay with a solid pen
         self._plot_widget.highlight_gate_index(gate_index)
+
+    def _on_show_gate(self, gate) -> None:
+        """Navigate display controls to a gate without changing analysis state."""
+        if gate.x_parameter:
+            y_parameter = gate.y_parameter or self._channel_selector.y_channel_id()
+            self._channel_selector.set_selected_channels(
+                gate.x_parameter, y_parameter
+            )
+        self._channel_selector.set_x_transform(gate.x_scale)
+        self._channel_selector.set_y_transform(gate.y_scale)
+        self._replot()
+        self._update_status(
+            f"Showing gate: {gate.name} [{gate.id}] on "
+            f"{gate.x_scale}/{gate.y_scale}"
+        )
 
     def _on_clear_gates(self) -> None:
         """Clear all gates."""
@@ -734,6 +756,7 @@ class MainWindow(QMainWindow):
         if report is not None:
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
+            self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
             self._validate_population_selection(report)
             self._update_status(f"Pipeline complete: {report.summary}")
@@ -999,7 +1022,7 @@ class MainWindow(QMainWindow):
             return False
 
         if gate_type == "rectangle":
-            self._gate_editor.cancel_polygon()
+            self._gate_editor.cancel_polygon(preserve_child_mode=True)
             self._plot_widget.begin_gate_creation("rectangle")
             self._update_status("Drag on the plot to create a rectangle gate.")
             return True
@@ -1099,6 +1122,7 @@ class MainWindow(QMainWindow):
     def _mark_results_stale(self, reason: str) -> None:
         self._results_stale = True
         self._population_tree.clear()
+        self._gate_editor.clear_population_results()
         self._selected_population_id = "all_events"
         self._update_status(f"{reason} (results stale; rerun pipeline)")
 

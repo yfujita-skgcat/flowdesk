@@ -57,9 +57,9 @@
 
 baselineで失敗した場合、今回の変更前から失敗していることを報告し、原因を切り分けてください。既存のユーザー変更をrevertしてはいけません。
 
-## Phase 1: Population Resultsの名称と列名を修正する [実装済み]
+## Phase 1: Population Resultsの名称と列名を修正する [済み]
 
-### 1-1. Population表示をgate名へ揃える [実装済み]
+### 1-1. Population表示をgate名へ揃える [済み]
 
 問題: Population Resultsは`population_id`を表示しているため、Defined gatesに表示される`GateSpec.name`と一致しません。
 
@@ -89,7 +89,7 @@ baselineで失敗した場合、今回の変更前から失敗していること
 - parent-child indentが維持される。
 - export結果は表示名ではなく従来のpopulation idを保持する。
 
-### 1-2. frequency列見出しを変更する [実装済み]
+### 1-2. frequency列見出しを変更する [済み]
 
 次の見出しだけを変更してください。
 
@@ -114,11 +114,11 @@ Phase 1確認コマンド:
 .direnv/python-3.12.13/bin/ruff check src tests
 ```
 
-## Phase 2: Population membershipをheadless pipelineの正式な結果として取得可能にする [実装済み]
+## Phase 2: Population membershipをheadless pipelineの正式な結果として取得可能にする [済み]
 
 このPhaseはPhase 3の表示絞り込みに必要です。GUIでgateを再評価してはいけません。
 
-### 2-1. core APIを設計する
+### 2-1. core APIを設計する [済み]
 
 要件:
 
@@ -168,7 +168,7 @@ rg -n "flowdesk_qt|PySide6|Qt" src/flowdesk_core src/flowdesk_cli
 .direnv/python-3.12.13/bin/ruff check src/flowdesk_core tests
 ```
 
-## Phase 3: 表示プロットを選択populationだけに絞り込む
+## Phase 3: 表示プロットを選択populationだけに絞り込む [済み]
 
 期待workflow例:
 
@@ -178,7 +178,7 @@ rg -n "flowdesk_qt|PySide6|Qt" src/flowdesk_core src/flowdesk_cli
 4. X/Yを`FSC-A` vs `FL1-A`へ変更する。
 5. 選択gateに属するeventだけがscatterへ表示される。
 
-### 3-1. PopulationTreeの選択API
+### 3-1. PopulationTreeの選択API [済み]
 
 1. row選択時にpopulation idを通知するcallback APIを追加してください。既存callback方式に合わせ、全面的なQt Signal移行はしないでください。
 2. callback引数は表示名ではなく`population_id`と`sample_id`にしてください。同じpopulationが複数sampleにあるためsample idも必要です。
@@ -186,7 +186,7 @@ rg -n "flowdesk_qt|PySide6|Qt" src/flowdesk_core src/flowdesk_cli
 4. `all_events`を選ぶと全event表示へ戻してください。
 5. report clear/stale、sample削除、project再読込時は無効な選択を解除してください。
 
-### 3-2. MainWindowでmembershipを表示へ適用する
+### 3-2. MainWindowでmembershipを表示へ適用する [済み]
 
 1. `PipelineRunner`が返したmembershipだけを使用してください。GUIでthresholdやpolygonを評価しないでください。
 2. 現在sampleと選択populationに対応するfull-length maskを取得してください。
@@ -199,7 +199,7 @@ rg -n "flowdesk_qt|PySide6|Qt" src/flowdesk_core src/flowdesk_cli
 9. plot statusまたはPopulation Results statusで、選択population名とfull event countを確認できるようにしてください。
 10. population selectionはdisplay stateです。gate定義やanalysis resultを変更しないため、選択だけでpipeline再実行やproject analysis state変更を行わないでください。
 
-### 3-3. 必須テスト
+### 3-3. 必須テスト [済み]
 
 synthetic FCSを使うGUI E2Eを追加してください。
 
@@ -229,9 +229,9 @@ Phase 3確認コマンド:
 .direnv/python-3.12.13/bin/ruff check src tests
 ```
 
-## Phase 4: Y軸のCount選択で1D histogramを表示する
+## Phase 4: Y軸のCount選択で1D histogramを表示する [済み]
 
-### 4-1. ChannelSelector
+### 4-1. ChannelSelector [済み]
 
 1. Y channel候補へ明示的なdisplay-only option `Count`を追加してください。
 2. 実FCS channel名と衝突しない内部値を使用してください。表示文字列`Count`だけをchannel idとして科学計算へ渡さないでください。必要ならrole dataまたは定数を使ってください。
@@ -239,7 +239,7 @@ Phase 3確認コマンド:
 4. Count選択中はY transformを無効化するか、histogramへ適用されないことがUI上明確な状態にしてください。
 5. sample切替時もCount選択を可能な限り維持してください。
 
-### 4-2. PlotWidgetの1D histogram mode
+### 4-2. PlotWidgetの1D histogram mode [済み]
 
 1. scatterとhistogramを明示的な別modeとして実装してください。例: `plot_histogram(values, ...)`。既存`plot_events(x, y)`へ多数の`None`分岐を無理に追加しないでください。
 2. histogramは表示機能です。bin数/bin幅はdisplay settingとして扱い、gate membershipやpopulation statisticsへ混ぜないでください。
@@ -262,16 +262,16 @@ Phase 3確認コマンド:
 - histogram中に2D gateを誤作成できない。
 - `debug_state()`にplot modeを追加し、raw values全体は含めない。
 
-## Phase 5: 2D plotの上・右にmarginal histogramを表示する
+## Phase 5: 2D plotの上・右にmarginal histogramを表示する [済み]
 
-### 5-1. UI mode
+### 5-1. UI mode [済み]
 
 1. `PlotToolbar`へmarginal histogramの表示/非表示を切り替えるcheckable controlを追加してください。
 2. 安定した`objectName`を設定してください。例: `toggleMarginalHistogramsButton`。
 3. この設定はdisplay-onlyです。population count、gate、project analysis stateを変更してはいけません。
 4. projectへ保存する場合は `plot_display_settings` 配下へ保存し、`transforms`やgate定義へ混ぜないでください。
 
-### 5-2. PlotWidget layout
+### 5-2. PlotWidget layout [済み]
 
 1. 既存2D plotを中央/左下に置き、X marginal histogramを上、Y marginal histogramを右に配置してください。
 2. pyqtgraphの`GraphicsLayoutWidget`、`PlotItem`、linked axisを使用してください。別windowや画像貼り付けで実装しないでください。
@@ -308,7 +308,7 @@ Phase 4・5確認コマンド:
 .direnv/python-3.12.13/bin/ruff check src tests
 ```
 
-## 6. 最終確認
+## 6. 最終確認 [済み]
 
 全Phase完了後、次を順番に実行してください。
 
@@ -348,4 +348,90 @@ rg -n "flowdesk_qt|PySide6|Qt" src/flowdesk_core src/flowdesk_cli
 9. 未解決問題。
 10. 次に実装する最小Phase。
 
-完了したPhaseは `ToDo.md` から削除してください。未完了のPhase、未実行のテスト、既知の制限は削除してはいけません。
+完了したPhaseは履歴として残し、見出しへ `[済み]` を付けてください。未完了のPhase、未実行のテスト、既知の制限へ `[済み]` を付けてはいけません。
+
+## 8. Gate hierarchy・Boolean gate GUI改善プラン
+
+### Phase H0: 実装ガイドとUX仕様を確定する [済み]
+
+1. `docs/implementation/gate-hierarchy-ui.md` を追加し、対象ファイル、操作フロー、scientific stateとdisplay stateの境界、必須テスト、受け入れ条件を記載する。
+2. Gate treeの選択、親指定、population表示選択を別状態として定義し、暗黙の親変更を防ぐ。
+3. gate削除時の子孫、Boolean参照、循環参照、親変更失敗時の挙動を定義する。
+4. linear/log10/asinhのgate coordinate scale表示と、scale不一致overlayの扱いを仕様へ含める。
+
+### Phase H1: Gate hierarchy treeを導入する [済み]
+
+1. Gate Editorの平坦な`QListWidget`を、安定したgate idを`Qt.UserRole`に保持する`QTreeWidget`または階層model/viewへ置き換える。
+2. `All Events`をrootとし、`parent_population_id`に従って子gateを表示する。
+3. 表示名が同じgateもidで区別し、rename後も選択と親子関係を維持する。
+4. gate type、X/Y parameter、X/Y scale、Boolean operationを補助列または詳細paneで確認可能にする。
+5. tree選択から該当channel/scaleへ切り替える明示的な「Show Gate」操作を追加する。選択だけで分析状態は変更しない。
+
+必須テスト:
+
+- parent-child-grandchildが正しい階層へ表示される。
+- 同名gateをidで区別できる。
+- rename、project再読込後も階層が維持される。
+- tree表示順に依存せずheadless評価順序が正しい。
+
+### Phase H2: 子gate作成workflowを改善する [済み]
+
+1. Population ResultsまたはGate treeのpopulationを選択し、「Create Child Gate」を押すと、そのidを親として固定した作成modeへ入る。
+2. 作成前に `Parent: <name> [<id>]`、sample、X/Y channel、X/Y scaleを確認できるbannerを表示する。
+3. Gate EditorのParent comboによる従来操作も維持する。
+4. 作成完了後は新しい子gateをtreeで選択し、結果をstaleにしてPipeline再実行を明示する。
+5. Population Resultsの単なる表示選択では親を自動変更しない。親指定は「Create Child Gate」の明示操作でのみ行う。
+
+必須テスト:
+
+- 選択populationから作ったgateの`parent_population_id`が正しい。
+- sample idや表示名をparent idとして誤保存しない。
+- cancel時に親やgate定義が変更されない。
+- GUI作成した3階層のcountがheadless PipelineRunnerと一致する。
+
+### Phase H3: 既存gateの親変更と安全な並べ替え [済み]
+
+1. Gate詳細paneへParent editorを追加する。
+2. 自分自身、子孫、存在しないpopulationを親に選べないようcoreの依存検証を利用する。
+3. 親変更前に影響を受ける子孫とBoolean gateを表示し、明示確認する。
+4. drag-and-dropを追加する場合も、drop後にcoreで完全な依存graphを検証し、失敗時はmodelを変更しない。
+5. 親変更後はmembership、statistics、plot filterをstaleにし、古いmaskを表示しない。
+
+必須テスト:
+
+- 有効なreparentがprojectへ保存されheadlessで再現される。
+- cycleを作るreparentが拒否される。
+- 親削除は参照中の子gateがある限り拒否される。
+- 失敗したreparent後も元のtreeとGateSpecが完全に維持される。
+
+### Phase H4: Boolean gate editorを改善する [済み]
+
+1. AND/OR/NOTを明示した式builderを追加し、source populationを階層treeから選択可能にする。
+2. AND/ORは2個以上、NOTは1個というarityをUIとcoreの両方で検証する。
+3. sourceは表示名ではなくgate idで保存し、同名gateを安全に扱う。
+4. parent populationによる最終mask制限を式previewへ明示する。
+5. 既存Boolean gateのoperation、source、parentを編集可能にする。
+6. 未保存状態での循環参照、削除済みsource、自己参照を即時表示し、確定を拒否する。
+
+必須テスト:
+
+- AND、OR、NOTのGUI作成・編集結果がcore maskと一致する。
+- Boolean gate同士の依存をtopological orderで評価する。
+- source順序やtree表示順を変えても結果が変わらない。
+- project保存・再読込・CLI実行で同じBoolean countになる。
+
+### Phase H5: Population Resultsとの統合と視認性改善 [済み]
+
+1. Gate treeとPopulation Resultsの選択をgate id/sample idで相互に案内するが、分析stateとdisplay stateを混同しない。
+2. 現在表示中population、作成中gateの親、結果のfresh/staleを常時見える状態にする。
+3. scale不一致で非表示のgateには、`Gate exists on linear/log10 axes`のような理由を表示する。
+4. parent count、total count、Boolean式をtree tooltipまたは詳細paneへ表示する。
+5. keyboard操作、stable objectName、スクリーン座標非依存のGUIテストを追加する。
+
+### Phase H6: 保存・headless・回帰テストを完結する [済み]
+
+1. hierarchy UIで編集可能な全分析stateをGateSpec/project schemaへ保存する。
+2. GUI、Python API、CLIでrectangle、polygon、range、Boolean、3階層以上のcountが完全一致することを検証する。
+3. 複数sample、同名gate、mixed axis scale、project round-tripをsynthetic FCSで検証する。
+4. real FCSが利用可能な場合、複数sampleでhierarchy作成・切替・再実行を検証し、ファイル不足時のみ理由付きskipする。
+5. `./tools/run-gui-tests.sh -q`、`make test-core`、`make test-all`、全pytest、ruff、`git diff --check`を実行する。

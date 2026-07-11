@@ -28,3 +28,4 @@ Recommended implementation order:
 12. `qt-gui-debugging.md`
 13. `performance-and-review.md`
 14. `population-filtering-and-histograms.md`
+15. `gate-hierarchy-ui.md`
