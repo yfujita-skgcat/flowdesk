@@ -137,6 +137,7 @@ class TransformSpec:
     "linear",
     "log",
     "asinh",
+    "logicle",
     "legacy_logicle_approximation",
   ]
   parameter: str

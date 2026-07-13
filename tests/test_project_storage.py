@@ -209,6 +209,31 @@ class TestRoundTrip:
     assert reloaded["experimental_flag"] is True
     assert reloaded["metadata"]["author"] == "test"
 
+  def test_published_logicle_parameters_and_version_are_preserved(
+    self,
+    tmp_path: Path,
+  ) -> None:
+    manifest = migrate_manifest(MINIMAL_MANIFEST)
+    manifest["transforms"] = [{
+      "id": "logicle_signal",
+      "name": "Logicle signal",
+      "transform_type": "logicle",
+      "parameter": "signal",
+      "settings": {
+        "T": 262144.0,
+        "W": 0.5,
+        "M": 4.5,
+        "A": 0.0,
+        "implementation_version": "logicle-gml2-moore-parks-2012-v1",
+      },
+    }]
+    bundle = tmp_path / "published-logicle.flowdesk"
+
+    save_project(bundle, manifest)
+    reloaded = load_project(bundle)
+
+    assert reloaded["transforms"] == manifest["transforms"]
+
   def test_channel_identity_and_unknown_metadata_preserved(self, tmp_path: Path) -> None:
     channel = {
       "id": "fcs_b530_a_123456789abc",

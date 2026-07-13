@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
+from flowdesk_core.models import TransformSpec
+from flowdesk_core.transforms import TransformError, validate_transform
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION, migrate_manifest
 
 REQUIRED_FIELDS = ["project_id", "project_version", "pipeline_version", "samples"]
@@ -56,6 +58,7 @@ def _validate_current_transforms(transforms: Any) -> None:
     "linear",
     "log",
     "asinh",
+    "logicle",
     "legacy_logicle_approximation",
   }
   transform_ids: set[str] = set()
@@ -86,6 +89,19 @@ def _validate_current_transforms(transforms: Any) -> None:
       raise ManifestValidationError(
         f"transform {transform_id!r} settings must be an object"
       )
+    if transform_type == "logicle":
+      try:
+        validate_transform(TransformSpec(
+          id=transform_id,
+          name=str(transform.get("name", transform_id)),
+          transform_type="logicle",
+          parameter=parameter,
+          settings=settings,
+        ))
+      except TransformError as exc:
+        raise ManifestValidationError(
+          f"transform {transform_id!r} has invalid Logicle settings: {exc}"
+        ) from exc
 
 
 def _validate_current_derived_parameters(definitions: Any) -> None:

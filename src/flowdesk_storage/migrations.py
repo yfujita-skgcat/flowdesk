@@ -8,8 +8,14 @@ from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
 
-CURRENT_PROJECT_VERSION = "1.3.0"
-LEGACY_PROJECT_VERSIONS = frozenset({"0.1", "1.0.0", "1.1.0", "1.2.0"})
+CURRENT_PROJECT_VERSION = "1.4.0"
+LEGACY_PROJECT_VERSIONS = frozenset({
+  "0.1",
+  "1.0.0",
+  "1.1.0",
+  "1.2.0",
+  "1.3.0",
+})
 
 
 class ProjectMigrationError(FlowdeskError):

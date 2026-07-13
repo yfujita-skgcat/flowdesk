@@ -1,4 +1,4 @@
-"""Transform functions for linear, log, asinh, and logicle-like views.
+"""Transform functions for linear, log, asinh, and Logicle views.
 
 Transforms are analysis definitions, not merely GUI display settings.
 All parameters needed to reproduce a transform are stored in the spec.
@@ -24,6 +24,11 @@ class TransformError(FlowdeskError):
   def __init__(self, code: str, message: str) -> None:
     self.code = code
     super().__init__(message)
+
+
+LOGICLE_IMPLEMENTATION_VERSION = "logicle-gml2-moore-parks-2012-v1"
+_LOGICLE_MAX_ITERATIONS = 20
+_LOGICLE_TAYLOR_LENGTH = 16
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +173,261 @@ def _apply_legacy_logicle_approximation(
   # Negative region: linear scaling
   result[neg_mask] = values[neg_mask] * tn / td
 
+  return result
+
+
+@dataclass(frozen=True)
+class _LogicleParameters:
+  """Precomputed Moore-Parks Logicle coefficients."""
+
+  a: float
+  b: float
+  c: float
+  d: float
+  f: float
+  w: float
+  x1: float
+  x_taylor: float
+  taylor: tuple[float, ...]
+
+
+def _required_finite_setting(
+  settings: Mapping[str, Any],
+  name: str,
+) -> float:
+  if name not in settings:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"Logicle setting {name!r} is required",
+    )
+  try:
+    value = float(settings[name])
+  except (TypeError, ValueError) as exc:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"Logicle setting {name!r} must be numeric",
+    ) from exc
+  if not math.isfinite(value):
+    raise TransformError(
+      "invalid_transform_settings",
+      f"Logicle setting {name!r} must be finite, got {value}",
+    )
+  return value
+
+
+def _validate_logicle(
+  settings: Mapping[str, Any],
+) -> dict[str, Any]:
+  normalized = {
+    name: _required_finite_setting(settings, name)
+    for name in ("T", "W", "M", "A")
+  }
+  version = settings.get("implementation_version")
+  if version != LOGICLE_IMPLEMENTATION_VERSION:
+    raise TransformError(
+      "invalid_transform_settings",
+      "Logicle implementation_version must be "
+      f"{LOGICLE_IMPLEMENTATION_VERSION!r}, got {version!r}",
+    )
+
+  top = normalized["T"]
+  width = normalized["W"]
+  decades = normalized["M"]
+  additional = normalized["A"]
+  if top <= 0:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"Logicle T must be positive, got {top}",
+    )
+  if decades <= 0:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"Logicle M must be positive, got {decades}",
+    )
+  if width < 0 or 2 * width > decades:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"Logicle W must satisfy 0 <= W <= M/2, got W={width}, M={decades}",
+    )
+  if additional < -width or additional > decades - 2 * width:
+    raise TransformError(
+      "invalid_transform_settings",
+      "Logicle A must satisfy -W <= A <= M - 2W, got "
+      f"A={additional}, W={width}, M={decades}",
+    )
+  normalized["implementation_version"] = version
+  return normalized
+
+
+def _solve_logicle_d(b: float, w: float) -> float:
+  """Solve the Moore-Parks coefficient equation by bounded bisection."""
+  if w == 0:
+    return b
+  lower = 0.0
+  upper = b
+  for _ in range(128):
+    midpoint = (lower + upper) / 2
+    if midpoint == lower or midpoint == upper:
+      return midpoint
+    value = 2 * (math.log(midpoint) - math.log(b)) + w * (b + midpoint)
+    if value > 0:
+      upper = midpoint
+    else:
+      lower = midpoint
+  return (lower + upper) / 2
+
+
+def _make_logicle_parameters(
+  settings: Mapping[str, Any],
+) -> _LogicleParameters:
+  top = float(settings["T"])
+  width = float(settings["W"])
+  decades = float(settings["M"])
+  additional = float(settings["A"])
+
+  denominator = decades + additional
+  w = width / denominator
+  x2 = additional / denominator
+  x1 = x2 + w
+  x0 = x2 + 2 * w
+  b = denominator * math.log(10)
+  d = _solve_logicle_d(b, w)
+
+  c_over_a = math.exp(x0 * (b + d))
+  f_over_a = math.exp(b * x1) - c_over_a / math.exp(d * x1)
+  a = top / (
+    math.exp(b) - f_over_a - c_over_a / math.exp(d)
+  )
+  c = c_over_a * a
+  f = -f_over_a * a
+
+  positive = a * math.exp(b * x1)
+  negative = -c / math.exp(d * x1)
+  taylor: list[float] = []
+  for index in range(_LOGICLE_TAYLOR_LENGTH):
+    positive *= b / (index + 1)
+    negative *= -d / (index + 1)
+    taylor.append(positive + negative)
+  taylor[1] = 0.0
+
+  return _LogicleParameters(
+    a=a,
+    b=b,
+    c=c,
+    d=d,
+    f=f,
+    w=w,
+    x1=x1,
+    x_taylor=x1 + w / 4,
+    taylor=tuple(taylor),
+  )
+
+
+def _logicle_series(scale: float, params: _LogicleParameters) -> float:
+  delta = scale - params.x1
+  total = params.taylor[-1] * delta
+  for coefficient in reversed(params.taylor[2:-1]):
+    total = (total + coefficient) * delta
+  return (total * delta + params.taylor[0]) * delta
+
+
+def _logicle_forward_value(value: float, params: _LogicleParameters) -> float:
+  if value == 0:
+    return params.x1
+  if value < 0:
+    return 2 * params.x1 - _logicle_forward_value(-value, params)
+
+  if value < params.f:
+    scale = params.x1 + value / params.taylor[0]
+  else:
+    scale = math.log(value / params.a) / params.b
+  tolerance = 3 * np.finfo(np.float64).eps
+  if scale > 1:
+    tolerance *= scale
+
+  for _ in range(_LOGICLE_MAX_ITERATIONS):
+    try:
+      positive = params.a * math.exp(params.b * scale)
+      negative = params.c / math.exp(params.d * scale)
+    except OverflowError as exc:
+      raise TransformError(
+        "transform_non_convergence",
+        f"Logicle solver overflowed for event value {value}",
+      ) from exc
+    if scale < params.x_taylor:
+      residual = _logicle_series(scale, params) - value
+    else:
+      residual = (positive + params.f) - (negative + value)
+    derivative = params.b * positive + params.d * negative
+    second_derivative = (
+      params.b * params.b * positive
+      - params.d * params.d * negative
+    )
+    if derivative == 0:
+      break
+    correction = 1 - residual * second_derivative / (
+      2 * derivative * derivative
+    )
+    if correction == 0 or not math.isfinite(correction):
+      break
+    delta = residual / (derivative * correction)
+    scale -= delta
+    if abs(delta) < tolerance:
+      return scale
+
+  raise TransformError(
+    "transform_non_convergence",
+    f"Logicle solver did not converge for event value {value}",
+  )
+
+
+def _apply_logicle(
+  values: NDArray[np.float64],
+  settings: Mapping[str, Any],
+) -> NDArray[np.float64]:
+  if not np.all(np.isfinite(values)):
+    raise TransformError(
+      "transform_domain_error",
+      "Logicle forward input must contain only finite event values",
+    )
+  params = _make_logicle_parameters(settings)
+  result = np.empty_like(values, dtype=np.float64)
+  for index in np.ndindex(values.shape):
+    result[index] = _logicle_forward_value(float(values[index]), params)
+  return result
+
+
+def _inverse_logicle(
+  values: NDArray[np.float64],
+  settings: Mapping[str, Any],
+) -> NDArray[np.float64]:
+  if not np.all(np.isfinite(values)):
+    raise TransformError(
+      "transform_domain_error",
+      "Logicle inverse input must contain only finite coordinates",
+    )
+  params = _make_logicle_parameters(settings)
+  result = np.empty_like(values, dtype=np.float64)
+  for index in np.ndindex(values.shape):
+    scale = float(values[index])
+    negative = scale < params.x1
+    if negative:
+      scale = 2 * params.x1 - scale
+    try:
+      if scale < params.x_taylor:
+        value = _logicle_series(scale, params)
+      else:
+        value = (
+          params.a * math.exp(params.b * scale)
+          + params.f
+          - params.c / math.exp(params.d * scale)
+        )
+    except OverflowError as exc:
+      raise TransformError(
+        "transform_domain_error",
+        f"Logicle inverse coordinate is outside the finite numeric range: {scale}",
+      ) from exc
+    result[index] = -value if negative else value
   return result
 
 
@@ -357,6 +617,9 @@ _TRANSFORM_REGISTRY: dict[str, TransformImplementation] = {
   "log": _RegisteredTransform(_validate_log, _apply_log, _inverse_log),
   "asinh": _RegisteredTransform(
     _validate_asinh, _apply_asinh, _inverse_asinh
+  ),
+  "logicle": _RegisteredTransform(
+    _validate_logicle, _apply_logicle, _inverse_logicle
   ),
   "legacy_logicle_approximation": _RegisteredTransform(
     _validate_legacy_logicle_approximation,

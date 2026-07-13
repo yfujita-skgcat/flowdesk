@@ -9,12 +9,77 @@ import pytest
 
 from flowdesk_core.models import TransformSpec
 from flowdesk_core.transforms import (
+  LOGICLE_IMPLEMENTATION_VERSION,
   TransformError,
   apply_transform,
   apply_transform_to_column,
   inverse_transform,
   validate_transform,
 )
+
+LOGICLE_REFERENCE_VALUES = np.array([
+  -10000.0,
+  -1000.0,
+  -100.0,
+  -10.0,
+  0.0,
+  10.0,
+  100.0,
+  1000.0,
+  10000.0,
+  100000.0,
+  262144.0,
+  1000000.0,
+], dtype=np.float64)
+
+# Generated with Moore-Parks Logicle.cpp from Bioconductor flowCore commit
+# 4935c7bf318697b3128ee50dae81018a6b246ab8 (Revised BSD license).
+LOGICLE_REFERENCE_SCALES = {
+  0.0: np.array([
+    -0.46161043500433507,
+    -0.23211535395017646,
+    0.009041134692025388,
+    0.099917946544774,
+    0.1111111111111111,
+    0.12230427567744821,
+    0.21318108753019682,
+    0.45433757617239867,
+    0.6838326572265573,
+    0.9069275914814589,
+    1.0,
+    1.1292427085676322,
+  ], dtype=np.float64),
+  1.0: np.array([
+    -0.19586308318536516,
+    -0.008094380504689802,
+    0.1892154738389299,
+    0.26356922899117874,
+    0.2727272727272727,
+    0.2818853164633667,
+    0.3562390716156155,
+    0.5535489259592352,
+    0.7413176286399106,
+    0.923849847575739,
+    1.0,
+    1.1057440342826081,
+  ], dtype=np.float64),
+}
+
+
+def _logicle_spec(*, additional_negative_decades: float = 0.0) -> TransformSpec:
+  return TransformSpec(
+    id="published_logicle",
+    name="Published Logicle",
+    transform_type="logicle",
+    parameter="signal",
+    settings={
+      "T": 262144.0,
+      "W": 0.5,
+      "M": 4.5,
+      "A": additional_negative_decades,
+      "implementation_version": LOGICLE_IMPLEMENTATION_VERSION,
+    },
+  )
 
 # ---------------------------------------------------------------------------
 # Model
@@ -399,6 +464,191 @@ def test_legacy_logicle_approximation_bad_w_raises() -> None:
   values = np.array([1.0], dtype=np.float64)
   with pytest.raises(TransformError, match="w must be in"):
     apply_transform(spec, values)
+
+
+@pytest.mark.parametrize("additional_negative_decades", (0.0, 1.0))
+def test_published_logicle_matches_moore_parks_reference_vector(
+  additional_negative_decades: float,
+) -> None:
+  spec = _logicle_spec(
+    additional_negative_decades=additional_negative_decades
+  )
+
+  result = apply_transform(spec, LOGICLE_REFERENCE_VALUES)
+
+  np.testing.assert_allclose(
+    result,
+    LOGICLE_REFERENCE_SCALES[additional_negative_decades],
+    rtol=0.0,
+    atol=1e-12,
+  )
+
+
+@pytest.mark.parametrize("additional_negative_decades", (0.0, 1.0))
+def test_published_logicle_inverse_matches_reference_values(
+  additional_negative_decades: float,
+) -> None:
+  spec = _logicle_spec(
+    additional_negative_decades=additional_negative_decades
+  )
+
+  restored = inverse_transform(
+    spec,
+    LOGICLE_REFERENCE_SCALES[additional_negative_decades],
+  )
+
+  np.testing.assert_allclose(
+    restored,
+    LOGICLE_REFERENCE_VALUES,
+    rtol=1e-12,
+    atol=262144.0e-12,
+  )
+
+
+def test_published_logicle_inverse_forward_round_trip() -> None:
+  spec = _logicle_spec()
+  restored = inverse_transform(
+    spec,
+    apply_transform(spec, LOGICLE_REFERENCE_VALUES),
+  )
+
+  np.testing.assert_allclose(
+    restored,
+    LOGICLE_REFERENCE_VALUES,
+    rtol=1e-12,
+    atol=262144.0e-12,
+  )
+
+
+def test_published_logicle_exact_zero_and_top_scale_anchors() -> None:
+  spec = _logicle_spec()
+  result = apply_transform(
+    spec,
+    np.array([0.0, 262144.0], dtype=np.float64),
+  )
+
+  np.testing.assert_allclose(
+    result,
+    [0.5 / 4.5, 1.0],
+    rtol=0.0,
+    atol=8 * np.finfo(np.float64).eps,
+  )
+
+
+@pytest.mark.parametrize(
+  ("width", "additional"),
+  (
+    (0.0, 0.0),
+    (0.5, -0.5),
+    (0.5, 3.5),
+    (2.25, 0.0),
+  ),
+  ids=("zero-W", "minimum-A", "maximum-A", "maximum-W"),
+)
+def test_published_logicle_accepts_parameter_boundaries(
+  width: float,
+  additional: float,
+) -> None:
+  spec = TransformSpec(
+    id="boundary_logicle",
+    name="Boundary Logicle",
+    transform_type="logicle",
+    parameter="signal",
+    settings={
+      "T": 262144.0,
+      "W": width,
+      "M": 4.5,
+      "A": additional,
+      "implementation_version": LOGICLE_IMPLEMENTATION_VERSION,
+    },
+  )
+  values = np.array([-100.0, 0.0, 100.0, 262144.0], dtype=np.float64)
+
+  validate_transform(spec)
+  restored = inverse_transform(spec, apply_transform(spec, values))
+
+  np.testing.assert_allclose(
+    restored,
+    values,
+    rtol=1e-12,
+    atol=262144.0e-12,
+  )
+
+@pytest.mark.parametrize(
+  "settings",
+  [
+    {},
+    {"T": 0.0, "W": 0.5, "M": 4.5, "A": 0.0},
+    {"T": 262144.0, "W": -0.1, "M": 4.5, "A": 0.0},
+    {"T": 262144.0, "W": 2.3, "M": 4.5, "A": 0.0},
+    {"T": 262144.0, "W": 0.5, "M": 4.5, "A": -0.6},
+    {"T": 262144.0, "W": 0.5, "M": 4.5, "A": 3.6},
+    {
+      "T": 262144.0,
+      "W": 0.5,
+      "M": 4.5,
+      "A": 0.0,
+      "implementation_version": "unknown-logicle",
+    },
+  ],
+  ids=(
+    "missing",
+    "non-positive-T",
+    "negative-W",
+    "W-over-half-M",
+    "A-below-negative-W",
+    "A-above-M-minus-two-W",
+    "unknown-version",
+  ),
+)
+def test_published_logicle_rejects_invalid_parameters(
+  settings: dict[str, object],
+) -> None:
+  complete_settings = dict(settings)
+  if complete_settings:
+    complete_settings.setdefault(
+      "implementation_version", LOGICLE_IMPLEMENTATION_VERSION
+    )
+  spec = TransformSpec(
+    id="invalid_logicle",
+    name="Invalid Logicle",
+    transform_type="logicle",
+    parameter="signal",
+    settings=complete_settings,
+  )
+
+  with pytest.raises(TransformError) as error:
+    validate_transform(spec)
+
+  assert error.value.code == "invalid_transform_settings"
+
+
+@pytest.mark.parametrize("value", (np.nan, np.inf, -np.inf))
+def test_published_logicle_rejects_nonfinite_event_values(value: float) -> None:
+  with pytest.raises(TransformError) as error:
+    apply_transform(
+      _logicle_spec(),
+      np.array([0.0, value], dtype=np.float64),
+    )
+
+  assert error.value.code == "transform_domain_error"
+
+
+def test_published_logicle_reports_non_convergence(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setattr(
+    "flowdesk_core.transforms._LOGICLE_MAX_ITERATIONS",
+    0,
+  )
+
+  with pytest.raises(TransformError) as error:
+    apply_transform(
+      _logicle_spec(),
+      np.array([100.0], dtype=np.float64),
+    )
+
+  assert error.value.code == "transform_non_convergence"
 
 
 # ---------------------------------------------------------------------------

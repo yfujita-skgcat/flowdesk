@@ -56,7 +56,7 @@ The inverse mapping from normalized display coordinate `y` to event value `x`
 is the modified biexponential
 
 ```text
-B(y) = a exp(b y) - c exp(-d y) - f
+B(y) = a exp(b y) - c exp(-d y) + f
 ```
 
 and the forward Logicle transform is the unique root `y` satisfying `B(y)=x`.
@@ -198,6 +198,26 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
   migration never converts a legacy approximation into formal Logicle.
 - Linear, log, and asinh names, settings, implementations, and persistence are
   unchanged by this migration.
+
+## Confirmed contract after increment 3
+
+- Core type `logicle` implements the normalized Moore–Parks/Gating-ML forward
+  and inverse mapping with required persisted `T`, `W`, `M`, `A`, and
+  implementation version `logicle-gml2-moore-parks-2012-v1`.
+- Coefficient construction, the 16-term near-zero Taylor expansion, and the
+  bounded 20-iteration Halley solver follow the Revised BSD `Logicle.cpp` in
+  Bioconductor flowCore commit
+  `4935c7bf318697b3128ee50dae81018a6b246ab8`. Two independently generated
+  reference vectors cover `A=0` and `A=1`.
+- Every finite event value is accepted and may map outside normalized display
+  interval `[0, 1]`. Nonfinite input and numeric inverse overflow report stable
+  `transform_domain_error`; failure to converge reports
+  `transform_non_convergence`. No value is silently clipped or replaced.
+- Project format `1.4.0` persists and validates all formal Logicle parameters
+  and the implementation identifier. Version `1.3.0` migrates without changing
+  existing transform definitions. Formal Logicle uses the same headless
+  transform protocol as linear, log, and asinh; gate IDs and Qt display/ticks
+  remain increment 4 and 5 work.
 
 ## Stop condition
 

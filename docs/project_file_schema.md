@@ -17,6 +17,8 @@ Samples initially use path references instead of copying FCS data into the proje
 
 Execution profiles allow one project to store multiple run configurations.
 
-The current project format is `1.3.0`. Version `1.2.0` transform definitions
+The current project format is `1.4.0`. It adds the formal `logicle` transform,
+whose `T`, `W`, `M`, `A`, and implementation version are mandatory. Version
+`1.2.0` transform definitions
 named `logicle_like` migrate to `legacy_logicle_approximation` with a persisted
 warning and unchanged numeric settings.

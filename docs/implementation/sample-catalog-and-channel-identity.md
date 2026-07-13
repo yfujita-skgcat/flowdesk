@@ -129,7 +129,7 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 ## Confirmed contract after increment 4
 
 - Channel-identity migration was introduced in project version `1.1.0`.
-  Current project version is `1.3.0`. Loading legacy `0.1` and GUI-produced
+  Current project version is `1.4.0`. Loading legacy `0.1` and GUI-produced
   `1.0.0` manifests returns a migrated in-memory copy; loading never rewrites
   the source bundle. Unsupported versions raise `ProjectMigrationError`.
 - Current samples persist an ordered `channels` array. Each entry preserves

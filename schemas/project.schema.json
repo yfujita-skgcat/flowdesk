@@ -6,7 +6,7 @@
   "required": ["project_id", "project_version", "pipeline_version", "samples"],
   "properties": {
     "project_id": { "type": "string" },
-    "project_version": { "const": "1.3.0" },
+    "project_version": { "const": "1.4.0" },
     "pipeline_version": { "type": "string" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" },
@@ -61,6 +61,7 @@
             "linear",
             "log",
             "asinh",
+            "logicle",
             "legacy_logicle_approximation"
           ]
         },
@@ -68,6 +69,32 @@
         "settings": { "type": "object" },
         "notes": { "type": "string" }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "transform_type": { "const": "logicle" } },
+            "required": ["transform_type"]
+          },
+          "then": {
+            "required": ["settings"],
+            "properties": {
+              "settings": {
+                "type": "object",
+                "required": ["T", "W", "M", "A", "implementation_version"],
+                "properties": {
+                  "T": { "type": "number", "exclusiveMinimum": 0 },
+                  "W": { "type": "number", "minimum": 0 },
+                  "M": { "type": "number", "exclusiveMinimum": 0 },
+                  "A": { "type": "number" },
+                  "implementation_version": {
+                    "const": "logicle-gml2-moore-parks-2012-v1"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
       "additionalProperties": true
     },
     "derivedParameter": {
