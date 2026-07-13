@@ -7,6 +7,7 @@ Assembles the UI components and delegates all scientific computation to
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from numpy.typing import NDArray
 from PySide6.QtCore import Qt, QThread
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QMainWindow,
     QMessageBox,
@@ -107,6 +109,11 @@ class MainWindow(QMainWindow):
         self._results_stale = False
         self._project_id = "flowdesk_session"
         self._project_path: Path | None = None
+        self._derived_parameters: list[dict[str, Any]] = []
+        self._compensation_matrices: list[dict[str, Any]] = []
+        self._transforms: list[dict[str, Any]] = []
+        self._default_compensation_matrix_id: str | None = None
+        self._migration_diagnostics: list[dict[str, Any]] = []
         # Display-only: selected population for plot filtering.
         self._selected_population_id: str = "all_events"
 
@@ -253,6 +260,15 @@ class MainWindow(QMainWindow):
         self.action_run_pipeline.setShortcut(QKeySequence("Ctrl+R"))
         self.action_run_pipeline.triggered.connect(self._on_run_pipeline)
         analysis_menu.addAction(self.action_run_pipeline)
+
+        analysis_menu.addSeparator()
+
+        self.action_derived_parameters = QAction("Derived &Parameters...", self)
+        self.action_derived_parameters.setObjectName("actionDerivedParameters")
+        self.action_derived_parameters.triggered.connect(
+            self._on_edit_derived_parameters
+        )
+        analysis_menu.addAction(self.action_derived_parameters)
 
         analysis_menu.addSeparator()
 
@@ -753,9 +769,11 @@ class MainWindow(QMainWindow):
             "gating_strategies_data": {
                 "default_strategy": strategy,
             },
-            "derived_parameters": [],
-            "transforms": [],
-            "compensation_matrices": [],
+            "derived_parameters": deepcopy(self._derived_parameters),
+            "transforms": deepcopy(self._transforms),
+            "compensation_matrices": deepcopy(self._compensation_matrices),
+            "default_compensation_matrix_id": self._default_compensation_matrix_id,
+            "migration_diagnostics": deepcopy(self._migration_diagnostics),
             "sample_path_resolution_policy": "relative_to_project_or_absolute",
             "plot_display_settings": {
                 "selected_sample_id": self._current_sample_id,
@@ -926,7 +944,53 @@ class MainWindow(QMainWindow):
 
         self._project_id = str(manifest["project_id"])
         self._project_path = project_path
+        self._derived_parameters = deepcopy(manifest.get("derived_parameters", []))
+        self._transforms = deepcopy(manifest.get("transforms", []))
+        self._compensation_matrices = deepcopy(
+            manifest.get("compensation_matrices", [])
+        )
+        self._default_compensation_matrix_id = manifest.get(
+            "default_compensation_matrix_id"
+        )
+        self._migration_diagnostics = deepcopy(
+            manifest.get("migration_diagnostics", [])
+        )
         self._mark_results_stale("Project loaded")
+
+    def _on_edit_derived_parameters(self) -> None:
+        """Edit project definitions; preview delegates to PipelineRunner."""
+        from flowdesk_qt.derived_parameter_editor import (
+            DerivedParameterEditorDialog,
+        )
+
+        channels_by_id = {}
+        current = self._sample_data.get(self._current_sample_id or "")
+        if current is not None:
+            channels_by_id.update({channel.id: channel for channel in current.channels})
+        for sample in self._sample_browser.samples():
+            for channel in sample.info.channels:
+                channels_by_id.setdefault(channel.id, channel)
+
+        def preview_callback(definitions, output_channel_id):
+            sample = self._sample_data.get(self._current_sample_id or "")
+            if sample is None:
+                raise RuntimeError("select a loaded sample before preview")
+            project = self._build_project_manifest()
+            project["derived_parameters"] = definitions
+            return PipelineRunner(project).preview_derived_parameter(
+                sample, output_channel_id, max_events=200
+            )
+
+        dialog = DerivedParameterEditorDialog(
+            self._derived_parameters,
+            tuple(channels_by_id.values()),
+            preview_callback=preview_callback,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._derived_parameters = dialog.definitions()
+        self._mark_results_stale("Derived parameters changed")
 
     def _population_parent_map(self) -> dict[str, str | None]:
         parents = {"all_events": None}

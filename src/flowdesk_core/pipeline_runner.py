@@ -22,6 +22,7 @@ from flowdesk_core.compensation import apply_compensation, validate_compensation
 from flowdesk_core.derived_parameters import (
   DerivedParameterPlan,
   DerivedParameterPlanningError,
+  DerivedParameterPreview,
   DerivedParameterStageError,
   DerivedParameterStageResult,
   ExpressionError,
@@ -184,6 +185,74 @@ class PipelineRunner:
       context,
       sample_by_id,
       messages,
+    )
+
+  def preview_derived_parameter(
+    self,
+    sample: SampleData,
+    output_channel_id: str,
+    *,
+    max_events: int = 200,
+  ) -> DerivedParameterPreview:
+    """Preview one derived output through the canonical headless stages."""
+    if max_events <= 0:
+      raise PipelineError("derived preview max_events must be positive")
+    specs = self._derived_parameter_specs()
+    try:
+      plan = plan_derived_parameters(
+        specs, (channel.id for channel in sample.channels)
+      )
+    except DerivedParameterPlanningError as exc:
+      raise PipelineError(f"{exc.code}: {exc}") from exc
+    by_output_id = {spec.output_id: spec for spec in plan.execution_order}
+    if output_channel_id not in by_output_id:
+      raise PipelineError(
+        f"unknown derived preview output channel: {output_channel_id!r}"
+      )
+    dependencies = dict(plan.dependencies)
+    required = {output_channel_id}
+    pending = [output_channel_id]
+    while pending:
+      current = pending.pop()
+      for dependency in dependencies[current]:
+        if dependency not in required:
+          required.add(dependency)
+          pending.append(dependency)
+    preview_plan = DerivedParameterPlan(
+      display_order=tuple(
+        spec for spec in plan.display_order if spec.output_id in required
+      ),
+      execution_order=tuple(
+        spec for spec in plan.execution_order if spec.output_id in required
+      ),
+      dependencies=tuple(
+        item for item in plan.dependencies if item[0] in required
+      ),
+    )
+    preview_event_count = min(sample.event_count, max_events)
+    bounded = _AnalysisData(
+      np.array(sample.events[:preview_event_count], dtype=np.float64, copy=True),
+      sample.channels,
+    )
+    compensated = self._step_compensation(bounded)
+    try:
+      stage_result, diagnostics = self._step_derived_parameters(
+        compensated,
+        bounded,
+        sample.sample_id,
+        preview_plan,
+      )
+    except _DerivedParameterStepError as exc:
+      raise PipelineError(
+        f"{exc.diagnostic.code}: {exc.diagnostic.message}"
+      ) from exc
+    output_index = stage_result.channel_ids.index(output_channel_id)
+    return DerivedParameterPreview(
+      values=stage_result.events[:, output_index],
+      channel=stage_result.channels[output_index],
+      source_event_count=sample.event_count,
+      preview_event_count=preview_event_count,
+      diagnostics=diagnostics,
     )
 
   # ------------------------------------------------------------------

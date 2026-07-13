@@ -133,15 +133,15 @@ git status --short
 
 #### GUI
 
-- [ ] name、expression、inputs、source stage、unit、policyを編集するdialogを追加する。
-- [ ] channel/derived parameter挿入、syntax validation、error位置、small previewを提供する。
-- [ ] previewはcore evaluatorを使用し、GUI独自計算をしない。
+- [x] 済み: name、expression、inputs、source stage、unit、policyを編集するdialogを追加する。
+- [x] 済み: channel/derived parameter挿入、syntax validation、error位置、small previewを提供する。
+- [x] 済み: previewはcore evaluatorを使用し、GUI独自計算をしない。
 
 #### 必須test
 
 - [x] 済み: 三つのfailure policyをそれぞれtestする。
 - [x] 済み: dependency chainとcycleをtestする。
-- [ ] division by zero、domain error、unknown parameter、all-NaN inputをtestする。
+- [x] 済み: division by zero、domain error、unknown parameter、all-NaN inputをtestする。
 - [ ] save/load/CLI runでpolicyとdiagnosticが維持される。
 - [x] 済み: raw値参照とcompensated値参照が、derived stage後・transform前のcanonical順序を壊さないことをtestする。
 - [x] 済み: derived parameterを後続transform、gate、statisticsで安定ID参照できることをtestする。

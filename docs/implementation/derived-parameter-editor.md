@@ -71,8 +71,9 @@ not silently reinterpret it.
   events are processed. They do not use a per-event invalid-value policy.
 - The only new failure policies are `fail_run`, `fail_sample`, and
   `emit_nan_with_warning`. Division by zero remains a numeric NaN result rather
-  than an evaluator exception. Domain and evaluation failures follow the stored
-  policy.
+  than an evaluator exception. Event-local invalid numeric domains such as
+  `sqrt(-1)` likewise produce NaN only for affected events. Structural
+  expression and evaluation failures follow the stored policy.
 
 ## Confirmed contract after increment 1
 
@@ -177,11 +178,40 @@ not silently reinterpret it.
 - The legacy `division_by_zero_to_nan` storage alias is normalized during
   migration; current schema stores only the three explicit failure policies.
 
+## Confirmed contract after increment 5
+
+- **Analysis → Derived Parameters** opens a project-state editor with stable Qt
+  object names. Definitions can be added, selected, edited, and deleted; closing
+  with Cancel leaves project state unchanged.
+- The dialog edits definition ID, name, stable output channel ID, expression,
+  explicit inputs, raw/compensated source, unit, and failure policy. Unknown
+  definition fields, output label, and notes survive editing.
+- Measured and derived output IDs are available for insertion at the expression
+  cursor and for explicit input selection. Validation calls the core model and
+  dependency planner, showing the stable diagnostic code and core-provided line
+  and column for syntax errors.
+- Preview calls `PipelineRunner.preview_derived_parameter()` on a deterministic
+  copy of at most 200 events. It reuses compensation, source views, dependency
+  order, vector evaluation, and failure policy from the headless pipeline. Qt
+  only displays event count, NaN count, range, and the first five returned values.
+- MainWindow preserves derived definitions, compensation matrices, transforms,
+  default compensation binding, and migration diagnostics across project
+  save/load. New definitions offer only raw and compensated sources; an existing
+  transformed legacy definition remains visibly rejected until the user makes
+  an explicit source change.
+- A GUI E2E fixture stores a ratio definition and gate, then proves GUI and
+  headless population counts are identical on full event data.
+
 ## Required tests
 
 - Ratio and dependent-derived chain work after compensation.
 - Cycle, unknown input, wrong-length result, and unsafe syntax fail clearly.
 - `emit_nan_with_warning` records affected count and sample ID.
+- Division by zero and invalid function domains produce event-aligned NaN values
+  without changing valid rows or mutating source events. An all-NaN input keeps
+  its event count, and downstream numeric gates exclude those NaN events.
+- Unknown parameters are planning errors before compensation or other sample
+  processing and are never converted into NaN by a stored failure policy.
 - A derived channel can be transformed, gated, reported, and exported by stable ID.
 - Save/reload/CLI produces the same values and diagnostics.
 

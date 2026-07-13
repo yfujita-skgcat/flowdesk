@@ -357,7 +357,9 @@ def test_derived_failure_policy_emit_nan_records_full_diagnostic(
   }
 
 
-def test_unknown_derived_input_is_rejected_before_failure_policy() -> None:
+def test_unknown_derived_input_is_rejected_before_failure_policy(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
   sample = SampleData(
     "s1",
     np.ones((2, 1), dtype=np.float64),
@@ -372,9 +374,90 @@ def test_unknown_derived_input_is_rejected_before_failure_policy() -> None:
       "invalid_value_policy": "emit_nan_with_warning",
     }],
   )
+  monkeypatch.setattr(
+    PipelineRunner,
+    "_step_compensation",
+    lambda *_args: pytest.fail(
+      "sample processing started for an unknown derived input"
+    ),
+  )
 
   with pytest.raises(PipelineError, match="unknown_derived_input"):
     PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+
+@pytest.mark.parametrize(
+  ("expression", "events", "expected_gate_count"),
+  [
+    (
+      "signal / reference",
+      np.array([[2.0, 1.0], [4.0, 0.0], [6.0, 3.0]], dtype=np.float64),
+      2,
+    ),
+    (
+      "sqrt(signal)",
+      np.array([[-1.0, 1.0], [0.0, 1.0], [4.0, 1.0]], dtype=np.float64),
+      1,
+    ),
+    (
+      "signal + 1",
+      np.array([[np.nan, 1.0], [np.nan, 2.0], [np.nan, 3.0]], dtype=np.float64),
+      0,
+    ),
+  ],
+  ids=("division-by-zero", "function-domain", "all-nan-input"),
+)
+def test_numeric_invalid_derived_values_are_excluded_from_downstream_gate(
+  expression: str,
+  events: np.ndarray,
+  expected_gate_count: int,
+) -> None:
+  source_before = events.copy()
+  sample = SampleData(
+    "s1",
+    events,
+    (
+      ChannelSpec(id="signal", name="Signal"),
+      ChannelSpec(id="reference", name="Reference"),
+    ),
+  )
+  strategy = GatingStrategySpec(
+    id="numeric_invalid_values",
+    name="Numeric invalid values",
+    gates=(GateSpec(
+      id="finite_result",
+      name="Finite result",
+      gate_type="range",
+      parent_population_id="all_events",
+      x_parameter="result",
+      thresholds={"min": 1.5, "max": 2.5},
+    ),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[{
+      "id": "result_definition",
+      "output_channel_id": "result",
+      "name": "Result",
+      "expression": expression,
+      "invalid_value_policy": "fail_run",
+    }],
+    execution_profiles=[
+      {"id": "default", "gating_strategy_id": strategy.id}
+    ],
+    gating_strategies_data={strategy.id: strategy},
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+  counts = {
+    result.population_id: result.event_count
+    for result in report.population_results
+  }
+  assert counts["all_events"] == len(events)
+  assert counts["finite_result"] == expected_gate_count
+  assert report.diagnostics == ()
+  np.testing.assert_array_equal(sample.events, source_before)
 
 
 def test_dependency_cycle_is_rejected_before_sample_processing(
@@ -1071,3 +1154,38 @@ def test_legacy_transformed_derived_source_is_rejected_before_processing(
 
   with pytest.raises(PipelineError, match="legacy_transformed_source_rejected"):
     PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+
+def test_derived_preview_uses_bounded_core_pipeline_and_stable_output_id() -> None:
+  sample = SampleData(
+    "s1",
+    np.array([[2.0, 1.0], [6.0, 3.0], [12.0, 4.0]], dtype=np.float64),
+    (
+      ChannelSpec(id="signal", name="Signal"),
+      ChannelSpec(id="reference", name="Reference"),
+    ),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[{
+      "id": "ratio_definition",
+      "output_channel_id": "ratio",
+      "name": "Ratio",
+      "expression": "signal / reference",
+      "unit": "ratio",
+      "source_stage": "raw",
+      "input_parameters": ["signal", "reference"],
+      "invalid_value_policy": "fail_run",
+    }],
+  )
+
+  preview = PipelineRunner(project).preview_derived_parameter(
+    sample, "ratio", max_events=2
+  )
+
+  np.testing.assert_array_equal(preview.values, [2.0, 2.0])
+  assert preview.channel.id == "ratio"
+  assert preview.channel.unit == "ratio"
+  assert preview.source_event_count == 3
+  assert preview.preview_event_count == 2
+  assert not preview.values.flags.writeable

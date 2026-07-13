@@ -218,6 +218,34 @@ def test_stage_result_copies_events_and_keeps_columns_aligned() -> None:
     assert not derived.events.flags.writeable
 
 
+def test_array_function_domain_error_marks_only_invalid_events_nan() -> None:
+  signal = np.array([-1.0, 0.0, 4.0], dtype=np.float64)
+  signal_before = signal.copy()
+
+  result = evaluate_array_expression(
+    "sqrt(signal)",
+    {"signal": signal},
+    row_count=3,
+  )
+
+  assert np.isnan(result[0])
+  np.testing.assert_array_equal(result[1:], [0.0, 2.0])
+  np.testing.assert_array_equal(signal, signal_before)
+
+
+def test_array_all_nan_input_preserves_event_alignment() -> None:
+  signal = np.full(4, np.nan, dtype=np.float64)
+
+  result = evaluate_array_expression(
+    "signal + 1",
+    {"signal": signal},
+    row_count=4,
+  )
+
+  assert result.shape == (4,)
+  assert np.isnan(result).all()
+
+
 @pytest.mark.parametrize(
     ("values", "code"),
     [

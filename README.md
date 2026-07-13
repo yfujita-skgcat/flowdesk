@@ -138,6 +138,23 @@ metadata are written under `artifacts/gui/<run-id>/`.
 - **Gate Editor** (right top): create rectangle, range, and polygon gates.
 - **Population Results** (right bottom): displays pipeline execution results.
 
+### Creating derived parameters
+
+1. Load and select a sample, then choose **Analysis → Derived Parameters**.
+2. Enter a definition ID, display name, stable output channel ID, expression,
+   source stage (`compensated` or `raw`), optional unit, and failure policy.
+3. Select explicit inputs or use **Insert parameter** to insert a measured or
+   previously defined channel ID at the expression cursor.
+4. Click **Validate** to run core syntax/dependency validation. Errors include a
+   diagnostic code and, for syntax errors, line and column.
+5. Click **Preview** to evaluate at most 200 events through the same compensation,
+   source-view, dependency, and expression pipeline used by headless execution.
+6. Confirm the dialog and rerun the pipeline. The stable output channel ID can
+   then be referenced by transforms and gates.
+
+Preview values are only a bounded diagnostic view. Gates, statistics, and
+exports always use the full event table through `PipelineRunner`.
+
 ### Keyboard Shortcuts
 
 | Shortcut | Action |

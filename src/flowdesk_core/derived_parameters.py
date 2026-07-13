@@ -14,11 +14,25 @@ import numpy as np
 from numpy.typing import NDArray
 
 from flowdesk_core.errors import FlowdeskError
+from flowdesk_core.execution_report import ExecutionDiagnostic
 from flowdesk_core.models import ChannelSpec, DerivedParameterSpec
 
 
 class ExpressionError(FlowdeskError):
   """Raised when a derived parameter expression is invalid or unsafe."""
+
+  def __init__(
+    self,
+    message: str,
+    *,
+    code: str = "invalid_derived_expression",
+    line: int | None = None,
+    column: int | None = None,
+  ) -> None:
+    self.code = code
+    self.line = line
+    self.column = column
+    super().__init__(message)
 
 
 class DerivedParameterPlanningError(FlowdeskError):
@@ -32,11 +46,15 @@ class DerivedParameterPlanningError(FlowdeskError):
     parameter_id: str | None = None,
     references: tuple[str, ...] = (),
     cycle_ids: tuple[str, ...] = (),
+    line: int | None = None,
+    column: int | None = None,
   ) -> None:
     self.code = code
     self.parameter_id = parameter_id
     self.references = references
     self.cycle_ids = cycle_ids
+    self.line = line
+    self.column = column
     super().__init__(message)
 
   def to_mapping(self) -> dict[str, Any]:
@@ -47,6 +65,8 @@ class DerivedParameterPlanningError(FlowdeskError):
       "parameter_id": self.parameter_id,
       "references": self.references,
       "cycle_ids": self.cycle_ids,
+      "line": self.line,
+      "column": self.column,
     }
 
 
@@ -147,6 +167,24 @@ class DerivedParameterStageResult:
   def channel_ids(self) -> list[str]:
     """Return stable IDs in the exact order of the event columns."""
     return [channel.id for channel in self.channels]
+
+
+@dataclass(frozen=True)
+class DerivedParameterPreview:
+  """Bounded, immutable preview produced by the headless pipeline."""
+
+  values: NDArray[np.float64]
+  channel: ChannelSpec
+  source_event_count: int
+  preview_event_count: int
+  diagnostics: tuple[ExecutionDiagnostic, ...] = ()
+
+  def __post_init__(self) -> None:
+    values = np.array(self.values, dtype=np.float64, copy=True)
+    if values.shape != (self.preview_event_count,):
+      raise ValueError("preview values must match preview_event_count")
+    values.setflags(write=False)
+    object.__setattr__(self, "values", values)
 
 
 @dataclass(frozen=True)
@@ -536,7 +574,11 @@ def extract_parameter_references(
   try:
     tree = ast.parse(safe_expr, mode="eval")
   except SyntaxError as exc:
-    raise ExpressionError(f"invalid expression syntax: {exc}") from exc
+    raise ExpressionError(
+      f"invalid expression syntax: {exc}",
+      line=exc.lineno,
+      column=exc.offset,
+    ) from exc
   _check_ast_safety(tree)
 
   for node in ast.walk(tree):
@@ -629,12 +671,16 @@ def plan_derived_parameters(
         parameter_id=spec.id,
         references=exc.references,
         cycle_ids=exc.cycle_ids,
+        line=exc.line,
+        column=exc.column,
       ) from exc
     except ExpressionError as exc:
       raise DerivedParameterPlanningError(
         "invalid_derived_expression",
         f"invalid expression for derived parameter {spec.id!r}: {exc}",
         parameter_id=spec.id,
+        line=exc.line,
+        column=exc.column,
       ) from exc
     all_references = tuple(dict.fromkeys(
       (*spec.input_parameters, *expression_references)
@@ -713,7 +759,11 @@ def evaluate_array_expression(
   try:
     tree = ast.parse(safe_expr, mode="eval")
   except SyntaxError as exc:
-    raise ExpressionError(f"invalid expression syntax: {exc}") from exc
+    raise ExpressionError(
+      f"invalid expression syntax: {exc}",
+      line=exc.lineno,
+      column=exc.offset,
+    ) from exc
   _check_ast_safety(tree)
   if not allow_functions and any(
     isinstance(node, ast.Call) for node in ast.walk(tree)
@@ -765,7 +815,9 @@ def evaluate_expression(
     tree = ast.parse(safe_expr, mode="eval")
   except SyntaxError as exc:
     raise ExpressionError(
-      f"invalid expression syntax: {exc}"
+      f"invalid expression syntax: {exc}",
+      line=exc.lineno,
+      column=exc.offset,
     ) from exc
 
   _check_ast_safety(tree)
