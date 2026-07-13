@@ -79,9 +79,9 @@ git status --short
 
 #### 事前文書
 
-- [ ] `docs/implementation/sample-catalog-and-channel-identity.md`を全文読み、今回のincrementで確定したcontractと制限を追記する。
-- [ ] FCS `$PnN`、`$PnS`、detector、stain、array indexの使い分けを定義する。
-- [ ] sample間でchannel orderやshort nameが違う場合のmapping規則を定義する。
+- [x] 済み: `docs/implementation/sample-catalog-and-channel-identity.md`を全文読み、今回のincrementで確定したcontractと制限を追記する。
+- [x] 済み: FCS `$PnN`、`$PnS`、detector、stain、array indexの使い分けを定義する。
+- [x] 済み: sample間でchannel orderやshort nameが違う場合のmapping規則を定義する。
 
 #### Core/model
 
@@ -101,9 +101,9 @@ git status --short
 #### 必須test
 
 - [ ] channel orderだけが異なる2 sampleでmarker指定のgate countが一致する。
-- [ ] `$PnN`が同じで`$PnS`が異なるcaseと、その逆を明示的にtestする。
-- [ ] ambiguous/missing channelでsilent fallbackしない。
-- [ ] sampleごとのraw arrayがread-onlyかつ変更されない。
+- [x] 済み: `$PnN`が同じで`$PnS`が異なるcaseと、その逆を明示的にtestする。
+- [x] 済み: ambiguous/missing channelでsilent fallbackしない。
+- [x] 済み: sampleごとのraw arrayがread-onlyかつ変更されない。
 - [ ] old projectをmigrationし、save/reload/headless runできる。
 - [ ] GUIで表示するchannelとheadless runnerが参照するchannel IDが一致する。
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +15,7 @@ from flowio.exceptions import FlowIOException, MultipleDataSetsError  # type: ig
 
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.models import ChannelSpec, CompensationMatrixSpec
+from flowdesk_core.sample import SampleData
 
 PathLike = str | os.PathLike[str]
 
@@ -34,28 +38,86 @@ class FcsFileInfo:
   metadata: dict[str, Any]
 
 
+def _parameter_metadata(
+  flow_data: flowio.FlowData,
+  parameter_index: int,
+) -> dict[str, Any]:
+  """Return parsed and raw metadata belonging to one FCS parameter."""
+  channel_info = dict(flow_data.channels.get(parameter_index, {}))
+  text = flow_data.text or {}
+  prefix = f"p{parameter_index}"
+  for raw_key, value in text.items():
+    key = str(raw_key).lower().lstrip("$")
+    if not key.startswith(prefix):
+      continue
+    suffix = key[len(prefix):]
+    if suffix and not suffix[0].isdigit():
+      channel_info[key] = value
+  return channel_info
+
+
+def _optional_text(metadata: dict[str, Any], *keys: str) -> str | None:
+  """Return the first non-empty metadata value without normalizing it."""
+  for key in keys:
+    value = metadata.get(key)
+    if value is not None and str(value) != "":
+      return str(value)
+  return None
+
+
+def _stable_fcs_channel_id(
+  pnn: str,
+  pns: str | None,
+  detector: str | None,
+  stain: str | None,
+) -> str:
+  """Create an order-independent ID from exact source identity fields."""
+  slug = re.sub(r"[^a-z0-9]+", "_", pnn.casefold()).strip("_")
+  if not slug:
+    slug = "parameter"
+  identity = json.dumps(
+    [pnn, pns, detector, stain],
+    ensure_ascii=False,
+    separators=(",", ":"),
+  )
+  digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
+  return f"fcs_{slug[:40]}_{digest}"
+
+
 def _build_channel_specs(flow_data: flowio.FlowData) -> tuple[ChannelSpec, ...]:
-  """Build ChannelSpec instances from flowio channel metadata."""
+  """Build ordered ChannelSpecs from FCS identity without guessing labels."""
   specs: list[ChannelSpec] = []
-  for idx in range(flow_data.channel_count):
-    ch_info = flow_data.channels.get(idx + 1, {})
-    pnn = ch_info.get("pnn", f"P{idx + 1}N")
-    png = ch_info.get("png", "")
-    pne = ch_info.get("pne", 0)
-    pnr = ch_info.get("pnr", 0.0)
+  seen_pnn: set[str] = set()
+  for parameter_index in range(1, flow_data.channel_count + 1):
+    metadata = _parameter_metadata(flow_data, parameter_index)
+    pnn = _optional_text(metadata, "pnn", f"p{parameter_index}n")
+    if pnn is None:
+      raise FcsIoError(
+        f"FCS parameter {parameter_index} is missing required $PnN metadata"
+      )
+    if pnn in seen_pnn:
+      raise FcsIoError(f"FCS file contains duplicate $PnN value {pnn!r}")
+    seen_pnn.add(pnn)
+
+    pns = _optional_text(metadata, "pns", f"p{parameter_index}s")
+    detector = _optional_text(metadata, "pnt", f"p{parameter_index}t")
+    unit = _optional_text(metadata, "pnu", f"p{parameter_index}u")
+    stain = _optional_text(
+      metadata,
+      "stain",
+      f"p{parameter_index}stain",
+    )
 
     specs.append(
       ChannelSpec(
-        id=f"ch_{idx}",
+        id=_stable_fcs_channel_id(pnn, pns, detector, stain),
         name=pnn,
-        short_name=None,
-        detector=None,
-        unit=None,
-        metadata={
-          "png": png,
-          "pne": pne,
-          "pnr": pnr,
-        },
+        short_name=pns,
+        detector=detector,
+        unit=unit,
+        metadata=metadata,
+        fcs_parameter_index=parameter_index,
+        stain=stain,
       )
     )
   return tuple(specs)
@@ -183,6 +245,25 @@ def read_fcs_events(
   )
 
   return info, events
+
+
+def read_fcs_sample(
+  path: PathLike,
+  sample_id: str,
+  preprocess: bool = True,
+) -> tuple[FcsFileInfo, SampleData]:
+  """Read metadata and raw events into a sample-specific typed container.
+
+  This is the preferred adapter for new callers. ``read_fcs_events`` remains
+  available for compatibility and contains the single FCS parsing path used
+  here.
+  """
+  info, events = read_fcs_events(path, preprocess=preprocess)
+  return info, SampleData(
+    sample_id=sample_id,
+    events=events,
+    channels=info.channels,
+  )
 
 
 def extract_spillover_matrix(

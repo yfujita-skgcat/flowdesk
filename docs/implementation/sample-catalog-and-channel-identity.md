@@ -39,7 +39,7 @@ metadata, and a stable project ID. Never use the visible label as the only ident
    - Extend the typed model and add constructor/lookup tests.
    - Keep old `ChannelSpec` fields readable through defaults.
    - Test duplicate label, duplicate ID, and shape mismatch errors.
-2. **FCS adapter**
+2. **FCS adapter** — implemented
    - Build ordered channel specs from metadata without discarding original names.
    - Return immutable events and metadata separately or in the typed sample object.
    - Add two synthetic samples whose column order differs.
@@ -68,8 +68,35 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 - `ChannelSpec.fcs_parameter_index` and `ChannelSpec.stain` are optional fields
   appended after the previous fields, preserving existing keyword and positional
   construction behavior.
-- The FCS adapter, pipeline runner, project storage, and GUI still use their
-  pre-existing APIs. Connecting them to `SampleData` belongs to increments 2–5.
+- At the end of increment 1, the FCS adapter, pipeline runner, project storage,
+  and GUI still used their pre-existing APIs. The adapter connection is covered
+  below; runner, storage, and GUI work remains in increments 3–5.
+
+## Confirmed contract after increment 2
+
+- `read_fcs_sample(path, sample_id, preprocess)` is the preferred typed adapter.
+  It returns `FcsFileInfo` separately from `SampleData`; `read_fcs_events()`
+  remains compatible and is the adapter's only event-reading implementation.
+- FCS parameter index is one-based and records the event-column order only. It
+  is never used alone as channel identity.
+- `ChannelSpec.name` preserves exact `$PnN`. Despite the legacy Python field
+  names, `ChannelSpec.short_name` preserves exact `$PnS`, which FCS 3.1 defines
+  as the optional long display name and does not require to be unique.
+- `detector` comes only from explicit `$PnT`, `unit` from explicit `$PnU`, and
+  `stain` only from an explicit vendor `PnSTAIN` value. Flowdesk does not infer
+  detector or stain from `$PnN` or `$PnS`.
+- The source-derived stable ID hashes exact `$PnN`, `$PnS`, detector, and stain
+  values but excludes array index. Therefore a pure column permutation retains
+  identity, while a label or instrument-identity change remains distinct until
+  a later explicit project mapping says otherwise.
+- Per-parameter keyword values exposed by flowio remain available under
+  flowio-normalized keys in `ChannelSpec.metadata`; whole-file unknown keywords
+  exposed by flowio remain in `FcsFileInfo.metadata`.
+- Duplicate `$PnN` is rejected as malformed FCS metadata instead of receiving a
+  positional fallback ID. Missing required `$PnN` is rejected for the same
+  reason.
+- Pipeline execution, persisted project IDs/migration, and GUI mapping remain
+  increments 3–5 and are not implied by this adapter.
 
 ## Required tests
 

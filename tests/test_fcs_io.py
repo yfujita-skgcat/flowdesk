@@ -15,6 +15,7 @@ from flowdesk_core.fcs_io import (
     extract_spillover_matrix,
     read_fcs_events,
     read_fcs_info,
+    read_fcs_sample,
     write_fcs_file,
 )
 
@@ -140,13 +141,17 @@ def test_read_fcs_events_immutable(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_channel_ids_normalized(tmp_path: Path) -> None:
-    """Channel ids are ch_0, ch_1, etc."""
+def test_channel_ids_are_stable_and_not_position_only(tmp_path: Path) -> None:
+    """Channel IDs are derived from preserved FCS identity, not array position."""
     path = _create_fcs_with_events(tmp_path, num_events=3, num_channels=4)
     info = read_fcs_info(path)
 
-    for idx, ch in enumerate(info.channels):
-        assert ch.id == f"ch_{idx}"
+    assert len({channel.id for channel in info.channels}) == 4
+    assert all(channel.id.startswith("fcs_") for channel in info.channels)
+    assert all(
+      channel.id not in {f"ch_{index}", f"ch_{index + 1}"}
+      for index, channel in enumerate(info.channels)
+    )
 
 
 def test_channel_names_preserved(tmp_path: Path) -> None:
@@ -172,6 +177,111 @@ def test_channel_count_matches(tmp_path: Path) -> None:
     assert info.channel_count == num_channels
     assert len(info.channels) == num_channels
     assert events.shape[1] == num_channels
+
+
+def test_read_fcs_sample_preserves_parameter_identity_metadata(tmp_path: Path) -> None:
+  path = tmp_path / "identity.fcs"
+  with path.open("wb") as fh:
+    flowio.create_fcs(
+      file_handle=fh,
+      event_data=[10.0, 20.0],
+      channel_names=["B530-A"],
+      opt_channel_names=["CD3 FITC Fluorescence - Area"],
+      metadata_dict={
+        "p1t": "PMT9524",
+        "p1u": "a.u.",
+        "p1stain": "CD3",
+      },
+    )
+
+  info, sample = read_fcs_sample(path, sample_id="sample-1", preprocess=False)
+  channel = sample.channels[0]
+
+  assert sample.sample_id == "sample-1"
+  assert channel.fcs_parameter_index == 1
+  assert channel.name == "B530-A"
+  assert channel.short_name == "CD3 FITC Fluorescence - Area"
+  assert channel.detector == "PMT9524"
+  assert channel.stain == "CD3"
+  assert channel.unit == "a.u."
+  assert channel.metadata["p1n"] == "B530-A"
+  assert channel.metadata["p1s"] == "CD3 FITC Fluorescence - Area"
+  assert info.metadata["p1stain"] == "CD3"
+  assert not sample.events.flags.writeable
+
+
+def test_read_fcs_sample_stable_ids_survive_channel_permutation(
+  tmp_path: Path,
+) -> None:
+  first_path = tmp_path / "first.fcs"
+  second_path = tmp_path / "second.fcs"
+  with first_path.open("wb") as fh:
+    flowio.create_fcs(
+      file_handle=fh,
+      event_data=[1.0, 10.0, 2.0, 20.0],
+      channel_names=["FSC-A", "B530-A"],
+      opt_channel_names=["", "CD3"],
+    )
+  with second_path.open("wb") as fh:
+    flowio.create_fcs(
+      file_handle=fh,
+      event_data=[10.0, 1.0, 20.0, 2.0],
+      channel_names=["B530-A", "FSC-A"],
+      opt_channel_names=["CD3", ""],
+    )
+
+  _, first = read_fcs_sample(first_path, sample_id="first", preprocess=False)
+  _, second = read_fcs_sample(second_path, sample_id="second", preprocess=False)
+  cd3_id = first.channel_by_id(first.channels[1].id).id
+
+  assert second.channel_index(cd3_id) == 0
+  np.testing.assert_array_equal(first.events[:, 1], [10.0, 20.0])
+  np.testing.assert_array_equal(second.events[:, 0], [10.0, 20.0])
+
+
+def test_pnn_or_pns_identity_changes_do_not_silently_collapse(
+  tmp_path: Path,
+) -> None:
+  same_pnn_a = tmp_path / "same-pnn-a.fcs"
+  same_pnn_b = tmp_path / "same-pnn-b.fcs"
+  same_pns = tmp_path / "same-pns.fcs"
+
+  cases = (
+    (same_pnn_a, "B530-A", "CD3"),
+    (same_pnn_b, "B530-A", "CD4"),
+    (same_pns, "R660-A", "CD3"),
+  )
+  for path, pnn, pns in cases:
+    with path.open("wb") as fh:
+      flowio.create_fcs(
+        file_handle=fh,
+        event_data=[1.0],
+        channel_names=[pnn],
+        opt_channel_names=[pns],
+      )
+
+  _, first = read_fcs_sample(same_pnn_a, "first", preprocess=False)
+  _, changed_long_name = read_fcs_sample(same_pnn_b, "second", preprocess=False)
+  _, changed_pnn = read_fcs_sample(same_pns, "third", preprocess=False)
+
+  assert first.channels[0].id != changed_long_name.channels[0].id
+  assert first.channels[0].short_name == "CD3"
+  assert changed_long_name.channels[0].short_name == "CD4"
+  assert first.channels[0].id != changed_pnn.channels[0].id
+  assert first.channels[0].short_name == changed_pnn.channels[0].short_name
+
+
+def test_duplicate_required_pnn_is_rejected(tmp_path: Path) -> None:
+  path = tmp_path / "duplicate-pnn.fcs"
+  with path.open("wb") as fh:
+    flowio.create_fcs(
+      file_handle=fh,
+      event_data=[1.0, 2.0],
+      channel_names=["FL1-A", "FL1-A"],
+    )
+
+  with pytest.raises(FcsIoError, match=r"duplicate \$PnN"):
+    read_fcs_info(path)
 
 
 # ---------------------------------------------------------------------------
