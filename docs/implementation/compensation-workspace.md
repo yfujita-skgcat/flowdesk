@@ -93,10 +93,32 @@ emission are increments 2 and 3.
 - No project schema/version or runner behavior changes in this increment;
   persistence and legacy migration are intentionally deferred to increment 4.
 
+## Confirmed contract after A4 increment 2
+
+- `inspect_compensation_matrix()` is the non-throwing core inspection API. It
+  returns matrix ID, persisted channel order, aligned event-column indices,
+  condition number, and stable warning/error diagnostics.
+- `validate_compensation_matrix()` remains the compatibility API. It delegates
+  to inspection, raises `CompensationError` for the first error diagnostic, and
+  returns the inspection result when valid. `apply_compensation()` reuses this
+  exact alignment result instead of maintaining a second resolver.
+- Empty/shape-mismatched, duplicate-channel, nonfinite, missing-channel,
+  ambiguous event-channel, and numerically singular definitions are errors.
+  Extra event channels remain allowed and are copied unchanged.
+- Condition number uses the NumPy 2-norm/SVD definition. For float64,
+  `condition_number >= 1e8` emits `compensation_condition_warning` because at
+  least about eight decimal digits may be lost. It is not fatal.
+  `condition_number >= 1 / numpy.finfo(float64).eps` (or nonfinite) is fatal as
+  `reason=numerically_singular`, because `kappa * eps >= 1` cannot guarantee a
+  relative significant digit.
+- Inspection does not apply compensation and raw event arrays remain untouched.
+  Conversion of these diagnostics into `ExecutionReport` entries remains
+  increment 3 work.
+
 ## Increments A4
 
 1. **Done:** Add typed provenance, manual edit record, and binding specs.
-2. Validate finite square matrices, unique channels, alignment, and condition number.
+2. **Done:** Validate finite square matrices, unique channels, alignment, and condition number.
 3. Resolve bindings per sample in the runner and record the choice in reports.
 4. Migrate the old global default without changing results.
 5. Add matrix list/editor, heat map, duplicate-before-edit, apply action, and badges.

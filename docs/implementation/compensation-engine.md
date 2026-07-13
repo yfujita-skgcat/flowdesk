@@ -19,6 +19,12 @@ Implement compensation matrix validation and application while preserving raw ev
 - Keep compensation independent from pandas/Polars if practical; accept a small adapter layer if needed.
 - Prefer NumPy arrays for numeric matrix operations once dependency is added.
 - Make channel-order behavior explicit in tests.
+- Use `inspect_compensation_matrix()` for structured validation. Keep
+  `validate_compensation_matrix()` as the exception-based compatibility
+  adapter and do not duplicate alignment logic in application code.
+- Condition-number warning threshold is `1e8`. The warning is nonfatal.
+  Values at or above `1 / float64 epsilon`, and nonfinite condition numbers,
+  are numerically singular and rejected.
 
 ## Required Behavior
 
@@ -35,6 +41,8 @@ Implement compensation matrix validation and application while preserving raw ev
 - Non-identity compensation matches hand-computed values.
 - Channel order mismatch is either corrected by labels or rejected with a clear error.
 - Raw input remains unchanged after compensation.
+- Inspection returns stable diagnostic codes, condition number, persisted
+  channel order, and aligned event-column indices.
 
 ## Acceptance Criteria
 

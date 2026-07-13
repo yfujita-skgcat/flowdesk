@@ -191,7 +191,7 @@ git status --short
 - [ ] global `default_compensation_matrix_id`だけでなく、sample/Group/execution profile単位のbindingを追加する。
 - [ ] binding priorityとconflict ruleを定義する。
 - [ ] matrix ID、source、control IDs、algorithm/version、manual edits、created metadataを保存する。
-- [ ] finite、square、channel set、duplicate channel、condition numberを検証する。
+- [x] 済み: finite、square、channel set、duplicate channel、condition numberを構造化diagnostic付きで検証する。
 - [ ] compensated outputとdiagnosticsを返し、raw inputを不変にする。
 - [ ] ExecutionReportへmatrix ID、channel order、condition warningを記録する。
 

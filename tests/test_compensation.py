@@ -8,6 +8,7 @@ import pytest
 from flowdesk_core.compensation import (
   CompensationError,
   apply_compensation,
+  inspect_compensation_matrix,
   validate_compensation_matrix,
 )
 from flowdesk_core.errors import FlowdeskError
@@ -191,6 +192,101 @@ def test_validate_rejects_singular_matrix() -> None:
         matrix=((0.0, 0.0), (0.0, 0.0)),
       )
     )
+
+
+def test_inspection_returns_channel_alignment_and_condition_number() -> None:
+  spec = _make_spec(
+    channels=("FL2-A", "FL1-A"),
+    matrix=((1.0, 0.1), (0.2, 1.0)),
+  )
+
+  result = inspect_compensation_matrix(
+    spec, available_channel_ids=("FSC-A", "FL1-A", "FL2-A")
+  )
+
+  assert result.is_valid
+  assert result.channel_order == ("FL2-A", "FL1-A")
+  assert result.channel_indices == (2, 1)
+  assert result.condition_number == pytest.approx(
+    np.linalg.cond(np.array(spec.matrix)), rel=1e-15
+  )
+  assert result.diagnostics == ()
+
+
+def test_ill_conditioned_matrix_returns_nonfatal_structured_warning() -> None:
+  spec = _make_spec(
+    channels=("FL1-A", "FL2-A"),
+    matrix=((1.0, 0.0), (0.0, 1e-10)),
+  )
+
+  result = inspect_compensation_matrix(spec)
+
+  assert result.is_valid
+  assert result.condition_number == pytest.approx(1e10)
+  assert [diagnostic.code for diagnostic in result.diagnostics] == [
+    "compensation_condition_warning"
+  ]
+  assert result.diagnostics[0].severity == "warning"
+  validate_compensation_matrix(spec)
+
+
+def test_numerically_singular_matrix_is_structured_error() -> None:
+  spec = _make_spec(
+    channels=("FL1-A", "FL2-A"),
+    matrix=((1.0, 0.0), (0.0, 1e-17)),
+  )
+
+  result = inspect_compensation_matrix(spec)
+
+  assert not result.is_valid
+  assert result.diagnostics[0].code == "invalid_compensation_matrix"
+  assert result.diagnostics[0].details["reason"] == "numerically_singular"
+  with pytest.raises(CompensationError) as error:
+    validate_compensation_matrix(spec)
+  assert error.value.code == "invalid_compensation_matrix"
+
+
+def test_missing_and_duplicate_event_channels_have_stable_diagnostic_codes() -> None:
+  spec = _make_spec(
+    channels=("FL1-A", "FL2-A"),
+    matrix=((1.0, 0.0), (0.0, 1.0)),
+  )
+
+  missing = inspect_compensation_matrix(
+    spec, available_channel_ids=("FL1-A", "FSC-A")
+  )
+  duplicate = inspect_compensation_matrix(
+    spec, available_channel_ids=("FL1-A", "FL2-A", "FL2-A")
+  )
+
+  assert missing.diagnostics[0].code == "missing_compensation_channel"
+  assert missing.diagnostics[0].details["missing_channel_ids"] == ["FL2-A"]
+  assert duplicate.diagnostics[0].code == "ambiguous_compensation_channel"
+  assert duplicate.diagnostics[0].details["duplicate_channel_ids"] == ["FL2-A"]
+
+
+def test_nonfinite_matrix_has_stable_structured_error() -> None:
+  result = inspect_compensation_matrix(
+    _make_spec(
+      channels=("FL1-A", "FL2-A"),
+      matrix=((1.0, float("nan")), (0.0, 1.0)),
+    )
+  )
+
+  assert not result.is_valid
+  assert result.condition_number is None
+  assert result.diagnostics[0].code == "invalid_compensation_matrix"
+  assert result.diagnostics[0].details["reason"] == "nonfinite_values"
+
+
+def test_matrix_channel_set_rejects_empty_stable_id() -> None:
+  result = inspect_compensation_matrix(
+    _make_spec(channels=("",), matrix=((1.0,),))
+  )
+
+  assert not result.is_valid
+  assert result.diagnostics[0].code == "invalid_compensation_matrix"
+  assert result.diagnostics[0].details["reason"] == "invalid_matrix_channels"
 
 
 # ---------------------------------------------------------------------------
