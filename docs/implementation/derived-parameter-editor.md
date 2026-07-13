@@ -54,6 +54,51 @@ not silently reinterpret it.
    - Preview through the core evaluator on a bounded copy of events.
    - Show syntax location and diagnostic code; never calculate expressions in Qt.
 
+## Decisions fixed before implementation
+
+- Derived execution remains after compensation and before transforms. A
+  `source_stage="raw"` definition will read immutable `SampleData.events`;
+  `source_stage="compensated"` will read the compensated stage view. Supporting
+  both requires explicit stage views and must not reorder the canonical pipeline.
+- `source_stage="transformed"` is invalid for new definitions because it would
+  introduce a backward edge. Legacy transformed-source definitions require a
+  later migration diagnostic and explicit compatibility action; they are never
+  silently reinterpreted as compensated input.
+- Dependency edges are stable derived output IDs referenced by
+  `input_parameters` or by the safe parsed expression. Execution order will be a
+  deterministic topological order; project/display order remains unchanged.
+- Unknown input IDs and cycles are definition errors detected before any sample
+  events are processed. They do not use a per-event invalid-value policy.
+- The only new failure policies are `fail_run`, `fail_sample`, and
+  `emit_nan_with_warning`. Division by zero remains a numeric NaN result rather
+  than an evaluator exception. Domain and evaluation failures follow the stored
+  policy.
+
+## Confirmed contract after increment 1
+
+- `DerivedFailurePolicy` is a typed string enum. New definitions default to
+  `emit_nan_with_warning`; invalid values are rejected when constructing the
+  model and are wrapped as `invalid_derived_parameter_definition` by the runner.
+- The historical `division_by_zero_to_nan` value is read as an explicit
+  compatibility alias for `emit_nan_with_warning`. The canonical example now
+  stores the new value. Migration diagnostics and normalization of legacy saved
+  values remain increment 4 work.
+- Derived evaluation no longer has a broad `except Exception`. Only expected
+  expression, arithmetic, type, and result-shape failures enter policy handling;
+  unexpected programming/system exceptions propagate.
+- `fail_run` stops the complete run with `PipelineError`. `fail_sample` records
+  an error diagnostic, skips all downstream stages for that sample, and
+  continues other samples. Reports use `partial_success` when another sample
+  succeeds and `failed_samples` when every processed sample fails.
+- `emit_nan_with_warning` appends an event-count-aligned NaN column and continues
+  downstream execution. `ExecutionReport.diagnostics` records stable code
+  `derived_parameter_evaluation_failed`, stage, severity, expression, policy,
+  sample ID, parameter ID, exception type, and affected event count.
+- The existing safe evaluator is scalar-first. Full vector evaluation,
+  dependency planning, stage-aware input views, result contracts, and GUI preview
+  remain increments 2–5; this increment does not pretend the current array
+  adapter is scientifically complete.
+
 ## Required tests
 
 - Ratio and dependent-derived chain work after compensation.
@@ -76,4 +121,3 @@ pytest -q tests/test_derived_parameters.py tests/test_pipeline_runner.py
 rg -n "eval|exec|compile" src/flowdesk_core/derived_parameters.py
 ruff check src tests
 ```
-

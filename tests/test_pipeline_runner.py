@@ -236,6 +236,110 @@ def test_pipeline_with_derived_parameters() -> None:
   assert "derived_params=done" in " ".join(report.messages)
 
 
+def test_derived_failure_policy_fail_run_stops_pipeline() -> None:
+  sample = SampleData(
+    "s1",
+    np.ones((3, 1), dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[{
+      "id": "ratio",
+      "name": "Ratio",
+      "expression": "missing / signal",
+      "invalid_value_policy": "fail_run",
+    }],
+  )
+
+  with pytest.raises(
+    PipelineError, match="derived_parameter_evaluation_failed"
+  ):
+    PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+
+def test_derived_failure_policy_fail_sample_continues_other_samples(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  from flowdesk_core.derived_parameters import ExpressionError
+
+  def sample_specific_evaluator(_expression, variables, **_kwargs):
+    if "other" in variables:
+      raise ExpressionError("synthetic sample-specific failure")
+    return 2.0
+
+  monkeypatch.setattr(
+    "flowdesk_core.pipeline_runner.evaluate_expression",
+    sample_specific_evaluator,
+  )
+  valid = SampleData(
+    "valid",
+    np.array([[2.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  invalid = SampleData(
+    "invalid",
+    np.array([[3.0]], dtype=np.float64),
+    (ChannelSpec(id="other", name="Other"),),
+  )
+  project = _make_project(
+    samples=[{"id": "valid"}, {"id": "invalid"}],
+    derived_parameters=[{
+      "id": "copy",
+      "name": "Copy",
+      "expression": "signal",
+      "invalid_value_policy": "fail_sample",
+    }],
+  )
+
+  report = PipelineRunner(project).run_samples(
+    ExecutionContext(), (valid, invalid)
+  )
+
+  assert report.status == "partial_success"
+  assert {result.sample_id for result in report.population_results} == {"valid"}
+  assert len(report.diagnostics) == 1
+  diagnostic = report.diagnostics[0]
+  assert diagnostic.code == "derived_parameter_evaluation_failed"
+  assert diagnostic.sample_id == "invalid"
+  assert diagnostic.parameter_id == "copy"
+  assert diagnostic.severity == "error"
+  assert diagnostic.details["policy"] == "fail_sample"
+
+
+def test_derived_failure_policy_emit_nan_records_full_diagnostic() -> None:
+  sample = SampleData(
+    "s1",
+    np.ones((4, 1), dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  expression = "missing / signal"
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[{
+      "id": "ratio",
+      "name": "Ratio",
+      "expression": expression,
+      "invalid_value_policy": "emit_nan_with_warning",
+    }],
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+  assert report.status == "success"
+  assert len(report.diagnostics) == 1
+  diagnostic = report.diagnostics[0]
+  assert diagnostic.code == "derived_parameter_evaluation_failed"
+  assert diagnostic.sample_id == "s1"
+  assert diagnostic.parameter_id == "ratio"
+  assert diagnostic.exception_type == "ExpressionError"
+  assert diagnostic.affected_event_count == 4
+  assert diagnostic.details == {
+    "expression": expression,
+    "policy": "emit_nan_with_warning",
+  }
+
+
 # ---------------------------------------------------------------------------
 # Transforms step
 # ---------------------------------------------------------------------------

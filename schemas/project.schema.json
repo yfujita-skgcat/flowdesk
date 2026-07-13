@@ -15,7 +15,10 @@
       "items": { "$ref": "#/$defs/sample" }
     },
     "compensation_matrices": { "type": "array", "items": { "type": "object" } },
-    "derived_parameters": { "type": "array", "items": { "type": "object" } },
+    "derived_parameters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/derivedParameter" }
+    },
     "transforms": { "type": "array", "items": { "type": "object" } },
     "gating_strategies": { "type": "array", "items": { "type": "object" } },
     "default_gating_strategy_id": { "type": "string" },
@@ -27,6 +30,31 @@
     "software": { "type": "object" }
   },
   "$defs": {
+    "derivedParameter": {
+      "type": "object",
+      "required": ["id", "name", "expression"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "expression": { "type": "string", "minLength": 1 },
+        "source_stage": { "enum": ["raw", "compensated", "transformed"] },
+        "input_parameters": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "output_label": { "type": ["string", "null"] },
+        "invalid_value_policy": {
+          "enum": [
+            "fail_run",
+            "fail_sample",
+            "emit_nan_with_warning",
+            "division_by_zero_to_nan"
+          ]
+        },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
     "sample": {
       "type": "object",
       "required": ["id", "channels"],

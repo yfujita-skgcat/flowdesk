@@ -3,6 +3,7 @@
 from flowdesk_core.models import (
   ChannelSpec,
   CompensationMatrixSpec,
+  DerivedFailurePolicy,
   DerivedParameterSpec,
   ExportRecord,
   GateSpec,
@@ -16,6 +17,7 @@ from flowdesk_core.sample import SampleData
 __all__ = [
   "ChannelSpec",
   "CompensationMatrixSpec",
+  "DerivedFailurePolicy",
   "DerivedParameterSpec",
   "ExportRecord",
   "GateSpec",

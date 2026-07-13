@@ -19,10 +19,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from flowdesk_core.compensation import apply_compensation, validate_compensation_matrix
-from flowdesk_core.derived_parameters import evaluate_expression
+from flowdesk_core.derived_parameters import ExpressionError, evaluate_expression
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.execution_context import ExecutionContext
-from flowdesk_core.execution_report import ExecutionReport
+from flowdesk_core.execution_report import ExecutionDiagnostic, ExecutionReport
 from flowdesk_core.gating_strategy import (
   GatingStrategyError,
   evaluate_gating_strategy_with_membership,
@@ -30,6 +30,7 @@ from flowdesk_core.gating_strategy import (
 from flowdesk_core.models import (
   ChannelSpec,
   CompensationMatrixSpec,
+  DerivedFailurePolicy,
   DerivedParameterSpec,
   GateSpec,
   GatingStrategySpec,
@@ -43,6 +44,19 @@ from flowdesk_core.transforms import TransformError, apply_transform_to_column
 
 class PipelineError(FlowdeskError):
   """Raised when the pipeline cannot execute."""
+
+
+class _DerivedParameterStepError(PipelineError):
+  """Carries a policy and diagnostic from the derived stage to the runner."""
+
+  def __init__(
+    self,
+    policy: DerivedFailurePolicy,
+    diagnostic: ExecutionDiagnostic,
+  ) -> None:
+    self.policy = policy
+    self.diagnostic = diagnostic
+    super().__init__(diagnostic.message)
 
 
 @dataclass(frozen=True)
@@ -208,6 +222,8 @@ class PipelineRunner:
     all_population_results: list[PopulationResult] = []
     all_population_membership: list[PopulationMembership] = []
     input_files: list[dict[str, Any]] = []
+    diagnostics: list[ExecutionDiagnostic] = []
+    failed_sample_count = 0
 
     for sample_meta in selected_samples:
       sid = sample_meta.get("id", "unknown")
@@ -226,7 +242,22 @@ class PipelineRunner:
       messages.append(f"sample={sid} compensation=done")
 
       # --- Step 2: Derived parameters ---
-      enriched = self._step_derived_parameters(compensated)
+      try:
+        enriched, derived_diagnostics = self._step_derived_parameters(
+          compensated, sid
+        )
+      except _DerivedParameterStepError as exc:
+        diagnostics.append(exc.diagnostic)
+        if exc.policy is DerivedFailurePolicy.FAIL_RUN:
+          raise PipelineError(
+            f"{exc.diagnostic.code}: {exc.diagnostic.message}"
+          ) from exc
+        failed_sample_count += 1
+        messages.append(
+          f"sample={sid} derived_params=failed policy={exc.policy.value}"
+        )
+        continue
+      diagnostics.extend(derived_diagnostics)
       messages.append(f"sample={sid} derived_params=done")
 
       # --- Step 3: Transforms ---
@@ -256,9 +287,12 @@ class PipelineRunner:
 
     population_tuple = tuple(all_population_results)
     membership_tuple = tuple(all_population_membership)
-    status = (
-      "success" if population_tuple else "no_data_processed"
-    )
+    if failed_sample_count and population_tuple:
+      status = "partial_success"
+    elif failed_sample_count:
+      status = "failed_samples"
+    else:
+      status = "success" if population_tuple else "no_data_processed"
 
     return ExecutionReport(
       project_id=str(self._project.get("project_id", "unknown")),
@@ -269,6 +303,7 @@ class PipelineRunner:
       population_membership=membership_tuple,
       input_files=tuple(input_files),
       messages=tuple(messages),
+      diagnostics=tuple(diagnostics),
     )
 
   # ------------------------------------------------------------------
@@ -310,27 +345,35 @@ class PipelineRunner:
   def _step_derived_parameters(
     self,
     data: _AnalysisData,
-  ) -> _AnalysisData:
+    sample_id: str,
+  ) -> tuple[_AnalysisData, tuple[ExecutionDiagnostic, ...]]:
     """Evaluate derived parameter expressions and append as new columns."""
     specs = self._project.get("derived_parameters", [])
     if not specs:
-      return data
+      return data, ()
 
     current_channels = list(data.channels)
     current_data = data.events
+    diagnostics: list[ExecutionDiagnostic] = []
 
     for spec_dict in specs:
-      spec = DerivedParameterSpec(
-        id=spec_dict["id"],
-        name=spec_dict.get("name", spec_dict["id"]),
-        expression=spec_dict["expression"],
-        source_stage=spec_dict.get("source_stage", "compensated"),
-        input_parameters=tuple(spec_dict.get("input_parameters", ())),
-        output_label=spec_dict.get("output_label"),
-        invalid_value_policy=spec_dict.get(
-          "invalid_value_policy", "division_by_zero_to_nan"
-        ),
-      )
+      try:
+        spec = DerivedParameterSpec(
+          id=spec_dict["id"],
+          name=spec_dict.get("name", spec_dict["id"]),
+          expression=spec_dict["expression"],
+          source_stage=spec_dict.get("source_stage", "compensated"),
+          input_parameters=tuple(spec_dict.get("input_parameters", ())),
+          output_label=spec_dict.get("output_label"),
+          invalid_value_policy=spec_dict.get(
+            "invalid_value_policy", "emit_nan_with_warning"
+          ),
+        )
+      except (KeyError, TypeError, ValueError) as exc:
+        parameter_id = spec_dict.get("id", "unknown")
+        raise PipelineError(
+          f"invalid_derived_parameter_definition: {parameter_id!r}: {exc}"
+        ) from exc
 
       label = spec.output_label or spec.name
       if spec.id in {channel.id for channel in current_channels}:
@@ -345,8 +388,44 @@ class PipelineRunner:
         result_any = evaluate_expression(spec.expression, variables,  # type: ignore[arg-type]
                                          allow_functions=True)
         result = np.asarray(result_any, dtype=np.float64)
-      except Exception:
-        # Produce NaN column on evaluation failure.
+        if result.ndim == 0:
+          result = np.full(current_data.shape[0], float(result), dtype=np.float64)
+        elif result.shape != (current_data.shape[0],):
+          raise ValueError(
+            f"expression returned shape {result.shape}, expected "
+            f"({current_data.shape[0]},)"
+          )
+      except (ExpressionError, ArithmeticError, TypeError, ValueError) as exc:
+        diagnostic = ExecutionDiagnostic(
+          code="derived_parameter_evaluation_failed",
+          message=(
+            f"derived parameter {spec.id!r} failed for sample {sample_id!r}: "
+            f"{exc}"
+          ),
+          severity=(
+            "warning"
+            if spec.invalid_value_policy
+            is DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
+            else "error"
+          ),
+          stage="derived_parameters",
+          sample_id=sample_id,
+          parameter_id=spec.id,
+          exception_type=type(exc).__name__,
+          affected_event_count=int(current_data.shape[0]),
+          details={
+            "expression": spec.expression,
+            "policy": spec.invalid_value_policy.value,
+          },
+        )
+        if (
+          spec.invalid_value_policy
+          is not DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
+        ):
+          raise _DerivedParameterStepError(
+            spec.invalid_value_policy, diagnostic
+          ) from exc
+        diagnostics.append(diagnostic)
         result = np.full(current_data.shape[0], np.nan, dtype=np.float64)
 
       new_col = result.reshape(-1, 1)
@@ -362,7 +441,7 @@ class PipelineRunner:
         )
       )
 
-    return _AnalysisData(current_data, tuple(current_channels))
+    return _AnalysisData(current_data, tuple(current_channels)), tuple(diagnostics)
 
   def _step_transforms(
     self,

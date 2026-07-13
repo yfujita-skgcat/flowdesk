@@ -14,7 +14,7 @@
       "expression": "FL1-A / FL2-A",
       "source_stage": "compensated",
       "input_parameters": ["FL1-A", "FL2-A"],
-      "invalid_value_policy": "division_by_zero_to_nan"
+      "invalid_value_policy": "emit_nan_with_warning"
     }
   ],
   "transforms": [],

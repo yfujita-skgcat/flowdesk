@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, Literal
 
 import numpy as np
@@ -12,6 +13,14 @@ SourceStage = Literal["raw", "compensated", "transformed"]
 GateType = Literal["rectangle", "polygon", "range", "boolean"]
 GateAxisScale = Literal["linear", "log10", "asinh"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported"]
+
+
+class DerivedFailurePolicy(StrEnum):
+  """Action taken when one derived parameter cannot be evaluated."""
+
+  FAIL_RUN = "fail_run"
+  FAIL_SAMPLE = "fail_sample"
+  EMIT_NAN_WITH_WARNING = "emit_nan_with_warning"
 
 
 @dataclass(frozen=True)
@@ -68,8 +77,24 @@ class DerivedParameterSpec:
   source_stage: SourceStage = "compensated"
   input_parameters: tuple[str, ...] = field(default_factory=tuple)
   output_label: str | None = None
-  invalid_value_policy: str = "division_by_zero_to_nan"
+  invalid_value_policy: DerivedFailurePolicy = (
+    DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
+  )
   notes: str = ""
+
+  def __post_init__(self) -> None:
+    raw_policy = self.invalid_value_policy
+    if raw_policy == "division_by_zero_to_nan":
+      raw_policy = DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
+    try:
+      policy = DerivedFailurePolicy(raw_policy)
+    except ValueError as exc:
+      choices = ", ".join(policy.value for policy in DerivedFailurePolicy)
+      raise ValueError(
+        f"invalid derived failure policy {self.invalid_value_policy!r}; "
+        f"expected one of: {choices}"
+      ) from exc
+    object.__setattr__(self, "invalid_value_policy", policy)
 
 
 @dataclass(frozen=True)

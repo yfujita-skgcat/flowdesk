@@ -9,6 +9,21 @@ from flowdesk_core.models import PopulationMembership, PopulationResult
 
 
 @dataclass(frozen=True)
+class ExecutionDiagnostic:
+  """Structured, reproducible diagnostic emitted by a pipeline stage."""
+
+  code: str
+  message: str
+  severity: str
+  stage: str
+  sample_id: str | None = None
+  parameter_id: str | None = None
+  exception_type: str | None = None
+  affected_event_count: int | None = None
+  details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ExecutionReport:
   """Summary and reproducibility metadata from a pipeline run."""
 
@@ -22,6 +37,7 @@ class ExecutionReport:
   )
   input_files: tuple[dict[str, Any], ...] = field(default_factory=tuple)
   messages: tuple[str, ...] = field(default_factory=tuple)
+  diagnostics: tuple[ExecutionDiagnostic, ...] = field(default_factory=tuple)
 
   @property
   def summary(self) -> str:

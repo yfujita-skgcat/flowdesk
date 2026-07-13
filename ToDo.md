@@ -118,13 +118,13 @@ git status --short
 
 #### 事前文書
 
-- [ ] `docs/implementation/derived-parameter-editor.md`を全文読み、source stage、dependency graph、invalid value、run failure policyの確定事項を追記する。
+- [x] 済み: `docs/implementation/derived-parameter-editor.md`を全文読み、source stage、dependency graph、invalid value、run failure policyの確定事項を追記する。
 
 #### Core
 
-- [ ] runner内の広い`except Exception`による全NaN置換を削除する。
-- [ ] `fail_run`、`fail_sample`、`emit_nan_with_warning`を型付きpolicyとしてmodel/schemaへ追加する。
-- [ ] `emit_nan_with_warning`時もexpression、sample、exception type、affected event countをExecutionReportへ記録する。
+- [x] 済み: runner内の広い`except Exception`による全NaN置換を削除する。
+- [x] 済み: `fail_run`、`fail_sample`、`emit_nan_with_warning`を型付きpolicyとしてmodel/schemaへ追加する。
+- [x] 済み: `emit_nan_with_warning`時もexpression、sample、exception type、affected event countをExecutionReportへ記録する。
 - [ ] derived parameter間のdependency graphを構築し、topological orderで評価する。
 - [ ] unknown inputとcycleをrun開始前に拒否する。
 - [ ] unit、output channel ID、source stageを保存する。
@@ -139,7 +139,7 @@ git status --short
 
 #### 必須test
 
-- [ ] 三つのfailure policyをそれぞれtestする。
+- [x] 済み: 三つのfailure policyをそれぞれtestする。
 - [ ] dependency chainとcycleをtestする。
 - [ ] division by zero、domain error、unknown parameter、all-NaN inputをtestする。
 - [ ] save/load/CLI runでpolicyとdiagnosticが維持される。

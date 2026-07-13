@@ -13,7 +13,7 @@ from flowdesk_core.derived_parameters import (
     evaluate_expression,
 )
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import DerivedParameterSpec
+from flowdesk_core.models import DerivedFailurePolicy, DerivedParameterSpec
 
 VALUES = {
     "FL1-A": 10.0,
@@ -36,7 +36,31 @@ def test_derived_parameter_model_defaults() -> None:
         input_parameters=("FL1-A", "FL2-A"),
     )
     assert spec.source_stage == "compensated"
-    assert spec.invalid_value_policy == "division_by_zero_to_nan"
+    assert (
+        spec.invalid_value_policy
+        is DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
+    )
+
+
+def test_derived_parameter_rejects_unknown_failure_policy() -> None:
+    with pytest.raises(ValueError, match="invalid derived failure policy"):
+        DerivedParameterSpec(
+            id="ratio",
+            name="Ratio",
+            expression="A / B",
+            invalid_value_policy="keep_going",  # type: ignore[arg-type]
+        )
+
+
+def test_legacy_division_policy_maps_to_explicit_nan_warning_policy() -> None:
+    spec = DerivedParameterSpec(
+        id="ratio",
+        name="Ratio",
+        expression="A / B",
+        invalid_value_policy="division_by_zero_to_nan",  # type: ignore[arg-type]
+    )
+
+    assert spec.invalid_value_policy is DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
 
 
 def test_describe_derived_parameter() -> None:
