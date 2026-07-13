@@ -250,8 +250,56 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
           }
           if diagnostic not in diagnostics:
             diagnostics.append(diagnostic)
+  # Migrate legacy compensation matrices to include provenance.
+  _migrate_compensation_matrices(migrated, diagnostics)
+
+  # Ensure compensation_bindings array exists for new projects.
+  _ensure_compensation_bindings(migrated)
+
   if diagnostics:
     migrated["migration_diagnostics"] = diagnostics
 
   migrated["project_version"] = CURRENT_PROJECT_VERSION
   return migrated
+
+
+def _migrate_compensation_matrices(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Ensure each compensation matrix has a provenance block."""
+
+  matrices = migrated.get("compensation_matrices", [])
+  if not isinstance(matrices, list):
+    return
+  for matrix in matrices:
+    if not isinstance(matrix, dict):
+      continue
+    matrix_id = matrix.get("id", "unknown")
+    if "provenance" not in matrix:
+      matrix["provenance"] = {}
+      diagnostic = {
+        "code": "legacy_compensation_matrix_provenance",
+        "severity": "info",
+        "stage": "migration",
+        "message": (
+          f"Compensation matrix {matrix_id!r} had no provenance; "
+          "empty provenance was added"
+        ),
+        "details": {"matrix_id": matrix_id},
+      }
+      if diagnostic not in diagnostics:
+        diagnostics.append(diagnostic)
+
+
+def _ensure_compensation_bindings(migrated: dict[str, Any]) -> None:
+  """Initialize compensation_bindings if absent.
+
+  The legacy ``default_compensation_matrix_id`` field is preserved as-is
+  and remains the authoritative fallback for the resolver.
+  ``compensation_bindings`` is only initialized as an empty array so that
+  the schema and storage layer always have the field present.
+  """
+
+  if "compensation_bindings" not in migrated:
+    migrated["compensation_bindings"] = []

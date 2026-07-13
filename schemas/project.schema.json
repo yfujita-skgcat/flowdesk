@@ -14,7 +14,14 @@
       "type": "array",
       "items": { "$ref": "#/$defs/sample" }
     },
-    "compensation_matrices": { "type": "array", "items": { "type": "object" } },
+    "compensation_matrices": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/compensationMatrix" }
+    },
+    "compensation_bindings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/compensationBinding" }
+    },
     "derived_parameters": {
       "type": "array",
       "items": { "$ref": "#/$defs/derivedParameter" }
@@ -245,6 +252,87 @@
           "minimum": 1
         },
         "metadata": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "compensationMatrix": {
+      "type": "object",
+      "required": ["id", "name", "source", "channels", "matrix"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "source": {
+          "enum": ["fcs_metadata_spillover", "user_defined", "imported"]
+        },
+        "channels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "matrix": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "number" }
+          }
+        },
+        "created_by": { "type": ["string", "null"] },
+        "created_at": { "type": ["string", "null"] },
+        "notes": { "type": "string" },
+        "provenance": { "$ref": "#/$defs/compensationProvenance" }
+      },
+      "additionalProperties": true
+    },
+    "compensationProvenance": {
+      "type": "object",
+      "properties": {
+        "source_sample_id": { "type": ["string", "null"] },
+        "source_metadata_key": { "type": ["string", "null"] },
+        "control_sample_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "control_population_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "algorithm": { "type": ["string", "null"] },
+        "algorithm_version": { "type": ["string", "null"] },
+        "software_version": { "type": ["string", "null"] },
+        "derived_from_matrix_id": { "type": ["string", "null"] },
+        "manual_edits": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/compensationManualEdit" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "compensationManualEdit": {
+      "type": "object",
+      "required": ["row_channel_id", "column_channel_id", "old_value", "new_value"],
+      "properties": {
+        "row_channel_id": { "type": "string", "minLength": 1 },
+        "column_channel_id": { "type": "string", "minLength": 1 },
+        "old_value": { "type": "number" },
+        "new_value": { "type": "number" },
+        "edited_at": { "type": ["string", "null"] },
+        "edited_by": { "type": ["string", "null"] },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "compensationBinding": {
+      "type": "object",
+      "required": ["id", "matrix_id", "scope", "target_id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "matrix_id": { "type": "string", "minLength": 1 },
+        "scope": {
+          "enum": ["sample", "group", "execution_profile"]
+        },
+        "target_id": { "type": "string", "minLength": 1 },
+        "created_at": { "type": ["string", "null"] },
+        "created_by": { "type": ["string", "null"] },
+        "notes": { "type": "string" }
       },
       "additionalProperties": true
     }

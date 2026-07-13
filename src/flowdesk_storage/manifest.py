@@ -55,6 +55,12 @@ def validate_manifest(data: dict[str, Any]) -> None:
       data.get("gating_strategies_data", {}),
       transform_parameters,
     )
+    _validate_current_compensation_matrices(data.get("compensation_matrices", []))
+    _validate_current_compensation_bindings(
+      data.get("compensation_bindings", []),
+      {m["id"] for m in data.get("compensation_matrices", [])
+       if isinstance(m, dict) and isinstance(m.get("id"), str)},
+    )
 
 
 def _validate_current_transforms(transforms: Any) -> dict[str, tuple[str, str]]:
@@ -297,6 +303,170 @@ def _validate_current_samples(samples: list[Any]) -> None:
           f"sample {sample_id!r} channel {channel_id!r} "
           "fcs_parameter_index must be a positive integer or null"
         )
+
+
+def _validate_current_compensation_matrices(matrices: Any) -> None:
+  """Validate compensation matrix definitions in the current project format."""
+
+  if not isinstance(matrices, list):
+    raise ManifestValidationError("compensation_matrices must be an array")
+  matrix_ids: set[str] = set()
+  valid_sources = {"fcs_metadata_spillover", "user_defined", "imported"}
+  for index, matrix in enumerate(matrices):
+    if not isinstance(matrix, dict):
+      raise ManifestValidationError(
+        f"compensation_matrices[{index}] must be an object"
+      )
+    matrix_id = matrix.get("id")
+    if not isinstance(matrix_id, str) or not matrix_id:
+      raise ManifestValidationError(
+        f"compensation_matrices[{index}].id must be a non-empty string"
+      )
+    if matrix_id in matrix_ids:
+      raise ManifestValidationError(
+        f"duplicate compensation matrix ID {matrix_id!r}"
+      )
+    matrix_ids.add(matrix_id)
+    name = matrix.get("name")
+    if not isinstance(name, str) or not name:
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} name must be a non-empty string"
+      )
+    source = matrix.get("source")
+    if source not in valid_sources:
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} has invalid source {source!r}"
+      )
+    channels = matrix.get("channels")
+    if not isinstance(channels, list) or len(channels) == 0 or not all(
+      isinstance(c, str) and c for c in channels
+    ):
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} channels must be non-empty strings"
+      )
+    if len(set(channels)) != len(channels):
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} has duplicate channel IDs"
+      )
+    mat = matrix.get("matrix")
+    if not isinstance(mat, list):
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} matrix must be an array"
+      )
+    n = len(channels)
+    if len(mat) != n:
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} row count ({len(mat)}) "
+        f"must match channel count ({n})"
+      )
+    for row_idx, row in enumerate(mat):
+      if not isinstance(row, list) or len(row) != n:
+        raise ManifestValidationError(
+          f"compensation matrix {matrix_id!r} row {row_idx} "
+          f"must have {n} elements"
+        )
+      for val_idx, val in enumerate(row):
+        if not isinstance(val, (int, float)) or isinstance(val, bool):
+          raise ManifestValidationError(
+            f"compensation matrix {matrix_id!r} row {row_idx} "
+            f"col {val_idx} must be a number"
+          )
+    provenance = matrix.get("provenance", {})
+    if not isinstance(provenance, dict):
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} provenance must be an object"
+      )
+    edits = provenance.get("manual_edits", [])
+    if not isinstance(edits, list):
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} provenance.manual_edits "
+        "must be an array"
+      )
+    for edit_idx, edit in enumerate(edits):
+      if not isinstance(edit, dict):
+        raise ManifestValidationError(
+          f"compensation matrix {matrix_id!r} manual edit {edit_idx} "
+          "must be an object"
+        )
+      for field in ("row_channel_id", "column_channel_id"):
+        val = edit.get(field)
+        if not isinstance(val, str) or not val:
+          raise ManifestValidationError(
+            f"compensation matrix {matrix_id!r} manual edit {edit_idx} "
+            f"{field} must be a non-empty string"
+          )
+      for field in ("old_value", "new_value"):
+        val = edit.get(field)
+        if not isinstance(val, (int, float)) or isinstance(val, bool):
+          raise ManifestValidationError(
+            f"compensation matrix {matrix_id!r} manual edit {edit_idx} "
+            f"{field} must be a number"
+          )
+    has_edits = len(edits) > 0
+    derived_from = provenance.get("derived_from_matrix_id")
+    if has_edits and (
+      not isinstance(derived_from, str) or not derived_from
+    ):
+      raise ManifestValidationError(
+        f"compensation matrix {matrix_id!r} has manual edits but "
+        "missing derived_from_matrix_id"
+      )
+
+
+def _validate_current_compensation_bindings(
+  bindings: Any,
+  known_matrix_ids: set[str],
+) -> None:
+  """Validate compensation binding definitions in the current project format."""
+
+  if not isinstance(bindings, list):
+    raise ManifestValidationError("compensation_bindings must be an array")
+  valid_scopes = {"sample", "group", "execution_profile"}
+  binding_ids: set[str] = set()
+  binding_keys: set[tuple[str, str]] = set()
+  for index, binding in enumerate(bindings):
+    if not isinstance(binding, dict):
+      raise ManifestValidationError(
+        f"compensation_bindings[{index}] must be an object"
+      )
+    binding_id = binding.get("id")
+    if not isinstance(binding_id, str) or not binding_id:
+      raise ManifestValidationError(
+        f"compensation_bindings[{index}].id must be a non-empty string"
+      )
+    if binding_id in binding_ids:
+      raise ManifestValidationError(
+        f"duplicate compensation binding ID {binding_id!r}"
+      )
+    binding_ids.add(binding_id)
+    matrix_id = binding.get("matrix_id")
+    if not isinstance(matrix_id, str) or not matrix_id:
+      raise ManifestValidationError(
+        f"compensation binding {binding_id!r} matrix_id must be "
+        "a non-empty string"
+      )
+    if matrix_id not in known_matrix_ids:
+      raise ManifestValidationError(
+        f"compensation binding {binding_id!r} references unknown "
+        f"matrix {matrix_id!r}"
+      )
+    scope = binding.get("scope")
+    if scope not in valid_scopes:
+      raise ManifestValidationError(
+        f"compensation binding {binding_id!r} has invalid scope {scope!r}"
+      )
+    target_id = binding.get("target_id")
+    if not isinstance(target_id, str) or not target_id:
+      raise ManifestValidationError(
+        f"compensation binding {binding_id!r} target_id must be "
+        "a non-empty string"
+      )
+    key = (scope, target_id)
+    if key in binding_keys:
+      raise ManifestValidationError(
+        f"duplicate compensation binding target ({scope}, {target_id!r})"
+      )
+    binding_keys.add(key)
 
 
 def _validate_file_fingerprint(sample_id: str, value: Any) -> None:
