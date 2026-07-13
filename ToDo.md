@@ -90,13 +90,13 @@ git status --short
 - [x] 済み: `PipelineRunner.run()`へsampleごとのchannel mappingを渡す新APIを追加する。既存`event_data + channel_names`はdeprecation-compatible wrapperとして残してよい。
 - [x] 済み: compensation、derived parameter、transform、gateがcolumn positionではなくchannel identityで解決されるようにする。
 - [ ] duplicate channel label、missing parameter、ambiguous short nameをstructured errorにする。
-- [ ] input file fingerprintにsize、mtime、hash algorithm/hash valueを保存する。
+- [x] 済み: input file fingerprintにsize、mtime、hash algorithm/hash valueを保存する。
 
 #### Storage/GUI
 
 - [x] 済み: project schemaとexample projectを新modelへ更新し、old versionからmigrationする。
-- [ ] Sample Browserへ選択可能なmetadata columns、sort/filter、channel mismatch badgeを追加する。
-- [ ] missing fileのreconnect dialogを追加し、hash/metadata一致を表示する。
+- [x] 済み: Sample Browserへ選択可能なmetadata columns、sort/filter、channel mismatch badgeを追加する。
+- [x] 済み: missing fileのreconnect dialogを追加し、hash/metadata一致を表示する。
 
 #### 必須test
 
@@ -105,7 +105,7 @@ git status --short
 - [x] 済み: ambiguous/missing channelでsilent fallbackしない。
 - [x] 済み: sampleごとのraw arrayがread-onlyかつ変更されない。
 - [x] 済み: old projectをmigrationし、save/reload/headless runできる。
-- [ ] GUIで表示するchannelとheadless runnerが参照するchannel IDが一致する。
+- [x] 済み: GUIで表示するchannelとheadless runnerが参照するchannel IDが一致する。
 
 #### 完了確認
 

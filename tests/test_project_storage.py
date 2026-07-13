@@ -334,6 +334,27 @@ class TestChannelIdentityMigration:
     with pytest.raises(ManifestValidationError, match="duplicate channel ID"):
       validate_manifest(manifest)
 
+  def test_current_file_fingerprint_fields_are_validated(self) -> None:
+    manifest = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+      "samples": [{
+        "id": "s1",
+        "channels": [],
+        "fingerprint": {
+          "size": 10,
+          "mtime_ns": 20,
+          "hash_algorithm": "sha256",
+          "hash_value": "abc",
+        },
+      }],
+    }
+    validate_manifest(manifest)
+
+    manifest["samples"][0]["fingerprint"]["size"] = -1
+    with pytest.raises(ManifestValidationError, match="fingerprint size"):
+      validate_manifest(manifest)
+
 
 # -- Gating strategy --
 

@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt
 
 from flowdesk_cli.main import run_project_command
 from flowdesk_core.execution_context import ExecutionContext
-from flowdesk_core.fcs_io import read_fcs_events, write_fcs_file
+from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.gating_strategy import GatingStrategyError
 from flowdesk_core.models import GateSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
@@ -248,17 +248,21 @@ def test_boolean_hierarchy_project_round_trip_and_cli(
         assert window._sample_browser.add_samples_from_paths([str(fcs_path)]) == 1
         sample = window._sample_browser.samples()[0]
         assert window._sample_browser.select_sample(sample.id)
+        gates = [
+            replace(gates[0], x_parameter=sample.info.channels[0].id),
+            replace(gates[1], x_parameter=sample.info.channels[1].id),
+            gates[2],
+        ]
         window._gate_editor.set_gates(gates, notify=False)
         manifest = window._build_project_manifest()
-        gui_report = PipelineRunner(manifest).run(
-            ExecutionContext(), {sample.id: window._event_data[sample.id]}, ["X", "Y"]
+        gui_report = PipelineRunner(manifest).run_samples(
+            ExecutionContext(), tuple(window._sample_data.values())
         )
         window._save_project_to_path(project_path)
 
         saved = load_project(project_path)
-        _, headless_events = read_fcs_events(fcs_path)
-        headless_report = PipelineRunner(saved).run(
-            ExecutionContext(), {sample.id: headless_events}, ["X", "Y"]
+        headless_report = PipelineRunner(saved).run_samples(
+            ExecutionContext(), tuple(window._sample_data.values())
         )
         gui_counts = {
             result.population_id: result.event_count

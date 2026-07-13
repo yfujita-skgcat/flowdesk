@@ -34,10 +34,22 @@
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
         "path": { "type": "string" },
+        "fingerprint": { "$ref": "#/$defs/fileFingerprint" },
         "channels": {
           "type": "array",
           "items": { "$ref": "#/$defs/channel" }
         }
+      },
+      "additionalProperties": true
+    },
+    "fileFingerprint": {
+      "type": "object",
+      "required": ["size", "mtime_ns", "hash_algorithm", "hash_value"],
+      "properties": {
+        "size": { "type": "integer", "minimum": 0 },
+        "mtime_ns": { "type": "integer", "minimum": 0 },
+        "hash_algorithm": { "type": "string", "minLength": 1 },
+        "hash_value": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": true
     },

@@ -25,14 +25,16 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.execution_context import ExecutionContext
-from flowdesk_core.fcs_io import read_fcs_events
+from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.pipeline_runner import PipelineRunner
+from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
 from flowdesk_qt.gate_editor import GateEditor
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
+from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import load_project, resolve_sample_paths, save_project
 
 logger = logging.getLogger(__name__)
@@ -54,14 +56,12 @@ class _PipelineWorker(QThread):
     def __init__(
         self,
         project: dict[str, Any],
-        event_data: dict[str, NDArray[np.float64]],
-        channel_names: list[str],
+        samples: tuple[SampleData, ...],
         profile_id: str = "default",
     ) -> None:
         super().__init__()
         self._project = project
-        self._event_data = event_data
-        self._channel_names = channel_names
+        self._samples = samples
         self._profile_id = profile_id
         self._report: Any = None
         self._error: Exception | None = None
@@ -70,7 +70,7 @@ class _PipelineWorker(QThread):
         try:
             runner = PipelineRunner(self._project)
             ctx = ExecutionContext(execution_profile_id=self._profile_id)
-            self._report = runner.run(ctx, self._event_data, self._channel_names)
+            self._report = runner.run_samples(ctx, self._samples)
             logger.info("Pipeline completed: %s", self._report.summary)
         except Exception as exc:
             self._error = exc
@@ -100,6 +100,7 @@ class MainWindow(QMainWindow):
 
         # Internal state
         self._event_data: dict[str, NDArray[np.float64]] = {}
+        self._sample_data: dict[str, SampleData] = {}
         self._channel_names: list[str] = []
         self._current_sample_id: str | None = None
         self._worker: _PipelineWorker | None = None
@@ -364,6 +365,7 @@ class MainWindow(QMainWindow):
 
         # When a sample is removed, clean up its associated state
         self._sample_browser.on_sample_removed(self._on_sample_removed)
+        self._sample_browser.on_sample_reconnected(self._on_sample_reconnected)
 
         # When channel selection changes, replot
         self._channel_selector.on_channel_changed(self._on_channel_changed)
@@ -403,7 +405,7 @@ class MainWindow(QMainWindow):
         if report is not None and not self._results_stale:
             self._validate_population_selection(report)
         self._channel_names = [ch.name for ch in sample.info.channels]
-        x_preserved, y_preserved = self._channel_selector.set_channels(self._channel_names)
+        x_preserved, y_preserved = self._channel_selector.set_channel_specs(sample.info.channels)
 
         status = (
             f"Selected: {sample.name}  ({sample.info.event_count} events, "
@@ -416,7 +418,12 @@ class MainWindow(QMainWindow):
         self._update_status(status)
 
         # Load event data if not already loaded
-        if sample.id not in self._event_data:
+        sample_status = getattr(sample, "status", "match")
+        if sample_status in {"missing", "fingerprint mismatch"}:
+            self._update_status(f"{sample.name}: {sample_status}; reconnect before analysis")
+            self._plot_widget.clear_plot()
+            return
+        if sample.id not in self._sample_data:
             self._load_sample_events(sample)
 
         # Replot with current channel selection
@@ -426,6 +433,7 @@ class MainWindow(QMainWindow):
         """Called when a sample is removed from the browser."""
         # Remove event data for this sample
         self._event_data.pop(sample.id, None)
+        self._sample_data.pop(sample.id, None)
         self._mark_results_stale(f"Removed: {sample.name}")
 
         # If the removed sample was the currently selected one, clear UI state
@@ -438,12 +446,21 @@ class MainWindow(QMainWindow):
     def _load_sample_events(self, sample: _SampleInfo) -> None:
         """Load FCS event data for a sample."""
         try:
-            _, events = read_fcs_events(sample.path)
-            self._event_data[sample.id] = events
-            logger.info("Loaded %d events for sample %s", events.shape[0], sample.id)
+            _, typed_sample = read_fcs_sample(sample.path, sample.id)
+            self._sample_data[sample.id] = typed_sample
+            self._event_data[sample.id] = typed_sample.events
+            logger.info("Loaded %d events for sample %s", typed_sample.event_count, sample.id)
         except Exception as exc:
             logger.error("Failed to load events for %s: %s", sample.id, exc)
             self._update_status(f"Error loading {sample.name}: {exc}")
+
+    def _on_sample_reconnected(self, sample: _SampleInfo) -> None:
+        """Invalidate prior raw view and reload an explicitly accepted reconnect."""
+        self._sample_data.pop(sample.id, None)
+        self._event_data.pop(sample.id, None)
+        self._mark_results_stale(f"Reconnected: {sample.name}")
+        if self._current_sample_id == sample.id:
+            self._on_sample_selected(sample)
 
     def _on_gates_changed(self) -> None:
         """Called when the gate list changes (add/delete/clear).
@@ -487,15 +504,17 @@ class MainWindow(QMainWindow):
 
         x_name = self._channel_selector.x_channel()
         y_name = self._channel_selector.y_channel()
+        x_id = self._channel_selector.x_channel_id()
+        y_id = self._channel_selector.y_channel_id()
 
         # Sync gate editor with current channels
-        self._gate_editor.set_plot_channels(x_name, y_name)
+        self._gate_editor.set_plot_channels(x_id, y_id)
         self._gate_editor.set_plot_scales(
             self._channel_selector.x_transform(),
             self._channel_selector.y_transform(),
         )
 
-        x_idx = self._get_channel_index(x_name)
+        x_idx = self._get_channel_index(x_id)
         if x_idx < 0:
             return
 
@@ -517,7 +536,6 @@ class MainWindow(QMainWindow):
             self._plot_widget.clear_gates()
         else:
             # 2D scatter plot.
-            y_id = self._channel_selector.y_channel_id()
             y_idx = self._get_channel_index(y_id)
 
             if y_idx < 0:
@@ -540,7 +558,7 @@ class MainWindow(QMainWindow):
 
             self._plot_widget.plot_events(
                 x_data, y_data,
-                x_label=x_name, y_label=y_id,
+                x_label=x_name, y_label=y_name,
                 marginal_x_data=marginal_x,
                 marginal_y_data=marginal_y,
             )
@@ -548,16 +566,27 @@ class MainWindow(QMainWindow):
             # Refresh gate overlays
             self._plot_widget.clear_gates()
             for idx, gate in enumerate(self._gate_editor.gates()):
-                if gate.x_parameter == x_name and gate.y_parameter == y_id:
+                if gate.x_parameter == x_id and gate.y_parameter == y_id:
                     self._plot_widget.add_gate_overlay(gate, idx)
             self._gate_editor.set_overlay_status(
                 self._plot_widget.display_state()["hidden_gate_reasons"]
             )
 
-    def _get_channel_index(self, channel_name: str) -> int:
-        """Get the column index for a channel name."""
+    def _get_channel_index(self, channel_id: str) -> int:
+        """Get a column index by stable ID for the current sample."""
+        sample = self._sample_data.get(self._current_sample_id or "")
+        if sample is not None:
+            try:
+                return sample.channel_index(channel_id)
+            except Exception:
+                return -1
+        selected = self._sample_browser.selected_sample()
+        if selected is not None:
+            for index, channel in enumerate(selected.info.channels):
+                if channel.id == channel_id or channel.name == channel_id:
+                    return index
         try:
-            return self._channel_names.index(channel_name)
+            return self._channel_names.index(channel_id)
         except (ValueError, AttributeError):
             return -1
 
@@ -640,7 +669,14 @@ class MainWindow(QMainWindow):
 
     def _on_run_pipeline(self) -> None:
         """Run the analysis pipeline on loaded samples."""
-        if not self._event_data:
+        for sample in self._sample_browser.samples():
+            if (
+                getattr(sample, "status", "match")
+                not in {"missing", "fingerprint mismatch"}
+                and sample.id not in self._sample_data
+            ):
+                self._load_sample_events(sample)
+        if not self._sample_data:
             QMessageBox.information(
                 self,
                 "No samples",
@@ -656,21 +692,11 @@ class MainWindow(QMainWindow):
             )
             return
 
-        if not self._all_loaded_samples_share_channels():
-            QMessageBox.critical(
-                self,
-                "Channel mismatch",
-                "Loaded samples have different channel names. Run Pipeline is blocked "
-                "until per-sample channel mapping is implemented.",
-            )
-            return
-
         project = self._build_project_manifest()
         self._update_status("Running pipeline...")
         self._worker = _PipelineWorker(
             project,
-            self._event_data,
-            self._channel_names,
+            tuple(self._sample_data.values()),
         )
         self._worker.finished.connect(self._on_pipeline_finished)
         self._worker.start()
@@ -683,18 +709,23 @@ class MainWindow(QMainWindow):
         """
         samples = []
         sample_lookup = {sample.id: sample for sample in self._sample_browser.samples()}
-        for sid in self._event_data:
+        sample_ids = list(sample_lookup)
+        sample_ids.extend(sid for sid in self._sample_data if sid not in sample_lookup)
+        for sid in sample_ids:
             sample_info = sample_lookup.get(sid)
             if sample_info is None:
-                samples.append({"id": sid, "name": sid, "path": ""})
+                samples.append({"id": sid, "name": sid, "path": "", "channels": []})
                 continue
-            samples.append(
-                {
-                    "id": sid,
-                    "name": sample_info.name,
-                    "path": sample_info.path,
-                }
-            )
+            sample_mapping = {
+                "id": sid,
+                "name": sample_info.name,
+                "path": sample_info.path,
+                "channels": [asdict(channel) for channel in sample_info.info.channels],
+            }
+            fingerprint = getattr(sample_info, "fingerprint", None)
+            if fingerprint is not None:
+                sample_mapping["fingerprint"] = fingerprint.to_mapping()
+            samples.append(sample_mapping)
 
         gates_list = list(self._gate_editor.gates())
 
@@ -708,7 +739,7 @@ class MainWindow(QMainWindow):
 
         project: dict[str, Any] = {
             "project_id": self._project_id,
-            "project_version": "1.0.0",
+            "project_version": CURRENT_PROJECT_VERSION,
             "pipeline_version": "0.1",
             "samples": samples,
             "execution_profiles": [
@@ -728,8 +759,8 @@ class MainWindow(QMainWindow):
             "sample_path_resolution_policy": "relative_to_project_or_absolute",
             "plot_display_settings": {
                 "selected_sample_id": self._current_sample_id,
-                "x_channel": self._channel_selector.x_channel(),
-                "y_channel": self._channel_selector.y_channel(),
+                "x_channel": self._channel_selector.x_channel_id(),
+                "y_channel": self._channel_selector.y_channel_id(),
                 "x_scale": self._channel_selector.x_transform(),
                 "y_scale": self._channel_selector.y_transform(),
                 "marginal_enabled": self._plot_widget.is_marginal_enabled(),
@@ -868,15 +899,14 @@ class MainWindow(QMainWindow):
 
         self._sample_browser.clear_samples()
         self._event_data.clear()
+        self._sample_data.clear()
         self._current_sample_id = None
         self._channel_names = []
         self._gate_editor.set_gates(list(strategy.gates), notify=False)
         self._population_tree.set_population_parents(self._population_parent_map())
 
         resolved_samples = resolve_sample_paths(manifest, project_path)
-        self._sample_browser.add_samples_from_paths(
-            [str(sample["path"]) for sample in resolved_samples]
-        )
+        self._sample_browser.add_project_samples(resolved_samples)
         display = manifest.get("plot_display_settings", {})
         self._channel_selector.set_x_transform(display.get("x_scale", "linear"))
         self._channel_selector.set_y_transform(display.get("y_scale", "linear"))
@@ -973,8 +1003,8 @@ class MainWindow(QMainWindow):
         if abs(x_max - x_min) < 1e-10 or abs(y_max - y_min) < 1e-10:
             return
 
-        x_name = self._channel_selector.x_channel()
-        y_name = self._channel_selector.y_channel()
+        x_name = self._channel_selector.x_channel_id()
+        y_name = self._channel_selector.y_channel_id()
 
         import uuid
 
@@ -1125,17 +1155,6 @@ class MainWindow(QMainWindow):
         self._gate_editor.clear_population_results()
         self._selected_population_id = "all_events"
         self._update_status(f"{reason} (results stale; rerun pipeline)")
-
-    def _all_loaded_samples_share_channels(self) -> bool:
-        samples = [
-            sample
-            for sample in self._sample_browser.samples()
-            if sample.id in self._event_data
-        ]
-        if not samples:
-            return True
-        first = [ch.name for ch in samples[0].info.channels]
-        return all([ch.name for ch in sample.info.channels] == first for sample in samples)
 
     # -- help ----------------------------------------------------------------
 

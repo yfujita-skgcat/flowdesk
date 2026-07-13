@@ -74,7 +74,7 @@ def test_population_filter_reduces_scatter_points(
             name="positive",
             gate_type="range",
             parent_population_id="all_events",
-            x_parameter="X",
+            x_parameter=sample.info.channels[0].id,
             thresholds={"min": 2.0},
         )
         window._gate_editor.set_gates([gate])
@@ -142,7 +142,7 @@ def test_population_filter_persists_across_channel_switch(
             name="positive",
             gate_type="range",
             parent_population_id="all_events",
-            x_parameter="X",
+            x_parameter=sample.info.channels[0].id,
             thresholds={"min": 2.0},
         )
         window._gate_editor.set_gates([gate])
@@ -203,7 +203,7 @@ def test_gate_edit_invalidates_population_filter(
             name="positive",
             gate_type="range",
             parent_population_id="all_events",
-            x_parameter="X",
+            x_parameter=sample.info.channels[0].id,
             thresholds={"min": 2.0},
         )
         window._gate_editor.set_gates([gate])
@@ -224,7 +224,7 @@ def test_gate_edit_invalidates_population_filter(
             name="negative",
             gate_type="range",
             parent_population_id="all_events",
-            x_parameter="X",
+            x_parameter=sample.info.channels[0].id,
             thresholds={"max": 1.0},
         )
         window._gate_editor.add_gate(new_gate)
@@ -274,8 +274,8 @@ def test_gui_population_count_matches_headless(
             name="rectangle",
             gate_type="rectangle",
             parent_population_id="all_events",
-            x_parameter="FSC",
-            y_parameter="SSC",
+            x_parameter=sample.info.channels[0].id,
+            y_parameter=sample.info.channels[1].id,
             thresholds={"x_min": 50.0, "x_max": 200.0, "y_min": 20.0, "y_max": 100.0},
         )
         window._gate_editor.set_gates([gate])
@@ -341,8 +341,8 @@ def test_downsampling_does_not_change_headless_count(
             name="rectangle",
             gate_type="rectangle",
             parent_population_id="all_events",
-            x_parameter="FSC",
-            y_parameter="SSC",
+            x_parameter=sample.info.channels[0].id,
+            y_parameter=sample.info.channels[1].id,
             thresholds={
                 "x_min": 50.0,
                 "x_max": 200.0,
@@ -431,9 +431,9 @@ def test_real_fcs_multi_sample_membership_switch(
         window._load_sample_events(sample2)
         qapp.processEvents()
 
-        ch_names = [ch.name for ch in sample1.info.channels]
-        x_ch = ch_names[0]
-        y_ch = ch_names[1] if len(ch_names) > 1 else ch_names[0]
+        channel_ids = [ch.id for ch in sample1.info.channels]
+        x_ch = channel_ids[0]
+        y_ch = channel_ids[1] if len(channel_ids) > 1 else channel_ids[0]
 
         data1 = window._event_data[sample1.id]
         mid_x = float(data1[:, 0].mean())
@@ -688,7 +688,7 @@ def test_count_mode_with_population_filter(
             name="positive",
             gate_type="range",
             parent_population_id="all_events",
-            x_parameter="X",
+            x_parameter=sample.info.channels[0].id,
             thresholds={"min": 2.0},
         )
         window._gate_editor.set_gates([gate])
@@ -808,7 +808,7 @@ def test_marginal_histograms_respect_population_filter(
             name="positive",
             gate_type="range",
             parent_population_id="all_events",
-            x_parameter="X",
+            x_parameter=sample.info.channels[0].id,
             thresholds={"min": 2.0},
         )
         window._gate_editor.set_gates([gate])

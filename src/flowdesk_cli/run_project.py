@@ -5,14 +5,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
-
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.export import (
   ExportError,
   write_population_results_wide,
 )
-from flowdesk_core.fcs_io import read_fcs_events
+from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.pipeline_runner import PipelineError, run_project_pipeline
 from flowdesk_storage.manifest import ManifestValidationError
 from flowdesk_storage.project import load_project, resolve_sample_paths
@@ -57,30 +55,19 @@ def run_project_command(
   # Run pipeline
   # ------------------------------------------------------------------
   try:
-    event_data = None
-    channel_names = None
+    typed_samples = None
     samples = resolve_sample_paths(project, Path(project_path))
     if samples:
-      loaded_events: dict[str, np.ndarray] = {}
-      common_channels: list[str] | None = None
-      for sample in samples:
-        info, events = read_fcs_events(sample["path"])
-        names = [channel.name for channel in info.channels]
-        if common_channels is not None and names != common_channels:
-          raise PipelineError(
-            "saved samples have different channel names; per-sample mapping is required"
-          )
-        common_channels = names
-        loaded_events[str(sample["id"])] = events
-      event_data = loaded_events
-      channel_names = common_channels
+      typed_samples = tuple(
+        read_fcs_sample(sample["path"], str(sample["id"]))[1]
+        for sample in samples
+      )
 
     report = run_project_pipeline(
       project,
       output_dir=None,
       execution_profile_id=execution_profile_id,
-      event_data=event_data,
-      channel_names=channel_names,
+      samples=typed_samples,
     )
   except PipelineError as exc:
     print("Error: pipeline execution failed:", file=sys.stderr)

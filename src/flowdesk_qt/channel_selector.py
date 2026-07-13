@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from flowdesk_core.models import ChannelSpec
 from flowdesk_qt.diagnostics import invoke_callback
 
 AxisTransform = Literal["linear", "log10", "asinh"]
@@ -56,35 +57,45 @@ class ChannelSelector(QWidget):
         selection had to fall back because the new sample lacks that channel.
         Axis transform selections are not changed.
         """
-        prev_x = self.x_channel() if preserve_selection else ""
-        prev_y = self.y_channel() if preserve_selection else ""
+        return self.set_channel_specs(
+            [ChannelSpec(id=name, name=name) for name in channels],
+            preserve_selection=preserve_selection,
+        )
+
+    def set_channel_specs(
+        self,
+        channels: list[ChannelSpec] | tuple[ChannelSpec, ...],
+        preserve_selection: bool = True,
+    ) -> tuple[bool, bool]:
+        """Populate selectors with display labels backed by stable channel IDs."""
+        prev_x = self.x_channel_id() if preserve_selection else ""
+        prev_y = self.y_channel_id() if preserve_selection else ""
 
         with QSignalBlocker(self._x_combo), QSignalBlocker(self._y_combo):
             self._x_combo.clear()
             self._y_combo.clear()
-            self._x_combo.addItems(channels)
-            # Y axis gets real channels plus the Count sentinel.
-            self._y_combo.addItems(channels)
+            for channel in channels:
+                label = channel.name
+                if channel.short_name and channel.short_name != channel.name:
+                    label = f"{channel.short_name} [{channel.name}]"
+                self._x_combo.addItem(label, channel.id)
+                self._y_combo.addItem(label, channel.id)
             self._y_combo.addItem(COUNT_DISPLAY, COUNT_CHANNEL)
 
-            x_preserved = False
-            y_preserved = False
-            if prev_x and prev_x in channels:
-                self._x_combo.setCurrentText(prev_x)
-                x_preserved = True
-            elif len(channels) >= 1:
+            x_index = self._x_combo.findData(prev_x)
+            y_index = self._y_combo.findData(prev_y)
+            x_preserved = prev_x != "" and x_index >= 0
+            y_preserved = prev_y != "" and y_index >= 0
+            if x_preserved:
+                self._x_combo.setCurrentIndex(x_index)
+            elif channels:
                 self._x_combo.setCurrentIndex(0)
 
-            if prev_y and prev_y in channels:
-                self._y_combo.setCurrentText(prev_y)
-                y_preserved = True
-            elif prev_y == COUNT_CHANNEL:
-                # Preserve Count selection across sample switch.
-                self._y_combo.setCurrentIndex(len(channels))
-                y_preserved = True
+            if y_preserved:
+                self._y_combo.setCurrentIndex(y_index)
             elif len(channels) >= 2:
                 self._y_combo.setCurrentIndex(1)
-            elif len(channels) >= 1:
+            elif channels:
                 self._y_combo.setCurrentIndex(0)
 
         self._on_any_changed()
@@ -93,6 +104,10 @@ class ChannelSelector(QWidget):
     def x_channel(self) -> str:
         """Return the currently selected X channel name."""
         return self._x_combo.currentText()
+
+    def x_channel_id(self) -> str:
+        """Return the stable ID of the selected X channel."""
+        return self._x_combo.currentData() or self._x_combo.currentText()
 
     def y_channel(self) -> str:
         """Return the currently selected Y channel name (display label)."""
@@ -119,16 +134,23 @@ class ChannelSelector(QWidget):
 
         If ``y_channel`` is ``COUNT_CHANNEL``, the Count option is selected.
         """
-        if self._x_combo.findText(x_channel) >= 0:
-            self._x_combo.setCurrentText(x_channel)
+        x_index = self._x_combo.findData(x_channel)
+        if x_index < 0:
+            x_index = self._x_combo.findText(x_channel)
+        if x_index >= 0:
+            self._x_combo.setCurrentIndex(x_index)
         if y_channel == COUNT_CHANNEL:
             # Find the Count sentinel by its user data.
             for i in range(self._y_combo.count()):
                 if self._y_combo.itemData(i) == COUNT_CHANNEL:
                     self._y_combo.setCurrentIndex(i)
                     break
-        elif self._y_combo.findText(y_channel) >= 0:
-            self._y_combo.setCurrentText(y_channel)
+        else:
+            y_index = self._y_combo.findData(y_channel)
+            if y_index < 0:
+                y_index = self._y_combo.findText(y_channel)
+            if y_index >= 0:
+                self._y_combo.setCurrentIndex(y_index)
 
     # -- axis transform API --------------------------------------------------
 

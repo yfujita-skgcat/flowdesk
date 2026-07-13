@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +23,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from flowdesk_cli.run_project import run_project_command  # noqa: E402
 from flowdesk_core.execution_context import ExecutionContext  # noqa: E402
 from flowdesk_core.execution_report import ExecutionReport  # noqa: E402
-from flowdesk_core.fcs_io import FcsFileInfo, read_fcs_events, write_fcs_file  # noqa: E402
+from flowdesk_core.fcs_io import FcsFileInfo, write_fcs_file  # noqa: E402
 from flowdesk_core.gating_strategy import (  # noqa: E402
   GatingStrategyError,
   evaluate_gating_strategy,
@@ -617,6 +619,72 @@ def test_sample_browser_same_stem_different_paths_get_unique_ids(
     app.processEvents()
 
 
+def test_sample_browser_metadata_columns_filter_and_mismatch_badges(
+  tmp_path: Path,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  try:
+    first = tmp_path / "alpha.fcs"
+    second = tmp_path / "beta.fcs"
+    write_fcs_file(first, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
+    write_fcs_file(second, np.ones((2, 2), dtype=np.float64), ["X", "Z"])
+
+    assert browser.add_samples_from_paths([str(first), str(second)]) == 2
+    assert browser.samples()[1].status == "channel mismatch"
+    assert "[≠]" in browser._list_widget.item(1).text()
+
+    browser.set_channel_column_visible("id", True)
+    assert not browser._channel_table.isColumnHidden(0)
+    browser._filter_edit.setText("alpha")
+    assert not browser._list_widget.item(0).isHidden()
+    assert browser._list_widget.item(1).isHidden()
+  finally:
+    browser.close()
+    browser.deleteLater()
+    app.processEvents()
+
+
+def test_sample_browser_reconnect_requires_confirmation_on_hash_mismatch(
+  tmp_path: Path,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  try:
+    original = tmp_path / "original.fcs"
+    identical = tmp_path / "identical.fcs"
+    changed = tmp_path / "changed.fcs"
+    write_fcs_file(original, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
+    assert browser.add_samples_from_paths([str(original)]) == 1
+    source = browser.samples()[0]
+    shutil.copyfile(original, identical)
+    write_fcs_file(changed, np.zeros((2, 2), dtype=np.float64), ["X", "Y"])
+    project_sample = {
+      "id": source.id,
+      "name": source.name,
+      "path": str(tmp_path / "missing.fcs"),
+      "fingerprint": source.fingerprint.to_mapping(),
+      "channels": [asdict(channel) for channel in source.info.channels],
+    }
+
+    browser.clear_samples()
+    assert browser.add_project_samples([project_sample]) == 1
+    restored = browser.samples()[0]
+    assert restored.status == "missing"
+    accepted, details = browser.reconnect_sample(restored.id, identical)
+    assert accepted, details
+
+    accepted, details = browser.reconnect_sample(restored.id, changed)
+    assert not accepted
+    assert "DIFFERENT" in details
+    accepted, _ = browser.reconnect_sample(restored.id, changed, allow_mismatch=True)
+    assert accepted
+  finally:
+    browser.close()
+    browser.deleteLater()
+    app.processEvents()
+
+
 def test_channel_selection_preserved_when_sample_channels_match() -> None:
   app = _app()
   window = MainWindow()
@@ -847,15 +915,14 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
       name="positive",
       gate_type="range",
       parent_population_id="all_events",
-      x_parameter="X",
+      x_parameter=sample.info.channels[0].id,
       thresholds={"min": 1.0},
     )
     window._gate_editor.set_gates([gate])
     gui_manifest = window._build_project_manifest()
-    gui_report = PipelineRunner(gui_manifest).run(
+    gui_report = PipelineRunner(gui_manifest).run_samples(
       ExecutionContext(),
-      {sample.id: window._event_data[sample.id]},
-      ["X", "Y"],
+      tuple(window._sample_data.values()),
     )
 
     window._save_project_to_path(project_path)
@@ -869,11 +936,9 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     reloaded_window._load_project_from_path(project_path)
     assert [gate.id for gate in reloaded_window._gate_editor.gates()] == ["positive"]
 
-    info, headless_events = read_fcs_events(fcs_path)
-    headless_report = PipelineRunner(saved).run(
+    headless_report = PipelineRunner(saved).run_samples(
       ExecutionContext(),
-      {sample.id: headless_events},
-      [channel.name for channel in info.channels],
+      tuple(reloaded_window._sample_data.values()),
     )
     gui_counts = {
       result.population_id: result.event_count for result in gui_report.population_results

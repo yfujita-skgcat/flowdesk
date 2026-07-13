@@ -54,13 +54,12 @@ def test_load_gate_run_and_match_headless(
       name="positive",
       gate_type="range",
       parent_population_id="all_events",
-      x_parameter="X",
+      x_parameter=sample.info.channels[0].id,
       thresholds={"min": 2.0},
     )
     window._gate_editor.set_gates([gate])
     manifest = window._build_project_manifest()
-    event_data = dict(window._event_data)
-    channel_names = list(window._channel_names)
+    typed_samples = tuple(window._sample_data.values())
 
     window._on_run_pipeline()
     _wait_for_worker(window)
@@ -71,8 +70,8 @@ def test_load_gate_run_and_match_headless(
     assert window._population_tree._table.rowCount() == 2
     assert window._worker is None
 
-    headless_report = PipelineRunner(manifest).run(
-      ExecutionContext(), event_data, channel_names
+    headless_report = PipelineRunner(manifest).run_samples(
+      ExecutionContext(), typed_samples
     )
     gui_counts = {
       result.population_id: result.event_count
@@ -129,7 +128,7 @@ def test_pipeline_exception_releases_worker(
   def fail_run(*_args, **_kwargs):
     raise RuntimeError("synthetic pipeline failure")
 
-  monkeypatch.setattr(PipelineRunner, "run", fail_run)
+  monkeypatch.setattr(PipelineRunner, "run_samples", fail_run)
   window = MainWindow()
   try:
     window._sample_browser.add_samples_from_paths([str(fcs_path)])
@@ -146,27 +145,53 @@ def test_pipeline_exception_releases_worker(
     qapp.processEvents()
 
 
-def test_channel_mismatch_blocks_pipeline(
+def test_channel_mismatch_is_visible_but_does_not_use_shared_column_order(
   qapp,
   tmp_path: Path,
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   first = tmp_path / "first.fcs"
   second = tmp_path / "second.fcs"
-  write_fcs_file(first, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
-  write_fcs_file(second, np.ones((2, 2), dtype=np.float64), ["X", "Z"])
-  critical: list[str] = []
-  monkeypatch.setattr(
-    "flowdesk_qt.main_window.QMessageBox.critical",
-    lambda _parent, _title, message: critical.append(message),
+  write_fcs_file(
+    first,
+    np.array([[1.0, 10.0], [3.0, 20.0]], dtype=np.float64),
+    ["X", "Y"],
+  )
+  write_fcs_file(
+    second,
+    np.array([[10.0, 1.0], [20.0, 3.0]], dtype=np.float64),
+    ["Y", "X"],
   )
   window = MainWindow()
   try:
     window._sample_browser.add_samples_from_paths([str(first), str(second)])
-    for sample in window._sample_browser.samples():
-      window._sample_browser.select_sample(sample.id)
+    x_id = window._sample_browser.samples()[0].info.channels[0].id
+    window._gate_editor.set_gates([
+      GateSpec(
+        id="x_positive",
+        name="X positive",
+        gate_type="range",
+        parent_population_id="all_events",
+        x_parameter=x_id,
+        thresholds={"min": 2.0},
+      )
+    ])
+    window._sample_browser.select_sample(window._sample_browser.samples()[0].id)
+    assert window._sample_browser.samples()[1].status == "order differs"
     window._on_run_pipeline()
-    assert "different channel names" in critical[0]
+    _wait_for_worker(window)
+    qapp.processEvents()
+    report = window._population_tree.last_report()
+    assert report is not None
+    assert {
+      (result.sample_id, result.population_id): result.event_count
+      for result in report.population_results
+    } == {
+      (window._sample_browser.samples()[0].id, "all_events"): 2,
+      (window._sample_browser.samples()[0].id, "x_positive"): 1,
+      (window._sample_browser.samples()[1].id, "all_events"): 2,
+      (window._sample_browser.samples()[1].id, "x_positive"): 1,
+    }
     assert window._worker is None
   finally:
     window.close()

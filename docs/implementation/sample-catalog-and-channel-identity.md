@@ -50,7 +50,7 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 4. **Storage and migration** — implemented
    - Persist stable IDs and FCS identity fields.
    - Add a project-version migration; never guess when duplicate legacy labels exist.
-5. **Catalog GUI**
+5. **Catalog GUI** — implemented
    - Display selectable metadata columns and mismatch badges.
    - Add reconnect logic based on stored fingerprint; require confirmation on mismatch.
 
@@ -147,7 +147,36 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 - The example bundle and JSON schema now describe version `1.1.0`. A synthetic
   `0.1` fixture proves migration, round-trip preservation, and headless gate
   execution.
-- Catalog GUI binding and reconnect UX remain increment 5.
+- Catalog GUI binding and reconnect UX are completed in increment 5.
+
+## Confirmed contract after increment 5
+
+- The channel selector renders a human-readable `$PnS [$PnN]` label when both
+  differ, while its Qt item data remains the stable `ChannelSpec.id`. New gates,
+  saved plot selections, overlays, event-column lookup, GUI execution, and CLI
+  execution all use that stable ID.
+- GUI execution passes immutable per-sample `SampleData` objects to
+  `PipelineRunner.run_samples()`. It no longer blocks samples with different
+  channel lists or assumes a shared column order. Samples not yet viewed are
+  loaded before execution through the same typed FCS adapter.
+- The CLI loads saved FCS inputs through `read_fcs_sample()` and calls the same
+  typed runner path, so a project created in the GUI remains reproducible
+  outside Qt.
+- The Sample Browser distinguishes exact identity, channel-order-only changes,
+  channel-set mismatch, missing input, and fingerprint mismatch. Order-only
+  differences are diagnostic and do not block scientifically valid execution.
+- Channel metadata columns are selectable and sortable. Samples can be filtered
+  by name, path, or status and sorted by those same catalog fields.
+- Each imported input stores size, nanosecond mtime, hash algorithm, and full
+  hash value. SHA-256 content equality is authoritative; size and mtime are
+  diagnostics and do not silently establish identity.
+- Missing or changed project inputs remain placeholders and are not executed.
+  Reconnect compares the stored content hash and ordered channel IDs. A mismatch
+  requires explicit confirmation before the path, metadata, and fingerprint are
+  replaced and all previous population results are invalidated.
+- Fingerprinting currently runs synchronously during catalog import/reconnect.
+  Moving hashing to a cancellable background catalog worker is a future
+  performance improvement; it does not change the persisted identity contract.
 
 ## Required tests
 

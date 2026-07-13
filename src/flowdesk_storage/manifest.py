@@ -58,6 +58,9 @@ def _validate_current_samples(samples: list[Any]) -> None:
       raise ManifestValidationError(
         f"samples[{sample_index}].id must be a non-empty string"
       )
+    fingerprint = sample.get("fingerprint")
+    if fingerprint is not None:
+      _validate_file_fingerprint(sample_id, fingerprint)
     channels = sample.get("channels")
     if not isinstance(channels, list):
       raise ManifestValidationError(
@@ -97,6 +100,26 @@ def _validate_current_samples(samples: list[Any]) -> None:
           f"sample {sample_id!r} channel {channel_id!r} "
           "fcs_parameter_index must be a positive integer or null"
         )
+
+
+def _validate_file_fingerprint(sample_id: str, value: Any) -> None:
+  """Validate the persisted fingerprint fields without reading the input file."""
+  if not isinstance(value, dict):
+    raise ManifestValidationError(
+      f"sample {sample_id!r} fingerprint must be an object"
+    )
+  for field in ("size", "mtime_ns"):
+    number = value.get(field)
+    if not isinstance(number, int) or isinstance(number, bool) or number < 0:
+      raise ManifestValidationError(
+        f"sample {sample_id!r} fingerprint {field} must be a non-negative integer"
+      )
+  for field in ("hash_algorithm", "hash_value"):
+    text = value.get(field)
+    if not isinstance(text, str) or not text:
+      raise ManifestValidationError(
+        f"sample {sample_id!r} fingerprint {field} must be a non-empty string"
+      )
 
 
 def load_manifest(path: str | Path) -> dict[str, Any]:

@@ -70,6 +70,7 @@ def run_project_pipeline(
   execution_profile_id: str = "default",
   event_data: dict[str, NDArray[np.float64]] | None = None,
   channel_names: list[str] | None = None,
+  samples: Sequence[SampleData] | None = None,
 ) -> ExecutionReport:
   """Run a project pipeline and return an execution report.
 
@@ -81,6 +82,7 @@ def run_project_pipeline(
         If omitted, the runner uses pre-baked ``population_results`` from the
         project manifest (backward compatibility).
     channel_names: Column names aligned with ``event_data`` arrays.
+    samples: Preferred typed inputs with per-sample channel identity.
 
   Returns:
     ``ExecutionReport`` with population results and reproducibility metadata.
@@ -90,7 +92,10 @@ def run_project_pipeline(
     output_dir=None if output_dir is None else Path(output_dir),
     execution_profile_id=execution_profile_id,
   )
-  return PipelineRunner(project).run(context, event_data, channel_names)
+  runner = PipelineRunner(project)
+  if samples is not None:
+    return runner.run_samples(context, samples)
+  return runner.run(context, event_data, channel_names)
 
 
 class PipelineRunner:
