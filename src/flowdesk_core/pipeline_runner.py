@@ -19,7 +19,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from flowdesk_core.compensation import apply_compensation, validate_compensation_matrix
-from flowdesk_core.derived_parameters import ExpressionError, evaluate_expression
+from flowdesk_core.derived_parameters import (
+  DerivedParameterPlan,
+  DerivedParameterPlanningError,
+  ExpressionError,
+  evaluate_expression,
+  plan_derived_parameters,
+)
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.execution_report import ExecutionDiagnostic, ExecutionReport
@@ -218,6 +224,21 @@ class PipelineRunner:
     # Resolve which samples to process.
     sample_selector = profile.get("sample_selector", "all")
     selected_samples = self._resolve_samples(samples, sample_selector)
+    available_input_ids: set[str] = set()
+    for sample_meta in selected_samples:
+      sample_id = str(sample_meta.get("id", "unknown"))
+      typed_sample = sample_data.get(sample_id)
+      if typed_sample is not None:
+        available_input_ids.update(channel.id for channel in typed_sample.channels)
+      for channel in sample_meta.get("channels", []):
+        if isinstance(channel, Mapping) and isinstance(channel.get("id"), str):
+          available_input_ids.add(channel["id"])
+    try:
+      derived_plan = plan_derived_parameters(
+        self._derived_parameter_specs(), available_input_ids
+      )
+    except DerivedParameterPlanningError as exc:
+      raise PipelineError(f"{exc.code}: {exc}") from exc
 
     all_population_results: list[PopulationResult] = []
     all_population_membership: list[PopulationMembership] = []
@@ -244,7 +265,7 @@ class PipelineRunner:
       # --- Step 2: Derived parameters ---
       try:
         enriched, derived_diagnostics = self._step_derived_parameters(
-          compensated, sid
+          compensated, sid, derived_plan
         )
       except _DerivedParameterStepError as exc:
         diagnostics.append(exc.diagnostic)
@@ -346,38 +367,18 @@ class PipelineRunner:
     self,
     data: _AnalysisData,
     sample_id: str,
+    plan: DerivedParameterPlan,
   ) -> tuple[_AnalysisData, tuple[ExecutionDiagnostic, ...]]:
     """Evaluate derived parameter expressions and append as new columns."""
-    specs = self._project.get("derived_parameters", [])
-    if not specs:
+    if not plan.execution_order:
       return data, ()
 
     current_channels = list(data.channels)
     current_data = data.events
     diagnostics: list[ExecutionDiagnostic] = []
 
-    for spec_dict in specs:
-      try:
-        spec = DerivedParameterSpec(
-          id=spec_dict["id"],
-          name=spec_dict.get("name", spec_dict["id"]),
-          expression=spec_dict["expression"],
-          source_stage=spec_dict.get("source_stage", "compensated"),
-          input_parameters=tuple(spec_dict.get("input_parameters", ())),
-          output_label=spec_dict.get("output_label"),
-          invalid_value_policy=spec_dict.get(
-            "invalid_value_policy", "emit_nan_with_warning"
-          ),
-        )
-      except (KeyError, TypeError, ValueError) as exc:
-        parameter_id = spec_dict.get("id", "unknown")
-        raise PipelineError(
-          f"invalid_derived_parameter_definition: {parameter_id!r}: {exc}"
-        ) from exc
-
+    for spec in plan.execution_order:
       label = spec.output_label or spec.name
-      if spec.id in {channel.id for channel in current_channels}:
-        raise PipelineError(f"duplicate derived channel ID: {spec.id!r}")
 
       # Build variable dict from current columns.
       variables: dict[str, NDArray[np.float64]] = {}
@@ -442,6 +443,38 @@ class PipelineRunner:
       )
 
     return _AnalysisData(current_data, tuple(current_channels)), tuple(diagnostics)
+
+  def _derived_parameter_specs(self) -> tuple[DerivedParameterSpec, ...]:
+    """Parse project definitions once before any sample is processed."""
+    definitions = self._project.get("derived_parameters", [])
+    parsed: list[DerivedParameterSpec] = []
+    for definition in definitions:
+      if not isinstance(definition, Mapping):
+        raise PipelineError(
+          "invalid_derived_parameter_definition: definition must be an object"
+        )
+      try:
+        parameter_id = definition["id"]
+        parsed.append(
+          DerivedParameterSpec(
+            id=parameter_id,
+            name=definition.get("name", parameter_id),
+            expression=definition["expression"],
+            source_stage=definition.get("source_stage", "compensated"),
+            input_parameters=tuple(definition.get("input_parameters", ())),
+            output_label=definition.get("output_label"),
+            invalid_value_policy=definition.get(
+              "invalid_value_policy", "emit_nan_with_warning"
+            ),
+            notes=definition.get("notes", ""),
+          )
+        )
+      except (KeyError, TypeError, ValueError) as exc:
+        parameter_id = definition.get("id", "unknown")
+        raise PipelineError(
+          f"invalid_derived_parameter_definition: {parameter_id!r}: {exc}"
+        ) from exc
+    return tuple(parsed)
 
   def _step_transforms(
     self,

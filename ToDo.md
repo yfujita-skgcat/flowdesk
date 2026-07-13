@@ -125,8 +125,8 @@ git status --short
 - [x] 済み: runner内の広い`except Exception`による全NaN置換を削除する。
 - [x] 済み: `fail_run`、`fail_sample`、`emit_nan_with_warning`を型付きpolicyとしてmodel/schemaへ追加する。
 - [x] 済み: `emit_nan_with_warning`時もexpression、sample、exception type、affected event countをExecutionReportへ記録する。
-- [ ] derived parameter間のdependency graphを構築し、topological orderで評価する。
-- [ ] unknown inputとcycleをrun開始前に拒否する。
+- [x] 済み: derived parameter間のdependency graphを構築し、topological orderで評価する。
+- [x] 済み: unknown inputとcycleをrun開始前に拒否する。
 - [ ] unit、output channel ID、source stageを保存する。
 - [ ] derived stageの戻り値をeventsと更新済みchannel specsの組にし、後続transform/gateへ必ず同じ列対応を渡す。
 - [ ] canonical orderに反する`source_stage = transformed`は新規作成を禁止する。既存projectは黙って意味を変えず、migration diagnosticと明示的互換policyを用意する。
@@ -140,7 +140,7 @@ git status --short
 #### 必須test
 
 - [x] 済み: 三つのfailure policyをそれぞれtestする。
-- [ ] dependency chainとcycleをtestする。
+- [x] 済み: dependency chainとcycleをtestする。
 - [ ] division by zero、domain error、unknown parameter、all-NaN inputをtestする。
 - [ ] save/load/CLI runでpolicyとdiagnosticが維持される。
 - [ ] raw値参照とcompensated値参照が、derived stage後・transform前のcanonical順序を壊さないことをtestする。

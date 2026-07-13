@@ -29,6 +29,9 @@ Implement a safe expression evaluator for derived parameters such as `FL1-A / FL
 - Reject attempts to access Python internals.
 - Report missing input parameters clearly.
 - Preserve source stage metadata.
+- Extract exact parameter references through the same restricted AST and build
+  dependencies before event evaluation. Unknown references and cycles are
+  definition errors, not per-event NaN policy cases.
 
 ## Required Tests
 

@@ -7,10 +7,13 @@ import math
 import pytest
 
 from flowdesk_core.derived_parameters import (
+    DerivedParameterPlanningError,
     ExpressionError,
     describe_derived_parameter,
     evaluate_binary_expression,
     evaluate_expression,
+    extract_parameter_references,
+    plan_derived_parameters,
 )
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.models import DerivedFailurePolicy, DerivedParameterSpec
@@ -61,6 +64,88 @@ def test_legacy_division_policy_maps_to_explicit_nan_warning_policy() -> None:
     )
 
     assert spec.invalid_value_policy is DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
+
+
+def test_extract_parameter_references_uses_exact_safe_ids() -> None:
+    references = extract_parameter_references(
+        "log10(FL1-A / ratio.previous)",
+        ("FL1-A", "ratio.previous"),
+    )
+
+    assert references == ("FL1-A", "ratio.previous")
+
+
+def test_extract_references_distinguishes_subtraction_from_hyphenated_ids() -> None:
+    references = extract_parameter_references(
+        "signal-reference + FL1-A",
+        ("signal", "reference", "FL1-A"),
+    )
+
+    assert references == ("signal", "reference", "FL1-A")
+
+
+def test_dependency_plan_keeps_display_order_and_topologically_reorders() -> None:
+    dependent = DerivedParameterSpec(
+        id="normalized",
+        name="Normalized",
+        expression="ratio + signal",
+        input_parameters=("ratio", "signal"),
+    )
+    prerequisite = DerivedParameterSpec(
+        id="ratio",
+        name="Ratio",
+        expression="signal / reference",
+        input_parameters=("signal", "reference"),
+    )
+
+    plan = plan_derived_parameters(
+        (dependent, prerequisite),
+        ("signal", "reference"),
+    )
+
+    assert [spec.id for spec in plan.display_order] == ["normalized", "ratio"]
+    assert [spec.id for spec in plan.execution_order] == ["ratio", "normalized"]
+    assert plan.dependencies == (
+        ("normalized", ("ratio",)),
+        ("ratio", ()),
+    )
+
+
+def test_dependency_plan_rejects_unknown_input_with_context() -> None:
+    spec = DerivedParameterSpec(
+        id="ratio",
+        name="Ratio",
+        expression="signal / missing",
+    )
+
+    with pytest.raises(DerivedParameterPlanningError) as error:
+        plan_derived_parameters((spec,), ("signal",))
+
+    assert error.value.code == "unknown_derived_input"
+    assert error.value.parameter_id == "ratio"
+    assert error.value.references == ("missing",)
+
+
+def test_dependency_plan_rejects_cycle_with_all_ids() -> None:
+    first = DerivedParameterSpec("first", "First", "second + 1")
+    second = DerivedParameterSpec("second", "Second", "first + 1")
+
+    with pytest.raises(DerivedParameterPlanningError) as error:
+        plan_derived_parameters((first, second), ())
+
+    assert error.value.code == "derived_dependency_cycle"
+    assert error.value.cycle_ids == ("first", "second")
+
+
+def test_cycle_diagnostic_excludes_nodes_only_blocked_by_cycle() -> None:
+    first = DerivedParameterSpec("first", "First", "second + 1")
+    second = DerivedParameterSpec("second", "Second", "first + 1")
+    blocked = DerivedParameterSpec("blocked", "Blocked", "first + 1")
+
+    with pytest.raises(DerivedParameterPlanningError) as error:
+        plan_derived_parameters((first, second, blocked), ())
+
+    assert error.value.cycle_ids == ("first", "second")
 
 
 def test_describe_derived_parameter() -> None:

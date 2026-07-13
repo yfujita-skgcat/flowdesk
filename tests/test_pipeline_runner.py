@@ -247,7 +247,7 @@ def test_derived_failure_policy_fail_run_stops_pipeline() -> None:
     derived_parameters=[{
       "id": "ratio",
       "name": "Ratio",
-      "expression": "missing / signal",
+      "expression": "signal",
       "invalid_value_policy": "fail_run",
     }],
   )
@@ -313,13 +313,12 @@ def test_derived_failure_policy_emit_nan_records_full_diagnostic() -> None:
     np.ones((4, 1), dtype=np.float64),
     (ChannelSpec(id="signal", name="Signal"),),
   )
-  expression = "missing / signal"
   project = _make_project(
     samples=[{"id": "s1"}],
     derived_parameters=[{
       "id": "ratio",
       "name": "Ratio",
-      "expression": expression,
+      "expression": "signal",
       "invalid_value_policy": "emit_nan_with_warning",
     }],
   )
@@ -332,12 +331,111 @@ def test_derived_failure_policy_emit_nan_records_full_diagnostic() -> None:
   assert diagnostic.code == "derived_parameter_evaluation_failed"
   assert diagnostic.sample_id == "s1"
   assert diagnostic.parameter_id == "ratio"
-  assert diagnostic.exception_type == "ExpressionError"
+  assert diagnostic.exception_type == "TypeError"
   assert diagnostic.affected_event_count == 4
   assert diagnostic.details == {
-    "expression": expression,
+    "expression": "signal",
     "policy": "emit_nan_with_warning",
   }
+
+
+def test_unknown_derived_input_is_rejected_before_failure_policy() -> None:
+  sample = SampleData(
+    "s1",
+    np.ones((2, 1), dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[{
+      "id": "ratio",
+      "name": "Ratio",
+      "expression": "missing / signal",
+      "invalid_value_policy": "emit_nan_with_warning",
+    }],
+  )
+
+  with pytest.raises(PipelineError, match="unknown_derived_input"):
+    PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+
+def test_dependency_cycle_is_rejected_before_sample_processing(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  sample = SampleData(
+    "s1",
+    np.ones((1, 1), dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[
+      {"id": "first", "name": "First", "expression": "second + 1"},
+      {"id": "second", "name": "Second", "expression": "first + 1"},
+    ],
+  )
+  monkeypatch.setattr(
+    PipelineRunner,
+    "_step_compensation",
+    lambda *_args: pytest.fail("sample processing started before graph validation"),
+  )
+
+  with pytest.raises(PipelineError, match="derived_dependency_cycle"):
+    PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+
+def test_runner_evaluates_dependent_definitions_in_topological_order(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  evaluation_order: list[str] = []
+
+  def vector_evaluator(expression, variables, **_kwargs):
+    evaluation_order.append(expression)
+    if expression == "signal + 1":
+      return variables["signal"] + 1
+    return variables["first"] + 1
+
+  monkeypatch.setattr(
+    "flowdesk_core.pipeline_runner.evaluate_expression", vector_evaluator
+  )
+  sample = SampleData(
+    "s1",
+    np.array([[1.0], [2.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  strategy = GatingStrategySpec(
+    id="derived_chain",
+    name="Derived chain",
+    gates=(GateSpec(
+      id="high_second",
+      name="High second",
+      gate_type="range",
+      parent_population_id="all_events",
+      x_parameter="second",
+      thresholds={"min": 3.5},
+    ),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[
+      {"id": "second", "name": "Second", "expression": "first + 1"},
+      {"id": "first", "name": "First", "expression": "signal + 1"},
+    ],
+    execution_profiles=[
+      {"id": "default", "gating_strategy_id": strategy.id}
+    ],
+    gating_strategies_data={strategy.id: strategy},
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+  assert evaluation_order == ["signal + 1", "first + 1"]
+  count = next(
+    result.event_count
+    for result in report.population_results
+    if result.population_id == "high_second"
+  )
+  assert count == 1
 
 
 # ---------------------------------------------------------------------------

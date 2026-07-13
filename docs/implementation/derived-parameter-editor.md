@@ -99,6 +99,36 @@ not silently reinterpret it.
   remain increments 2–5; this increment does not pretend the current array
   adapter is scientifically complete.
 
+## Confirmed contract after increment 2
+
+- `extract_parameter_references()` parses the same restricted Python AST used
+  by the safe evaluator. It recognizes exact stable IDs including hyphens and
+  dots, distinguishes subtraction between identifier-like IDs, ignores only
+  explicitly whitelisted function names, and rejects attributes, unsafe calls,
+  syntax errors, and unknown identifiers.
+- Planning uses the union of explicit `input_parameters` and references found in
+  the expression. Explicit declarations cannot hide an actual expression
+  dependency, and an unused declared dependency is still validated and ordered.
+- `plan_derived_parameters()` preserves the project tuple as `display_order` and
+  returns a separate `execution_order`. Kahn ordering uses original display
+  indexes as its deterministic tie-break, so independent definitions do not
+  reorder unpredictably between runs.
+- Duplicate derived IDs, output/input ID collisions, unknown inputs, invalid
+  expressions, and dependency cycles raise `DerivedParameterPlanningError`
+  with a stable code and structured IDs. Cycle diagnostics contain an actual
+  cycle and exclude definitions that are merely blocked downstream.
+- The runner builds the plan once, before compensation or any other per-sample
+  processing. Project sample channel metadata and typed input samples contribute
+  the known base-ID union. An ID known in another selected sample is a valid
+  project input; if absent from a particular sample, that sample's stored
+  failure policy applies during evaluation.
+- Definition errors are never converted into NaN, even when a definition stores
+  `emit_nan_with_warning`. They stop the run with a `PipelineError` prefixed by
+  the structured planning code.
+- Evaluation appends derived channels in dependency execution order while the
+  project definition order remains unchanged. Full vectorized evaluator and
+  typed stage-result validation remain increment 3 work.
+
 ## Required tests
 
 - Ratio and dependent-derived chain work after compensation.

@@ -6,7 +6,8 @@ import ast
 import math
 import operator
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
@@ -15,6 +16,77 @@ from flowdesk_core.models import DerivedParameterSpec
 
 class ExpressionError(FlowdeskError):
   """Raised when a derived parameter expression is invalid or unsafe."""
+
+
+class DerivedParameterPlanningError(FlowdeskError):
+  """Structured error raised before sample processing for an invalid graph."""
+
+  def __init__(
+    self,
+    code: str,
+    message: str,
+    *,
+    parameter_id: str | None = None,
+    references: tuple[str, ...] = (),
+    cycle_ids: tuple[str, ...] = (),
+  ) -> None:
+    self.code = code
+    self.parameter_id = parameter_id
+    self.references = references
+    self.cycle_ids = cycle_ids
+    super().__init__(message)
+
+  def to_mapping(self) -> dict[str, Any]:
+    """Return stable context without requiring message parsing."""
+    return {
+      "code": self.code,
+      "message": str(self),
+      "parameter_id": self.parameter_id,
+      "references": self.references,
+      "cycle_ids": self.cycle_ids,
+    }
+
+
+@dataclass(frozen=True)
+class DerivedParameterPlan:
+  """Display order plus deterministic dependency-safe execution order."""
+
+  display_order: tuple[DerivedParameterSpec, ...]
+  execution_order: tuple[DerivedParameterSpec, ...]
+  dependencies: tuple[tuple[str, tuple[str, ...]], ...]
+
+
+def _find_dependency_cycle(
+  dependencies: Mapping[str, set[str]],
+  display_index: Mapping[str, int],
+) -> tuple[str, ...]:
+  """Return one deterministic actual cycle, excluding merely blocked nodes."""
+  state: dict[str, int] = {}
+  stack: list[str] = []
+
+  def visit(spec_id: str) -> tuple[str, ...]:
+    state[spec_id] = 1
+    stack.append(spec_id)
+    for dependency in sorted(
+      dependencies[spec_id], key=display_index.__getitem__
+    ):
+      if state.get(dependency, 0) == 0:
+        cycle = visit(dependency)
+        if cycle:
+          return cycle
+      elif state.get(dependency) == 1:
+        start = stack.index(dependency)
+        return tuple(stack[start:])
+    stack.pop()
+    state[spec_id] = 2
+    return ()
+
+  for spec_id in sorted(dependencies, key=display_index.__getitem__):
+    if state.get(spec_id, 0) == 0:
+      cycle = visit(spec_id)
+      if cycle:
+        return cycle
+  return ()
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +170,13 @@ def _normalize_parameter_name(name: str) -> str:
 
   ``FL1-A`` becomes ``_p_FL1__A_``.
   """
-  return "_p_" + name.replace("-", "__") + "_"
+  encoded = "".join(
+    character
+    if character.isalnum() or character == "_"
+    else f"_{ord(character):x}_"
+    for character in name
+  )
+  return f"_flowdesk_parameter_{encoded}_"
 
 
 def _build_safe_variables(
@@ -228,6 +306,176 @@ def _check_ast_safety(tree: ast.AST) -> None:
       raise ExpressionError(
         f"unsafe expression node: {type(node).__name__}"
       )
+
+
+def extract_parameter_references(
+  expression: str,
+  known_parameters: Iterable[str],
+) -> tuple[str, ...]:
+  """Return exact known parameter IDs referenced by a safe expression.
+
+  Unknown identifiers and unsafe syntax are rejected here so dependency
+  planning completes before any sample event processing begins.
+  """
+  known = tuple(dict.fromkeys(known_parameters))
+  placeholder_to_parameter: dict[str, str] = {}
+  for parameter in known:
+    aliases = [_normalize_parameter_name(parameter)]
+    if parameter.isidentifier():
+      aliases.append(parameter)
+    for alias in aliases:
+      previous = placeholder_to_parameter.get(alias)
+      if previous is not None and previous != parameter:
+        raise DerivedParameterPlanningError(
+          "derived_parameter_placeholder_collision",
+          "parameter IDs collide after safe expression normalization",
+          references=(previous, parameter),
+        )
+      placeholder_to_parameter[alias] = parameter
+  safe_expr = _preprocess_expression(
+    expression,
+    {parameter: 0.0 for parameter in known},
+  )
+  try:
+    tree = ast.parse(safe_expr, mode="eval")
+  except SyntaxError as exc:
+    raise ExpressionError(f"invalid expression syntax: {exc}") from exc
+  _check_ast_safety(tree)
+
+  for node in ast.walk(tree):
+    if isinstance(node, ast.Attribute):
+      raise ExpressionError("attribute access is not supported")
+    if isinstance(node, ast.Call):
+      if not isinstance(node.func, ast.Name) or node.func.id not in SAFE_FUNCTIONS:
+        raise ExpressionError("function not allowed in derived expression")
+      if node.keywords:
+        raise ExpressionError("keyword arguments are not supported")
+
+  references: list[str] = []
+  unknown: list[str] = []
+  function_nodes = {
+    id(node.func)
+    for node in ast.walk(tree)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+  }
+  name_nodes = sorted(
+    (node for node in ast.walk(tree) if isinstance(node, ast.Name)),
+    key=lambda node: (node.lineno, node.col_offset),
+  )
+  for node in name_nodes:
+    if id(node) in function_nodes:
+      continue
+    resolved_parameter = placeholder_to_parameter.get(node.id)
+    if resolved_parameter is None:
+      if node.id not in unknown:
+        unknown.append(node.id)
+    elif resolved_parameter not in references:
+      references.append(resolved_parameter)
+  if unknown:
+    raise DerivedParameterPlanningError(
+      "unknown_derived_input",
+      f"expression references unknown parameters: {unknown}",
+      references=tuple(unknown),
+    )
+  return tuple(references)
+
+
+def plan_derived_parameters(
+  specs: Sequence[DerivedParameterSpec],
+  available_input_ids: Iterable[str],
+) -> DerivedParameterPlan:
+  """Validate and topologically order derived definitions deterministically."""
+  display_order = tuple(specs)
+  by_id: dict[str, DerivedParameterSpec] = {}
+  display_index: dict[str, int] = {}
+  for index, spec in enumerate(display_order):
+    if spec.id in by_id:
+      raise DerivedParameterPlanningError(
+        "duplicate_derived_parameter_id",
+        f"duplicate derived parameter ID: {spec.id!r}",
+        parameter_id=spec.id,
+      )
+    by_id[spec.id] = spec
+    display_index[spec.id] = index
+
+  available = set(available_input_ids)
+  collisions = tuple(spec_id for spec_id in by_id if spec_id in available)
+  if collisions:
+    raise DerivedParameterPlanningError(
+      "derived_output_id_collision",
+      f"derived output IDs collide with input channels: {list(collisions)}",
+      references=collisions,
+    )
+
+  known = available | set(by_id)
+  dependencies: dict[str, set[str]] = {}
+  for spec in display_order:
+    try:
+      expression_references = extract_parameter_references(
+        spec.expression, known
+      )
+    except DerivedParameterPlanningError as exc:
+      if exc.parameter_id is not None:
+        raise
+      raise DerivedParameterPlanningError(
+        exc.code,
+        str(exc),
+        parameter_id=spec.id,
+        references=exc.references,
+        cycle_ids=exc.cycle_ids,
+      ) from exc
+    except ExpressionError as exc:
+      raise DerivedParameterPlanningError(
+        "invalid_derived_expression",
+        f"invalid expression for derived parameter {spec.id!r}: {exc}",
+        parameter_id=spec.id,
+      ) from exc
+    all_references = tuple(dict.fromkeys(
+      (*spec.input_parameters, *expression_references)
+    ))
+    unknown = tuple(reference for reference in all_references if reference not in known)
+    if unknown:
+      raise DerivedParameterPlanningError(
+        "unknown_derived_input",
+        f"derived parameter {spec.id!r} has unknown inputs: {list(unknown)}",
+        parameter_id=spec.id,
+        references=unknown,
+      )
+    dependencies[spec.id] = {
+      reference for reference in all_references if reference in by_id
+    }
+
+  remaining = {key: set(value) for key, value in dependencies.items()}
+  ordered_ids: list[str] = []
+  while remaining:
+    ready = sorted(
+      (spec_id for spec_id, deps in remaining.items() if not deps),
+      key=display_index.__getitem__,
+    )
+    if not ready:
+      cycle_ids = _find_dependency_cycle(remaining, display_index)
+      raise DerivedParameterPlanningError(
+        "derived_dependency_cycle",
+        f"derived parameter dependency cycle: {list(cycle_ids)}",
+        cycle_ids=cycle_ids,
+      )
+    for spec_id in ready:
+      ordered_ids.append(spec_id)
+      remaining.pop(spec_id)
+    for deps in remaining.values():
+      deps.difference_update(ready)
+
+  return DerivedParameterPlan(
+    display_order=display_order,
+    execution_order=tuple(by_id[spec_id] for spec_id in ordered_ids),
+    dependencies=tuple(
+      (
+        spec.id,
+        tuple(sorted(dependencies[spec.id], key=display_index.__getitem__)),
+      )
+      for spec in display_order
+    ),
+  )
 
 
 def evaluate_expression(
