@@ -249,6 +249,33 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
   Transform parameter editing and explicit legacy gate duplication/migration
   preview remain increment 5 work.
 
+## Confirmed contract after increment 5
+
+- `Analysis > Analysis Transforms` edits complete linear, log, asinh, and
+  published Logicle definitions. Preview calls the core forward and inverse
+  APIs on at most 200 finite events and reports the maximum absolute inverse
+  round-trip error. The legacy approximation remains visible for old projects
+  but is not offered as a new transform type.
+- A transform ID referenced by a gate cannot be deleted or changed in place.
+  Users create a new definition and use the explicit gate migration operation,
+  preventing an editor change from silently changing population membership.
+- Formal analysis transforms lock the corresponding legacy display-scale
+  selector to linear. Rectangle and polygon gates drawn in those coordinates
+  persist both axis transform IDs, and synthetic GUI/headless fixtures produce
+  identical full-event masks.
+- `gate_transform_migration` inverse-maps old boundary coordinates and
+  forward-maps them with the selected target definition. Rectangle/range
+  boundaries are labeled monotonic-axis mappings. Polygon vertices are always
+  labeled a reprojection approximation because straight edges need not remain
+  scientifically equivalent across nonlinear coordinate systems.
+- Migration preview reports source/candidate counts plus gained and lost events
+  after an optional full-length parent mask. The GUI offers separate Duplicate
+  and Migrate actions and never mutates the source gate before confirmation.
+- Current GUI migration preview is deliberately disabled when compensation or
+  derived parameters are configured. A later runner-level preview must expose
+  the canonical post-compensation/post-derived gate input stage; raw events are
+  never substituted for that stage merely to produce a preview.
+
 ## Stop condition
 
 If no licensed/reference implementation or equation can be verified, stop after the

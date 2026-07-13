@@ -181,6 +181,18 @@ class ChannelSelector(QWidget):
         """
         self._y_transform_combo.setEnabled(not disabled)
 
+    def set_analysis_transform_bound(self, x_bound: bool, y_bound: bool) -> None:
+        """Lock legacy display-scale controls when formal coordinates are active."""
+        with QSignalBlocker(self._x_transform_combo), QSignalBlocker(
+            self._y_transform_combo
+        ):
+            if x_bound:
+                self._x_transform_combo.setCurrentText("linear")
+            if y_bound:
+                self._y_transform_combo.setCurrentText("linear")
+        self._x_transform_combo.setEnabled(not x_bound)
+        self._y_transform_combo.setEnabled(not y_bound and not self.is_count_mode())
+
     # -- signals (callback-based) --------------------------------------------
 
     def on_channel_changed(self, callback) -> None:
@@ -196,7 +208,8 @@ class ChannelSelector(QWidget):
         x = self.x_channel()
         y = self.y_channel()
         # Disable Y transform when in histogram (Count) mode.
-        self._y_transform_combo.setEnabled(not self.is_count_mode())
+        if self.is_count_mode():
+            self._y_transform_combo.setEnabled(False)
         for cb in self._change_callbacks:
             invoke_callback(cb, x, y)
 

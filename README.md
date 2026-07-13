@@ -155,6 +155,33 @@ metadata are written under `artifacts/gui/<run-id>/`.
 Preview values are only a bounded diagnostic view. Gates, statistics, and
 exports always use the full event table through `PipelineRunner`.
 
+### Analysis transforms and Logicle gates
+
+1. Load a sample and choose **Analysis → Analysis Transforms**.
+2. Create one transform for each parameter that needs formal analysis
+   coordinates. Choose `linear`, `log`, `asinh`, or the published Gating-ML
+   `logicle`, enter every displayed parameter, and click **Preview** to inspect
+   the inverse round-trip error on up to 200 finite events.
+3. Confirm the dialog. When a transformed parameter is selected on an axis,
+   the old display-scale combo is fixed to `linear`; the plot, ticks, and newly
+   drawn gate all use the same persisted transform ID.
+4. Draw a rectangle or polygon normally and run the pipeline. The gate's X/Y
+   transform IDs make the same membership reproducible through the CLI and
+   Python runner.
+
+A transform already referenced by a gate cannot be changed or deleted in
+place. Create a new transform ID, select the old gate in **Gate hierarchy**,
+and click **Migrate Transform**. The preview shows source/candidate event
+counts plus gained and lost events. Choose **Duplicate** to preserve the old
+gate or **Migrate** to replace it. Polygon migration is explicitly approximate:
+reprojected vertices do not make straight edges scientifically equivalent
+between nonlinear coordinate systems.
+
+Migration preview currently stops, rather than using raw-event estimates, when
+the project includes compensation or derived parameters. Those projects need
+a future canonical pipeline-stage preview before this analysis-changing action
+can be enabled safely.
+
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
@@ -216,10 +243,11 @@ Invalid self/descendant/cyclic relationships are rejected atomically.
 
 #### Axis scales and gate coordinates
 
-Each geometric gate records the X and Y scales in which it was created:
-`linear`, `log10`, or `asinh`. The headless pipeline applies those scales to
-full-resolution event values before evaluating the gate. This makes a polygon
-drawn with straight edges on a log/log plot reproducible outside the GUI.
+Legacy geometric gates record the X and Y scales in which they were created:
+`linear`, `log10`, or `asinh`. New formal analysis transforms instead persist
+stable per-axis transform IDs. In both cases the headless pipeline applies the
+same coordinate definition to full-resolution values before evaluating the
+gate.
 
 A gate overlay is shown and editable only when the current channel pair and
 axis scales match the gate definition. For example, a linear/linear gate is

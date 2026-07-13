@@ -238,6 +238,8 @@ class GateEditor(QWidget):
         self._y_channel: str = ""
         self._x_scale: str = "linear"
         self._y_scale: str = "linear"
+        self._x_transform_id: str | None = None
+        self._y_transform_id: str | None = None
         self._parent_population_id: str = "all_events"
         self._polygon_vertices: list[tuple[float, float]] = []
         self._collecting_polygon: bool = False
@@ -259,6 +261,14 @@ class GateEditor(QWidget):
         """Set coordinate scales used by newly created gates."""
         self._x_scale = x_scale
         self._y_scale = y_scale
+        self._update_creation_banner()
+
+    def set_plot_transforms(
+        self, x_transform_id: str | None, y_transform_id: str | None
+    ) -> None:
+        """Bind exact analysis coordinate IDs used by newly drawn gates."""
+        self._x_transform_id = x_transform_id
+        self._y_transform_id = y_transform_id
         self._update_creation_banner()
 
     def set_current_sample_id(self, sample_id: str | None) -> None:
@@ -484,6 +494,8 @@ class GateEditor(QWidget):
             y_parameter=self._y_channel,
             x_scale=self._x_scale,
             y_scale=self._y_scale,
+            x_transform_id=self._x_transform_id,
+            y_transform_id=self._y_transform_id,
             coordinates=coords,
         )
         self._gates.append(gate)
@@ -536,6 +548,10 @@ class GateEditor(QWidget):
     def on_show_gate(self, callback) -> None:
         """Register display-only navigation callback receiving a GateSpec."""
         self._show_gate_callbacks.append(callback)
+
+    def on_migrate_gate(self, callback) -> None:
+        """Register an explicit coordinate-migration request callback."""
+        self._migrate_gate_callbacks.append(callback)
 
     # -- private ------------------------------------------------------------
 
@@ -640,6 +656,11 @@ class GateEditor(QWidget):
             y_parameter=self._y_channel if gate_type not in {"range", "boolean"} else None,
             x_scale=self._x_scale,
             y_scale=self._y_scale,
+            x_transform_id=self._x_transform_id if gate_type != "boolean" else None,
+            y_transform_id=(
+                self._y_transform_id
+                if gate_type not in {"range", "boolean"} else None
+            ),
             thresholds=thresholds,
         )
         try:
@@ -819,6 +840,8 @@ class GateEditor(QWidget):
             f"Sample: {self._current_sample_id or '-'} | "
             f"Axes: {self._x_channel or '-'} / {self._y_channel or '-'} | "
             f"Scale: {self._x_scale}/{self._y_scale}"
+            f" | Transform IDs: {self._x_transform_id or '-'} / "
+            f"{self._y_transform_id or '-'}"
         )
 
     def _on_tree_selection_changed(self) -> None:
@@ -861,6 +884,14 @@ class GateEditor(QWidget):
         if gate is None:
             return
         for callback in self._show_gate_callbacks:
+            invoke_callback(callback, gate)
+
+    def _on_migrate_gate_clicked(self) -> None:
+        gate = self.selected_gate()
+        if gate is None:
+            QMessageBox.information(self, "Select gate", "Select a gate to migrate.")
+            return
+        for callback in self._migrate_gate_callbacks:
             invoke_callback(callback, gate)
 
     def _on_apply_parent_clicked(self) -> None:
@@ -958,6 +989,7 @@ class GateEditor(QWidget):
         self._gates_changed_callbacks: list[Any] = []
         self._interactive_gate_callbacks: list[Any] = []
         self._show_gate_callbacks: list[Any] = []
+        self._migrate_gate_callbacks: list[Any] = []
         self._updating_list_item = False
         self._updating_tree = False
         self._tree_items: dict[str, QTreeWidgetItem] = {}
@@ -999,6 +1031,10 @@ class GateEditor(QWidget):
         self._btn_show_gate = QPushButton("Show Gate")
         self._btn_show_gate.setObjectName("showGateButton")
         self._btn_show_gate.clicked.connect(self._on_show_gate_clicked)
+
+        self._btn_migrate_gate = QPushButton("Migrate Transform")
+        self._btn_migrate_gate.setObjectName("migrateGateTransformButton")
+        self._btn_migrate_gate.clicked.connect(self._on_migrate_gate_clicked)
 
         self._btn_apply_parent = QPushButton("Apply Parent")
         self._btn_apply_parent.setObjectName("applyGateParentButton")
@@ -1052,6 +1088,7 @@ class GateEditor(QWidget):
         box_layout.addWidget(self._tree_widget)
         detail_row = QHBoxLayout()
         detail_row.addWidget(self._btn_show_gate)
+        detail_row.addWidget(self._btn_migrate_gate)
         detail_row.addWidget(self._reparent_combo)
         detail_row.addWidget(self._btn_apply_parent)
         detail_row.addWidget(self._btn_edit_boolean)

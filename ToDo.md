@@ -167,16 +167,16 @@ git status --short
 
 #### GUI/migration
 
-- [ ] Transform Editorでtypeと全parameterを編集し、previewとinverse round-trip errorを表示する。
+- [x] 済み: Transform Editorでtypeと全parameterを編集し、previewとinverse round-trip errorを表示する。
 - [x] 済み: legacy project読込時に近似typeを勝手に正式Logicleへ変換しない。
-- [ ] legacy gateを正式Logicleへ移す場合は明示的duplicate/migrate operationと差分previewを提供する。
+- [x] 済み: legacy gateを正式Logicleへ移す場合は明示的duplicate/migrate operationと全イベント差分previewを提供する。Polygonは頂点再投影近似と明示し、compensation/derived parameterを含むprojectではcanonical-stage preview実装まで操作を停止する。
 
 #### 必須test
 
 - [x] 済み: reference vectorsに対するforward/inverse値を固定する。
 - [x] 済み: negative、zero、linear region、large positive、boundaryをtestする。
 - [x] 済み: `inverse(forward(x))`の誤差を定義済みtolerance内にする。
-- [ ] Logicle viewで作成したrectangle/polygonのGUI/headless membershipを一致させる。
+- [x] 済み: Logicle viewで作成したrectangle/polygonのGUI/headless membershipを一致させる。
 - [x] 済み: linear/log/asinh既存gateを壊さない。
 
 ### Phase A4: Compensation bindingとdiagnostics [S03-P0]

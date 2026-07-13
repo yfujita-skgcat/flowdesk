@@ -596,6 +596,109 @@ def test_plot_widget_uses_core_logicle_coordinates_ticks_and_gate_ids() -> None:
     app.processEvents()
 
 
+def test_gui_created_logicle_rectangle_binds_ids_and_matches_headless() -> None:
+  app = _app()
+  window = MainWindow()
+  x_transform = TransformSpec(
+    id="logicle_x",
+    name="Logicle X",
+    transform_type="logicle",
+    parameter="X",
+    settings={
+      "T": 262144.0, "W": 0.5, "M": 4.5, "A": 0.0,
+      "implementation_version": LOGICLE_IMPLEMENTATION_VERSION,
+    },
+  )
+  y_transform = TransformSpec(
+    id="logicle_y",
+    name="Logicle Y",
+    transform_type="logicle",
+    parameter="Y",
+    settings=dict(x_transform.settings),
+  )
+  raw = np.array([-100.0, 0.0, 100.0, 1000.0])
+  coordinates = apply_transform(x_transform, raw)
+  try:
+    window._transforms = [asdict(x_transform), asdict(y_transform)]
+    window._current_sample_id = "sample"
+    window._event_data["sample"] = np.column_stack((raw, raw))
+    window._channel_names = ["X", "Y"]
+    window._channel_selector.set_channels(["X", "Y"])
+    window._replot()
+    window._create_rectangle_gate(
+      float(coordinates[0]), float(coordinates[0]),
+      float(coordinates[2]), float(coordinates[2]),
+    )
+
+    gate = window._gate_editor.gates()[0]
+    assert gate.x_transform_id == x_transform.id
+    assert gate.y_transform_id == y_transform.id
+    assert gate.x_scale == gate.y_scale == "linear"
+    _results, masks = evaluate_gating_strategy_with_membership(
+      GatingStrategySpec(id="s", name="s", gates=(gate,)),
+      window._event_data["sample"],
+      ["X", "Y"],
+      transforms=(x_transform, y_transform),
+    )
+    assert masks[gate.id].tolist() == [True, True, True, False]
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_gui_created_logicle_polygon_binds_ids_and_matches_headless() -> None:
+  app = _app()
+  editor = GateEditor()
+  transform = TransformSpec(
+    id="logicle_signal",
+    name="Logicle signal",
+    transform_type="logicle",
+    parameter="X",
+    settings={
+      "T": 262144.0, "W": 0.5, "M": 4.5, "A": 0.0,
+      "implementation_version": LOGICLE_IMPLEMENTATION_VERSION,
+    },
+  )
+  raw = np.array([-100.0, 0.0, 100.0, 1000.0])
+  coordinates = apply_transform(transform, raw)
+  try:
+    editor.set_plot_channels("X", "Y")
+    editor.set_plot_scales("linear", "linear")
+    editor.set_plot_transforms(transform.id, "logicle_y")
+    editor.start_polygon_collection()
+    for point in (
+      (coordinates[0], coordinates[0]),
+      (coordinates[2], coordinates[0]),
+      (coordinates[2], coordinates[2]),
+      (coordinates[0], coordinates[2]),
+    ):
+      editor.receive_polygon_vertex(float(point[0]), float(point[1]))
+    editor.finish_polygon_gate("GUI polygon")
+
+    gate = editor.gates()[0]
+    y_transform = TransformSpec(
+      id="logicle_y",
+      name="Logicle Y",
+      transform_type="logicle",
+      parameter="Y",
+      settings=dict(transform.settings),
+    )
+    assert gate.x_transform_id == transform.id
+    assert gate.y_transform_id == y_transform.id
+    _results, masks = evaluate_gating_strategy_with_membership(
+      GatingStrategySpec(id="s", name="s", gates=(gate,)),
+      np.column_stack((raw, raw)),
+      ["X", "Y"],
+      transforms=(transform, y_transform),
+    )
+    assert masks[gate.id].tolist() == [True, True, True, False]
+  finally:
+    editor.close()
+    editor.deleteLater()
+    app.processEvents()
+
+
 def test_polygon_roi_edit_emits_updated_gate_coordinates() -> None:
   app = _app()
   widget = PlotWidget()

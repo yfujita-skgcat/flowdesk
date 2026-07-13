@@ -5,6 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from flowdesk_core.gate_transform_migration import (
+  GateTransformMigrationError,
+  build_gate_transform_migration_candidate,
+  preview_gate_transform_migration,
+)
 from flowdesk_core.gates import (
   GateError,
   apply_parent_mask,
@@ -982,3 +987,88 @@ def test_evaluate_with_membership_no_gui_dependency() -> None:
   )
   assert len(results) == 1  # root only
   assert "all_events" in masks
+
+
+def test_rectangle_gate_transform_migration_preserves_membership() -> None:
+  transform = _gate_logicle_transform("x", "logicle_x")
+  gate = GateSpec(
+    id="legacy",
+    name="Legacy rectangle",
+    gate_type="rectangle",
+    x_parameter="x",
+    y_parameter="y",
+    x_scale="asinh",
+    thresholds={"x_min": -2.0, "x_max": 2.0, "y_min": -1.0, "y_max": 1.0},
+  )
+  events = np.array([
+    [-10.0, 0.0], [-2.0, -1.0], [0.0, 0.0], [2.0, 1.0], [10.0, 0.0],
+  ])
+  parent_mask = np.array([False, True, True, True, True])
+
+  preview = preview_gate_transform_migration(
+    gate,
+    events,
+    ["x", "y"],
+    transforms=(transform,),
+    target_x_transform=transform,
+    parent_mask=parent_mask,
+  )
+
+  assert preview.candidate_gate.id == gate.id
+  assert preview.candidate_gate.x_transform_id == transform.id
+  assert preview.candidate_gate.x_scale == "linear"
+  assert preview.source_event_count == preview.candidate_event_count == 3
+  assert preview.gained_event_count == preview.lost_event_count == 0
+  assert preview.mapping_kind == "exact_axis_monotonic"
+
+
+def test_polygon_gate_transform_migration_is_labeled_approximate() -> None:
+  transform = _gate_logicle_transform("x", "logicle_x")
+  gate = GateSpec(
+    id="legacy_polygon",
+    name="Legacy polygon",
+    gate_type="polygon",
+    x_parameter="x",
+    y_parameter="y",
+    coordinates=((-10.0, -2.0), (10.0, -2.0), (0.0, 2.0)),
+  )
+  events = np.array([[-5.0, 0.0], [0.0, 0.0], [5.0, 0.0], [9.0, 1.5]])
+
+  preview = preview_gate_transform_migration(
+    gate,
+    events,
+    ["x", "y"],
+    transforms=(transform,),
+    target_x_transform=transform,
+  )
+
+  assert preview.mapping_kind == "vertex_reprojection_approximation"
+  assert preview.scientifically_equivalent is False
+
+
+def test_legacy_approximation_gate_cannot_claim_formal_inverse_migration() -> None:
+  legacy = TransformSpec(
+    id="legacy_x",
+    name="Legacy approximation",
+    transform_type="legacy_logicle_approximation",
+    parameter="x",
+    settings={"w": 0.25, "td": 1e6, "tn": 1e4},
+  )
+  formal = _gate_logicle_transform("x", "formal_x")
+  gate = GateSpec(
+    id="legacy_gate",
+    name="Legacy gate",
+    gate_type="range",
+    x_parameter="x",
+    x_transform_id=legacy.id,
+    thresholds={"min": 0.0, "max": 1.0},
+  )
+
+  with pytest.raises(GateTransformMigrationError) as error:
+    build_gate_transform_migration_candidate(
+      gate,
+      transforms=(legacy, formal),
+      target_x_transform=formal,
+    )
+
+  assert error.value.code == "source_transform_inverse_unavailable"

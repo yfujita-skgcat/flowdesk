@@ -7,8 +7,9 @@ Assembles the UI components and delegates all scientific computation to
 from __future__ import annotations
 
 import logging
+import uuid
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,8 @@ from PySide6.QtWidgets import (
 
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import read_fcs_sample
+from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
+from flowdesk_core.models import TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
@@ -270,6 +273,11 @@ class MainWindow(QMainWindow):
         )
         analysis_menu.addAction(self.action_derived_parameters)
 
+        self.action_transforms = QAction("Analysis &Transforms...", self)
+        self.action_transforms.setObjectName("actionTransforms")
+        self.action_transforms.triggered.connect(self._on_edit_transforms)
+        analysis_menu.addAction(self.action_transforms)
+
         analysis_menu.addSeparator()
 
         self.action_clear_gates = QAction("Clear &Gates", self)
@@ -395,6 +403,7 @@ class MainWindow(QMainWindow):
         # Interactive gate creation starts from the gate editor.
         self._gate_editor.on_interactive_gate_requested(self._on_interactive_gate_requested)
         self._gate_editor.on_show_gate(self._on_show_gate)
+        self._gate_editor.on_migrate_gate(self._on_migrate_gate)
 
         # Plot toolbar callbacks
         self._plot_toolbar.on_reset_robust(self._on_reset_robust)
@@ -523,11 +532,24 @@ class MainWindow(QMainWindow):
         x_id = self._channel_selector.x_channel_id()
         y_id = self._channel_selector.y_channel_id()
 
+        x_spec = self._transform_for_parameter(x_id)
+        y_spec = None if self._channel_selector.is_count_mode() else (
+            self._transform_for_parameter(y_id)
+        )
+        self._channel_selector.set_analysis_transform_bound(
+            x_spec is not None, y_spec is not None
+        )
+        self._plot_widget.set_axis_transform_specs(x_spec, y_spec)
+
         # Sync gate editor with current channels
         self._gate_editor.set_plot_channels(x_id, y_id)
         self._gate_editor.set_plot_scales(
             self._channel_selector.x_transform(),
             self._channel_selector.y_transform(),
+        )
+        self._gate_editor.set_plot_transforms(
+            None if x_spec is None else x_spec.id,
+            None if y_spec is None else y_spec.id,
         )
 
         x_idx = self._get_channel_index(x_id)
@@ -665,13 +687,44 @@ class MainWindow(QMainWindow):
             self._channel_selector.set_selected_channels(
                 gate.x_parameter, y_parameter
             )
-        self._channel_selector.set_x_transform(gate.x_scale)
-        self._channel_selector.set_y_transform(gate.y_scale)
+        if gate.x_transform_id or gate.transform_id:
+            self._channel_selector.set_x_transform("linear")
+        else:
+            self._channel_selector.set_x_transform(gate.x_scale)
+        if gate.y_transform_id:
+            self._channel_selector.set_y_transform("linear")
+        else:
+            self._channel_selector.set_y_transform(gate.y_scale)
         self._replot()
         self._update_status(
             f"Showing gate: {gate.name} [{gate.id}] on "
-            f"{gate.x_scale}/{gate.y_scale}"
+            f"{gate.x_transform_id or gate.x_scale}/"
+            f"{gate.y_transform_id or gate.y_scale}"
         )
+
+    def _transform_specs(self) -> tuple[TransformSpec, ...]:
+        return tuple(
+            TransformSpec(
+                id=value["id"],
+                name=value.get("name", value["id"]),
+                transform_type=value["transform_type"],
+                parameter=value["parameter"],
+                settings=value.get("settings", {}),
+                role=value.get("role", "analysis"),
+                notes=value.get("notes", ""),
+            )
+            for value in self._transforms
+        )
+
+    def _transform_for_parameter(self, parameter: str) -> TransformSpec | None:
+        matches = [
+            transform for transform in self._transform_specs()
+            if transform.parameter == parameter
+        ]
+        if len(matches) > 1:
+            logger.error("Ambiguous analysis transforms for parameter %s", parameter)
+            return None
+        return matches[0] if matches else None
 
     def _on_clear_gates(self) -> None:
         """Clear all gates."""
@@ -923,6 +976,12 @@ class MainWindow(QMainWindow):
         self._gate_editor.set_gates(list(strategy.gates), notify=False)
         self._population_tree.set_population_parents(self._population_parent_map())
 
+        self._derived_parameters = deepcopy(manifest.get("derived_parameters", []))
+        self._transforms = deepcopy(manifest.get("transforms", []))
+        self._compensation_matrices = deepcopy(
+            manifest.get("compensation_matrices", [])
+        )
+
         resolved_samples = resolve_sample_paths(manifest, project_path)
         self._sample_browser.add_project_samples(resolved_samples)
         display = manifest.get("plot_display_settings", {})
@@ -944,11 +1003,6 @@ class MainWindow(QMainWindow):
 
         self._project_id = str(manifest["project_id"])
         self._project_path = project_path
-        self._derived_parameters = deepcopy(manifest.get("derived_parameters", []))
-        self._transforms = deepcopy(manifest.get("transforms", []))
-        self._compensation_matrices = deepcopy(
-            manifest.get("compensation_matrices", [])
-        )
         self._default_compensation_matrix_id = manifest.get(
             "default_compensation_matrix_id"
         )
@@ -991,6 +1045,161 @@ class MainWindow(QMainWindow):
             return
         self._derived_parameters = dialog.definitions()
         self._mark_results_stale("Derived parameters changed")
+
+    def _on_edit_transforms(self) -> None:
+        """Edit versioned transform definitions without changing used IDs in place."""
+        from flowdesk_qt.transform_editor import TransformEditorDialog
+
+        channels_by_id = {}
+        for sample in self._sample_browser.samples():
+            for channel in sample.info.channels:
+                channels_by_id.setdefault(channel.id, channel)
+        current = self._sample_data.get(self._current_sample_id or "")
+        preview_values = {}
+        if current is not None:
+            channels_by_id.update({channel.id: channel for channel in current.channels})
+            preview_values = {
+                channel.id: current.events[:, index]
+                for index, channel in enumerate(current.channels)
+            }
+        dialog = TransformEditorDialog(
+            self._transforms,
+            tuple(channels_by_id.values()),
+            preview_values=preview_values,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        updated = dialog.transforms()
+        old_by_id = {value["id"]: value for value in self._transforms}
+        new_by_id = {value["id"]: value for value in updated}
+        referenced = {
+            transform_id
+            for gate in self._gate_editor.gates()
+            for transform_id in (
+                gate.x_transform_id or gate.transform_id,
+                gate.y_transform_id,
+            )
+            if transform_id is not None
+        }
+        changed_references = sorted(
+            transform_id for transform_id in referenced
+            if old_by_id.get(transform_id) != new_by_id.get(transform_id)
+        )
+        if changed_references:
+            QMessageBox.warning(
+                self,
+                "Transform is used by gates",
+                "Create a new transform ID and explicitly migrate the gates first. "
+                f"Used definitions were not changed: {', '.join(changed_references)}",
+            )
+            return
+        self._transforms = updated
+        self._mark_results_stale("Analysis transforms changed")
+        self._replot()
+
+    def _on_migrate_gate(self, gate) -> None:
+        """Preview and explicitly duplicate or replace one geometric gate."""
+        if self._current_sample_id is None:
+            QMessageBox.information(self, "No sample", "Select a loaded sample first.")
+            return
+        sample = self._sample_data.get(self._current_sample_id)
+        if sample is None:
+            QMessageBox.information(self, "No data", "Load the selected sample first.")
+            return
+        if self._compensation_matrices or self._derived_parameters:
+            QMessageBox.information(
+                self,
+                "Canonical preview unavailable",
+                "Gate migration preview is currently limited to projects without "
+                "compensation or derived parameters; no raw-event approximation "
+                "will be used for an analysis-changing decision.",
+            )
+            return
+        target_x = self._transform_for_parameter(gate.x_parameter or "")
+        target_y = (
+            self._transform_for_parameter(gate.y_parameter or "")
+            if gate.y_parameter else None
+        )
+        if target_x is None or (gate.y_parameter and target_y is None):
+            QMessageBox.information(
+                self,
+                "Target transform missing",
+                "Create one analysis transform for each gate parameter first.",
+            )
+            return
+        parent_mask = None
+        parent_id = gate.parent_population_id or "all_events"
+        if parent_id != "all_events":
+            report = self._population_tree.last_report()
+            if report is None or self._results_stale:
+                QMessageBox.information(
+                    self,
+                    "Run Pipeline first",
+                    "A fresh full-event parent population is required for migration preview.",
+                )
+                return
+            parent_mask = next(
+                (
+                    membership.mask for membership in report.population_membership
+                    if membership.sample_id == sample.id
+                    and membership.population_id == parent_id
+                ),
+                None,
+            )
+            if parent_mask is None:
+                QMessageBox.warning(
+                    self, "Parent unavailable", "Parent membership was not found."
+                )
+                return
+        try:
+            preview = preview_gate_transform_migration(
+                gate,
+                sample.events,
+                [channel.id for channel in sample.channels],
+                transforms=self._transform_specs(),
+                target_x_transform=target_x,
+                target_y_transform=target_y,
+                parent_mask=parent_mask,
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Migration unavailable", str(exc))
+            return
+        message = QMessageBox(self)
+        message.setObjectName("gateTransformMigrationPreview")
+        message.setWindowTitle("Gate transform migration preview")
+        warning = (
+            "\nPolygon vertices are reprojected approximately; straight edges are "
+            "not scientifically equivalent across nonlinear coordinates."
+            if not preview.scientifically_equivalent else ""
+        )
+        message.setText(
+            f"Source events: {preview.source_event_count}\n"
+            f"Candidate events: {preview.candidate_event_count}\n"
+            f"Gained: {preview.gained_event_count}; Lost: {preview.lost_event_count}"
+            f"{warning}"
+        )
+        duplicate_button = message.addButton("Duplicate", QMessageBox.ButtonRole.ActionRole)
+        migrate_button = message.addButton("Migrate", QMessageBox.ButtonRole.AcceptRole)
+        message.addButton(QMessageBox.StandardButton.Cancel)
+        message.exec()
+        clicked = message.clickedButton()
+        if clicked not in {duplicate_button, migrate_button}:
+            return
+        candidate = preview.candidate_gate
+        if clicked is duplicate_button:
+            candidate = replace(
+                candidate,
+                id=f"gate_{uuid.uuid4().hex[:8]}",
+                name=f"{candidate.name} (migrated copy)",
+            )
+            self._gate_editor.add_gate(candidate)
+        else:
+            index = next(
+                index for index, value in enumerate(self._gate_editor.gates())
+                if value.id == gate.id
+            )
+            self._gate_editor.update_gate(index, candidate, notify=True)
 
     def _population_parent_map(self) -> dict[str, str | None]:
         parents = {"all_events": None}
@@ -1070,8 +1279,6 @@ class MainWindow(QMainWindow):
         x_name = self._channel_selector.x_channel_id()
         y_name = self._channel_selector.y_channel_id()
 
-        import uuid
-
         gate = GateSpec(
             id=f"gate_{uuid.uuid4().hex[:8]}",
             name=f"rect_{len(self._gate_editor.gates()) + 1}",
@@ -1079,8 +1286,20 @@ class MainWindow(QMainWindow):
             parent_population_id=self._gate_editor.parent_population(),
             x_parameter=x_name,
             y_parameter=y_name,
-            x_scale=self._channel_selector.x_transform(),
-            y_scale=self._channel_selector.y_transform(),
+            x_scale="linear" if self._transform_for_parameter(x_name) else (
+                self._channel_selector.x_transform()
+            ),
+            y_scale="linear" if self._transform_for_parameter(y_name) else (
+                self._channel_selector.y_transform()
+            ),
+            x_transform_id=(
+                None if self._transform_for_parameter(x_name) is None
+                else self._transform_for_parameter(x_name).id
+            ),
+            y_transform_id=(
+                None if self._transform_for_parameter(y_name) is None
+                else self._transform_for_parameter(y_name).id
+            ),
             thresholds={
                 "x_min": x_min,
                 "x_max": x_max,
