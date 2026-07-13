@@ -11,6 +11,7 @@ from flowdesk_core.models import (
   SampleSpec,
   TransformSpec,
 )
+from flowdesk_core.sample import SampleData
 
 __all__ = [
   "ChannelSpec",
@@ -21,5 +22,6 @@ __all__ = [
   "GatingStrategySpec",
   "PopulationResult",
   "SampleSpec",
+  "SampleData",
   "TransformSpec",
 ]

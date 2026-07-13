@@ -24,6 +24,8 @@ class ChannelSpec:
   detector: str | None = None
   unit: str | None = None
   metadata: dict[str, Any] = field(default_factory=dict)
+  fcs_parameter_index: int | None = None
+  stain: str | None = None
 
 
 @dataclass(frozen=True)

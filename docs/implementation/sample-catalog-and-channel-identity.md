@@ -35,7 +35,7 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 
 ## Increments
 
-1. **Identity model and fixtures**
+1. **Identity model and fixtures** — implemented
    - Extend the typed model and add constructor/lookup tests.
    - Keep old `ChannelSpec` fields readable through defaults.
    - Test duplicate label, duplicate ID, and shape mismatch errors.
@@ -53,6 +53,23 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 5. **Catalog GUI**
    - Display selectable metadata columns and mismatch badges.
    - Add reconnect logic based on stored fingerprint; require confirmation on mismatch.
+
+## Confirmed contract after increment 1
+
+- `flowdesk_core.sample.SampleData` owns a defensive, read-only copy of one
+  sample's 2-D event matrix and the ordered `ChannelSpec` tuple for its columns.
+- Construction rejects a column/channel count mismatch and duplicate stable IDs.
+- Exact stable-ID lookup is the analytical path. Label lookup is a compatibility
+  aid and matches only the original `name` (`$PnN`) and `short_name` (`$PnS`)
+  values; it performs no normalization or first-match fallback.
+- Duplicate visible labels are retained. Resolving one raises
+  `AmbiguousChannelReferenceError` with the sample ID and all candidate stable
+  IDs, so metadata is not lost and the caller must disambiguate explicitly.
+- `ChannelSpec.fcs_parameter_index` and `ChannelSpec.stain` are optional fields
+  appended after the previous fields, preserving existing keyword and positional
+  construction behavior.
+- The FCS adapter, pipeline runner, project storage, and GUI still use their
+  pre-existing APIs. Connecting them to `SampleData` belongs to increments 2–5.
 
 ## Required tests
 
@@ -78,4 +95,3 @@ pytest -q tests/test_fcs_io.py tests/test_pipeline_runner.py tests/test_project_
 ruff check src tests
 mypy src/flowdesk_core src/flowdesk_storage src/flowdesk_cli
 ```
-
