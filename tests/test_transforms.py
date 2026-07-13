@@ -13,6 +13,7 @@ from flowdesk_core.transforms import (
   TransformError,
   apply_transform,
   apply_transform_to_column,
+  generate_transform_ticks,
   inverse_transform,
   validate_transform,
 )
@@ -649,6 +650,22 @@ def test_published_logicle_reports_non_convergence(
     )
 
   assert error.value.code == "transform_non_convergence"
+
+
+def test_logicle_ticks_use_the_same_forward_and_inverse_definition() -> None:
+  spec = _logicle_spec()
+
+  ticks = generate_transform_ticks(spec, -0.5, 1.0)
+  by_value = {tick.event_value: tick.coordinate for tick in ticks}
+
+  assert 0.0 in by_value
+  assert 262144.0 in by_value
+  expected = apply_transform(
+    spec,
+    np.array([0.0, 262144.0], dtype=np.float64),
+  )
+  assert by_value[0.0] == pytest.approx(expected[0], abs=1e-15)
+  assert by_value[262144.0] == pytest.approx(expected[1], abs=1e-15)
 
 
 # ---------------------------------------------------------------------------

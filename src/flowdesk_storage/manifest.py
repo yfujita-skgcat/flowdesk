@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -47,10 +48,16 @@ def validate_manifest(data: dict[str, Any]) -> None:
   if data["project_version"] == CURRENT_PROJECT_VERSION:
     _validate_current_samples(data["samples"])
     _validate_current_derived_parameters(data.get("derived_parameters", []))
-    _validate_current_transforms(data.get("transforms", []))
+    transform_parameters = _validate_current_transforms(
+      data.get("transforms", [])
+    )
+    _validate_current_gate_transforms(
+      data.get("gating_strategies_data", {}),
+      transform_parameters,
+    )
 
 
-def _validate_current_transforms(transforms: Any) -> None:
+def _validate_current_transforms(transforms: Any) -> dict[str, tuple[str, str]]:
   """Validate unambiguous transform types in the current project format."""
   if not isinstance(transforms, list):
     raise ManifestValidationError("transforms must be an array")
@@ -62,6 +69,7 @@ def _validate_current_transforms(transforms: Any) -> None:
     "legacy_logicle_approximation",
   }
   transform_ids: set[str] = set()
+  transform_parameters: dict[str, tuple[str, str]] = {}
   for index, transform in enumerate(transforms):
     if not isinstance(transform, dict):
       raise ManifestValidationError(f"transforms[{index}] must be an object")
@@ -84,6 +92,15 @@ def _validate_current_transforms(transforms: Any) -> None:
       raise ManifestValidationError(
         f"transform {transform_id!r} parameter must be a non-empty string"
       )
+    if transform.get("role") != "analysis":
+      raise ManifestValidationError(
+        f"transform {transform_id!r} role must be 'analysis'"
+      )
+    if parameter in (item[1] for item in transform_parameters.values()):
+      raise ManifestValidationError(
+        f"parameter {parameter!r} has more than one analysis transform"
+      )
+    transform_parameters[transform_id] = (transform_type, parameter)
     settings = transform.get("settings", {})
     if not isinstance(settings, dict):
       raise ManifestValidationError(
@@ -102,6 +119,63 @@ def _validate_current_transforms(transforms: Any) -> None:
         raise ManifestValidationError(
           f"transform {transform_id!r} has invalid Logicle settings: {exc}"
         ) from exc
+  return transform_parameters
+
+
+def _validate_current_gate_transforms(
+  strategies: Any,
+  transforms: Mapping[str, tuple[str, str]],
+) -> None:
+  if not isinstance(strategies, dict):
+    raise ManifestValidationError("gating_strategies_data must be an object")
+  defaults_by_parameter = {
+    parameter: transform_id
+    for transform_id, (_transform_type, parameter) in transforms.items()
+  }
+  for strategy_id, strategy in strategies.items():
+    if not isinstance(strategy, dict):
+      raise ManifestValidationError(
+        f"gating strategy {strategy_id!r} must be an object"
+      )
+    gates = strategy.get("gates", [])
+    if not isinstance(gates, list):
+      raise ManifestValidationError(
+        f"gating strategy {strategy_id!r} gates must be an array"
+      )
+    for gate in gates:
+      if not isinstance(gate, dict):
+        raise ManifestValidationError(
+          f"gating strategy {strategy_id!r} gate must be an object"
+        )
+      gate_id = str(gate.get("id", "unknown"))
+      for axis in ("x", "y"):
+        parameter = gate.get(f"{axis}_parameter")
+        if parameter is None:
+          continue
+        transform_id = gate.get(f"{axis}_transform_id")
+        if axis == "x" and transform_id is None:
+          transform_id = gate.get("transform_id")
+        default_id = defaults_by_parameter.get(parameter)
+        if transform_id is None and default_id is not None:
+          raise ManifestValidationError(
+            f"gate {gate_id!r} {axis}-axis must reference transform "
+            f"{default_id!r} for parameter {parameter!r}"
+          )
+        if transform_id is None:
+          continue
+        if transform_id not in transforms:
+          raise ManifestValidationError(
+            f"gate {gate_id!r} references unknown transform {transform_id!r}"
+          )
+        if transforms[transform_id][1] != parameter:
+          raise ManifestValidationError(
+            f"gate {gate_id!r} {axis}-parameter does not match transform "
+            f"{transform_id!r}"
+          )
+        if gate.get(f"{axis}_scale", "linear") != "linear":
+          raise ManifestValidationError(
+            f"gate {gate_id!r} {axis}-axis defines a double transform"
+          )
 
 
 def _validate_current_derived_parameters(definitions: Any) -> None:

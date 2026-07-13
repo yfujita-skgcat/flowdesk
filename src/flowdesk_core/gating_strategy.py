@@ -6,6 +6,8 @@ and building parent-child population hierarchy.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -15,7 +17,9 @@ from flowdesk_core.models import (
   GateSpec,
   GatingStrategySpec,
   PopulationResult,
+  TransformSpec,
 )
+from flowdesk_core.transforms import TransformError, apply_transform
 
 # ---------------------------------------------------------------------------
 # Type alias for membership masks dict
@@ -114,6 +118,9 @@ def evaluate_gating_strategy(
   strategy: GatingStrategySpec,
   data: NDArray[np.float64],
   channel_names: list[str],
+  *,
+  transforms: Sequence[TransformSpec] = (),
+  default_transform_ids: Mapping[str, str] | None = None,
 ) -> list[PopulationResult]:
   """Evaluate a gating strategy on event data.
 
@@ -129,7 +136,11 @@ def evaluate_gating_strategy(
     List of ``PopulationResult`` for each population (including root).
   """
   results, _ = evaluate_gating_strategy_with_membership(
-    strategy, data, channel_names
+    strategy,
+    data,
+    channel_names,
+    transforms=transforms,
+    default_transform_ids=default_transform_ids,
   )
   return results
 
@@ -138,6 +149,9 @@ def evaluate_gating_strategy_with_membership(
   strategy: GatingStrategySpec,
   data: NDArray[np.float64],
   channel_names: list[str],
+  *,
+  transforms: Sequence[TransformSpec] = (),
+  default_transform_ids: Mapping[str, str] | None = None,
 ) -> tuple[list[PopulationResult], PopulationMaskDict]:
   """Evaluate a gating strategy and return both results and membership masks.
 
@@ -158,6 +172,9 @@ def evaluate_gating_strategy_with_membership(
   n_events = data.shape[0]
   population_masks: PopulationMaskDict = {}
   gate_lookup = {gate.id: gate for gate in strategy.gates}
+  transform_lookup = _transform_lookup(transforms)
+  default_ids = dict(default_transform_ids or {})
+  transformed_cache: dict[str, NDArray[np.float64]] = {}
 
   # Root population: all events.
   root_mask = np.ones(n_events, dtype=np.bool_)
@@ -165,20 +182,40 @@ def evaluate_gating_strategy_with_membership(
 
   for gate in ordered_gates(strategy):
     if gate.gate_type == "boolean":
-      x_vals = np.zeros(n_events, dtype=np.float64)
-      y_vals = None
+      x_values = np.zeros(n_events, dtype=np.float64)
+      y_values: NDArray[np.float64] | None = None
     else:
-      x_vals = _get_column(gate.x_parameter, data, channel_names)
-      y_vals = _get_column(gate.y_parameter, data, channel_names)
-      if x_vals is None:
+      raw_x_values = _get_column(gate.x_parameter, data, channel_names)
+      y_values = _get_column(gate.y_parameter, data, channel_names)
+      if raw_x_values is None:
         raise GatingStrategyError(
           f"gate {gate.id!r} has no x_parameter defined"
         )
-      x_vals = _apply_gate_axis_scale(x_vals, gate.x_scale)
-      if y_vals is not None:
-        y_vals = _apply_gate_axis_scale(y_vals, gate.y_scale)
+      x_values = _gate_axis_values(
+        gate=gate,
+        axis="x",
+        values=raw_x_values,
+        parameter=gate.x_parameter,
+        scale=gate.x_scale,
+        transform_id=gate.x_transform_id or gate.transform_id,
+        transform_lookup=transform_lookup,
+        default_transform_ids=default_ids,
+        transformed_cache=transformed_cache,
+      )
+      if y_values is not None:
+        y_values = _gate_axis_values(
+          gate=gate,
+          axis="y",
+          values=y_values,
+          parameter=gate.y_parameter,
+          scale=gate.y_scale,
+          transform_id=gate.y_transform_id,
+          transform_lookup=transform_lookup,
+          default_transform_ids=default_ids,
+          transformed_cache=transformed_cache,
+        )
 
-    gate_mask = evaluate_gate(gate, x_vals, y_vals, population_masks)
+    gate_mask = evaluate_gate(gate, x_values, y_values, population_masks)
 
     parent_id = gate.parent_population_id
     if parent_id is not None:
@@ -193,10 +230,12 @@ def evaluate_gating_strategy_with_membership(
 
   population_results: list[PopulationResult] = []
   for population_id, mask in population_masks.items():
-    gate = gate_lookup.get(population_id)
+    population_gate = gate_lookup.get(population_id)
     parent_frequency = None
-    if gate is not None and gate.parent_population_id is not None:
-      parent_count = int(population_masks[gate.parent_population_id].sum())
+    if population_gate is not None and population_gate.parent_population_id is not None:
+      parent_count = int(
+        population_masks[population_gate.parent_population_id].sum()
+      )
       if parent_count > 0:
         parent_frequency = int(mask.sum()) / parent_count
     population_results.append(
@@ -217,6 +256,71 @@ def evaluate_gating_strategy_with_membership(
     mask.setflags(write=False)
 
   return population_results, population_masks
+
+
+def _transform_lookup(
+  transforms: Sequence[TransformSpec],
+) -> dict[str, TransformSpec]:
+  lookup: dict[str, TransformSpec] = {}
+  for transform in transforms:
+    if transform.id in lookup:
+      raise GatingStrategyError(
+        f"duplicate transform id: {transform.id!r}"
+      )
+    lookup[transform.id] = transform
+  return lookup
+
+
+def _gate_axis_values(
+  *,
+  gate: GateSpec,
+  axis: str,
+  values: NDArray[np.float64],
+  parameter: str | None,
+  scale: str,
+  transform_id: str | None,
+  transform_lookup: Mapping[str, TransformSpec],
+  default_transform_ids: Mapping[str, str],
+  transformed_cache: dict[str, NDArray[np.float64]],
+) -> NDArray[np.float64]:
+  """Return one gate axis in its single persisted coordinate definition."""
+  effective_id = transform_id
+  if effective_id is None and parameter is not None:
+    effective_id = default_transform_ids.get(parameter)
+  if effective_id is None:
+    return _apply_gate_axis_scale(values, scale)
+  if scale != "linear":
+    raise GatingStrategyError(
+      f"gate {gate.id!r} {axis}-axis defines a double transform: "
+      f"transform_id={effective_id!r} and legacy scale={scale!r}"
+    )
+  transform = transform_lookup.get(effective_id)
+  if transform is None:
+    raise GatingStrategyError(
+      f"gate {gate.id!r} {axis}-axis references unknown transform: "
+      f"{effective_id!r}"
+    )
+  if transform.role != "analysis":
+    raise GatingStrategyError(
+      f"gate {gate.id!r} references non-analysis transform {effective_id!r}"
+    )
+  if transform.parameter != parameter:
+    raise GatingStrategyError(
+      f"gate {gate.id!r} {axis}-parameter {parameter!r} does not match "
+      f"transform {effective_id!r} parameter {transform.parameter!r}"
+    )
+  cached = transformed_cache.get(effective_id)
+  if cached is not None:
+    return cached
+  try:
+    transformed = apply_transform(transform, values)
+  except TransformError as exc:
+    raise GatingStrategyError(
+      f"gate {gate.id!r} transform {effective_id!r} failed "
+      f"with {exc.code}: {exc}"
+    ) from exc
+  transformed_cache[effective_id] = transformed
+  return transformed
 
 
 def _apply_gate_axis_scale(

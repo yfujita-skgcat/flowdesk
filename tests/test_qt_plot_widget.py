@@ -27,14 +27,20 @@ from flowdesk_core.fcs_io import FcsFileInfo, write_fcs_file  # noqa: E402
 from flowdesk_core.gating_strategy import (  # noqa: E402
   GatingStrategyError,
   evaluate_gating_strategy,
+  evaluate_gating_strategy_with_membership,
 )
 from flowdesk_core.models import (  # noqa: E402
   ChannelSpec,
   GateSpec,
   GatingStrategySpec,
   PopulationResult,
+  TransformSpec,
 )
 from flowdesk_core.pipeline_runner import PipelineRunner  # noqa: E402
+from flowdesk_core.transforms import (  # noqa: E402
+  LOGICLE_IMPLEMENTATION_VERSION,
+  apply_transform,
+)
 from flowdesk_qt.gate_editor import GateEditor  # noqa: E402
 from flowdesk_qt.main_window import MainWindow  # noqa: E402
 from flowdesk_qt.plot_widget import PlotWidget  # noqa: E402
@@ -497,6 +503,93 @@ def test_linear_polygon_is_hidden_on_log_display_without_rewrite() -> None:
     widget.add_gate_overlay(gate, gate_index=0)
     assert widget._gate_items[0].__class__.__name__ == "PolyLineROI"
     assert gate.coordinates == ((1.0, 1.0), (100.0, 20.0), (10.0, 100.0))
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_plot_widget_uses_core_logicle_coordinates_ticks_and_gate_ids() -> None:
+  app = _app()
+  widget = PlotWidget()
+  x_transform = TransformSpec(
+    id="logicle_x",
+    name="Logicle X",
+    transform_type="logicle",
+    parameter="X",
+    settings={
+      "T": 262144.0,
+      "W": 0.5,
+      "M": 4.5,
+      "A": 0.0,
+      "implementation_version": LOGICLE_IMPLEMENTATION_VERSION,
+    },
+  )
+  y_transform = TransformSpec(
+    id="logicle_y",
+    name="Logicle Y",
+    transform_type="logicle",
+    parameter="Y",
+    settings=dict(x_transform.settings),
+  )
+  raw = np.array([-100.0, 0.0, 100.0, 262144.0], dtype=np.float64)
+  try:
+    widget.set_axis_transform_specs(x_transform, y_transform)
+    widget.plot_events(raw, raw, x_label="X", y_label="Y")
+
+    expected = apply_transform(x_transform, raw)
+    np.testing.assert_allclose(widget._scatter.xData, expected, atol=1e-12)
+    assert {tick.event_value for tick in widget.axis_ticks("x")} >= {
+      0.0,
+      262144.0,
+    }
+
+    gate = GateSpec(
+      id="logicle_gate",
+      name="Logicle gate",
+      gate_type="rectangle",
+      x_parameter="X",
+      y_parameter="Y",
+      x_transform_id=x_transform.id,
+      y_transform_id=y_transform.id,
+      thresholds={
+        "x_min": float(expected[0]),
+        "x_max": float(expected[2]),
+        "y_min": float(expected[0]),
+        "y_max": float(expected[2]),
+      },
+    )
+    widget.add_gate_overlay(gate)
+    polygon = GateSpec(
+      id="logicle_polygon",
+      name="Logicle polygon",
+      gate_type="polygon",
+      x_parameter="X",
+      y_parameter="Y",
+      x_transform_id=x_transform.id,
+      y_transform_id=y_transform.id,
+      coordinates=(
+        (float(expected[0]), float(expected[0])),
+        (float(expected[2]), float(expected[0])),
+        (float(expected[2]), float(expected[2])),
+        (float(expected[0]), float(expected[2])),
+      ),
+    )
+    widget.add_gate_overlay(polygon)
+    assert len(widget._gate_items) == 2
+
+    _results, masks = evaluate_gating_strategy_with_membership(
+      GatingStrategySpec(
+        id="logicle_strategy",
+        name="Logicle strategy",
+        gates=(gate, polygon),
+      ),
+      np.column_stack((raw, raw)),
+      ["X", "Y"],
+      transforms=(x_transform, y_transform),
+    )
+    assert masks[gate.id].tolist() == [True, True, True, False]
+    assert masks[polygon.id].tolist() == [True, True, True, False]
   finally:
     widget.close()
     widget.deleteLater()

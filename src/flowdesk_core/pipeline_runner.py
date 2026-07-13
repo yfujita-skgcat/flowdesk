@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,7 @@ from flowdesk_core.models import (
   TransformSpec,
 )
 from flowdesk_core.sample import SampleData
-from flowdesk_core.transforms import TransformError, apply_transform_to_column
+from flowdesk_core.transforms import TransformError, validate_transform
 
 
 class PipelineError(FlowdeskError):
@@ -74,6 +74,8 @@ class _AnalysisData:
 
   events: NDArray[np.float64]
   channels: tuple[ChannelSpec, ...]
+  transforms: tuple[TransformSpec, ...] = ()
+  default_transform_ids: dict[str, str] = field(default_factory=dict)
 
   def __post_init__(self) -> None:
     if self.events.ndim != 2 or self.events.shape[1] != len(self.channels):
@@ -577,36 +579,63 @@ class PipelineRunner:
   def _step_transforms(
     self,
     data: _AnalysisData | DerivedParameterStageResult,
-  ) -> _AnalysisData | DerivedParameterStageResult:
-    """Apply transforms to specified parameters."""
+  ) -> _AnalysisData:
+    """Validate and bind immutable transform views for downstream gates."""
     specs = self._project.get("transforms", [])
     if not specs:
-      return data
+      return _AnalysisData(data.events, data.channels)
 
-    current_data = data.events.copy()
-
+    parsed: list[TransformSpec] = []
+    transform_ids: set[str] = set()
+    default_ids: dict[str, str] = {}
     for spec_dict in specs:
-      spec = TransformSpec(
-        id=spec_dict["id"],
-        name=spec_dict.get("name", spec_dict["id"]),
-        transform_type=spec_dict["transform_type"],
-        parameter=spec_dict["parameter"],
-        settings=spec_dict.get("settings", {}),
-      )
-
       try:
-        current_data = apply_transform_to_column(
-          spec, current_data, data.channel_ids
+        spec = TransformSpec(
+          id=spec_dict["id"],
+          name=spec_dict.get("name", spec_dict["id"]),
+          transform_type=spec_dict["transform_type"],
+          parameter=spec_dict["parameter"],
+          settings=spec_dict.get("settings", {}),
+          role=spec_dict.get("role", "analysis"),
+          notes=spec_dict.get("notes", ""),
         )
-      except TransformError:
-        pass  # Skip invalid transforms silently.
+        validate_transform(spec)
+      except (KeyError, TypeError, ValueError, TransformError) as exc:
+        transform_id = spec_dict.get("id", "unknown")
+        raise PipelineError(
+          f"invalid_transform_definition: {transform_id!r}: {exc}"
+        ) from exc
+      if spec.role != "analysis":
+        raise PipelineError(
+          f"invalid_transform_role: transform {spec.id!r} must be analysis"
+        )
+      if spec.id in transform_ids:
+        raise PipelineError(f"duplicate_transform_id: {spec.id!r}")
+      if spec.parameter in default_ids:
+        raise PipelineError(
+          "duplicate_analysis_transform_parameter: "
+          f"{spec.parameter!r} uses {default_ids[spec.parameter]!r} "
+          f"and {spec.id!r}"
+        )
+      if spec.parameter not in data.channel_ids:
+        raise PipelineError(
+          f"unknown_transform_parameter: {spec.parameter!r}"
+        )
+      transform_ids.add(spec.id)
+      default_ids[spec.parameter] = spec.id
+      parsed.append(spec)
 
-    return _AnalysisData(current_data, data.channels)
+    return _AnalysisData(
+      data.events,
+      data.channels,
+      transforms=tuple(parsed),
+      default_transform_ids=default_ids,
+    )
 
   def _step_gating(
     self,
     strategy_id: str,
-    data: _AnalysisData | DerivedParameterStageResult,
+    data: _AnalysisData,
     sample_id: str,
   ) -> tuple[list[PopulationResult], list[PopulationMembership]]:
     """Evaluate the gating strategy on transformed data.
@@ -630,7 +659,11 @@ class PipelineRunner:
       strat = self._strategy_from_mapping(strat)
 
     results, masks = evaluate_gating_strategy_with_membership(
-      strat, data.events, data.channel_ids
+      strat,
+      data.events,
+      data.channel_ids,
+      transforms=data.transforms,
+      default_transform_ids=data.default_transform_ids,
     )
 
     # Attach sample_id to results (frozen dataclass, so rebuild).
@@ -781,6 +814,8 @@ class PipelineRunner:
         y_parameter=gate.get("y_parameter"),
         x_scale=gate.get("x_scale", "linear"),
         y_scale=gate.get("y_scale", "linear"),
+        x_transform_id=gate.get("x_transform_id"),
+        y_transform_id=gate.get("y_transform_id"),
         transform_id=gate.get("transform_id"),
         compensation_id=gate.get("compensation_id"),
         coordinates=tuple(tuple(point) for point in gate.get("coordinates", ())),

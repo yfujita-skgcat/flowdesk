@@ -20,7 +20,9 @@ from flowdesk_core.gating_strategy import (
 from flowdesk_core.models import (
   GateSpec,
   GatingStrategySpec,
+  TransformSpec,
 )
+from flowdesk_core.transforms import LOGICLE_IMPLEMENTATION_VERSION, apply_transform
 
 # ---------------------------------------------------------------------------
 # Backward-compatible scalar rectangle
@@ -821,6 +823,150 @@ def test_polygon_gate_is_evaluated_in_its_stored_log_scales() -> None:
   assert masks["log-poly"].tolist() == [True, True, True, False, False]
   result = next(r for r in results if r.population_id == "log-poly")
   assert result.event_count == 3
+
+
+def _gate_logicle_transform(parameter: str, transform_id: str) -> TransformSpec:
+  return TransformSpec(
+    id=transform_id,
+    name=f"Logicle {parameter}",
+    transform_type="logicle",
+    parameter=parameter,
+    settings={
+      "T": 262144.0,
+      "W": 0.5,
+      "M": 4.5,
+      "A": 0.0,
+      "implementation_version": LOGICLE_IMPLEMENTATION_VERSION,
+    },
+  )
+
+
+def test_rectangle_gate_uses_referenced_logicle_transforms_once() -> None:
+  x_transform = _gate_logicle_transform("x", "logicle_x")
+  y_transform = _gate_logicle_transform("y", "logicle_y")
+  events = np.array([
+    [-100.0, -100.0],
+    [0.0, 0.0],
+    [100.0, 100.0],
+    [1000.0, 1000.0],
+  ], dtype=np.float64)
+  transformed = apply_transform(
+    x_transform,
+    np.array([-100.0, 100.0], dtype=np.float64),
+  )
+  gate = GateSpec(
+    id="logicle_rectangle",
+    name="Logicle rectangle",
+    gate_type="rectangle",
+    parent_population_id="all_events",
+    x_parameter="x",
+    y_parameter="y",
+    x_transform_id=x_transform.id,
+    y_transform_id=y_transform.id,
+    thresholds={
+      "x_min": float(transformed[0]),
+      "x_max": float(transformed[1]),
+      "y_min": float(transformed[0]),
+      "y_max": float(transformed[1]),
+    },
+  )
+
+  _results, masks = evaluate_gating_strategy_with_membership(
+    GatingStrategySpec(id="s", name="s", gates=(gate,)),
+    events,
+    ["x", "y"],
+    transforms=(x_transform, y_transform),
+  )
+
+  assert masks[gate.id].tolist() == [True, True, True, False]
+
+
+def test_gate_transform_reference_rejects_second_legacy_scale() -> None:
+  transform = _gate_logicle_transform("x", "logicle_x")
+  gate = GateSpec(
+    id="double",
+    name="double",
+    gate_type="range",
+    x_parameter="x",
+    x_scale="log10",
+    x_transform_id=transform.id,
+    thresholds={"min": 0.0},
+  )
+
+  with pytest.raises(GatingStrategyError, match="double transform"):
+    evaluate_gating_strategy_with_membership(
+      GatingStrategySpec(id="s", name="s", gates=(gate,)),
+      np.array([[10.0]], dtype=np.float64),
+      ["x"],
+      transforms=(transform,),
+    )
+
+
+@pytest.mark.parametrize(
+  ("transform", "values", "minimum", "maximum"),
+  (
+    (
+      TransformSpec(
+        id="linear_x",
+        name="Linear X",
+        transform_type="linear",
+        parameter="x",
+        settings={"scale": 2.0, "offset": 0.0},
+      ),
+      np.array([1.0, 2.0, 3.0], dtype=np.float64),
+      3.5,
+      4.5,
+    ),
+    (
+      TransformSpec(
+        id="log_x",
+        name="Log X",
+        transform_type="log",
+        parameter="x",
+        settings={"base": 10.0, "invalid_value_policy": "to_nan"},
+      ),
+      np.array([1.0, 10.0, 100.0], dtype=np.float64),
+      0.5,
+      1.5,
+    ),
+    (
+      TransformSpec(
+        id="asinh_x",
+        name="Asinh X",
+        transform_type="asinh",
+        parameter="x",
+        settings={"cofactor": 1.0},
+      ),
+      np.array([-10.0, 0.0, 10.0], dtype=np.float64),
+      -0.1,
+      0.1,
+    ),
+  ),
+  ids=("linear", "log", "asinh"),
+)
+def test_existing_transform_types_use_the_same_gate_reference_api(
+  transform: TransformSpec,
+  values: np.ndarray,
+  minimum: float,
+  maximum: float,
+) -> None:
+  gate = GateSpec(
+    id="range",
+    name="Range",
+    gate_type="range",
+    x_parameter="x",
+    x_transform_id=transform.id,
+    thresholds={"min": minimum, "max": maximum},
+  )
+
+  _results, masks = evaluate_gating_strategy_with_membership(
+    GatingStrategySpec(id="s", name="s", gates=(gate,)),
+    values[:, np.newaxis],
+    ["x"],
+    transforms=(transform,),
+  )
+
+  assert masks[gate.id].tolist() == [False, True, False]
 
 
 def test_evaluate_with_membership_no_gui_dependency() -> None:

@@ -6,7 +6,7 @@
   "required": ["project_id", "project_version", "pipeline_version", "samples"],
   "properties": {
     "project_id": { "type": "string" },
-    "project_version": { "const": "1.4.0" },
+    "project_version": { "const": "1.5.0" },
     "pipeline_version": { "type": "string" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" },
@@ -24,6 +24,10 @@
       "items": { "$ref": "#/$defs/transform" }
     },
     "gating_strategies": { "type": "array", "items": { "type": "object" } },
+    "gating_strategies_data": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/gatingStrategy" }
+    },
     "default_gating_strategy_id": { "type": "string" },
     "default_compensation_matrix_id": { "type": ["string", "null"] },
     "export_settings": { "type": "array", "items": { "type": "object" } },
@@ -31,6 +35,7 @@
     "last_execution_report_path": { "type": ["string", "null"] },
     "sample_path_resolution_policy": { "type": "string" },
     "software": { "type": "object" },
+    "plot_display_settings": { "$ref": "#/$defs/plotDisplaySettings" },
     "migration_diagnostics": {
       "type": "array",
       "items": {
@@ -52,7 +57,7 @@
   "$defs": {
     "transform": {
       "type": "object",
-      "required": ["id", "transform_type", "parameter"],
+      "required": ["id", "transform_type", "parameter", "role"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
@@ -66,6 +71,7 @@
           ]
         },
         "parameter": { "type": "string", "minLength": 1 },
+        "role": { "const": "analysis" },
         "settings": { "type": "object" },
         "notes": { "type": "string" }
       },
@@ -95,6 +101,61 @@
           }
         }
       ],
+      "additionalProperties": true
+    },
+    "gatingStrategy": {
+      "type": "object",
+      "required": ["id", "gates"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "root_population_id": { "type": "string", "minLength": 1 },
+        "gates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gate" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "gate": {
+      "type": "object",
+      "required": ["id", "gate_type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "gate_type": { "enum": ["rectangle", "polygon", "range", "boolean"] },
+        "parent_population_id": { "type": ["string", "null"] },
+        "x_parameter": { "type": ["string", "null"] },
+        "y_parameter": { "type": ["string", "null"] },
+        "x_scale": { "enum": ["linear", "log10", "asinh"] },
+        "y_scale": { "enum": ["linear", "log10", "asinh"] },
+        "x_transform_id": { "type": ["string", "null"] },
+        "y_transform_id": { "type": ["string", "null"] },
+        "transform_id": { "type": ["string", "null"] },
+        "coordinates": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [{ "type": "number" }, { "type": "number" }],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "thresholds": { "type": "object" },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "plotDisplaySettings": {
+      "type": "object",
+      "properties": {
+        "selected_sample_id": { "type": ["string", "null"] },
+        "x_channel": { "type": "string" },
+        "y_channel": { "type": "string" },
+        "x_scale": { "enum": ["linear", "log10", "asinh"] },
+        "y_scale": { "enum": ["linear", "log10", "asinh"] },
+        "marginal_enabled": { "type": "boolean" }
+      },
       "additionalProperties": true
     },
     "derivedParameter": {

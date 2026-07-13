@@ -142,7 +142,12 @@ class TransformSpec:
   ]
   parameter: str
   settings: dict[str, Any] = field(default_factory=dict)
+  role: Literal["analysis"] = "analysis"
   notes: str = ""
+
+  def __post_init__(self) -> None:
+    if self.role != "analysis":
+      raise ValueError(f"invalid transform role: {self.role!r}")
 
 
 @dataclass(frozen=True)
@@ -157,6 +162,8 @@ class GateSpec:
   y_parameter: str | None = None
   x_scale: GateAxisScale = "linear"
   y_scale: GateAxisScale = "linear"
+  x_transform_id: str | None = None
+  y_transform_id: str | None = None
   transform_id: str | None = None
   compensation_id: str | None = None
   coordinates: tuple[tuple[float, float], ...] = field(default_factory=tuple)

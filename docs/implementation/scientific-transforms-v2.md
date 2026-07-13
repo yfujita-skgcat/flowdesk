@@ -219,6 +219,36 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
   transform protocol as linear, log, and asinh; gate IDs and Qt display/ticks
   remain increment 4 and 5 work.
 
+## Confirmed contract after increment 4
+
+- `GateSpec.x_transform_id` and `GateSpec.y_transform_id` identify the exact
+  versioned analysis coordinate definition for each geometric axis. The old
+  single `transform_id` and `x_scale`/`y_scale` fields remain read-compatible;
+  combining a transform ID with a non-linear legacy scale is rejected as a
+  double transform.
+- The pipeline transform stage validates definitions and binds one default
+  analysis transform per parameter without mutating event columns. Gate
+  evaluation lazily applies the referenced transform to the immutable
+  compensated/derived view and caches it by transform ID. Thus project and
+  gate references select one transform application instead of composing two.
+- `TransformSpec.role="analysis"` is persisted separately from
+  `plot_display_settings`. Display-only linear/log10/asinh choices are not
+  accepted as gate analysis transform IDs.
+- Core tick generation inverse-maps the visible coordinate interval, selects
+  zero and signed event-space decades (plus Logicle `T`), then forward-maps
+  candidates through the same `TransformSpec`. `PlotWidget` uses that API for
+  formal transform coordinates, ticks, and matching gate overlays.
+- Project format `1.5.0` adds transform roles and per-axis gate transform IDs.
+  Migration binds an old linear gate axis to its unique matching project
+  transform. A legacy project transform combined with an additional non-linear
+  gate scale records `legacy_double_transform` and is rejected rather than
+  silently changing membership.
+- Synthetic rectangle and polygon fixtures verify that PlotWidget coordinates
+  and GUI-visible overlays produce the same full-event headless membership.
+  Existing linear, log, asinh, and legacy scale gate tests remain unchanged.
+  Transform parameter editing and explicit legacy gate duplication/migration
+  preview remain increment 5 work.
+
 ## Stop condition
 
 If no licensed/reference implementation or equation can be verified, stop after the

@@ -160,9 +160,9 @@ git status --short
 - [x] 済み: 現在の`logicle_like`を`legacy_logicle_approximation`へrenameするschema migrationを作る。
 - [x] 済み: published Logicleのforward/inverseを実装する。optional dependencyを使う場合もversionとparameter mappingを保存する。
 - [x] 済み: linear、log、asinh、logicleを共通Transform protocol/APIで扱う。
-- [ ] gate evaluator、plot coordinate conversion、tick生成が同じimplementationを使う。
-- [ ] project-level transformとgate axis transformを同じtransform ID参照へ統合し、同一parameterへ二重適用されないようにする。
-- [ ] analysis transformとdisplay-only view transformを型とschemaで区別する。
+- [x] 済み: gate evaluator、plot coordinate conversion、tick生成が同じimplementationを使う。
+- [x] 済み: project-level transformとgate axis transformを同じtransform ID参照へ統合し、同一parameterへ二重適用されないようにする。
+- [x] 済み: analysis transformとdisplay-only view transformを型とschemaで区別する。
 - [x] 済み: transform domain外とnon-convergenceをstructured errorにする。
 
 #### GUI/migration
@@ -177,7 +177,7 @@ git status --short
 - [x] 済み: negative、zero、linear region、large positive、boundaryをtestする。
 - [x] 済み: `inverse(forward(x))`の誤差を定義済みtolerance内にする。
 - [ ] Logicle viewで作成したrectangle/polygonのGUI/headless membershipを一致させる。
-- [ ] linear/log/asinh既存gateを壊さない。
+- [x] 済み: linear/log/asinh既存gateを壊さない。
 
 ### Phase A4: Compensation bindingとdiagnostics [S03-P0]
 

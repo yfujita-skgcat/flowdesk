@@ -17,8 +17,11 @@ Samples initially use path references instead of copying FCS data into the proje
 
 Execution profiles allow one project to store multiple run configurations.
 
-The current project format is `1.4.0`. It adds the formal `logicle` transform,
-whose `T`, `W`, `M`, `A`, and implementation version are mandatory. Version
+The current project format is `1.5.0`. Analysis transforms require
+`role: analysis`; geometric gate axes reference them using
+`x_transform_id`/`y_transform_id`. `plot_display_settings` remains explicitly
+display-only. Formal `logicle` transforms require `T`, `W`, `M`, `A`, and an
+implementation version. Version
 `1.2.0` transform definitions
 named `logicle_like` migrate to `legacy_logicle_approximation` with a persisted
 warning and unchanged numeric settings.

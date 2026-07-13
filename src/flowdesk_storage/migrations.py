@@ -8,13 +8,14 @@ from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
 
-CURRENT_PROJECT_VERSION = "1.4.0"
+CURRENT_PROJECT_VERSION = "1.5.0"
 LEGACY_PROJECT_VERSIONS = frozenset({
   "0.1",
   "1.0.0",
   "1.1.0",
   "1.2.0",
   "1.3.0",
+  "1.4.0",
 })
 
 
@@ -170,6 +171,7 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
         "invalid_legacy_transform_id",
         "legacy transform ID must be a non-empty string",
       )
+    transform.setdefault("role", "analysis")
     if transform.get("transform_type") != "logicle_like":
       continue
     transform["transform_type"] = "legacy_logicle_approximation"
@@ -190,6 +192,64 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
     }
     if diagnostic not in diagnostics:
       diagnostics.append(diagnostic)
+
+  transform_ids_by_parameter: dict[str, str] = {}
+  duplicate_transform_parameters: set[str] = set()
+  for transform in transforms:
+    parameter = transform.get("parameter")
+    transform_id = transform.get("id")
+    if not isinstance(parameter, str) or not parameter:
+      continue
+    if parameter in transform_ids_by_parameter:
+      duplicate_transform_parameters.add(parameter)
+      continue
+    transform_ids_by_parameter[parameter] = transform_id
+  for parameter in duplicate_transform_parameters:
+    transform_ids_by_parameter.pop(parameter, None)
+
+  strategy_data = migrated.get("gating_strategies_data", {})
+  if isinstance(strategy_data, dict):
+    for strategy in strategy_data.values():
+      if not isinstance(strategy, dict):
+        continue
+      gates = strategy.get("gates", [])
+      if not isinstance(gates, list):
+        continue
+      for gate in gates:
+        if not isinstance(gate, dict):
+          continue
+        legacy_transform_id = gate.get("transform_id")
+        if legacy_transform_id is not None:
+          gate.setdefault("x_transform_id", legacy_transform_id)
+        for axis in ("x", "y"):
+          parameter = gate.get(f"{axis}_parameter")
+          if not isinstance(parameter, str) or not parameter:
+            continue
+          transform_id = transform_ids_by_parameter.get(parameter)
+          if transform_id is None or gate.get(f"{axis}_transform_id") is not None:
+            continue
+          scale = gate.get(f"{axis}_scale", "linear")
+          if scale == "linear":
+            gate[f"{axis}_transform_id"] = transform_id
+            continue
+          diagnostic = {
+            "code": "legacy_double_transform",
+            "severity": "error",
+            "stage": "migration",
+            "message": (
+              f"Gate {gate.get('id', 'unknown')!r} {axis}-axis combines "
+              f"project transform {transform_id!r} with legacy scale {scale!r}"
+            ),
+            "transform_id": transform_id,
+            "details": {
+              "gate_id": gate.get("id"),
+              "axis": axis,
+              "legacy_scale": scale,
+              "compatibility_policy": "reject_double_application",
+            },
+          }
+          if diagnostic not in diagnostics:
+            diagnostics.append(diagnostic)
   if diagnostics:
     migrated["migration_diagnostics"] = diagnostics
 

@@ -568,6 +568,51 @@ def test_pipeline_with_transforms() -> None:
   assert "transforms=done" in " ".join(report.messages)
 
 
+def test_project_transform_referenced_by_gate_is_applied_exactly_once() -> None:
+  strategy = GatingStrategySpec(
+    id="single_application",
+    name="Single application",
+    gates=(GateSpec(
+      id="scaled_range",
+      name="Scaled range",
+      gate_type="range",
+      parent_population_id="all_events",
+      x_parameter="signal",
+      x_transform_id="scale_signal",
+      thresholds={"min": 3.5, "max": 4.5},
+    ),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    transforms=[{
+      "id": "scale_signal",
+      "name": "Scale signal",
+      "transform_type": "linear",
+      "parameter": "signal",
+      "settings": {"scale": 2.0, "offset": 0.0},
+      "role": "analysis",
+    }],
+    execution_profiles=[{
+      "id": "default",
+      "gating_strategy_id": strategy.id,
+    }],
+    gating_strategies_data={strategy.id: strategy},
+  )
+  sample = SampleData(
+    "s1",
+    np.array([[1.0], [2.0], [3.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+  result = next(
+    item for item in report.population_results
+    if item.population_id == "scaled_range"
+  )
+  assert result.event_count == 1
+
+
 # ---------------------------------------------------------------------------
 # Gating step
 # ---------------------------------------------------------------------------

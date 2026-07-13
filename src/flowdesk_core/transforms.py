@@ -26,6 +26,15 @@ class TransformError(FlowdeskError):
     super().__init__(message)
 
 
+@dataclass(frozen=True)
+class TransformTick:
+  """One axis tick derived from a versioned transform definition."""
+
+  coordinate: float
+  event_value: float
+  label: str
+
+
 LOGICLE_IMPLEMENTATION_VERSION = "logicle-gml2-moore-parks-2012-v1"
 _LOGICLE_MAX_ITERATIONS = 20
 _LOGICLE_TAYLOR_LENGTH = 16
@@ -675,6 +684,94 @@ def inverse_transform(
   implementation = _implementation_for(spec)
   settings = implementation.validate_settings(spec.settings)
   return implementation.inverse(values, settings)
+
+
+def generate_transform_ticks(
+  spec: TransformSpec,
+  minimum_coordinate: float,
+  maximum_coordinate: float,
+) -> tuple[TransformTick, ...]:
+  """Generate signed-decade ticks using the same forward/inverse transform.
+
+  Coordinate limits are inverse-mapped to event space. Candidate event values
+  are then forward-mapped with ``spec``; no independent display approximation
+  is used.
+  """
+  if not math.isfinite(minimum_coordinate) or not math.isfinite(maximum_coordinate):
+    raise TransformError(
+      "transform_domain_error",
+      "transform tick coordinate limits must be finite",
+    )
+  low_coordinate = min(minimum_coordinate, maximum_coordinate)
+  high_coordinate = max(minimum_coordinate, maximum_coordinate)
+  event_bounds = inverse_transform(
+    spec,
+    np.array([low_coordinate, high_coordinate], dtype=np.float64),
+  )
+  low_event = float(min(event_bounds))
+  high_event = float(max(event_bounds))
+  candidates: set[float] = set()
+  if low_event <= 0 <= high_event:
+    candidates.add(0.0)
+
+  maximum_magnitude = max(abs(low_event), abs(high_event))
+  if maximum_magnitude > 0 and math.isfinite(maximum_magnitude):
+    maximum_exponent = min(308, math.ceil(math.log10(maximum_magnitude)))
+    minimum_nonzero = min(
+      (abs(value) for value in (low_event, high_event) if value != 0),
+      default=1.0,
+    )
+    minimum_exponent = max(-15, math.floor(math.log10(minimum_nonzero)))
+    minimum_exponent = min(minimum_exponent, 0)
+    for exponent in range(minimum_exponent, maximum_exponent + 1):
+      magnitude = 10.0 ** exponent
+      if low_event <= magnitude <= high_event:
+        candidates.add(magnitude)
+      if low_event <= -magnitude <= high_event:
+        candidates.add(-magnitude)
+
+  if spec.transform_type == "logicle":
+    top = float(spec.settings["T"])
+    if low_event <= top <= high_event:
+      candidates.add(top)
+
+  if not candidates:
+    return ()
+  event_values = np.array(sorted(candidates), dtype=np.float64)
+  coordinates = apply_transform(spec, event_values)
+  ticks: list[TransformTick] = []
+  for event_value, coordinate in zip(event_values, coordinates, strict=True):
+    coordinate_value = float(coordinate)
+    event_value_float = float(event_value)
+    if not math.isfinite(coordinate_value):
+      continue
+    if coordinate_value < low_coordinate or coordinate_value > high_coordinate:
+      continue
+    if ticks and math.isclose(
+      coordinate_value,
+      ticks[-1].coordinate,
+      rel_tol=0.0,
+      abs_tol=8 * np.finfo(np.float64).eps,
+    ):
+      continue
+    ticks.append(TransformTick(
+      coordinate=coordinate_value,
+      event_value=event_value_float,
+      label=_format_tick_label(event_value_float),
+    ))
+  ticks.sort(key=lambda tick: tick.coordinate)
+  return tuple(ticks)
+
+
+def _format_tick_label(value: float) -> str:
+  if value == 0:
+    return "0"
+  magnitude = abs(value)
+  exponent = round(math.log10(magnitude))
+  if math.isclose(magnitude, 10.0 ** exponent, rel_tol=1e-12):
+    sign = "-" if value < 0 else ""
+    return f"{sign}1e{exponent}"
+  return f"{value:g}"
 
 
 def apply_transform_to_column(
