@@ -89,7 +89,7 @@ git status --short
 - [x] 済み: `SampleData`または同等のGUI非依存input objectを追加し、sample ID、read-only events、sample固有channel specsを一体でrunnerへ渡す。
 - [x] 済み: `PipelineRunner.run()`へsampleごとのchannel mappingを渡す新APIを追加する。既存`event_data + channel_names`はdeprecation-compatible wrapperとして残してよい。
 - [x] 済み: compensation、derived parameter、transform、gateがcolumn positionではなくchannel identityで解決されるようにする。
-- [ ] duplicate channel label、missing parameter、ambiguous short nameをstructured errorにする。
+- [x] 済み: duplicate channel label、missing parameter、ambiguous short nameをstructured errorにする。
 - [x] 済み: input file fingerprintにsize、mtime、hash algorithm/hash valueを保存する。
 
 #### Storage/GUI

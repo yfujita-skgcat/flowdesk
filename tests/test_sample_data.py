@@ -61,6 +61,8 @@ def test_sample_data_rejects_duplicate_stable_ids() -> None:
 
   assert error.value.sample_id == "sample-1"
   assert error.value.channel_id == "cd3_a"
+  assert error.value.code == "duplicate_channel_id"
+  assert error.value.to_mapping()["sample_id"] == "sample-1"
 
 
 def test_stable_id_lookup_does_not_depend_on_visible_channel_order() -> None:
@@ -94,6 +96,14 @@ def test_duplicate_visible_label_is_allowed_but_ambiguous_to_resolve() -> None:
   assert error.value.sample_id == "sample-1"
   assert error.value.reference == "CD3"
   assert error.value.candidate_ids == ("cd3_area", "cd3_height")
+  assert error.value.code == "ambiguous_channel_reference"
+  assert error.value.matching_fields == (
+    ("cd3_area", ("short_name",)),
+    ("cd3_height", ("short_name",)),
+  )
+  assert error.value.to_mapping()["candidate_ids"] == (
+    "cd3_area", "cd3_height"
+  )
 
 
 def test_missing_channel_reference_has_sample_context() -> None:
@@ -108,3 +118,5 @@ def test_missing_channel_reference_has_sample_context() -> None:
 
   assert error.value.sample_id == "sample-1"
   assert error.value.reference == "CD3"
+  assert error.value.code == "channel_not_found"
+  assert error.value.to_mapping()["reference"] == "CD3"

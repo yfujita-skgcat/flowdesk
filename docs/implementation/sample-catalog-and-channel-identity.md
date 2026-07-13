@@ -53,6 +53,9 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 5. **Catalog GUI** — implemented
    - Display selectable metadata columns and mismatch badges.
    - Add reconnect logic based on stored fingerprint; require confirmation on mismatch.
+6. **Structured identity errors** — implemented
+   - Give malformed FCS parameter metadata stable error codes and context.
+   - Give missing/ambiguous channel lookup errors stable candidate information.
 
 ## Confirmed contract after increment 1
 
@@ -177,6 +180,25 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 - Fingerprinting currently runs synchronously during catalog import/reconnect.
   Moving hashing to a cancellable background catalog worker is a future
   performance improvement; it does not change the persisted identity contract.
+
+## Confirmed contract after increment 6
+
+- `ChannelIdentityError` subclasses expose a stable `code`, structured
+  `context`, and `to_mapping()` in addition to their existing human-readable
+  messages and typed attributes. Existing exception inheritance and constructor
+  signatures remain compatible.
+- Missing lookup uses `channel_not_found`; duplicate stable IDs use
+  `duplicate_channel_id`; ambiguous visible-label lookup uses
+  `ambiguous_channel_reference` and includes every candidate stable ID.
+- Ambiguous lookup also reports whether each candidate matched `name` (`$PnN`),
+  `short_name` (`$PnS`), or both. No normalized or first-match fallback is used.
+- Missing required `$PnN` raises `MissingFcsParameterError` with code
+  `missing_fcs_parameter`, one-based parameter index, and keyword.
+- Duplicate required `$PnN` raises `DuplicateFcsChannelLabelError` with code
+  `duplicate_fcs_channel_label`, label type/value, and every implicated
+  one-based parameter index. Duplicate `$PnS` remains legal FCS metadata and is
+  handled as an ambiguous visible-label lookup only when a caller tries to
+  resolve it.
 
 ## Required tests
 

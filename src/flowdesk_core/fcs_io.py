@@ -23,6 +23,60 @@ PathLike = str | os.PathLike[str]
 class FcsIoError(FlowdeskError):
   """Error during FCS file I/O operations."""
 
+  code = "fcs_io_error"
+
+  def __init__(self, message: str, **context: Any) -> None:
+    self.context = context
+    super().__init__(message)
+
+  def to_mapping(self) -> dict[str, Any]:
+    """Return a stable machine-readable representation."""
+    return {"code": self.code, "message": str(self), **self.context}
+
+
+class FcsParameterMetadataError(FcsIoError):
+  """Base error for malformed identity metadata on an FCS parameter."""
+
+  code = "invalid_fcs_parameter_metadata"
+
+
+class MissingFcsParameterError(FcsParameterMetadataError):
+  """Raised when a required FCS parameter keyword is absent."""
+
+  code = "missing_fcs_parameter"
+
+  def __init__(self, parameter_index: int, keyword: str) -> None:
+    self.parameter_index = parameter_index
+    self.keyword = keyword
+    super().__init__(
+      f"FCS parameter {parameter_index} is missing required {keyword} metadata",
+      parameter_index=parameter_index,
+      keyword=keyword,
+    )
+
+
+class DuplicateFcsChannelLabelError(FcsParameterMetadataError):
+  """Raised when required primary FCS labels are duplicated."""
+
+  code = "duplicate_fcs_channel_label"
+
+  def __init__(
+    self,
+    label_type: str,
+    label: str,
+    parameter_indices: tuple[int, ...],
+  ) -> None:
+    self.label_type = label_type
+    self.label = label
+    self.parameter_indices = parameter_indices
+    super().__init__(
+      f"FCS file contains duplicate {label_type} value {label!r} at parameters "
+      + ", ".join(str(index) for index in parameter_indices),
+      label_type=label_type,
+      label=label,
+      parameter_indices=parameter_indices,
+    )
+
 
 @dataclass(frozen=True)
 class FcsFileInfo:
@@ -87,17 +141,19 @@ def _stable_fcs_channel_id(
 def _build_channel_specs(flow_data: flowio.FlowData) -> tuple[ChannelSpec, ...]:
   """Build ordered ChannelSpecs from FCS identity without guessing labels."""
   specs: list[ChannelSpec] = []
-  seen_pnn: set[str] = set()
+  seen_pnn: dict[str, int] = {}
   for parameter_index in range(1, flow_data.channel_count + 1):
     metadata = _parameter_metadata(flow_data, parameter_index)
     pnn = _optional_text(metadata, "pnn", f"p{parameter_index}n")
     if pnn is None:
-      raise FcsIoError(
-        f"FCS parameter {parameter_index} is missing required $PnN metadata"
-      )
+      raise MissingFcsParameterError(parameter_index, "$PnN")
     if pnn in seen_pnn:
-      raise FcsIoError(f"FCS file contains duplicate $PnN value {pnn!r}")
-    seen_pnn.add(pnn)
+      raise DuplicateFcsChannelLabelError(
+        "$PnN",
+        pnn,
+        (seen_pnn[pnn], parameter_index),
+      )
+    seen_pnn[pnn] = parameter_index
 
     pns = _optional_text(metadata, "pns", f"p{parameter_index}s")
     detector = _optional_text(metadata, "pnt", f"p{parameter_index}t")

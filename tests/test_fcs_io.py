@@ -10,8 +10,10 @@ import pytest
 
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.fcs_io import (
+    DuplicateFcsChannelLabelError,
     FcsFileInfo,
     FcsIoError,
+    MissingFcsParameterError,
     extract_spillover_matrix,
     read_fcs_events,
     read_fcs_info,
@@ -271,7 +273,7 @@ def test_pnn_or_pns_identity_changes_do_not_silently_collapse(
   assert first.channels[0].short_name == changed_pnn.channels[0].short_name
 
 
-def test_duplicate_required_pnn_is_rejected(tmp_path: Path) -> None:
+def test_duplicate_required_pnn_is_rejected_with_structured_context(tmp_path: Path) -> None:
   path = tmp_path / "duplicate-pnn.fcs"
   with path.open("wb") as fh:
     flowio.create_fcs(
@@ -280,8 +282,41 @@ def test_duplicate_required_pnn_is_rejected(tmp_path: Path) -> None:
       channel_names=["FL1-A", "FL1-A"],
     )
 
-  with pytest.raises(FcsIoError, match=r"duplicate \$PnN"):
+  with pytest.raises(DuplicateFcsChannelLabelError, match=r"duplicate \$PnN") as error:
     read_fcs_info(path)
+
+  assert error.value.code == "duplicate_fcs_channel_label"
+  assert error.value.label_type == "$PnN"
+  assert error.value.label == "FL1-A"
+  assert error.value.parameter_indices == (1, 2)
+  assert error.value.to_mapping()["parameter_indices"] == (1, 2)
+
+
+def test_missing_required_pnn_has_structured_parameter_context(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  class MissingPnnFlowData:
+    channel_count = 1
+    event_count = 0
+    channels = {1: {}}
+    text: dict[str, str] = {}
+    header: dict[str, str] = {}
+    version = "3.1"
+
+  monkeypatch.setattr(flowio, "FlowData", lambda *_args, **_kwargs: MissingPnnFlowData())
+
+  with pytest.raises(MissingFcsParameterError) as error:
+    read_fcs_info("synthetic-missing-pnn.fcs")
+
+  assert error.value.code == "missing_fcs_parameter"
+  assert error.value.parameter_index == 1
+  assert error.value.keyword == "$PnN"
+  assert error.value.to_mapping() == {
+    "code": "missing_fcs_parameter",
+    "message": "FCS parameter 1 is missing required $PnN metadata",
+    "parameter_index": 1,
+    "keyword": "$PnN",
+  }
 
 
 # ---------------------------------------------------------------------------

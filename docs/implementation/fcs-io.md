@@ -29,6 +29,10 @@ Implement FCS loading, metadata parsing, channel mapping, and spillover extracti
 - Load event data through a stable return type.
 - Extract spillover matrix if available.
 - Produce clear errors for unsupported or malformed files.
+- Malformed identity metadata must use typed errors with stable codes and
+  one-based FCS parameter context. Do not require callers to parse messages.
+- Duplicate required `$PnN` is rejected. Duplicate optional `$PnS` is preserved;
+  ambiguity is reported only by explicit visible-label lookup.
 
 ## Required Tests
 
