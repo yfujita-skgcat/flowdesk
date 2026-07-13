@@ -1,437 +1,547 @@
-# Flowdesk local LLM 実装指令書
+# Flowdesk LLM実装指令書
 
 対象リポジトリ: `/home/yfujita/work/bin/python/flowdesk`
 
-この指令書は `bug.md` の未処理項目を、Qwen3.6 27B が順番に実装できるよう細分化したものです。上から順に1項目ずつ作業してください。一度に全ファイルを大きく書き換えないでください。各Phaseが完了したら、そのPhaseのテストを通してから次へ進んでください。
+要求仕様: [specs.md](specs.md)
 
-## 0. 絶対に守るルール
+FlowJo機能参照: [flowjo-manual.md](flowjo-manual.md)
 
-1. 最初に次を全文読んでください。
-   - `AGENTS.md`
-   - `docs/architecture.md`
-   - `docs/headless_execution.md`
-   - `docs/ai_development_workflow.md`
-   - `docs/implementation/qt-integration.md`
-   - `docs/implementation/qt-interactive-plot-controls.md`
-   - `docs/implementation/gate-engine.md`
-   - `docs/implementation/population-statistics.md`
-   - `docs/implementation/pipeline-runner.md`
-   - `docs/implementation/qt-gui-debugging.md`
-   - `.codex/skills/gate-engine/SKILL.md`
-   - `.codex/skills/qt-plot-widget/SKILL.md`
-   - `.codex/skills/scientific-review/SKILL.md`
-   - `tests/test_qt_plot_widget.py`
-   - `tests/gui/test_gui_workflow.py`
-2. Pythonのインデントは2 spacesを使用してください。既存ファイルを無関係に整形しないでください。
-3. `flowdesk_core` から PySide6、Qt、`flowdesk_qt` をimportしてはいけません。
-4. GUIにgate membership、compensation、transform、population statisticsの科学計算を実装してはいけません。
-5. raw FCS event arrayを変更してはいけません。表示用配列やmaskは別オブジェクトにしてください。
-6. 表示downsampling済みデータをgate判定、event count、frequency計算に使用してはいけません。
-7. GUIで表示するpopulation countは、同じprojectをheadless `PipelineRunner` で実行した結果と完全一致させてください。
-8. rectangle/polygon/range/boolean gate、parent-child gate、通常のpyqtgraph pan/zoom、manual/robust/full rangeを壊してはいけません。
-9. テストを通すためにassertion、期待値、scientific behaviorを弱めてはいけません。
-10. `data/*.fcs` は変更・追加・commitしないでください。通常テストはsynthetic FCSを使い、real FCSテストはファイル不足時のみ理由付きskipにしてください。
-11. 新しい分析結果やmembershipをGUIで必要とする場合、最初にcore model/APIとheadless runnerで表現してください。
-12. 対応するimplementation guideが不足しているため、production code変更前に `docs/implementation/population-filtering-and-histograms.md` を追加してください。Goal、対象ファイル、科学計算と表示計算の境界、必須テスト、受け入れ条件を書いてください。`docs/implementation/README.md` にも追加してください。
+この文書には未実装の作業だけを記載する。上から順に進め、同時に複数Phaseを実装しないこと。チェックボックスは、記載されたtestと受け入れ条件をすべて満たした後だけ`[x]`へ変更すること。
 
-## 1. 作業開始前のbaseline
+## 0. 全Phase共通の絶対ルール
 
-コードを変更する前に以下を実行し、実際の終了コードと件数を記録してください。
+- [ ] 作業開始時に`AGENTS.md`、`specs.md`、`docs/architecture.md`、`docs/headless_execution.md`、`docs/processing_pipeline.md`、`docs/ai_development_workflow.md`を全文読む。
+- [ ] 変更対象に対応する`.codex/skills/*/SKILL.md`と`docs/implementation/*.md`を読む。
+- [ ] 対応するimplementation guideがなければ、production codeより先に追加し、`docs/implementation/README.md`へ登録する。
+- [ ] 変更前に目的、変更予定file、受け入れ条件を短く記録する。
+- [ ] Pythonは2 spaces indentを使う。無関係なfileをformatしない。
+- [ ] `flowdesk_core`からPySide6、Qt、`flowdesk_qt`をimportしない。
+- [ ] GUIへcompensation、transform、gate membership、statistics、model fitの科学計算を実装しない。
+- [ ] raw FCS event arrayを変更しない。
+- [ ] display-downsampled dataをgate、count、frequency、statistics、fitへ使用しない。
+- [ ] 科学的結果を変える設定はproject schemaへ保存し、CLI/Python APIから再現可能にする。
+- [ ] errorを黙ってzero、empty、全NaNへ変換しない。projectで明示されたpolicyとstructured diagnosticを使う。
+- [ ] 既存のrectangle/polygon/range/boolean、gate hierarchy、population filtering、histogram、marginal、project save/loadを壊さない。
+- [ ] assertionや許容誤差を理由なく弱めない。期待と実装が違う場合は科学的定義を確認する。
+- [ ] 大きなFCSをrepositoryへ追加しない。通常testはsmall synthetic fixtureを使う。
+- [ ] GUI testはstable objectNameを使い、固定sleepを使わず、QThreadを停止して終了する。
+- [ ] 各Phase完了時に、実行test、残る制限、次の小taskを記録する。
+
+### 0.1 Baseline command
+
+各Phaseの最初に次を実行する。変更前failureがある場合は今回の変更と区別する。
 
 ```bash
-.direnv/python-3.12.13/bin/python -c "import platform, PySide6, pyqtgraph, pytest; from PySide6.QtCore import qVersion; print(platform.python_version(), PySide6.__version__, qVersion(), pyqtgraph.__version__, pytest.__version__)"
-./tools/run-gui-tests.sh -q
+git status --short
 .direnv/python-3.12.13/bin/python -X faulthandler -m pytest -q
-.direnv/python-3.12.13/bin/ruff check src tests
-```
-
-変更前に次の実装を確認してください。
-
-- `src/flowdesk_core/gating_strategy.py`: 現在membership maskがどこで生成され、どこで破棄されるか。
-- `src/flowdesk_core/execution_report.py`: GUIへ渡せる結果model。
-- `src/flowdesk_core/pipeline_runner.py`: sampleごとのgate実行順序。
-- `src/flowdesk_qt/main_window.py`: report受信、sample/channel切替、plot更新。
-- `src/flowdesk_qt/population_tree.py`: 表示列と選択イベント。
-- `src/flowdesk_qt/channel_selector.py`: X/Y候補。
-- `src/flowdesk_qt/plot_widget.py`: scatter、range、overlay、downsampling。
-
-baselineで失敗した場合、今回の変更前から失敗していることを報告し、原因を切り分けてください。既存のユーザー変更をrevertしてはいけません。
-
-## Phase 1: Population Resultsの名称と列名を修正する [済み]
-
-### 1-1. Population表示をgate名へ揃える [済み]
-
-問題: Population Resultsは`population_id`を表示しているため、Defined gatesに表示される`GateSpec.name`と一致しません。
-
-実装要件:
-
-1. `PopulationTree` にpopulation idから表示名を解決するための明示的なAPIを追加してください。例: `set_population_names(dict[str, str])`。名前解決をtable描画中の文字列解析で行わないでください。
-2. root population `all_events` は `All Events` と表示してください。
-3. gate populationは `GateSpec.id -> GateSpec.name` のmappingで表示してください。
-4. parent-childを表す既存indentは維持してください。indentの後ろにgate名を表示してください。
-5. population idは失わないでください。最低限 `QTableWidgetItem` の `Qt.UserRole` にpopulation idを保存し、選択処理が表示名に依存しないようにしてください。
-6. 同名gateが複数あっても内部処理はidで区別してください。
-7. gate rename、gate追加・削除、project再読込後にmappingを更新してください。
-8. exportは従来どおりpopulation idを出力してください。GUI表示名をTSV/CSVのpopulation idへ混ぜないでください。
-
-対象ファイル候補:
-
-- `src/flowdesk_qt/population_tree.py`
-- `src/flowdesk_qt/main_window.py`
-- `tests/test_qt_plot_widget.py` または `tests/gui/test_main_window.py`
-
-必須テスト:
-
-- gate idが`gate_ab12`、nameが`CD45 positive`の場合、Population列は`CD45 positive`を表示する。
-- itemの`Qt.UserRole`は`gate_ab12`を保持する。
-- rootは`All Events`と表示する。
-- rename後に表示が更新されるがidは変わらない。
-- parent-child indentが維持される。
-- export結果は表示名ではなく従来のpopulation idを保持する。
-
-### 1-2. frequency列見出しを変更する [済み]
-
-次の見出しだけを変更してください。
-
-- `Freq. of Parent` -> `% of Parent`
-- `Freq. of Total` -> `% of Total`
-
-注意:
-
-- 値を100倍しないでください。今回のbugは表記変更だけです。既存値は0〜1のfraction表示のまま維持してください。値のpercent化は別仕様なので勝手に変更しないでください。
-- coreの`frequency_of_parent`、`frequency_of_total`のフィールド名やexport headerを変更しないでください。
-
-必須テスト:
-
-- table header文字列が正確に`% of Parent`、`% of Total`である。
-- table cell値とexport値が変更前と同じである。
-
-Phase 1確認コマンド:
-
-```bash
-./tools/run-single-gui-test.sh <追加したPhase-1-test-node-id> -q
 ./tools/run-gui-tests.sh -q
 .direnv/python-3.12.13/bin/ruff check src tests
+.direnv/python-3.12.13/bin/mypy src/flowdesk_core src/flowdesk_storage src/flowdesk_cli
 ```
 
-## Phase 2: Population membershipをheadless pipelineの正式な結果として取得可能にする [済み]
+既存のuser変更をrevertしない。test commandが環境理由で実行不能なら、command、終了code、理由を記録する。
 
-このPhaseはPhase 3の表示絞り込みに必要です。GUIでgateを再評価してはいけません。
+### 0.2 個別実装ガイド
 
-### 2-1. core APIを設計する [済み]
+各Phaseでは、最初に`docs/implementation/llm-task-protocol.md`と次の個別ガイドを全文読む。一度のLLM実行では、個別ガイドの番号付きincrementを一つだけ実装する。
 
-要件:
+| Phase | 個別ガイド |
+|---|---|
+| A1 | `docs/implementation/sample-catalog-and-channel-identity.md` |
+| A2 | `docs/implementation/derived-parameter-editor.md` |
+| A3 | `docs/implementation/scientific-transforms-v2.md` |
+| A4-A5 | `docs/implementation/compensation-workspace.md` |
+| A6 | `docs/implementation/statistics-definitions.md` |
+| A7, B8 | `docs/implementation/project-migration-and-recovery.md` |
+| B1 | `docs/implementation/groups-and-annotations.md` |
+| B2, B5 | `docs/implementation/gate-engine-v2.md` |
+| B3 | `docs/implementation/workspace-tree-and-undo.md` |
+| B4 | `docs/implementation/group-gating-and-overrides.md` |
+| B6 | `docs/implementation/graph-window-v2.md` |
+| B7 | `docs/implementation/overlay-and-backgating.md` |
+| C1 | `docs/implementation/table-editor.md` |
+| C2 | `docs/implementation/layout-editor.md` |
+| C3 | `docs/implementation/templates-and-mapping.md` |
+| C4-C6, C8 | `docs/implementation/interoperability.md` |
+| C7 | `docs/implementation/plate-workspace.md` |
+| D1 | `docs/implementation/kinetics-platform.md` |
+| D2 | `docs/implementation/proliferation-platform.md` |
+| D3 | `docs/implementation/cell-cycle-platform.md` |
+| D4 | `docs/implementation/population-comparison.md` |
+| D5 | `docs/implementation/spectral-compensation.md` |
+| D6 | `docs/implementation/extension-api.md` |
+| D7 | `docs/implementation/preferences-and-accessibility.md` |
+| Performance | `docs/implementation/performance-and-review.md` |
 
-1. `evaluate_gating_strategy()` 内で生成しているroot/gate population maskを、統計結果と一緒に取得できるGUI非依存APIを追加してください。
-2. 既存の `evaluate_gating_strategy()` の戻り値と既存callerを壊さないでください。推奨方法は、新しい結果dataclassまたは新しい関数を追加し、既存関数を互換wrapperとして維持することです。
-3. membership maskはsample id、population idと対応づけてください。
-4. maskは必ずfull event dataと同じ長さのboolean arrayにしてください。
-5. maskをimmutableにしてください。少なくとも返却前に `setflags(write=False)` を設定するか、外部変更から守る明確な方法を実装してください。
-6. root mask、rectangle、polygon、range、boolean、parent-childのmaskを返してください。
-7. event countは必ず`mask.sum()`と一致させてください。
-8. compensation、derived parameters、analysis transformsを適用した後のcanonical pipeline順序でgateを評価してください。
-9. `ExecutionReport`へmembershipを含める場合、既存report API・summary・placeholder modeを壊さないでください。巨大maskをJSON debug stateや通常exportへ書き出してはいけません。
-10. `MainWindow.debug_state()`にはmask本体を入れず、population idとmask長またはcountだけを入れてください。
+## Release A: Scientific foundation
 
-設計候補:
+### Phase A1: Sampleごとのchannel identity [S01]
 
-- `PopulationMembership` のようなcore dataclassを追加する。
-- sampleごとの`population_id`とread-only boolean maskをtupleで保持する。
-- `ExecutionReport`にdefault empty tupleのfieldを追加する。
+#### 事前文書
 
-対象ファイル候補:
+- [ ] `docs/implementation/sample-catalog-and-channel-identity.md`を全文読み、今回のincrementで確定したcontractと制限を追記する。
+- [ ] FCS `$PnN`、`$PnS`、detector、stain、array indexの使い分けを定義する。
+- [ ] sample間でchannel orderやshort nameが違う場合のmapping規則を定義する。
 
-- `src/flowdesk_core/models.py`
-- `src/flowdesk_core/gating_strategy.py`
-- `src/flowdesk_core/execution_report.py`
-- `src/flowdesk_core/pipeline_runner.py`
-- `tests/test_gates.py`
-- `tests/test_pipeline_runner.py`
-- `tests/test_project_headless_execution.py`
+#### Core/model
 
-必須coreテスト:
+- [ ] `ChannelSpec`へ、安定ID、FCS index、primary name、short name、detector、stain、unit、raw metadataを欠落なく表せるfieldを追加する。既存project migrationを用意する。
+- [ ] `SampleData`または同等のGUI非依存input objectを追加し、sample ID、read-only events、sample固有channel specsを一体でrunnerへ渡す。
+- [ ] `PipelineRunner.run()`へsampleごとのchannel mappingを渡す新APIを追加する。既存`event_data + channel_names`はdeprecation-compatible wrapperとして残してよい。
+- [ ] compensation、derived parameter、transform、gateがcolumn positionではなくchannel identityで解決されるようにする。
+- [ ] duplicate channel label、missing parameter、ambiguous short nameをstructured errorにする。
+- [ ] input file fingerprintにsize、mtime、hash algorithm/hash valueを保存する。
 
-- root maskは全eventがTrue。
-- child maskはparent mask外で必ずFalse。
-- boolean gate maskが既存event countと一致。
-- 各`PopulationResult.event_count == membership.mask.sum()`。
-- mask shape/dtype/read-onlyを検証。
-- 複数sampleでsample idが混ざらない。
-- GUI依存なしでimport・実行可能。
-- raw input arrayが変更されない。
+#### Storage/GUI
 
-Phase 2確認コマンド:
+- [ ] project schemaとexample projectを新modelへ更新し、old versionからmigrationする。
+- [ ] Sample Browserへ選択可能なmetadata columns、sort/filter、channel mismatch badgeを追加する。
+- [ ] missing fileのreconnect dialogを追加し、hash/metadata一致を表示する。
 
-```bash
-.direnv/python-3.12.13/bin/python -X faulthandler -m pytest -q tests/test_gates.py tests/test_pipeline_runner.py tests/test_project_headless_execution.py
-rg -n "flowdesk_qt|PySide6|Qt" src/flowdesk_core src/flowdesk_cli
-.direnv/python-3.12.13/bin/ruff check src/flowdesk_core tests
-```
+#### 必須test
 
-## Phase 3: 表示プロットを選択populationだけに絞り込む [済み]
+- [ ] channel orderだけが異なる2 sampleでmarker指定のgate countが一致する。
+- [ ] `$PnN`が同じで`$PnS`が異なるcaseと、その逆を明示的にtestする。
+- [ ] ambiguous/missing channelでsilent fallbackしない。
+- [ ] sampleごとのraw arrayがread-onlyかつ変更されない。
+- [ ] old projectをmigrationし、save/reload/headless runできる。
+- [ ] GUIで表示するchannelとheadless runnerが参照するchannel IDが一致する。
 
-期待workflow例:
-
-1. `FSC-A` vs `SSC-A`でgateを作る。
-2. pipelineを実行する。
-3. Population Resultsでそのgateを選択する。
-4. X/Yを`FSC-A` vs `FL1-A`へ変更する。
-5. 選択gateに属するeventだけがscatterへ表示される。
-
-### 3-1. PopulationTreeの選択API [済み]
-
-1. row選択時にpopulation idを通知するcallback APIを追加してください。既存callback方式に合わせ、全面的なQt Signal移行はしないでください。
-2. callback引数は表示名ではなく`population_id`と`sample_id`にしてください。同じpopulationが複数sampleにあるためsample idも必要です。
-3. callbackは `flowdesk_qt.diagnostics.invoke_callback()` を通してください。例外を握りつぶしてはいけません。
-4. `all_events`を選ぶと全event表示へ戻してください。
-5. report clear/stale、sample削除、project再読込時は無効な選択を解除してください。
-
-### 3-2. MainWindowでmembershipを表示へ適用する [済み]
-
-1. `PipelineRunner`が返したmembershipだけを使用してください。GUIでthresholdやpolygonを評価しないでください。
-2. 現在sampleと選択populationに対応するfull-length maskを取得してください。
-3. `_replot()`でX/Y raw columnを取得した後、同じmaskをX/Y両方へ適用し、その後に`PlotWidget.plot_events()`へ渡してください。
-4. downsamplingはmask適用後の表示処理として行って構いません。ただしmembership countはfull mask由来のままにしてください。
-5. X/Y channelをgate作成時とは異なるchannelへ変更しても同じmembershipを適用してください。
-6. sampleを切り替えた場合、同じpopulation idがそのsampleのreportにあればそのsample用maskを使い、なければ`all_events`へ戻してください。
-7. gate追加・編集・削除後は既存どおりresultをstaleにし、古いmembershipで表示しないでください。
-8. plot上のgate overlay表示条件は既存のX/Y parameter一致ルールを維持してください。population絞り込みとoverlay表示を混同しないでください。
-9. plot statusまたはPopulation Results statusで、選択population名とfull event countを確認できるようにしてください。
-10. population selectionはdisplay stateです。gate定義やanalysis resultを変更しないため、選択だけでpipeline再実行やproject analysis state変更を行わないでください。
-
-### 3-3. 必須テスト [済み]
-
-synthetic FCSを使うGUI E2Eを追加してください。
-
-- 4 eventsから2 eventsを選ぶgateを作る。
-- pipeline完了をsignal/event loopで待つ。固定sleepを使用しない。
-- gate populationを選択後、scatterへ渡された点数が2である。
-- X/Yをgate作成時と異なる組み合わせへ変更しても点数が2のまま。
-- `all_events`選択後は4点へ戻る。
-- Population Resultsのevent countとmembership sumと表示対象full countが一致。
-- gate編集後にreport/membershipがstaleとなり、古い2点表示を使用しない。
-- GUIとheadless runnerのpopulation countが完全一致。
-- display downsampling値を変更してもheadless countが変わらない。
-
-real FCSテストを拡張してください。
-
-- `data/*.fcs` を2つ以上読み、各sampleで`all_events`表示できる。
-- 1つのgateをpipelineで評価し、sample切替ごとに対応するsampleのmembershipが使われる。
-- FCS不足時だけ理由付きskip。
-- real FCS自体や期待event countをrepositoryへ固定コピーしない。
-
-Phase 3確認コマンド:
+#### 完了確認
 
 ```bash
-./tools/run-single-gui-test.sh <population-filter-e2e-node-id> -q
+.direnv/python-3.12.13/bin/python -m pytest -q tests/test_fcs_io.py tests/test_pipeline_runner.py tests/test_project_storage.py
 ./tools/run-gui-tests.sh -q
-.direnv/python-3.12.13/bin/python -X faulthandler -m pytest -q
+```
+
+### Phase A2: Derived parameterの明示的failure policy [S04]
+
+#### 事前文書
+
+- [ ] `docs/implementation/derived-parameter-editor.md`を全文読み、source stage、dependency graph、invalid value、run failure policyの確定事項を追記する。
+
+#### Core
+
+- [ ] runner内の広い`except Exception`による全NaN置換を削除する。
+- [ ] `fail_run`、`fail_sample`、`emit_nan_with_warning`を型付きpolicyとしてmodel/schemaへ追加する。
+- [ ] `emit_nan_with_warning`時もexpression、sample、exception type、affected event countをExecutionReportへ記録する。
+- [ ] derived parameter間のdependency graphを構築し、topological orderで評価する。
+- [ ] unknown inputとcycleをrun開始前に拒否する。
+- [ ] unit、output channel ID、source stageを保存する。
+- [ ] derived stageの戻り値をeventsと更新済みchannel specsの組にし、後続transform/gateへ必ず同じ列対応を渡す。
+- [ ] canonical orderに反する`source_stage = transformed`は新規作成を禁止する。既存projectは黙って意味を変えず、migration diagnosticと明示的互換policyを用意する。
+
+#### GUI
+
+- [ ] name、expression、inputs、source stage、unit、policyを編集するdialogを追加する。
+- [ ] channel/derived parameter挿入、syntax validation、error位置、small previewを提供する。
+- [ ] previewはcore evaluatorを使用し、GUI独自計算をしない。
+
+#### 必須test
+
+- [ ] 三つのfailure policyをそれぞれtestする。
+- [ ] dependency chainとcycleをtestする。
+- [ ] division by zero、domain error、unknown parameter、all-NaN inputをtestする。
+- [ ] save/load/CLI runでpolicyとdiagnosticが維持される。
+- [ ] raw値参照とcompensated値参照が、derived stage後・transform前のcanonical順序を壊さないことをtestする。
+- [ ] derived parameterを後続transform、gate、statisticsで安定ID参照できることをtestする。
+
+### Phase A3: 正式なLogicleとtransform model [S05]
+
+#### 事前調査・文書
+
+- [ ] `docs/implementation/scientific-transforms-v2.md`を全文読み、選択した式、reference、toleranceを追記する。
+- [ ] Logicleのprimary paperまたは検証済みreference implementationを記載する。
+- [ ] parameter `T/W/M/A`、domain、inverse、tick generation、numeric toleranceを定義する。
+- [ ] FlowJo Biexと同値を保証しない場合、その名称を使用しないことを明記する。
+
+#### Core
+
+- [ ] 現在の`logicle_like`を`legacy_logicle_approximation`へrenameするschema migrationを作る。
+- [ ] published Logicleのforward/inverseを実装する。optional dependencyを使う場合もversionとparameter mappingを保存する。
+- [ ] linear、log、asinh、logicleを共通Transform protocol/APIで扱う。
+- [ ] gate evaluator、plot coordinate conversion、tick生成が同じimplementationを使う。
+- [ ] project-level transformとgate axis transformを同じtransform ID参照へ統合し、同一parameterへ二重適用されないようにする。
+- [ ] analysis transformとdisplay-only view transformを型とschemaで区別する。
+- [ ] transform domain外とnon-convergenceをstructured errorにする。
+
+#### GUI/migration
+
+- [ ] Transform Editorでtypeと全parameterを編集し、previewとinverse round-trip errorを表示する。
+- [ ] legacy project読込時に近似typeを勝手に正式Logicleへ変換しない。
+- [ ] legacy gateを正式Logicleへ移す場合は明示的duplicate/migrate operationと差分previewを提供する。
+
+#### 必須test
+
+- [ ] reference vectorsに対するforward/inverse値を固定する。
+- [ ] negative、zero、linear region、large positive、boundaryをtestする。
+- [ ] `inverse(forward(x))`の誤差を定義済みtolerance内にする。
+- [ ] Logicle viewで作成したrectangle/polygonのGUI/headless membershipを一致させる。
+- [ ] linear/log/asinh既存gateを壊さない。
+
+### Phase A4: Compensation bindingとdiagnostics [S03-P0]
+
+#### 事前文書
+
+- [ ] `docs/implementation/compensation-workspace.md`を全文読み、binding、provenance、diagnosticの確定事項を追記する。
+- [ ] matrix source、channel alignment、sample/Group binding、provenance、diagnostic schemaを定義する。
+
+#### Core/storage
+
+- [ ] global `default_compensation_matrix_id`だけでなく、sample/Group/execution profile単位のbindingを追加する。
+- [ ] binding priorityとconflict ruleを定義する。
+- [ ] matrix ID、source、control IDs、algorithm/version、manual edits、created metadataを保存する。
+- [ ] finite、square、channel set、duplicate channel、condition numberを検証する。
+- [ ] compensated outputとdiagnosticsを返し、raw inputを不変にする。
+- [ ] ExecutionReportへmatrix ID、channel order、condition warningを記録する。
+
+#### GUI
+
+- [ ] Compensation Matrix list/editorを追加する。
+- [ ] matrix heat map、numeric cell editor、duplicate-before-edit、sample/Group applyを提供する。
+- [ ] compensated/uncompensated previewを同じPopulationで表示する。
+- [ ] applied matrix badgeとinvalid/stale statusをWorkspaceへ表示する。
+
+#### 必須test
+
+- [ ] sample別に異なるmatrixを適用する。
+- [ ] channel permutationで同じ結果を得る。
+- [ ] singular、ill-conditioned、NaN、missing detectorをtestする。
+- [ ] manual editで元matrixが変わらない。
+- [ ] GUI previewとheadless compensated valuesが一致する。
+
+### Phase A5: Traditional compensation calculation [S03-P1]
+
+Phase A4完了後に開始する。
+
+- [ ] positive/negative control Populationを入力とするcalculation specをmodel化する。
+- [ ] regression/background method、minimum events、outlier policyを明示する。
+- [ ] synthetic single-stain controlsからknown spill matrixを復元するcore algorithmを実装する。
+- [ ] detector × control assignment tableをGUIへ追加する。
+- [ ] cleanup/positive/negative gateをGraph Windowで編集するとcalculationをstale化する。
+- [ ] residual、slope、event count、condition numberをdiagnostic panelへ表示する。
+- [ ] calculated matrixをimmutable resultとして保存し、編集はduplicateで行う。
+- [ ] known synthetic fixturesとindependent calculationで数値検証する。
+
+AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混ぜない。
+
+### Phase A6: 保存可能なStatistics definitions [S11]
+
+#### 事前文書
+
+- [ ] `docs/implementation/statistics-definitions.md`を全文読み、raw-eventとdisplay-binned statisticsの選択を追記する。
+
+#### Model/core
+
+- [ ] `StatisticSpec`を追加する。Population ID、parameter ID、metric、source stage、transform/binning policy、settings、formatを保持する。
+- [ ] count、frequency parent/total、mean、median、geometric mean、SD、CV、MAD、percentileを実装する。
+- [ ] empty、zero denominator、negative valuesを含むgeometric mean、NaN/Infのpolicyをmetricごとに定義する。
+- [ ] gate/matrix/transform変更時のdependency invalidationを実装する。
+- [ ] ExecutionReportへtyped statistic resultsとundefined reasonを追加する。
+
+#### GUI/export
+
+- [ ] Add Statistic dialogをPopulation TreeとGraphから開けるようにする。
+- [ ] statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
+- [ ] CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
+
+#### 必須test
+
+- [ ] 各metricのknown values、empty、NaN/Infをtestする。
+- [ ] statistics定義のsave/load round-tripをtestする。
+- [ ] gate編集後stale、pipeline後更新をtestする。
+- [ ] GUI値、CLI export、Python API値を一致させる。
+
+### Phase A7: Schema migration、atomic save、structured diagnostics [S14/S23]
+
+- [ ] `docs/implementation/project-migration-and-recovery.md`を全文読み、対象versionとmigration経路を追記する。
+- [ ] project schemaを厳密化し、ID reference integrityをvalidatorで検証する。
+- [ ] versionごとのmigration registryを作り、migration reportとbackupを生成する。
+- [ ] temp pathへwrite、fsync、atomic replaceするsave手順を実装する。
+- [ ] newer unsupported schemaをread-only以外で開かない。
+- [ ] ExecutionDiagnostic modelを追加し、severity、code、sample、population、stage、message、detailsを保持する。
+- [ ] GUI diagnostics panelとCLI machine-readable JSON outputを追加する。
+- [ ] interrupted save、invalid reference、old schema、newer schemaをtestする。
+
+## Release B: Experiment-scale gating and review
+
+### Phase B1: Groupとannotation [S02]
+
+- [ ] `docs/implementation/groups-and-annotations.md`を全文読み、今回実装するrule grammarまたはUI範囲を追記する。
+- [ ] `SampleGroupSpec`、`AnnotationSpec`、safe membership ruleをmodel/schemaへ追加する。
+- [ ] All Samples、Compensation Controls、user groupを複数所属可能にする。
+- [ ] keyword条件でdynamic group membershipをheadlessに解決する。
+- [ ] WorkspaceへGroup pane、create/edit/delete、drag/drop membershipを追加する。
+- [ ] keyword columns、edit、find/replace、fill series、CSV paste/importを追加する。
+- [ ] annotationはproject側へ保存し、raw FCS bytesを変更しない。
+- [ ] Group bindingしたstrategy/statisticsを新規memberへ自動適用する。
+- [ ] GUIとCLIで同じGroup member IDsを返すtestを追加する。
+
+### Phase B2: Gate engine v2 [S06]
+
+- [ ] `docs/implementation/gate-engine-v2.md`を全文読み、今回実装するgate型のboundary semanticsを追記する。
+- [ ] ellipse、quadrant、offset quadrantをcore model/evaluator/schemaへ追加する。
+- [ ] inclusive boundary、shared boundary、NaN/Inf、degenerate geometryを定義しtestする。
+- [ ] 全geometric gateのnumeric editorを追加する。
+- [ ] Boolean gateをnested expression treeへmigrationし、AND/OR/NOTを任意に組み合わせる。
+- [ ] expression treeのcycle、missing reference、scope violationをrun前に拒否する。
+- [ ] GUI toolbarへ新gate typeとBoolean expression tree editorを追加する。
+- [ ] project round-tripとGUI/headless membership一致testを追加する。
+
+Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
+
+### Phase B3: Gate hierarchy UXとUndo/Redo [S07/S14]
+
+- [ ] `docs/implementation/workspace-tree-and-undo.md`を全文読み、今回追加するcommand contractを追記する。
+- [ ] project mutation commandとUndo stackをGUI非依存modelまたはapplication layerに実装する。
+- [ ] gate create/edit/rename/delete/reparent/duplicate/subtree copyをUndo/Redo可能にする。
+- [ ] sample、Population、statisticsを一つのhierarchy viewへ統合する。
+- [ ] breadcrumb、parent、previous/next sample navigationを追加する。
+- [ ] selectionとPlot/Hierarchyを双方向同期する。
+- [ ] subtree Copy Analysisを別Population/sample/Groupへatomicに適用する。
+- [ ] duplicate sibling name、cycle、reference deleteを確定前に表示する。
+- [ ] Undo後もcache/reportが正しくstale化されるtestを追加する。
+
+### Phase B4: Group strategyとsample override review [S08]
+
+- [ ] `docs/implementation/group-gating-and-overrides.md`を全文読み、override resolutionとrebase policyを追記する。
+- [ ] Group共通gate definitionとsample-specific geometry overrideを別modelで表現する。
+- [ ] overrideにbase ID、delta/full geometry、author、time、reasonを保存する。
+- [ ] sample navigation中に同じPopulation path、axes、scale、view rangeを維持する。
+- [ ] shared/override/stale/missingをtree badgeとplot bannerで表示する。
+- [ ] reset-to-group、promote-to-group、copy-to-selectedを別commandにする。
+- [ ] Groupへsubtree適用前にchannel mappingを全sampleでvalidateする。
+- [ ] frequency outlier、gate boundary clipping、missing Population、override一覧をQC panelへ表示する。
+- [ ] GUI確認値とbatch headless resultsを一致させるE2E testを追加する。
+
+### Phase B5: Auto、magnetic、tethered、clone gates [S06]
+
+各gateを一つずつ独立subphaseで実装する。まとめて実装しない。
+
+- [ ] 各algorithmについてprimary/reference method、parameters、fit failure、determinismをimplementation guideへ記載する。
+- [ ] template definitionとsample-specific fitted geometryを分離する。
+- [ ] fitted resultへinput hash、algorithm version、diagnosticsを保存する。
+- [ ] manual override後の再fit policyを定義する。
+- [ ] clone gateの同期group、leader/conflict、Undo behaviorを定義する。
+- [ ] density downsamplingではなくfull Populationをfitへ使用する。
+- [ ] synthetic distributionsとedge casesでnumeric testする。
+
+### Phase B6: Graph Window plot types [S09]
+
+- [ ] `docs/implementation/graph-window-v2.md`を全文読み、今回追加するplot typeのaggregation/display policyを追記する。
+- [ ] `PlotViewSpec`をmodel化し、Population、axes、transforms、plot type、range、styleを保存する。
+- [ ] dot/scatter、pseudocolor、density、contour、histogram、CDFを段階実装する。
+- [ ] density/contour binningはfull selected Populationを入力にする。
+- [ ] rendering downsampleとdensity aggregationの設定を区別する。
+- [ ] duplicate graph tab/windowとlinked sample navigationを追加する。
+- [ ] selection、gate draw、pan/zoom modeをtoolbarで排他的に表示する。
+- [ ] gate label、Population statistics、compensation badgeをoverlay可能にする。
+- [ ] PNGに加えSVG/PDF exportとmetadata sidecarを追加する。
+- [ ] 全plot typeについてempty、NaN/Inf、logicle、large eventのtestを追加する。
+
+### Phase B7: Overlayとbackgating [S10]
+
+- [ ] `docs/implementation/overlay-and-backgating.md`を全文読み、normalizationまたはprojection policyを追記する。
+- [ ] OverlaySpecとBackgatingSpecをcore/storageへ追加する。
+- [ ] 1D overlayのcount/mode/unit-area normalizationを実装する。
+- [ ] 2D overlayはPopulationごとの色とalphaを保存する。
+- [ ] backgatingはrunner membershipをancestor viewへ投影するだけにし、GUIで再評価しない。
+- [ ] target、parent background、ancestor gateを視覚的に区別する。
+- [ ] project save/load、headless render、GUI displayを同じdefinitionでtestする。
+
+### Phase B8: Autosaveとcrash recovery [S14]
+
+- [ ] autosave interval、retention、disableをglobal preferenceとして追加する。
+- [ ] dirty projectだけをatomic autosaveする。
+- [ ] normal projectより新しいrecoveryがある場合だけ起動時に選択肢を表示する。
+- [ ] recover copyを別pathで開き、元projectを自動上書きしない。
+- [ ] QThread実行中、save中、crash途中、disk fullをtestする。
+
+## Release C: Reports, reuse, interoperability
+
+### Phase C1: Table Editor [S12]
+
+- [ ] `docs/implementation/table-editor.md`を全文読み、今回追加するcolumn sourceまたはiterator contractを追記する。
+- [ ] `TableDefinitionSpec`と`TableColumnSpec`をmodel/schemaへ追加する。
+- [ ] keyword、StatisticSpec、platform result、constant、安全なformula列を実装する。
+- [ ] sample/Group/Population path/plate well iterationをcore table runnerへ実装する。
+- [ ] column reorder、rename、number format、hidden、sort、filterをGUIへ追加する。
+- [ ] conditional formattingはdisplay definitionとして保存し、数値を変更しない。
+- [ ] previewとbatch exportで同じcore runnerを使う。
+- [ ] CSV/TSVとprovenance sidecarを実装する。XLSXはoptional dependencyとして後から追加する。
+- [ ] gate変更後の再計算とGUI/CLI table一致をE2E testする。
+
+### Phase C2: Layout modelとrenderer [S13]
+
+- [ ] `docs/implementation/layout-editor.md`を全文読み、今回追加するscene objectまたはrenderer contractを追記する。
+- [ ] page、plot、overlay、table、statistic text、legend、shape、annotationのscene modelを作る。
+- [ ] device-independent units、z-order、style、font fallbackを定義する。
+- [ ] Qt非依存headless renderer interfaceを先に実装する。
+- [ ] PNG、SVG、PDFの順にoutput backendを実装する。
+- [ ] GUIへselect/move/resize、align/distribute、group/lock、duplicate、Undo/Redoを追加する。
+- [ ] sample/Group/keyword iterationとfiltered batchを実装する。
+- [ ] GUI previewとheadless outputのobject count、text value、statisticsを一致させる。
+- [ ] image comparisonはfont差を考慮しつつ、blank outputやmissing plotを厳格に検出する。
+
+### Phase C3: Template [S15]
+
+- [ ] `docs/implementation/templates-and-mapping.md`を全文読み、mapping evidenceとconfirmation policyを追記する。
+- [ ] sample events/pathを除外し、Group rules、channel roles、matrix setup、strategy、statistics、tables、layoutsを保存する。
+- [ ] template apply時のchannel/marker mapping planをcoreで生成する。
+- [ ] GUI wizardでexact、suggested、ambiguous、missing mappingを表示する。
+- [ ] user確認なしにambiguous mappingを確定しない。
+- [ ] template適用結果をatomicに保存し、cancel時はprojectを変更しない。
+- [ ] 別channel order、別detector label、missing markerのfixturesをtestする。
+
+### Phase C4: Portable archive [S15]
+
+- [ ] archive manifest、checksums、project、FCS、derived artifactsのformatを文書化する。
+- [ ] create/list/verify/extract CLIを実装する。
+- [ ] path traversal、symlink escape、checksum mismatch、duplicate IDを拒否する。
+- [ ] GUIにarchive progress、size estimate、include/exclude一覧を表示する。
+- [ ] archive round-trip後のheadless resultが元projectと一致するtestを追加する。
+
+### Phase C5: GatingMLとFCS export [S16]
+
+- [ ] `docs/implementation/interoperability.md`を全文読み、今回扱うformat/versionのsupport matrixを追記する。
+- [ ] GatingML 2.0の対応gate/transform matrixを記載する。
+- [ ] basic rectangle/polygon/range/ellipse/quadrant/hierarchyのimport/exportを実装する。
+- [ ] Booleanとunsupported transformはcompatibility reportへ記録し、黙って落とさない。
+- [ ] importしたgateをprojectへ保存し、headless評価できるようにする。
+- [ ] selected PopulationのFCS exportを実装し、元metadataとworkspace annotationのsourceを区別する。
+- [ ] exportは新fileへ行い、input FCSを上書きしない。
+- [ ] external validatorまたはindependent libraryでround-tripを検証する。
+
+### Phase C6: WSP read-only import [S16]
+
+- [ ] WSP version/feature support matrixを文書化する。
+- [ ] sample reference、basic compensation、basic gates、hierarchy、axis transformをread-only parserで取り込む。
+- [ ] FlowJo Biex、plugin node、unsupported platformをopaque metadataとwarningとして保持する。
+- [ ] import結果を新しい`.flowdesk` projectへ保存し、元WSPを変更しない。
+- [ ] public/synthetic WSP fixtureの出所とlicenseを記録する。
+- [ ] FlowJoと同じ結果を主張する場合はversion、input hash、settings、toleranceをfixtureに含める。
+
+### Phase C7: Plate workspace [S17]
+
+- [ ] `docs/implementation/plate-workspace.md`を全文読み、plate formatまたはimport mapping contractを追記する。
+- [ ] plate format、well、sample mapping、condition、dose、replicateをmodel化する。
+- [ ] CSV paste/import、well grid selection、missing/duplicate well診断を実装する。
+- [ ] plate heat mapはStatisticSpecを入力にし、GUI独自統計を使わない。
+- [ ] Group、Table、Layout iterationへwell metadataを接続する。
+- [ ] 96/384 wellとpartial plateをtestする。
+
+### Phase C8: De-identification [S16]
+
+- [ ] removal/replace/hash policy fileをschema化する。
+- [ ] previewで対象keywordと変更後値を表示する。
+- [ ] new FCS/archiveへ出力し、元fileを上書きしない。
+- [ ] audit reportへinput/output hash、policy、removed keysを記録する。
+- [ ] required FCS keywordを壊さないvalidationを追加する。
+
+## Release D: Specialized platforms and ecosystem
+
+各platformは独立Phaseとして実装し、core model、numeric reference tests、headless runner、GUI、Table/Layout integrationの順を守る。
+
+### Phase D1: Kinetics [S18]
+
+- [ ] `docs/implementation/kinetics-platform.md`を全文読み、今回実装するmetricの式とreferenceを追記する。
+- [ ] KineticsSpec、time windows、baseline、metrics、diagnosticsをmodel化する。
+- [ ] max、time-to-max、slope、AUC、responding fractionを実装する。
+- [ ] Time欠損時のevent-number近似はflow-rate仮定とwarningを必須にする。
+- [ ] manual/automatic rangesをdeterministicにし、algorithm versionを保存する。
+- [ ] GUI plot、Table columns、Layout objectを追加する。
+- [ ] irregular time、duplicate time、empty window、low eventsをtestする。
+
+### Phase D2: Proliferation [S19]
+
+- [ ] `docs/implementation/proliferation-platform.md`を全文読み、model、formula、reference fixtureを追記する。
+- [ ] dye、generation 0、peak ratio、CV、generation count、background/modelを保存する。
+- [ ] fit residual、convergence、uncertaintyをresultへ含める。
+- [ ] division index、proliferation index、percent divided、generation countsをreference definitionで実装する。
+- [ ] model fitとgeneration gate生成を別commandにする。
+- [ ] published/synthetic reference datasetでnumeric validationする。
+- [ ] failed fitを成功表示しないGUI testを追加する。
+
+### Phase D3: Cell Cycle [S20]
+
+- [ ] `docs/implementation/cell-cycle-platform.md`を全文読み、model、constraints、reference fixtureを追記する。
+- [ ] model type、DNA parameter、G1/G2 constraint、background、debris、doublet policyを保存する。
+- [ ] G0/G1、S、G2/M fraction、fit residual、convergenceを出力する。
+- [ ] initial valuesとconstraintsをGUIで編集できるようにする。
+- [ ] reference distributionsとfailure casesをtestする。
+
+### Phase D4: Population Comparison [S21]
+
+- [ ] `docs/implementation/population-comparison.md`を全文読み、method definitionとreference fixtureを追記する。
+- [ ] test/control populations、parameters、normalization、methodを保存する。
+- [ ] histogram、CDF、difference overlayを実装する。
+- [ ] KSとOvertonを先に実装し、probability binningは別subphaseにする。
+- [ ] multiple controls、minimum events、empty control、multiple comparison policyを定義する。
+- [ ] methodごとにindependent numeric fixtureを用意する。
+- [ ] Table/Layout integrationを追加する。
+
+### Phase D5: Spectral/AutoSpill extensions [S03]
+
+- [ ] `docs/implementation/spectral-compensation.md`を全文読み、選択したalgorithm、reference、validation fixtureを追記する。
+- [ ] conventional compensationと別のimplementation guide/modelにする。
+- [ ] spectral unmixing reference、endmember/control assumptions、residual metricを定義する。
+- [ ] AutoSpillを実装する場合はoriginal publicationのalgorithmとvalidation datasetに従う。
+- [ ] autofluorescence extractionとspreading matrixを別result/provenanceとして保存する。
+- [ ] approximate implementationをAutoSpill互換と表示しない。
+
+### Phase D6: Extension APIとbatch queue [S22]
+
+- [ ] `docs/implementation/extension-api.md`を全文読み、今回公開するAPI contractまたはpermission boundaryを追記する。
+- [ ] Python/CLI public APIをversioned contractとして定義する。
+- [ ] plugin manifestへinput type、output type、version、resource、permissionsを定義する。
+- [ ] pluginは別processを既定とし、project内codeを自動実行しない。
+- [ ] outputをderived parameter、Population、table、artifactとして検証してimportする。
+- [ ] batch queueへsample selector、parallelism、cancel、failure policy、output dirを追加する。
+- [ ] crashed/timeout/malformed pluginがprojectを破損しないtestを追加する。
+
+### Phase D7: Preferences、help、accessibility [S24]
+
+- [ ] `docs/implementation/preferences-and-accessibility.md`を全文読み、今回追加するpreference scopeまたはaccessibility criteriaを追記する。
+- [ ] global preferenceとproject display settingsを分離する。
+- [ ] plot defaults、number format、autosave、performance、theme、font、export defaultsを提供する。
+- [ ] preference reset/import/exportを実装する。
+- [ ] stable objectName、keyboard navigation、shortcut help、non-color-only statusを全主要画面で確認する。
+- [ ] context helpを`flowjo-manual.md`ではなくFlowdesk固有README/user guideへ接続する。
+- [ ] preference変更で既存projectのscientific definitionを暗黙変更しないtestを追加する。
+
+## Performance track [S23]
+
+以下はRelease Aから継続し、各release終了時に更新する。
+
+- [ ] `docs/implementation/performance-and-review.md`へ10万、100万、1000万events profileを追加する。
+- [ ] deterministic synthetic dataset generatorとseedを固定する。
+- [ ] load、compensation、derived、transform、gating、statistics、renderを別々に計測する。
+- [ ] cache keyへinput fingerprintと全上流definition hashを含める。
+- [ ] matrix/derived/transform/gate/statistics変更時のcache invalidation testを追加する。
+- [ ] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。
+- [ ] scatter downsampling変更でscientific count/statisticsが変わらないことをtestする。
+- [ ] rare-event visibilityの限界をGUIへ表示する。
+
+## 各Phaseの最終確認template
+
+Phaseを完了扱いにする前に、次を実行して結果を作業報告へ記載する。
+
+```bash
+.direnv/python-3.12.13/bin/python -X faulthandler -m pytest -q <phase-specific-tests>
 .direnv/python-3.12.13/bin/ruff check src tests
-```
-
-## Phase 4: Y軸のCount選択で1D histogramを表示する [済み]
-
-### 4-1. ChannelSelector [済み]
-
-1. Y channel候補へ明示的なdisplay-only option `Count`を追加してください。
-2. 実FCS channel名と衝突しない内部値を使用してください。表示文字列`Count`だけをchannel idとして科学計算へ渡さないでください。必要ならrole dataまたは定数を使ってください。
-3. Xは通常channelを選択し、YがCountの場合だけ1D histogram modeにしてください。
-4. Count選択中はY transformを無効化するか、histogramへ適用されないことがUI上明確な状態にしてください。
-5. sample切替時もCount選択を可能な限り維持してください。
-
-### 4-2. PlotWidgetの1D histogram mode [済み]
-
-1. scatterとhistogramを明示的な別modeとして実装してください。例: `plot_histogram(values, ...)`。既存`plot_events(x, y)`へ多数の`None`分岐を無理に追加しないでください。
-2. histogramは表示機能です。bin数/bin幅はdisplay settingとして扱い、gate membershipやpopulation statisticsへ混ぜないでください。
-3. histogram inputには、Phase 3で選択されたpopulationのfull membership適用後データを使用してください。
-4. NaN/Infを除外してください。除外数をdebug stateまたはstatusで確認可能にしてください。
-5. X transformの扱いを明示してください。linear/log10/asinhで空画像や不正rangeを作らないでください。
-6. Y軸labelは`Count`にしてください。bin countは0以上にしてください。
-7. mode切替時に古いscatter、ROI、histogram itemが重なって残らないようにしてください。
-8. histogram表示中のgate作成・編集をどう扱うか明示してください。最低限、2D rectangle/polygon作成buttonを無効化または明確に拒否し、誤った2D gateを作らないでください。range gateはX軸上で作成可能でも構いませんが、headless再現可能なraw/data座標で保存してください。
-9. PNG exportがhistogramを含むことを確認してください。
-10. sample/channel切替、population切替、robust/full rangeでcrashしないでください。
-
-必須テスト:
-
-- Y=`Count`でscatterではなくhistogram itemが存在する。
-- histogram bin countの合計が有限な選択population event数と一致する。表示downsamplingをhistogram countへ使わない。
-- all eventsとgate population切替で合計が変わる。
-- Yを通常channelへ戻すと2D scatterへ戻り、古いhistogram itemが消える。
-- linear/log10/asinh XでPNGがnonblank。
-- histogram中に2D gateを誤作成できない。
-- `debug_state()`にplot modeを追加し、raw values全体は含めない。
-
-## Phase 5: 2D plotの上・右にmarginal histogramを表示する [済み]
-
-### 5-1. UI mode [済み]
-
-1. `PlotToolbar`へmarginal histogramの表示/非表示を切り替えるcheckable controlを追加してください。
-2. 安定した`objectName`を設定してください。例: `toggleMarginalHistogramsButton`。
-3. この設定はdisplay-onlyです。population count、gate、project analysis stateを変更してはいけません。
-4. projectへ保存する場合は `plot_display_settings` 配下へ保存し、`transforms`やgate定義へ混ぜないでください。
-
-### 5-2. PlotWidget layout [済み]
-
-1. 既存2D plotを中央/左下に置き、X marginal histogramを上、Y marginal histogramを右に配置してください。
-2. pyqtgraphの`GraphicsLayoutWidget`、`PlotItem`、linked axisを使用してください。別windowや画像貼り付けで実装しないでください。
-3. 上histogramのX axisをmain plotのX axisへlinkしてください。
-4. 右histogramのY axisをmain plotのY axisへlinkしてください。
-5. main plotのpan/zoomを維持し、linked histogramが追従することを確認してください。
-6. marginal histogram inputはPhase 3の選択population dataにしてください。
-7. histogram集計はfull selected populationを使ってください。scatter downsamplingの点だけで集計しないでください。
-8. NaN/Infとlog10非正値を明示的に処理してください。
-9. marginal表示ON/OFFでmain plotのgate overlay、ROI編集、rectangle drag、polygon clickを壊さないでください。
-10. 1D Count modeではmarginal histogramを非表示または無効化してください。二重histogram layoutを曖昧にしないでください。
-11. PNG exportに現在表示中のmarginal histogramを含めてください。
-12. `debug_state()`にmarginal mode、bin数、表示対象population idを追加してください。event array全体は含めないでください。
-
-必須テスト:
-
-- toggle OFFでは既存2D plotだけ、ONではtop/right histogram itemが存在する。
-- top histogram count合計とright histogram count合計が選択populationの有限event数と一致する。
-- population切替で両histogramが更新される。
-- sample切替で両histogramが更新される。
-- main ViewBox range変更時にlinked axis rangeが一致する。
-- marginal ONでもdefault mouse dragがViewBoxへ委譲される。
-- rectangle/polygon gate作成とROI編集の既存テストが成功する。
-- marginal ONのPNGがnonblankで、OFF画像とpixel内容が異なる。
-- `data/*.fcs` の複数sample切替テストでもcrashせずrangeが有限。
-
-Phase 4・5確認コマンド:
-
-```bash
-./tools/run-single-gui-test.sh <histogram-test-node-id> -q
-./tools/run-single-gui-test.sh <marginal-histogram-test-node-id> -q
+.direnv/python-3.12.13/bin/mypy src/flowdesk_core src/flowdesk_storage src/flowdesk_cli
 ./tools/run-gui-tests.sh -q
-.direnv/python-3.12.13/bin/python -X faulthandler -m pytest -q
-.direnv/python-3.12.13/bin/ruff check src tests
-```
-
-## 6. 最終確認 [済み]
-
-全Phase完了後、次を順番に実行してください。
-
-```bash
-./tools/run-gui-tests.sh -q
-make test-core
 make test-all
-.direnv/python-3.12.13/bin/python -X faulthandler -m pytest -q
-.direnv/python-3.12.13/bin/ruff check src tests
 git diff --check
-rg -n "flowdesk_qt|PySide6|Qt" src/flowdesk_core src/flowdesk_cli
+git status --short
 ```
 
-さらに次を確認してください。
+さらに次を確認する。
 
-- `artifacts/gui/<run-id>/environment.json`、`pytest.log`、`logs/application.log`が生成される。
-- GUI test終了後にrunning QThreadがない。
-- Qt teardownでsegmentation faultがない。
-- callback例外がstrict modeで再送出される。
-- core/storage/CLI testが壊れていない。
-- `MainWindow.debug_state()`がJSON serialize可能で、FCS event arrayやmembership mask本体を含まない。
-- GUI、Python API、CLIのpopulation countが一致する。
-- display histogram/marginal histogramの設定がscientific resultを変更しない。
-
-## 7. Phaseごとの報告形式
-
-各Phase終了時に、以下を省略せず報告してください。
-
-1. 変更したファイル。
-2. 変更したclass/functionと目的。
-3. scientific stateとdisplay stateをどう分離したか。
-4. 実行したコマンドをそのまま記載。
-5. 各コマンドの実際の終了コード。
-6. passed/failed/skipped件数。
-7. 生成されたartifactのpath。
-8. 未実行項目と理由。
-9. 未解決問題。
-10. 次に実装する最小Phase。
-
-完了したPhaseは履歴として残し、見出しへ `[済み]` を付けてください。未完了のPhase、未実行のテスト、既知の制限へ `[済み]` を付けてはいけません。
-
-## 8. Gate hierarchy・Boolean gate GUI改善プラン
-
-### Phase H0: 実装ガイドとUX仕様を確定する [済み]
-
-1. `docs/implementation/gate-hierarchy-ui.md` を追加し、対象ファイル、操作フロー、scientific stateとdisplay stateの境界、必須テスト、受け入れ条件を記載する。
-2. Gate treeの選択、親指定、population表示選択を別状態として定義し、暗黙の親変更を防ぐ。
-3. gate削除時の子孫、Boolean参照、循環参照、親変更失敗時の挙動を定義する。
-4. linear/log10/asinhのgate coordinate scale表示と、scale不一致overlayの扱いを仕様へ含める。
-
-### Phase H1: Gate hierarchy treeを導入する [済み]
-
-1. Gate Editorの平坦な`QListWidget`を、安定したgate idを`Qt.UserRole`に保持する`QTreeWidget`または階層model/viewへ置き換える。
-2. `All Events`をrootとし、`parent_population_id`に従って子gateを表示する。
-3. 表示名が同じgateもidで区別し、rename後も選択と親子関係を維持する。
-4. gate type、X/Y parameter、X/Y scale、Boolean operationを補助列または詳細paneで確認可能にする。
-5. tree選択から該当channel/scaleへ切り替える明示的な「Show Gate」操作を追加する。選択だけで分析状態は変更しない。
-
-必須テスト:
-
-- parent-child-grandchildが正しい階層へ表示される。
-- 同名gateをidで区別できる。
-- rename、project再読込後も階層が維持される。
-- tree表示順に依存せずheadless評価順序が正しい。
-
-### Phase H2: 子gate作成workflowを改善する [済み]
-
-1. Population ResultsまたはGate treeのpopulationを選択し、「Create Child Gate」を押すと、そのidを親として固定した作成modeへ入る。
-2. 作成前に `Parent: <name> [<id>]`、sample、X/Y channel、X/Y scaleを確認できるbannerを表示する。
-3. Gate EditorのParent comboによる従来操作も維持する。
-4. 作成完了後は新しい子gateをtreeで選択し、結果をstaleにしてPipeline再実行を明示する。
-5. Population Resultsの単なる表示選択では親を自動変更しない。親指定は「Create Child Gate」の明示操作でのみ行う。
-
-必須テスト:
-
-- 選択populationから作ったgateの`parent_population_id`が正しい。
-- sample idや表示名をparent idとして誤保存しない。
-- cancel時に親やgate定義が変更されない。
-- GUI作成した3階層のcountがheadless PipelineRunnerと一致する。
-
-### Phase H3: 既存gateの親変更と安全な並べ替え [済み]
-
-1. Gate詳細paneへParent editorを追加する。
-2. 自分自身、子孫、存在しないpopulationを親に選べないようcoreの依存検証を利用する。
-3. 親変更前に影響を受ける子孫とBoolean gateを表示し、明示確認する。
-4. drag-and-dropを追加する場合も、drop後にcoreで完全な依存graphを検証し、失敗時はmodelを変更しない。
-5. 親変更後はmembership、statistics、plot filterをstaleにし、古いmaskを表示しない。
-
-必須テスト:
-
-- 有効なreparentがprojectへ保存されheadlessで再現される。
-- cycleを作るreparentが拒否される。
-- 親削除は参照中の子gateがある限り拒否される。
-- 失敗したreparent後も元のtreeとGateSpecが完全に維持される。
-
-### Phase H4: Boolean gate editorを改善する [済み]
-
-1. AND/OR/NOTを明示した式builderを追加し、source populationを階層treeから選択可能にする。
-2. AND/ORは2個以上、NOTは1個というarityをUIとcoreの両方で検証する。
-3. sourceは表示名ではなくgate idで保存し、同名gateを安全に扱う。
-4. parent populationによる最終mask制限を式previewへ明示する。
-5. 既存Boolean gateのoperation、source、parentを編集可能にする。
-6. 未保存状態での循環参照、削除済みsource、自己参照を即時表示し、確定を拒否する。
-
-必須テスト:
-
-- AND、OR、NOTのGUI作成・編集結果がcore maskと一致する。
-- Boolean gate同士の依存をtopological orderで評価する。
-- source順序やtree表示順を変えても結果が変わらない。
-- project保存・再読込・CLI実行で同じBoolean countになる。
-
-### Phase H5: Population Resultsとの統合と視認性改善 [済み]
-
-1. Gate treeとPopulation Resultsの選択をgate id/sample idで相互に案内するが、分析stateとdisplay stateを混同しない。
-2. 現在表示中population、作成中gateの親、結果のfresh/staleを常時見える状態にする。
-3. scale不一致で非表示のgateには、`Gate exists on linear/log10 axes`のような理由を表示する。
-4. parent count、total count、Boolean式をtree tooltipまたは詳細paneへ表示する。
-5. keyboard操作、stable objectName、スクリーン座標非依存のGUIテストを追加する。
-
-### Phase H6: 保存・headless・回帰テストを完結する [済み]
-
-1. hierarchy UIで編集可能な全分析stateをGateSpec/project schemaへ保存する。
-2. GUI、Python API、CLIでrectangle、polygon、range、Boolean、3階層以上のcountが完全一致することを検証する。
-3. 複数sample、同名gate、mixed axis scale、project round-tripをsynthetic FCSで検証する。
-4. real FCSが利用可能な場合、複数sampleでhierarchy作成・切替・再実行を検証し、ファイル不足時のみ理由付きskipする。
-5. `./tools/run-gui-tests.sh -q`、`make test-core`、`make test-all`、全pytest、ruff、`git diff --check`を実行する。
+- [ ] GUIをimportせずcore/headless testが実行できる。
+- [ ] GUIのcount/statisticsがheadless結果と一致する。
+- [ ] raw inputが変更されていない。
+- [ ] project save/load/CLI round-tripが成功する。
+- [ ] schema、implementation guide、README/user操作説明が更新されている。
+- [ ] error/warning/skipがstructured diagnosticとして確認できる。
+- [ ] remaining limitationsと次の小taskが明記されている。
