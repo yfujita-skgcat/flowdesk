@@ -10,7 +10,8 @@ Used by GUI, CLI, and Python API. Must never import PySide6, Qt, or flowdesk_qt.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ from flowdesk_core.gating_strategy import (
   evaluate_gating_strategy_with_membership,
 )
 from flowdesk_core.models import (
+  ChannelSpec,
   CompensationMatrixSpec,
   DerivedParameterSpec,
   GateSpec,
@@ -35,11 +37,31 @@ from flowdesk_core.models import (
   PopulationResult,
   TransformSpec,
 )
+from flowdesk_core.sample import SampleData
 from flowdesk_core.transforms import TransformError, apply_transform_to_column
 
 
 class PipelineError(FlowdeskError):
   """Raised when the pipeline cannot execute."""
+
+
+@dataclass(frozen=True)
+class _AnalysisData:
+  """Events paired with ordered channel identity at one pipeline stage."""
+
+  events: NDArray[np.float64]
+  channels: tuple[ChannelSpec, ...]
+
+  def __post_init__(self) -> None:
+    if self.events.ndim != 2 or self.events.shape[1] != len(self.channels):
+      raise PipelineError(
+        "pipeline stage event columns must match ordered channel definitions"
+      )
+
+  @property
+  def channel_ids(self) -> list[str]:
+    """Stable IDs aligned with event columns."""
+    return [channel.id for channel in self.channels]
 
 
 def run_project_pipeline(
@@ -93,19 +115,49 @@ class PipelineRunner:
     Otherwise, pre-baked ``population_results`` from the project manifest are
     returned (backward-compatible placeholder mode).
     """
-    profile = self._resolve_execution_profile(context.execution_profile_id)
-
-    messages: list[str] = []
-    messages.append(f"execution_profile={context.execution_profile_id}")
-
     # ---------- Full pipeline execution when event data is supplied ----------
     if event_data is not None and channel_names is not None:
-      return self._run_full_pipeline(
-        profile, context, event_data, channel_names, messages
+      legacy_channels = tuple(
+        ChannelSpec(id=name, name=name) for name in channel_names
       )
+      try:
+        samples = tuple(
+          SampleData(
+            sample_id=sample_id,
+            events=events,
+            channels=legacy_channels,
+          )
+          for sample_id, events in event_data.items()
+        )
+      except FlowdeskError as exc:
+        raise PipelineError(f"invalid legacy event input: {exc}") from exc
+      return self.run_samples(context, samples)
+
+    profile = self._resolve_execution_profile(context.execution_profile_id)
+    messages = [f"execution_profile={context.execution_profile_id}"]
 
     # ---------- Placeholder mode (backward compat) ----------
     return self._run_placeholder(profile, context, messages)
+
+  def run_samples(
+    self,
+    context: ExecutionContext,
+    samples: Sequence[SampleData],
+  ) -> ExecutionReport:
+    """Run the canonical pipeline with sample-specific channel identities."""
+    profile = self._resolve_execution_profile(context.execution_profile_id)
+    sample_by_id: dict[str, SampleData] = {}
+    for sample in samples:
+      if sample.sample_id in sample_by_id:
+        raise PipelineError(f"duplicate input sample ID: {sample.sample_id!r}")
+      sample_by_id[sample.sample_id] = sample
+    messages = [f"execution_profile={context.execution_profile_id}"]
+    return self._run_full_pipeline(
+      profile,
+      context,
+      sample_by_id,
+      messages,
+    )
 
   # ------------------------------------------------------------------
   # Profile resolution
@@ -136,8 +188,7 @@ class PipelineRunner:
     self,
     profile: dict[str, Any],
     context: ExecutionContext,
-    event_data: dict[str, NDArray[np.float64]],
-    channel_names: list[str],
+    sample_data: Mapping[str, SampleData],
     messages: list[str],
   ) -> ExecutionReport:
     """Execute the canonical pipeline on event data."""
@@ -155,34 +206,33 @@ class PipelineRunner:
 
     for sample_meta in selected_samples:
       sid = sample_meta.get("id", "unknown")
-      data = event_data.get(sid)
-      if data is None:
+      sample = sample_data.get(sid)
+      if sample is None:
         messages.append(f"warning: no event data for sample {sid!r}, skipping")
         continue
+      analysis_data = _AnalysisData(sample.events, sample.channels)
 
       # Record input file metadata.
-      input_info = self._record_input_file(sample_meta, data)
+      input_info = self._record_input_file(sample_meta, analysis_data.events)
       input_files.append(input_info)
 
       # --- Step 1: Compensation ---
-      compensated = self._step_compensation(data, channel_names)
+      compensated = self._step_compensation(analysis_data)
       messages.append(f"sample={sid} compensation=done")
 
       # --- Step 2: Derived parameters ---
-      enriched = self._step_derived_parameters(
-        compensated, channel_names
-      )
+      enriched = self._step_derived_parameters(compensated)
       messages.append(f"sample={sid} derived_params=done")
 
       # --- Step 3: Transforms ---
-      transformed = self._step_transforms(enriched, channel_names)
+      transformed = self._step_transforms(enriched)
       messages.append(f"sample={sid} transforms=done")
 
       # --- Step 4: Gating ---
       if gating_strategy_id is not None:
         try:
           pop_results, pop_membership = self._step_gating(
-            gating_strategy_id, transformed, channel_names, sid
+            gating_strategy_id, transformed, sid
           )
         except GatingStrategyError as exc:
           raise PipelineError(
@@ -190,10 +240,10 @@ class PipelineRunner:
           ) from exc
       else:
         pop_results = self._fallback_root_population(
-          sid, int(transformed.shape[0])
+          sid, int(transformed.events.shape[0])
         )
         pop_membership = self._fallback_root_membership(
-          sid, int(transformed.shape[0])
+          sid, int(transformed.events.shape[0])
         )
 
       all_population_results.extend(pop_results)
@@ -222,9 +272,8 @@ class PipelineRunner:
 
   def _step_compensation(
     self,
-    data: NDArray[np.float64],
-    channel_names: list[str],
-  ) -> NDArray[np.float64]:
+    data: _AnalysisData,
+  ) -> _AnalysisData:
     """Apply compensation if configured."""
     comp_id = self._project.get("default_compensation_matrix_id")
     if comp_id is None:
@@ -248,20 +297,22 @@ class PipelineRunner:
       matrix=matrix_data,
     )
     validate_compensation_matrix(comp_spec)
-    return apply_compensation(comp_spec, data, channel_names)
+    return _AnalysisData(
+      apply_compensation(comp_spec, data.events, data.channel_ids),
+      data.channels,
+    )
 
   def _step_derived_parameters(
     self,
-    data: NDArray[np.float64],
-    channel_names: list[str],
-  ) -> NDArray[np.float64]:
+    data: _AnalysisData,
+  ) -> _AnalysisData:
     """Evaluate derived parameter expressions and append as new columns."""
     specs = self._project.get("derived_parameters", [])
     if not specs:
       return data
 
-    current_names = list(channel_names)
-    current_data = data
+    current_channels = list(data.channels)
+    current_data = data.events
 
     for spec_dict in specs:
       spec = DerivedParameterSpec(
@@ -277,11 +328,13 @@ class PipelineRunner:
       )
 
       label = spec.output_label or spec.name
+      if spec.id in {channel.id for channel in current_channels}:
+        raise PipelineError(f"duplicate derived channel ID: {spec.id!r}")
 
       # Build variable dict from current columns.
       variables: dict[str, NDArray[np.float64]] = {}
-      for i, name in enumerate(current_names):
-        variables[name] = current_data[:, i]
+      for i, channel in enumerate(current_channels):
+        variables[channel.id] = current_data[:, i]
 
       try:
         result_any = evaluate_expression(spec.expression, variables,  # type: ignore[arg-type]
@@ -293,21 +346,29 @@ class PipelineRunner:
 
       new_col = result.reshape(-1, 1)
       current_data = np.hstack([current_data, new_col])
-      current_names.append(label)
+      current_channels.append(
+        ChannelSpec(
+          id=spec.id,
+          name=label,
+          metadata={
+            "kind": "derived_parameter",
+            "source_stage": spec.source_stage,
+          },
+        )
+      )
 
-    return current_data
+    return _AnalysisData(current_data, tuple(current_channels))
 
   def _step_transforms(
     self,
-    data: NDArray[np.float64],
-    channel_names: list[str],
-  ) -> NDArray[np.float64]:
+    data: _AnalysisData,
+  ) -> _AnalysisData:
     """Apply transforms to specified parameters."""
     specs = self._project.get("transforms", [])
     if not specs:
       return data
 
-    current_data = data.copy()
+    current_data = data.events.copy()
 
     for spec_dict in specs:
       spec = TransformSpec(
@@ -320,18 +381,17 @@ class PipelineRunner:
 
       try:
         current_data = apply_transform_to_column(
-          spec, current_data, channel_names
+          spec, current_data, data.channel_ids
         )
       except TransformError:
         pass  # Skip invalid transforms silently.
 
-    return current_data
+    return _AnalysisData(current_data, data.channels)
 
   def _step_gating(
     self,
     strategy_id: str,
-    data: NDArray[np.float64],
-    channel_names: list[str],
+    data: _AnalysisData,
     sample_id: str,
   ) -> tuple[list[PopulationResult], list[PopulationMembership]]:
     """Evaluate the gating strategy on transformed data.
@@ -347,15 +407,15 @@ class PipelineRunner:
       strat = self._build_strategy_from_manifest(strategy_id)
       if strat is None:
         return (
-          self._fallback_root_population(sample_id, int(data.shape[0])),
-          self._fallback_root_membership(sample_id, int(data.shape[0])),
+          self._fallback_root_population(sample_id, int(data.events.shape[0])),
+          self._fallback_root_membership(sample_id, int(data.events.shape[0])),
         )
 
     if isinstance(strat, Mapping):
       strat = self._strategy_from_mapping(strat)
 
     results, masks = evaluate_gating_strategy_with_membership(
-      strat, data, channel_names
+      strat, data.events, data.channel_ids
     )
 
     # Attach sample_id to results (frozen dataclass, so rebuild).

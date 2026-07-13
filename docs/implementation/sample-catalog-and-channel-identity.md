@@ -43,7 +43,7 @@ metadata, and a stable project ID. Never use the visible label as the only ident
    - Build ordered channel specs from metadata without discarding original names.
    - Return immutable events and metadata separately or in the typed sample object.
    - Add two synthetic samples whose column order differs.
-3. **Runner API**
+3. **Runner API** — implemented
    - Add `PipelineRunner.run_samples(context, samples)` or an equivalent typed API.
    - Keep `run(..., event_data, channel_names)` as a thin compatibility adapter.
    - Pass updated channel specs through every pipeline stage.
@@ -95,8 +95,33 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 - Duplicate `$PnN` is rejected as malformed FCS metadata instead of receiving a
   positional fallback ID. Missing required `$PnN` is rejected for the same
   reason.
-- Pipeline execution, persisted project IDs/migration, and GUI mapping remain
-  increments 3–5 and are not implied by this adapter.
+- At the end of increment 2, pipeline execution, persisted project IDs, and GUI
+  mapping still remained in increments 3–5. The runner connection is covered
+  below; storage and GUI work remains in increments 4 and 5.
+
+## Confirmed contract after increment 3
+
+- `PipelineRunner.run_samples(context, samples)` is the typed headless API.
+  Duplicate input sample IDs are rejected, project profile selection still
+  determines which samples execute, and missing selected inputs retain the
+  existing warning behavior.
+- Each pipeline stage receives events paired with ordered `ChannelSpec`.
+  Compensation, derived expressions, transforms, and gates use
+  `ChannelSpec.id` aligned to the current event columns; analytical execution
+  does not fall back to `$PnN` or `$PnS` labels.
+- Derived output appends a new `ChannelSpec` carrying the derived parameter ID
+  before transform and gate execution. An ID collision raises `PipelineError`.
+- `run(context, event_data, channel_names)` is a compatibility adapter. It
+  constructs `SampleData` whose IDs equal the legacy names and delegates to
+  `run_samples()`; it contains no separate scientific pipeline.
+- Synthetic compensation and rectangle-gate tests confirm identical full-event
+  membership and counts when two samples contain the same stable IDs in
+  different column orders. Raw `SampleData.events` remain byte-identical.
+- Storage still does not persist these channel definitions and the GUI still
+  calls the legacy adapter; those remain increments 4 and 5.
+- The existing derived evaluator's multi-event scalar limitation and broad NaN
+  fallback are unchanged. They belong to Phase A2, so the increment 3 test only
+  verifies identity propagation with a scalar constant.
 
 ## Required tests
 

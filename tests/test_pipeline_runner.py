@@ -6,10 +6,14 @@ import numpy as np
 import pytest
 
 from flowdesk_core.errors import FlowdeskError
+from flowdesk_core.execution_context import ExecutionContext
+from flowdesk_core.models import ChannelSpec, GateSpec, GatingStrategySpec
 from flowdesk_core.pipeline_runner import (
   PipelineError,
+  PipelineRunner,
   run_project_pipeline,
 )
+from flowdesk_core.sample import SampleData
 from flowdesk_core.statistics import population_results_to_export_records
 
 # ---------------------------------------------------------------------------
@@ -590,3 +594,149 @@ def test_pipeline_membership_placeholder_mode_empty() -> None:
   project = _make_project()
   report = run_project_pipeline(project)
   assert len(report.population_membership) == 0
+
+
+# ---------------------------------------------------------------------------
+# Sample-specific stable channel identity API
+# ---------------------------------------------------------------------------
+
+
+def test_run_samples_gate_count_is_stable_across_channel_permutation() -> None:
+  fsc = ChannelSpec(id="fsc_area", name="FSC-A")
+  cd3 = ChannelSpec(id="cd3_area", name="B530-A", short_name="CD3")
+  canonical_events = np.array(
+    [[1.0, 15.0], [2.0, 25.0], [9.0, 15.0], [1.0, 40.0]],
+    dtype=np.float64,
+  )
+  first = SampleData("s1", canonical_events, (fsc, cd3))
+  second = SampleData("s2", canonical_events[:, [1, 0]], (cd3, fsc))
+  original_first = first.events.tobytes()
+  original_second = second.events.tobytes()
+  strategy = GatingStrategySpec(
+    id="stable_identity",
+    name="Stable identity",
+    gates=(
+      GateSpec(
+        id="cd3_positive",
+        name="CD3 positive",
+        gate_type="rectangle",
+        parent_population_id="all_events",
+        x_parameter="fsc_area",
+        y_parameter="cd3_area",
+        thresholds={
+          "x_min": 0.0,
+          "x_max": 5.0,
+          "y_min": 10.0,
+          "y_max": 30.0,
+        },
+      ),
+    ),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}, {"id": "s2"}],
+    execution_profiles=[
+      {
+        "id": "default",
+        "sample_selector": "all",
+        "gating_strategy_id": strategy.id,
+      }
+    ],
+    compensation_matrices=[
+      {
+        "id": "identity_compensation",
+        "name": "Identity compensation",
+        "source": "user_defined",
+        "channels": ("fsc_area", "cd3_area"),
+        "matrix": ((1.0, 0.0), (0.0, 1.0)),
+      }
+    ],
+    default_compensation_matrix_id="identity_compensation",
+    gating_strategies_data={strategy.id: strategy},
+  )
+
+  report = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_profile_id="default"),
+    (first, second),
+  )
+
+  counts = {
+    result.sample_id: result.event_count
+    for result in report.population_results
+    if result.population_id == "cd3_positive"
+  }
+  masks = {
+    membership.sample_id: membership.mask
+    for membership in report.population_membership
+    if membership.population_id == "cd3_positive"
+  }
+  assert counts == {"s1": 2, "s2": 2}
+  np.testing.assert_array_equal(masks["s1"], masks["s2"])
+  assert first.events.tobytes() == original_first
+  assert second.events.tobytes() == original_second
+
+
+def test_run_samples_passes_derived_channel_identity_to_gating() -> None:
+  sample = SampleData(
+    "s1",
+    np.array([[2.0, 1.0]], dtype=np.float64),
+    (
+      ChannelSpec(id="signal", name="Signal-A"),
+      ChannelSpec(id="denominator", name="Reference-A"),
+    ),
+  )
+  strategy = GatingStrategySpec(
+    id="derived_gate_strategy",
+    name="Derived gate strategy",
+    gates=(
+      GateSpec(
+        id="ratio_near_two",
+        name="Ratio near two",
+        gate_type="rectangle",
+        parent_population_id="all_events",
+        x_parameter="ratio",
+        y_parameter="denominator",
+        thresholds={
+          "x_min": 3.5,
+          "x_max": 4.5,
+          "y_min": 0.0,
+          "y_max": 10.0,
+        },
+      ),
+    ),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[
+      {
+        "id": "ratio",
+        "name": "Signal ratio",
+        "expression": "2.0",
+        "input_parameters": [],
+      }
+    ],
+    transforms=[
+      {
+        "id": "scale_ratio",
+        "name": "Scale ratio",
+        "transform_type": "linear",
+        "parameter": "ratio",
+        "settings": {"scale": 2.0, "offset": 0.0},
+      }
+    ],
+    execution_profiles=[
+      {"id": "default", "gating_strategy_id": strategy.id}
+    ],
+    gating_strategies_data={strategy.id: strategy},
+  )
+
+  report = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_profile_id="default"),
+    (sample,),
+  )
+
+  result = next(
+    result
+    for result in report.population_results
+    if result.population_id == "ratio_near_two"
+  )
+  assert result.event_count == 1

@@ -86,9 +86,9 @@ git status --short
 #### Core/model
 
 - [ ] `ChannelSpec`へ、安定ID、FCS index、primary name、short name、detector、stain、unit、raw metadataを欠落なく表せるfieldを追加する。既存project migrationを用意する。
-- [ ] `SampleData`または同等のGUI非依存input objectを追加し、sample ID、read-only events、sample固有channel specsを一体でrunnerへ渡す。
-- [ ] `PipelineRunner.run()`へsampleごとのchannel mappingを渡す新APIを追加する。既存`event_data + channel_names`はdeprecation-compatible wrapperとして残してよい。
-- [ ] compensation、derived parameter、transform、gateがcolumn positionではなくchannel identityで解決されるようにする。
+- [x] 済み: `SampleData`または同等のGUI非依存input objectを追加し、sample ID、read-only events、sample固有channel specsを一体でrunnerへ渡す。
+- [x] 済み: `PipelineRunner.run()`へsampleごとのchannel mappingを渡す新APIを追加する。既存`event_data + channel_names`はdeprecation-compatible wrapperとして残してよい。
+- [x] 済み: compensation、derived parameter、transform、gateがcolumn positionではなくchannel identityで解決されるようにする。
 - [ ] duplicate channel label、missing parameter、ambiguous short nameをstructured errorにする。
 - [ ] input file fingerprintにsize、mtime、hash algorithm/hash valueを保存する。
 
@@ -100,7 +100,7 @@ git status --short
 
 #### 必須test
 
-- [ ] channel orderだけが異なる2 sampleでmarker指定のgate countが一致する。
+- [x] 済み: channel orderだけが異なる2 sampleでmarker指定のgate countが一致する。
 - [x] 済み: `$PnN`が同じで`$PnS`が異なるcaseと、その逆を明示的にtestする。
 - [x] 済み: ambiguous/missing channelでsilent fallbackしない。
 - [x] 済み: sampleごとのraw arrayがread-onlyかつ変更されない。
