@@ -127,9 +127,9 @@ git status --short
 - [x] 済み: `emit_nan_with_warning`時もexpression、sample、exception type、affected event countをExecutionReportへ記録する。
 - [x] 済み: derived parameter間のdependency graphを構築し、topological orderで評価する。
 - [x] 済み: unknown inputとcycleをrun開始前に拒否する。
-- [ ] unit、output channel ID、source stageを保存する。
+- [x] 済み: unit、output channel ID、source stageを保存する。
 - [x] 済み: derived stageの戻り値をeventsと更新済みchannel specsの組にし、後続transform/gateへ必ず同じ列対応を渡す。
-- [ ] canonical orderに反する`source_stage = transformed`は新規作成を禁止する。既存projectは黙って意味を変えず、migration diagnosticと明示的互換policyを用意する。
+- [x] 済み: canonical orderに反する`source_stage = transformed`は新規作成を禁止する。既存projectは黙って意味を変えず、migration diagnosticと明示的互換policyを用意する。
 
 #### GUI
 
@@ -143,7 +143,7 @@ git status --short
 - [x] 済み: dependency chainとcycleをtestする。
 - [ ] division by zero、domain error、unknown parameter、all-NaN inputをtestする。
 - [ ] save/load/CLI runでpolicyとdiagnosticが維持される。
-- [ ] raw値参照とcompensated値参照が、derived stage後・transform前のcanonical順序を壊さないことをtestする。
+- [x] 済み: raw値参照とcompensated値参照が、derived stage後・transform前のcanonical順序を壊さないことをtestする。
 - [x] 済み: derived parameterを後続transform、gate、statisticsで安定ID参照できることをtestする。
 
 ### Phase A3: 正式なLogicleとtransform model [S05]

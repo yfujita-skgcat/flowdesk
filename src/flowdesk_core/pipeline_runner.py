@@ -267,7 +267,7 @@ class PipelineRunner:
       # --- Step 2: Derived parameters ---
       try:
         enriched, derived_diagnostics = self._step_derived_parameters(
-          compensated, sid, derived_plan
+          compensated, analysis_data, sid, derived_plan
         )
       except _DerivedParameterStepError as exc:
         diagnostics.append(exc.diagnostic)
@@ -367,12 +367,19 @@ class PipelineRunner:
 
   def _step_derived_parameters(
     self,
-    data: _AnalysisData,
+    compensated_data: _AnalysisData,
+    raw_data: _AnalysisData,
     sample_id: str,
     plan: DerivedParameterPlan,
   ) -> tuple[DerivedParameterStageResult, tuple[ExecutionDiagnostic, ...]]:
     """Evaluate derived parameter expressions and append as new columns."""
-    stage_result = DerivedParameterStageResult(data.events, data.channels)
+    if raw_data.channel_ids != compensated_data.channel_ids:
+      raise PipelineError(
+        "raw and compensated stage channel identities must remain aligned"
+      )
+    stage_result = DerivedParameterStageResult(
+      compensated_data.events, compensated_data.channels
+    )
     if not plan.execution_order:
       return stage_result, ()
 
@@ -381,18 +388,25 @@ class PipelineRunner:
     for spec in plan.execution_order:
       label = spec.output_label or spec.name
       output_channel = ChannelSpec(
-        id=spec.id,
+        id=spec.output_id,
         name=label,
+        unit=spec.unit,
         metadata={
           "kind": "derived_parameter",
+          "definition_id": spec.id,
           "source_stage": spec.source_stage,
         },
       )
 
-      # Build variable dict from current columns.
-      variables: dict[str, NDArray[np.float64]] = {}
-      for i, channel in enumerate(stage_result.channels):
-        variables[channel.id] = stage_result.events[:, i]
+      source_data = raw_data if spec.source_stage == "raw" else compensated_data
+      variables = {
+        channel.id: source_data.events[:, index]
+        for index, channel in enumerate(source_data.channels)
+      }
+      base_channel_ids = set(source_data.channel_ids)
+      for index, channel in enumerate(stage_result.channels):
+        if channel.id not in base_channel_ids:
+          variables[channel.id] = stage_result.events[:, index]
 
       try:
         result = evaluate_array_expression(
@@ -465,9 +479,14 @@ class PipelineRunner:
             expression=definition["expression"],
             source_stage=definition.get("source_stage", "compensated"),
             input_parameters=tuple(definition.get("input_parameters", ())),
+            output_channel_id=definition.get("output_channel_id"),
             output_label=definition.get("output_label"),
+            unit=definition.get("unit"),
             invalid_value_policy=definition.get(
               "invalid_value_policy", "emit_nan_with_warning"
+            ),
+            legacy_source_stage_policy=definition.get(
+              "legacy_source_stage_policy"
             ),
             notes=definition.get("notes", ""),
           )
@@ -477,6 +496,13 @@ class PipelineRunner:
         raise PipelineError(
           f"invalid_derived_parameter_definition: {parameter_id!r}: {exc}"
         ) from exc
+    for spec in parsed:
+      if spec.source_stage == "transformed":
+        raise PipelineError(
+          "legacy_transformed_source_rejected: derived parameter "
+          f"{spec.id!r} requires transformed input, which would violate "
+          "the canonical pipeline order"
+        )
     return tuple(parsed)
 
   def _step_transforms(

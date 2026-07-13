@@ -8,8 +8,8 @@ from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
 
-CURRENT_PROJECT_VERSION = "1.1.0"
-LEGACY_PROJECT_VERSIONS = frozenset({"0.1", "1.0.0"})
+CURRENT_PROJECT_VERSION = "1.2.0"
+LEGACY_PROJECT_VERSIONS = frozenset({"0.1", "1.0.0", "1.1.0"})
 
 
 class ProjectMigrationError(FlowdeskError):
@@ -96,6 +96,57 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
       }
       for name in legacy_names
     ]
+
+  definitions = migrated.get("derived_parameters", [])
+  if not isinstance(definitions, list):
+    raise ProjectMigrationError(
+      "invalid_legacy_derived_parameters",
+      "legacy derived_parameters must be an array",
+    )
+  diagnostics = migrated.get("migration_diagnostics", [])
+  if not isinstance(diagnostics, list):
+    raise ProjectMigrationError(
+      "invalid_legacy_migration_diagnostics",
+      "legacy migration_diagnostics must be an array",
+    )
+  for definition in definitions:
+    if not isinstance(definition, dict):
+      raise ProjectMigrationError(
+        "invalid_legacy_derived_parameter",
+        "legacy derived parameter must be an object",
+      )
+    parameter_id = definition.get("id")
+    if not isinstance(parameter_id, str) or not parameter_id:
+      raise ProjectMigrationError(
+        "invalid_legacy_derived_parameter_id",
+        "legacy derived parameter ID must be a non-empty string",
+      )
+    definition.setdefault("output_channel_id", parameter_id)
+    definition.setdefault("unit", None)
+    definition.setdefault("source_stage", "compensated")
+    definition.setdefault("input_parameters", [])
+    policy = definition.setdefault(
+      "invalid_value_policy", "emit_nan_with_warning"
+    )
+    if policy == "division_by_zero_to_nan":
+      definition["invalid_value_policy"] = "emit_nan_with_warning"
+    if definition["source_stage"] == "transformed":
+      definition["legacy_source_stage_policy"] = "reject"
+      diagnostic = {
+        "code": "legacy_transformed_derived_source",
+        "severity": "error",
+        "stage": "migration",
+        "message": (
+          f"Derived parameter {parameter_id!r} uses legacy transformed source "
+          "and cannot run in the canonical pipeline"
+        ),
+        "parameter_id": parameter_id,
+        "details": {"compatibility_policy": "reject"},
+      }
+      if diagnostic not in diagnostics:
+        diagnostics.append(diagnostic)
+  if diagnostics:
+    migrated["migration_diagnostics"] = diagnostics
 
   migrated["project_version"] = CURRENT_PROJECT_VERSION
   return migrated

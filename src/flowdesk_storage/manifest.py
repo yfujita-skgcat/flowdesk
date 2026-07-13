@@ -44,6 +44,72 @@ def validate_manifest(data: dict[str, Any]) -> None:
 
   if data["project_version"] == CURRENT_PROJECT_VERSION:
     _validate_current_samples(data["samples"])
+    _validate_current_derived_parameters(data.get("derived_parameters", []))
+
+
+def _validate_current_derived_parameters(definitions: Any) -> None:
+  """Validate persisted derived identity and source-stage compatibility."""
+  if not isinstance(definitions, list):
+    raise ManifestValidationError("derived_parameters must be an array")
+  definition_ids: set[str] = set()
+  output_ids: set[str] = set()
+  valid_policies = {"fail_run", "fail_sample", "emit_nan_with_warning"}
+  for index, definition in enumerate(definitions):
+    if not isinstance(definition, dict):
+      raise ManifestValidationError(
+        f"derived_parameters[{index}] must be an object"
+      )
+    for field in ("id", "name", "expression", "output_channel_id"):
+      value = definition.get(field)
+      if not isinstance(value, str) or not value:
+        raise ManifestValidationError(
+          f"derived_parameters[{index}].{field} must be a non-empty string"
+        )
+    parameter_id = definition["id"]
+    output_id = definition["output_channel_id"]
+    if parameter_id in definition_ids:
+      raise ManifestValidationError(
+        f"duplicate derived parameter ID {parameter_id!r}"
+      )
+    if output_id in output_ids:
+      raise ManifestValidationError(
+        f"duplicate derived output channel ID {output_id!r}"
+      )
+    definition_ids.add(parameter_id)
+    output_ids.add(output_id)
+    unit = definition.get("unit")
+    if unit is not None and not isinstance(unit, str):
+      raise ManifestValidationError(
+        f"derived parameter {parameter_id!r} unit must be a string or null"
+      )
+    inputs = definition.get("input_parameters")
+    if not isinstance(inputs, list) or not all(
+      isinstance(value, str) and value for value in inputs
+    ):
+      raise ManifestValidationError(
+        f"derived parameter {parameter_id!r} input_parameters must be strings"
+      )
+    policy = definition.get("invalid_value_policy")
+    if policy not in valid_policies:
+      raise ManifestValidationError(
+        f"derived parameter {parameter_id!r} has invalid failure policy"
+      )
+    source_stage = definition.get("source_stage")
+    if source_stage not in {"raw", "compensated", "transformed"}:
+      raise ManifestValidationError(
+        f"derived parameter {parameter_id!r} has invalid source_stage"
+      )
+    legacy_policy = definition.get("legacy_source_stage_policy")
+    if source_stage == "transformed" and legacy_policy != "reject":
+      raise ManifestValidationError(
+        f"derived parameter {parameter_id!r} transformed source requires "
+        "legacy_source_stage_policy='reject'"
+      )
+    if source_stage != "transformed" and legacy_policy is not None:
+      raise ManifestValidationError(
+        f"derived parameter {parameter_id!r} legacy_source_stage_policy is "
+        "only valid for transformed source"
+      )
 
 
 def _validate_current_samples(samples: list[Any]) -> None:

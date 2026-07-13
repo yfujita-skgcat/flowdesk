@@ -76,13 +76,38 @@ class DerivedParameterSpec:
   expression: str
   source_stage: SourceStage = "compensated"
   input_parameters: tuple[str, ...] = field(default_factory=tuple)
+  output_channel_id: str | None = None
   output_label: str | None = None
+  unit: str | None = None
   invalid_value_policy: DerivedFailurePolicy = (
     DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
   )
+  legacy_source_stage_policy: Literal["reject"] | None = None
   notes: str = ""
 
   def __post_init__(self) -> None:
+    if self.source_stage not in {"raw", "compensated", "transformed"}:
+      raise ValueError(f"invalid derived source stage: {self.source_stage!r}")
+    if (
+      self.source_stage == "transformed"
+      and self.legacy_source_stage_policy != "reject"
+    ):
+      raise ValueError(
+        "legacy transformed source requires legacy_source_stage_policy='reject'"
+      )
+    if (
+      self.source_stage != "transformed"
+      and self.legacy_source_stage_policy is not None
+    ):
+      raise ValueError(
+        "legacy_source_stage_policy is only valid for transformed source"
+      )
+    if self.output_channel_id is not None and (
+      not isinstance(self.output_channel_id, str) or not self.output_channel_id
+    ):
+      raise ValueError("derived output channel ID must be a non-empty string")
+    if self.unit is not None and not isinstance(self.unit, str):
+      raise ValueError("derived unit must be a string or null")
     raw_policy = self.invalid_value_policy
     if raw_policy == "division_by_zero_to_nan":
       raw_policy = DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
@@ -95,6 +120,11 @@ class DerivedParameterSpec:
         f"expected one of: {choices}"
       ) from exc
     object.__setattr__(self, "invalid_value_policy", policy)
+
+  @property
+  def output_id(self) -> str:
+    """Stable channel ID produced by this definition."""
+    return self.output_channel_id or self.id
 
 
 @dataclass(frozen=True)

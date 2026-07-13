@@ -583,17 +583,26 @@ def plan_derived_parameters(
 ) -> DerivedParameterPlan:
   """Validate and topologically order derived definitions deterministically."""
   display_order = tuple(specs)
+  definition_ids: set[str] = set()
   by_id: dict[str, DerivedParameterSpec] = {}
   display_index: dict[str, int] = {}
   for index, spec in enumerate(display_order):
-    if spec.id in by_id:
+    if spec.id in definition_ids:
       raise DerivedParameterPlanningError(
         "duplicate_derived_parameter_id",
         f"duplicate derived parameter ID: {spec.id!r}",
         parameter_id=spec.id,
       )
-    by_id[spec.id] = spec
-    display_index[spec.id] = index
+    definition_ids.add(spec.id)
+    if spec.output_id in by_id:
+      raise DerivedParameterPlanningError(
+        "duplicate_derived_output_id",
+        f"duplicate derived output channel ID: {spec.output_id!r}",
+        parameter_id=spec.id,
+        references=(spec.output_id,),
+      )
+    by_id[spec.output_id] = spec
+    display_index[spec.output_id] = index
 
   available = set(available_input_ids)
   collisions = tuple(spec_id for spec_id in by_id if spec_id in available)
@@ -638,7 +647,7 @@ def plan_derived_parameters(
         parameter_id=spec.id,
         references=unknown,
       )
-    dependencies[spec.id] = {
+    dependencies[spec.output_id] = {
       reference for reference in all_references if reference in by_id
     }
 
@@ -667,8 +676,8 @@ def plan_derived_parameters(
     execution_order=tuple(by_id[spec_id] for spec_id in ordered_ids),
     dependencies=tuple(
       (
-        spec.id,
-        tuple(sorted(dependencies[spec.id], key=display_index.__getitem__)),
+        spec.output_id,
+        tuple(sorted(dependencies[spec.output_id], key=display_index.__getitem__)),
       )
       for spec in display_order
     ),

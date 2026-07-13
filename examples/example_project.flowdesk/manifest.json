@@ -1,6 +1,6 @@
 {
   "project_id": "example_project",
-  "project_version": "1.1.0",
+  "project_version": "1.2.0",
   "pipeline_version": "0.1",
   "created_at": "2026-06-25T00:00:00Z",
   "updated_at": "2026-06-25T00:00:00Z",
@@ -12,6 +12,8 @@
       "id": "fl1_over_fl2",
       "name": "FL1_over_FL2",
       "expression": "FL1-A / FL2-A",
+      "output_channel_id": "fl1_over_fl2",
+      "unit": null,
       "source_stage": "compensated",
       "input_parameters": ["FL1-A", "FL2-A"],
       "invalid_value_policy": "emit_nan_with_warning"

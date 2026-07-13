@@ -6,7 +6,7 @@
   "required": ["project_id", "project_version", "pipeline_version", "samples"],
   "properties": {
     "project_id": { "type": "string" },
-    "project_version": { "const": "1.1.0" },
+    "project_version": { "const": "1.2.0" },
     "pipeline_version": { "type": "string" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" },
@@ -27,32 +27,69 @@
     "execution_profiles": { "type": "array", "items": { "type": "object" } },
     "last_execution_report_path": { "type": ["string", "null"] },
     "sample_path_resolution_policy": { "type": "string" },
-    "software": { "type": "object" }
+    "software": { "type": "object" },
+    "migration_diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "stage", "message"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "severity": { "enum": ["info", "warning", "error"] },
+          "stage": { "const": "migration" },
+          "message": { "type": "string", "minLength": 1 },
+          "parameter_id": { "type": "string" },
+          "details": { "type": "object" }
+        },
+        "additionalProperties": true
+      }
+    }
   },
   "$defs": {
     "derivedParameter": {
       "type": "object",
-      "required": ["id", "name", "expression"],
+      "required": [
+        "id",
+        "name",
+        "expression",
+        "output_channel_id",
+        "unit",
+        "source_stage",
+        "input_parameters",
+        "invalid_value_policy"
+      ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
         "expression": { "type": "string", "minLength": 1 },
         "source_stage": { "enum": ["raw", "compensated", "transformed"] },
+        "legacy_source_stage_policy": { "const": "reject" },
         "input_parameters": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         },
+        "output_channel_id": { "type": "string", "minLength": 1 },
         "output_label": { "type": ["string", "null"] },
+        "unit": { "type": ["string", "null"] },
         "invalid_value_policy": {
           "enum": [
             "fail_run",
             "fail_sample",
-            "emit_nan_with_warning",
-            "division_by_zero_to_nan"
+            "emit_nan_with_warning"
           ]
         },
         "notes": { "type": "string" }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "source_stage": { "const": "transformed" } },
+            "required": ["source_stage"]
+          },
+          "then": { "required": ["legacy_source_stage_policy"] },
+          "else": { "not": { "required": ["legacy_source_stage_policy"] } }
+        }
+      ],
       "additionalProperties": true
     },
     "sample": {

@@ -1,4 +1,4 @@
-from flowdesk_core.models import ChannelSpec, SampleSpec
+from flowdesk_core.models import ChannelSpec, DerivedParameterSpec, SampleSpec
 
 
 def test_channel_and_sample_models() -> None:
@@ -28,3 +28,16 @@ def test_channel_identity_fields_have_compatible_defaults() -> None:
   assert channel.detector is None
   assert channel.stain is None
   assert channel.fcs_parameter_index is None
+
+
+def test_derived_parameter_persists_output_channel_identity_and_unit() -> None:
+  spec = DerivedParameterSpec(
+    id="ratio_definition",
+    name="Ratio",
+    expression="signal / reference",
+    output_channel_id="signal_ratio",
+    unit="ratio",
+  )
+
+  assert spec.output_id == "signal_ratio"
+  assert spec.unit == "ratio"

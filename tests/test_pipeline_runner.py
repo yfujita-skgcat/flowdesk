@@ -964,3 +964,110 @@ def test_run_samples_passes_derived_channel_identity_to_gating() -> None:
   assert result.event_count == 1
   np.testing.assert_array_equal(source_events, source_before)
   np.testing.assert_array_equal(sample.events, source_before)
+
+
+def test_raw_and_compensated_derived_sources_use_explicit_stage_views() -> None:
+  source_events = np.array([[15.0, 10.0]], dtype=np.float64)
+  sample = SampleData(
+    "s1",
+    source_events,
+    (
+      ChannelSpec(id="signal", name="Signal"),
+      ChannelSpec(id="reference", name="Reference"),
+    ),
+  )
+  strategy = GatingStrategySpec(
+    id="source_views",
+    name="Source views",
+    gates=(GateSpec(
+      id="expected_values",
+      name="Expected values",
+      gate_type="rectangle",
+      parent_population_id="all_events",
+      x_parameter="raw_signal",
+      y_parameter="compensated_signal",
+      thresholds={
+        "x_min": 29.0,
+        "x_max": 31.0,
+        "y_min": 9.0,
+        "y_max": 11.0,
+      },
+    ),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    compensation_matrices=[{
+      "id": "spill",
+      "name": "Spill",
+      "source": "user_defined",
+      "channels": ("signal", "reference"),
+      "matrix": ((1.0, 0.5), (0.0, 1.0)),
+    }],
+    default_compensation_matrix_id="spill",
+    derived_parameters=[
+      {
+        "id": "raw_definition",
+        "output_channel_id": "raw_signal",
+        "name": "Raw signal",
+        "expression": "signal",
+        "source_stage": "raw",
+      },
+      {
+        "id": "compensated_definition",
+        "output_channel_id": "compensated_signal",
+        "name": "Compensated signal",
+        "expression": "signal",
+        "source_stage": "compensated",
+      },
+    ],
+    transforms=[{
+      "id": "scale_raw_derived",
+      "name": "Scale raw-derived signal",
+      "transform_type": "linear",
+      "parameter": "raw_signal",
+      "settings": {"scale": 2.0, "offset": 0.0},
+    }],
+    execution_profiles=[
+      {"id": "default", "gating_strategy_id": strategy.id}
+    ],
+    gating_strategies_data={strategy.id: strategy},
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+  result = next(
+    result
+    for result in report.population_results
+    if result.population_id == "expected_values"
+  )
+  assert result.event_count == 1
+  np.testing.assert_array_equal(sample.events, source_events)
+
+
+def test_legacy_transformed_derived_source_is_rejected_before_processing(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  sample = SampleData(
+    "s1",
+    np.ones((1, 1), dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[{
+      "id": "legacy",
+      "output_channel_id": "legacy_output",
+      "name": "Legacy",
+      "expression": "signal",
+      "source_stage": "transformed",
+      "legacy_source_stage_policy": "reject",
+    }],
+  )
+  monkeypatch.setattr(
+    PipelineRunner,
+    "_step_compensation",
+    lambda *_args: pytest.fail("processing started for rejected legacy source"),
+  )
+
+  with pytest.raises(PipelineError, match="legacy_transformed_source_rejected"):
+    PipelineRunner(project).run_samples(ExecutionContext(), (sample,))

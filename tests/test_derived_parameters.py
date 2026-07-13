@@ -115,6 +115,35 @@ def test_dependency_plan_keeps_display_order_and_topologically_reorders() -> Non
     )
 
 
+def test_dependency_plan_uses_output_channel_id_not_definition_id() -> None:
+    dependent = DerivedParameterSpec(
+        id="normalized_definition",
+        name="Normalized",
+        expression="ratio_channel + signal",
+        output_channel_id="normalized_channel",
+    )
+    prerequisite = DerivedParameterSpec(
+        id="ratio_definition",
+        name="Ratio",
+        expression="signal / reference",
+        output_channel_id="ratio_channel",
+    )
+
+    plan = plan_derived_parameters(
+        (dependent, prerequisite),
+        ("signal", "reference"),
+    )
+
+    assert [spec.id for spec in plan.execution_order] == [
+        "ratio_definition",
+        "normalized_definition",
+    ]
+    assert plan.dependencies == (
+        ("normalized_channel", ("ratio_channel",)),
+        ("ratio_channel", ()),
+    )
+
+
 def test_dependency_plan_rejects_unknown_input_with_context() -> None:
     spec = DerivedParameterSpec(
         id="ratio",

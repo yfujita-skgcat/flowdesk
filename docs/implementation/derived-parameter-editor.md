@@ -151,6 +151,32 @@ not silently reinterpret it.
 - Unit/output-ID persistence and raw/compensated source-view semantics remain
   increment 4 work; this increment does not reinterpret `source_stage`.
 
+## Confirmed contract after increment 4
+
+- Project version `1.2.0` persists definition `id` separately from stable
+  `output_channel_id`, plus nullable `unit`, explicit `source_stage`, inputs,
+  and failure policy. Legacy definitions migrate with `output_channel_id=id`
+  and retain unknown extension fields.
+- Dependency planning and all downstream transforms, gates, and statistics use
+  `output_channel_id`. Definition IDs remain provenance identifiers and are
+  stored in derived `ChannelSpec.metadata`.
+- The runner carries immutable raw and compensated stage views into the derived
+  stage. A raw-source definition resolves measured inputs from the raw view; a
+  compensated-source definition resolves them from the compensated view.
+  Already-computed derived dependencies remain available to either source.
+- Derived columns are still appended only after compensation and before
+  transforms. A hand-computable fixture verifies raw 15, compensated 10, then a
+  downstream linear transform of the raw-derived channel to 30 before gating.
+- Legacy `source_stage="transformed"` is never rewritten as compensated.
+  Migration preserves it, adds `legacy_source_stage_policy="reject"`, and
+  records `legacy_transformed_derived_source` in persisted migration diagnostics.
+  The runner rejects it before compensation or other sample processing.
+- New/current transformed-source data without the explicit legacy reject policy
+  fails manifest/model validation. The later Qt editor must offer only raw and
+  compensated for new definitions.
+- The legacy `division_by_zero_to_nan` storage alias is normalized during
+  migration; current schema stores only the three explicit failure policies.
+
 ## Required tests
 
 - Ratio and dependent-derived chain work after compensation.

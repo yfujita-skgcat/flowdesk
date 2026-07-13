@@ -122,13 +122,14 @@ metadata, and a stable project ID. Never use the visible label as the only ident
   different column orders. Raw `SampleData.events` remain byte-identical.
 - Storage still does not persist these channel definitions and the GUI still
   calls the legacy adapter; those remain increments 4 and 5.
-- The existing derived evaluator's multi-event scalar limitation and broad NaN
-  fallback are unchanged. They belong to Phase A2, so the increment 3 test only
-  verifies identity propagation with a scalar constant.
+- This increment originally used the then-current scalar derived evaluator only
+  to verify identity propagation. Phase A2 later replaced that limitation with
+  validated vector evaluation; the channel-identity contract remains unchanged.
 
 ## Confirmed contract after increment 4
 
-- Current project version is `1.1.0`. Loading legacy `0.1` and GUI-produced
+- Channel-identity migration was introduced in project version `1.1.0`.
+  Current project version is `1.2.0`. Loading legacy `0.1` and GUI-produced
   `1.0.0` manifests returns a migrated in-memory copy; loading never rewrites
   the source bundle. Unsupported versions raise `ProjectMigrationError`.
 - Current samples persist an ordered `channels` array. Each entry preserves
@@ -147,7 +148,7 @@ metadata, and a stable project ID. Never use the visible label as the only ident
   migration; the catalog import/reconnect layer must populate them explicitly.
 - The current manifest validator rejects missing channel arrays, duplicate
   stable IDs, malformed metadata, and invalid FCS parameter indexes.
-- The example bundle and JSON schema now describe version `1.1.0`. A synthetic
+- The channel-identity example and schema baseline was version `1.1.0`. A synthetic
   `0.1` fixture proves migration, round-trip preservation, and headless gate
   execution.
 - Catalog GUI binding and reconnect UX are completed in increment 5.

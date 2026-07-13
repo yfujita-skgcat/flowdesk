@@ -175,6 +175,9 @@ class TestRoundTrip:
     params = reloaded.get("derived_parameters", [])
     assert len(params) == 1
     assert params[0]["expression"] == "FL1-A / FL2-A"
+    assert params[0]["output_channel_id"] == "fl1_over_fl2"
+    assert params[0]["unit"] is None
+    assert params[0]["invalid_value_policy"] == "emit_nan_with_warning"
 
   def test_unknown_fields_preserved(self, tmp_path: Path) -> None:
     manifest = dict(MINIMAL_MANIFEST)
@@ -288,6 +291,76 @@ class TestChannelIdentityMigration:
 
     assert migrated["project_version"] == CURRENT_PROJECT_VERSION
     assert migrated["samples"][0]["channels"] == []
+
+  def test_v1_1_derived_parameters_migrate_with_explicit_source_semantics(
+    self,
+    tmp_path: Path,
+  ) -> None:
+    legacy = {
+      **MINIMAL_MANIFEST,
+      "project_version": "1.1.0",
+      "samples": [{"id": "s1", "channels": []}],
+      "derived_parameters": [{
+        "id": "legacy_ratio",
+        "name": "Legacy ratio",
+        "expression": "signal / reference",
+        "source_stage": "transformed",
+        "vendor_extension": {"keep": True},
+      }],
+    }
+
+    migrated = migrate_manifest(legacy)
+
+    definition = migrated["derived_parameters"][0]
+    assert migrated["project_version"] == CURRENT_PROJECT_VERSION
+    assert definition["output_channel_id"] == "legacy_ratio"
+    assert definition["unit"] is None
+    assert definition["input_parameters"] == []
+    assert definition["invalid_value_policy"] == "emit_nan_with_warning"
+    assert definition["source_stage"] == "transformed"
+    assert definition["legacy_source_stage_policy"] == "reject"
+    assert definition["vendor_extension"] == {"keep": True}
+    assert migrated["migration_diagnostics"] == [{
+      "code": "legacy_transformed_derived_source",
+      "severity": "error",
+      "stage": "migration",
+      "message": (
+        "Derived parameter 'legacy_ratio' uses legacy transformed source and "
+        "cannot run in the canonical pipeline"
+      ),
+      "parameter_id": "legacy_ratio",
+      "details": {"compatibility_policy": "reject"},
+    }]
+    assert migrate_manifest(migrated) == migrated
+
+    bundle = tmp_path / "migrated-derived.flowdesk"
+    save_project(bundle, migrated)
+    reloaded = load_project(bundle)
+    assert reloaded["derived_parameters"] == migrated["derived_parameters"]
+    assert reloaded["migration_diagnostics"] == migrated["migration_diagnostics"]
+
+  def test_current_transformed_source_requires_explicit_legacy_policy(self) -> None:
+    current = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+      "samples": [],
+      "derived_parameters": [{
+        "id": "legacy",
+        "name": "Legacy",
+        "expression": "signal",
+        "output_channel_id": "legacy_output",
+        "unit": None,
+        "source_stage": "transformed",
+        "input_parameters": ["signal"],
+        "invalid_value_policy": "fail_run",
+      }],
+    }
+
+    with pytest.raises(ManifestValidationError, match="legacy_source_stage_policy"):
+      validate_manifest(current)
+
+    current["derived_parameters"][0]["legacy_source_stage_policy"] = "reject"
+    validate_manifest(current)
 
   def test_current_migration_is_idempotent(self) -> None:
     current = {
