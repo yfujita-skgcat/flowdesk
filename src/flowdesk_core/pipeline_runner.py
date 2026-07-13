@@ -18,7 +18,14 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from flowdesk_core.compensation import apply_compensation, validate_compensation_matrix
+from flowdesk_core.compensation import (
+  CompensationBindingResolution,
+  CompensationError,
+  CompensationValidationResult,
+  apply_compensation,
+  inspect_compensation_matrix,
+  resolve_compensation_binding,
+)
 from flowdesk_core.derived_parameters import (
   DerivedParameterPlan,
   DerivedParameterPlanningError,
@@ -38,6 +45,7 @@ from flowdesk_core.gating_strategy import (
 )
 from flowdesk_core.models import (
   ChannelSpec,
+  CompensationBindingSpec,
   CompensationMatrixSpec,
   DerivedFailurePolicy,
   DerivedParameterSpec,
@@ -87,6 +95,14 @@ class _AnalysisData:
   def channel_ids(self) -> list[str]:
     """Stable IDs aligned with event columns."""
     return [channel.id for channel in self.channels]
+
+
+@dataclass(frozen=True)
+class _CompensationStepResult:
+  """Canonical compensated view plus report-ready diagnostics."""
+
+  data: _AnalysisData
+  diagnostics: tuple[ExecutionDiagnostic, ...] = ()
 
 
 def run_project_pipeline(
@@ -195,6 +211,7 @@ class PipelineRunner:
     output_channel_id: str,
     *,
     max_events: int = 200,
+    execution_profile_id: str = "default",
   ) -> DerivedParameterPreview:
     """Preview one derived output through the canonical headless stages."""
     if max_events <= 0:
@@ -236,10 +253,22 @@ class PipelineRunner:
       np.array(sample.events[:preview_event_count], dtype=np.float64, copy=True),
       sample.channels,
     )
-    compensated = self._step_compensation(bounded)
+    sample_meta = next(
+      (
+        value for value in self._project.get("samples", [])
+        if value.get("id") == sample.sample_id
+      ),
+      {"id": sample.sample_id},
+    )
+    compensation = self._step_compensation(
+      bounded,
+      sample_id=sample.sample_id,
+      execution_profile_id=execution_profile_id,
+      group_ids=self._sample_group_ids(sample_meta),
+    )
     try:
       stage_result, diagnostics = self._step_derived_parameters(
-        compensated,
+        compensation.data,
         bounded,
         sample.sample_id,
         preview_plan,
@@ -254,7 +283,7 @@ class PipelineRunner:
       channel=stage_result.channels[output_index],
       source_event_count=sample.event_count,
       preview_event_count=preview_event_count,
-      diagnostics=diagnostics,
+      diagnostics=compensation.diagnostics + diagnostics,
     )
 
   # ------------------------------------------------------------------
@@ -320,7 +349,7 @@ class PipelineRunner:
     failed_sample_count = 0
 
     for sample_meta in selected_samples:
-      sid = sample_meta.get("id", "unknown")
+      sid = str(sample_meta.get("id", "unknown"))
       sample = sample_data.get(sid)
       if sample is None:
         messages.append(f"warning: no event data for sample {sid!r}, skipping")
@@ -332,7 +361,14 @@ class PipelineRunner:
       input_files.append(input_info)
 
       # --- Step 1: Compensation ---
-      compensated = self._step_compensation(analysis_data)
+      compensation = self._step_compensation(
+        analysis_data,
+        sample_id=sid,
+        execution_profile_id=context.execution_profile_id,
+        group_ids=self._sample_group_ids(sample_meta),
+      )
+      compensated = compensation.data
+      diagnostics.extend(compensation.diagnostics)
       messages.append(f"sample={sid} compensation=done")
 
       # --- Step 2: Derived parameters ---
@@ -407,34 +443,160 @@ class PipelineRunner:
   def _step_compensation(
     self,
     data: _AnalysisData,
-  ) -> _AnalysisData:
-    """Apply compensation if configured."""
-    comp_id = self._project.get("default_compensation_matrix_id")
-    if comp_id is None:
-      return data
+    *,
+    sample_id: str,
+    execution_profile_id: str,
+    group_ids: Sequence[str] = (),
+  ) -> _CompensationStepResult:
+    """Resolve and apply one matrix before derived parameter evaluation."""
+    matrices = self._compensation_matrix_mappings()
+    bindings = self._compensation_bindings()
+    try:
+      resolution = resolve_compensation_binding(
+        bindings,
+        sample_id=sample_id,
+        execution_profile_id=execution_profile_id,
+        group_ids=group_ids,
+        default_matrix_id=self._project.get("default_compensation_matrix_id"),
+        known_matrix_ids=set(matrices),
+      )
+    except CompensationError as exc:
+      raise PipelineError(f"{exc.code}: {exc}") from exc
+    if resolution.matrix_id is None:
+      return _CompensationStepResult(data)
 
-    matrices = self._project.get("compensation_matrices", [])
-    matrix_spec = self._find_by_id(matrices, comp_id)
-    if matrix_spec is None:
-      return data
+    mapping = matrices[resolution.matrix_id]
+    try:
+      spec = CompensationMatrixSpec(
+        id=resolution.matrix_id,
+        name=str(mapping.get("name", resolution.matrix_id)),
+        source=mapping.get("source", "user_defined"),
+        channels=tuple(mapping.get("channels", ())),
+        matrix=tuple(tuple(row) for row in mapping.get("matrix", ())),
+        created_by=mapping.get("created_by"),
+        created_at=mapping.get("created_at"),
+        notes=str(mapping.get("notes", "")),
+      )
+    except (TypeError, ValueError) as exc:
+      raise PipelineError(
+        f"invalid_compensation_matrix: {resolution.matrix_id!r}: {exc}"
+      ) from exc
+    validation = inspect_compensation_matrix(spec, data.channel_ids)
+    error = next(
+      (
+        diagnostic for diagnostic in validation.diagnostics
+        if diagnostic.severity == "error"
+      ),
+      None,
+    )
+    if error is not None:
+      raise PipelineError(f"{error.code}: {error.message}")
 
-    channels = tuple(matrix_spec.get("channels", []))
-    matrix_data = tuple(
-      tuple(row) for row in matrix_spec.get("matrix", [])
+    details = self._compensation_diagnostic_details(
+      spec, validation, resolution
+    )
+    diagnostics = [ExecutionDiagnostic(
+      code="compensation_matrix_applied",
+      message=f"applied compensation matrix {spec.id!r}",
+      severity="info",
+      stage="compensation",
+      sample_id=sample_id,
+      affected_event_count=int(data.events.shape[0]),
+      details=details,
+    )]
+    diagnostics.extend(
+      ExecutionDiagnostic(
+        code=diagnostic.code,
+        message=diagnostic.message,
+        severity=diagnostic.severity,
+        stage="compensation",
+        sample_id=sample_id,
+        affected_event_count=int(data.events.shape[0]),
+        details={**details, **diagnostic.details},
+      )
+      for diagnostic in validation.diagnostics
+      if diagnostic.severity == "warning"
+    )
+    return _CompensationStepResult(
+      _AnalysisData(
+        apply_compensation(spec, data.events, data.channel_ids),
+        data.channels,
+      ),
+      tuple(diagnostics),
     )
 
-    comp_spec = CompensationMatrixSpec(
-      id=comp_id,
-      name=matrix_spec.get("name", comp_id),
-      source=matrix_spec.get("source", "user_defined"),
-      channels=channels,
-      matrix=matrix_data,
-    )
-    validate_compensation_matrix(comp_spec)
-    return _AnalysisData(
-      apply_compensation(comp_spec, data.events, data.channel_ids),
-      data.channels,
-    )
+  def _compensation_matrix_mappings(self) -> dict[str, Mapping[str, Any]]:
+    matrices: dict[str, Mapping[str, Any]] = {}
+    for value in self._project.get("compensation_matrices", []):
+      if not isinstance(value, Mapping):
+        raise PipelineError("invalid_compensation_matrix: definition must be an object")
+      matrix_id = value.get("id")
+      if not isinstance(matrix_id, str) or not matrix_id:
+        raise PipelineError("invalid_compensation_matrix: matrix ID must be non-empty")
+      if matrix_id in matrices:
+        raise PipelineError(f"duplicate_compensation_matrix_id: {matrix_id!r}")
+      matrices[matrix_id] = value
+    return matrices
+
+  def _compensation_bindings(self) -> tuple[CompensationBindingSpec, ...]:
+    result: list[CompensationBindingSpec] = []
+    for value in self._project.get("compensation_bindings", []):
+      if not isinstance(value, Mapping):
+        raise PipelineError("invalid_compensation_binding: binding must be an object")
+      try:
+        result.append(CompensationBindingSpec(
+          id=value["id"],
+          matrix_id=value["matrix_id"],
+          scope=value["scope"],
+          target_id=value["target_id"],
+          created_at=value.get("created_at"),
+          created_by=value.get("created_by"),
+          notes=str(value.get("notes", "")),
+        ))
+      except (KeyError, TypeError, ValueError) as exc:
+        raise PipelineError(f"invalid_compensation_binding: {exc}") from exc
+    return tuple(result)
+
+  @staticmethod
+  def _sample_group_ids(sample_meta: Mapping[str, Any]) -> tuple[str, ...]:
+    group_ids: list[str] = []
+    group_id = sample_meta.get("group_id")
+    if isinstance(group_id, str) and group_id:
+      group_ids.append(group_id)
+    multiple = sample_meta.get("group_ids", ())
+    if not isinstance(multiple, (list, tuple)):
+      raise PipelineError("invalid sample group_ids: expected an array")
+    for value in multiple:
+      if not isinstance(value, str) or not value:
+        raise PipelineError("invalid sample group_ids: IDs must be non-empty strings")
+      if value not in group_ids:
+        group_ids.append(value)
+    return tuple(group_ids)
+
+  @staticmethod
+  def _compensation_diagnostic_details(
+    spec: CompensationMatrixSpec,
+    validation: CompensationValidationResult,
+    resolution: CompensationBindingResolution,
+  ) -> dict[str, Any]:
+    return {
+      "matrix_id": spec.id,
+      "matrix_source": spec.source,
+      "channel_order": list(validation.channel_order),
+      "channel_indices": (
+        None if validation.channel_indices is None
+        else list(validation.channel_indices)
+      ),
+      "condition_number": validation.condition_number,
+      "binding_id": resolution.binding_id,
+      "binding_ids": list(resolution.binding_ids),
+      "binding_scope": resolution.priority,
+      "binding_target_id": (
+        resolution.target_ids[0] if len(resolution.target_ids) == 1 else None
+      ),
+      "binding_target_ids": list(resolution.target_ids),
+      "resolution_priority": resolution.priority,
+    }
 
   def _step_derived_parameters(
     self,

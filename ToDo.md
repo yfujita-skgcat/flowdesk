@@ -189,11 +189,11 @@ git status --short
 #### Core/storage
 
 - [ ] global `default_compensation_matrix_id`だけでなく、sample/Group/execution profile単位のbindingを追加する。
-- [ ] binding priorityとconflict ruleを定義する。
+- [x] 済み: binding priorityとconflict ruleを定義し、headless resolverで曖昧なgroup/duplicate target/unknown matrixを拒否する。
 - [ ] matrix ID、source、control IDs、algorithm/version、manual edits、created metadataを保存する。
 - [x] 済み: finite、square、channel set、duplicate channel、condition numberを構造化diagnostic付きで検証する。
-- [ ] compensated outputとdiagnosticsを返し、raw inputを不変にする。
-- [ ] ExecutionReportへmatrix ID、channel order、condition warningを記録する。
+- [x] 済み: sampleごとにcompensated outputと構造化diagnosticsを生成し、raw inputを不変にする。
+- [x] 済み: ExecutionReportへmatrix ID、source、channel order/index、binding根拠、condition warningを記録する。
 
 #### GUI
 
@@ -204,8 +204,8 @@ git status --short
 
 #### 必須test
 
-- [ ] sample別に異なるmatrixを適用する。
-- [ ] channel permutationで同じ結果を得る。
+- [x] 済み: sample別に異なるmatrixを適用する。
+- [x] 済み: channel permutationで同じ結果を得る。
 - [ ] singular、ill-conditioned、NaN、missing detectorをtestする。
 - [ ] manual editで元matrixが変わらない。
 - [ ] GUI previewとheadless compensated valuesが一致する。

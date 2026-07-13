@@ -14,7 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import CompensationMatrixSpec
+from flowdesk_core.models import CompensationBindingSpec, CompensationMatrixSpec
 
 
 class CompensationError(FlowdeskError):
@@ -60,6 +60,23 @@ class CompensationValidationResult:
     )
 
 
+@dataclass(frozen=True)
+class CompensationBindingResolution:
+  """One reproducible matrix selection for a sample/profile combination."""
+
+  matrix_id: str | None
+  priority: Literal[
+    "sample", "execution_profile", "group", "project_default", "none"
+  ]
+  binding_ids: tuple[str, ...] = ()
+  target_ids: tuple[str, ...] = ()
+
+  @property
+  def binding_id(self) -> str | None:
+    """Return the single binding ID, or none for multi-group/default choices."""
+    return self.binding_ids[0] if len(self.binding_ids) == 1 else None
+
+
 COMPENSATION_CONDITION_WARNING_THRESHOLD = 1e8
 COMPENSATION_NUMERICAL_SINGULARITY_THRESHOLD = 1.0 / np.finfo(np.float64).eps
 
@@ -67,6 +84,105 @@ COMPENSATION_NUMERICAL_SINGULARITY_THRESHOLD = 1.0 / np.finfo(np.float64).eps
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
+
+def resolve_compensation_binding(
+  bindings: Sequence[CompensationBindingSpec],
+  *,
+  sample_id: str,
+  execution_profile_id: str,
+  group_ids: Sequence[str],
+  default_matrix_id: str | None,
+  known_matrix_ids: set[str],
+) -> CompensationBindingResolution:
+  """Resolve one matrix without silently choosing among conflicting bindings."""
+  seen_targets: dict[tuple[str, str], str] = {}
+  for binding in bindings:
+    key = (binding.scope, binding.target_id)
+    previous = seen_targets.get(key)
+    if previous is not None:
+      raise CompensationError(
+        "duplicate compensation bindings target the same scope and ID",
+        code="compensation_binding_conflict",
+        details={
+          "scope": binding.scope,
+          "target_id": binding.target_id,
+          "binding_ids": [previous, binding.id],
+        },
+      )
+    seen_targets[key] = binding.id
+
+  def require_known(
+    matrix_id: str, selected: Sequence[CompensationBindingSpec]
+  ) -> None:
+    if matrix_id in known_matrix_ids:
+      return
+    raise CompensationError(
+      f"compensation binding references unknown matrix: {matrix_id!r}",
+      code="unknown_compensation_matrix",
+      details={
+        "matrix_id": matrix_id,
+        "binding_ids": [binding.id for binding in selected],
+      },
+    )
+
+  sample_bindings = tuple(
+    binding for binding in bindings
+    if binding.scope == "sample" and binding.target_id == sample_id
+  )
+  if sample_bindings:
+    selected = sample_bindings[0]
+    require_known(selected.matrix_id, sample_bindings)
+    return CompensationBindingResolution(
+      selected.matrix_id, "sample", (selected.id,), (sample_id,)
+    )
+
+  profile_bindings = tuple(
+    binding for binding in bindings
+    if binding.scope == "execution_profile"
+    and binding.target_id == execution_profile_id
+  )
+  if profile_bindings:
+    selected = profile_bindings[0]
+    require_known(selected.matrix_id, profile_bindings)
+    return CompensationBindingResolution(
+      selected.matrix_id,
+      "execution_profile",
+      (selected.id,),
+      (execution_profile_id,),
+    )
+
+  group_id_set = set(group_ids)
+  group_bindings = tuple(
+    binding for binding in bindings
+    if binding.scope == "group" and binding.target_id in group_id_set
+  )
+  if group_bindings:
+    matrix_ids = {binding.matrix_id for binding in group_bindings}
+    if len(matrix_ids) != 1:
+      raise CompensationError(
+        "applicable group bindings reference different compensation matrices",
+        code="compensation_binding_conflict",
+        details={
+          "sample_id": sample_id,
+          "group_ids": [binding.target_id for binding in group_bindings],
+          "binding_ids": [binding.id for binding in group_bindings],
+          "matrix_ids": sorted(matrix_ids),
+        },
+      )
+    matrix_id = next(iter(matrix_ids))
+    require_known(matrix_id, group_bindings)
+    return CompensationBindingResolution(
+      matrix_id,
+      "group",
+      tuple(binding.id for binding in group_bindings),
+      tuple(binding.target_id for binding in group_bindings),
+    )
+
+  if default_matrix_id is not None:
+    require_known(default_matrix_id, ())
+    return CompensationBindingResolution(default_matrix_id, "project_default")
+  return CompensationBindingResolution(None, "none")
 
 
 def inspect_compensation_matrix(

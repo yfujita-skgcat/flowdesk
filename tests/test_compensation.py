@@ -9,6 +9,7 @@ from flowdesk_core.compensation import (
   CompensationError,
   apply_compensation,
   inspect_compensation_matrix,
+  resolve_compensation_binding,
   validate_compensation_matrix,
 )
 from flowdesk_core.errors import FlowdeskError
@@ -137,6 +138,125 @@ def test_existing_matrix_constructor_keeps_empty_provenance_compatibility() -> N
   spec = _make_spec(("FL1-A",), ((1.0,),))
 
   assert spec.provenance == CompensationProvenanceSpec()
+
+
+def _binding(
+  binding_id: str, matrix_id: str, scope: str, target_id: str
+) -> CompensationBindingSpec:
+  return CompensationBindingSpec(
+    id=binding_id,
+    matrix_id=matrix_id,
+    scope=scope,
+    target_id=target_id,
+  )
+
+
+def test_binding_resolution_priority_is_sample_profile_group_default() -> None:
+  bindings = (
+    _binding("sample", "m_sample", "sample", "s1"),
+    _binding("profile", "m_profile", "execution_profile", "profile"),
+    _binding("group", "m_group", "group", "g1"),
+  )
+  known = {"m_sample", "m_profile", "m_group", "m_default"}
+
+  sample = resolve_compensation_binding(
+    bindings,
+    sample_id="s1",
+    execution_profile_id="profile",
+    group_ids=("g1",),
+    default_matrix_id="m_default",
+    known_matrix_ids=known,
+  )
+  profile = resolve_compensation_binding(
+    bindings[1:],
+    sample_id="s1",
+    execution_profile_id="profile",
+    group_ids=("g1",),
+    default_matrix_id="m_default",
+    known_matrix_ids=known,
+  )
+  group = resolve_compensation_binding(
+    bindings[2:],
+    sample_id="s1",
+    execution_profile_id="other",
+    group_ids=("g1",),
+    default_matrix_id="m_default",
+    known_matrix_ids=known,
+  )
+  default = resolve_compensation_binding(
+    (),
+    sample_id="s1",
+    execution_profile_id="other",
+    group_ids=(),
+    default_matrix_id="m_default",
+    known_matrix_ids=known,
+  )
+
+  assert (sample.matrix_id, sample.priority) == ("m_sample", "sample")
+  assert (profile.matrix_id, profile.priority) == ("m_profile", "execution_profile")
+  assert (group.matrix_id, group.priority) == ("m_group", "group")
+  assert (default.matrix_id, default.priority) == ("m_default", "project_default")
+
+
+def test_same_matrix_group_bindings_are_unambiguous() -> None:
+  resolution = resolve_compensation_binding(
+    (
+      _binding("g1-binding", "matrix", "group", "g1"),
+      _binding("g2-binding", "matrix", "group", "g2"),
+    ),
+    sample_id="s1",
+    execution_profile_id="default",
+    group_ids=("g1", "g2"),
+    default_matrix_id=None,
+    known_matrix_ids={"matrix"},
+  )
+
+  assert resolution.matrix_id == "matrix"
+  assert resolution.binding_ids == ("g1-binding", "g2-binding")
+  assert resolution.target_ids == ("g1", "g2")
+
+
+def test_binding_conflicts_and_unknown_matrix_never_fall_through() -> None:
+  with pytest.raises(CompensationError) as conflict:
+    resolve_compensation_binding(
+      (
+        _binding("g1", "m1", "group", "g1"),
+        _binding("g2", "m2", "group", "g2"),
+      ),
+      sample_id="s1",
+      execution_profile_id="default",
+      group_ids=("g1", "g2"),
+      default_matrix_id="fallback",
+      known_matrix_ids={"m1", "m2", "fallback"},
+    )
+  assert conflict.value.code == "compensation_binding_conflict"
+
+  with pytest.raises(CompensationError) as unknown:
+    resolve_compensation_binding(
+      (_binding("sample", "missing", "sample", "s1"),),
+      sample_id="s1",
+      execution_profile_id="default",
+      group_ids=(),
+      default_matrix_id="fallback",
+      known_matrix_ids={"fallback"},
+    )
+  assert unknown.value.code == "unknown_compensation_matrix"
+
+
+def test_duplicate_binding_scope_target_is_invalid() -> None:
+  with pytest.raises(CompensationError) as error:
+    resolve_compensation_binding(
+      (
+        _binding("first", "m1", "sample", "s1"),
+        _binding("second", "m1", "sample", "s1"),
+      ),
+      sample_id="s1",
+      execution_profile_id="default",
+      group_ids=(),
+      default_matrix_id=None,
+      known_matrix_ids={"m1"},
+    )
+  assert error.value.code == "compensation_binding_conflict"
 
 
 # ---------------------------------------------------------------------------

@@ -27,6 +27,7 @@ def _make_project(
   execution_profiles: list[dict] | None = None,
   samples: list[dict] | None = None,
   compensation_matrices: list[dict] | None = None,
+  compensation_bindings: list[dict] | None = None,
   derived_parameters: list[dict] | None = None,
   transforms: list[dict] | None = None,
   gating_strategies_data: dict[str, object] | None = None,
@@ -41,6 +42,7 @@ def _make_project(
     ],
     "samples": samples or [],
     "compensation_matrices": compensation_matrices or [],
+    "compensation_bindings": compensation_bindings or [],
     "derived_parameters": derived_parameters or [],
     "transforms": transforms or [],
     "gating_strategies_data": gating_strategies_data or {},
@@ -205,6 +207,107 @@ def test_pipeline_with_compensation() -> None:
 
   assert report.status == "success"
   assert "compensation=done" in " ".join(report.messages)
+
+
+def test_two_samples_use_different_bound_compensation_matrices() -> None:
+  channels = (
+    ChannelSpec(id="signal", name="Signal", detector="D1"),
+    ChannelSpec(id="reference", name="Reference", detector="D2"),
+  )
+  raw = np.array([[15.0, 10.0]], dtype=np.float64)
+  first = SampleData("s1", raw, channels)
+  second = SampleData("s2", raw, channels)
+  strategy = GatingStrategySpec(
+    id="compensated_gate",
+    name="Compensated gate",
+    gates=(GateSpec(
+      id="signal_15",
+      name="Signal near 15",
+      gate_type="range",
+      x_parameter="signal",
+      thresholds={"min": 14.0, "max": 16.0},
+    ),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}, {"id": "s2"}],
+    execution_profiles=[{
+      "id": "default",
+      "sample_selector": "all",
+      "gating_strategy_id": strategy.id,
+    }],
+    compensation_matrices=[
+      {
+        "id": "identity",
+        "name": "Identity",
+        "source": "user_defined",
+        "channels": ("signal", "reference"),
+        "matrix": ((1.0, 0.0), (0.0, 1.0)),
+      },
+      {
+        "id": "spill",
+        "name": "Spill",
+        "source": "user_defined",
+        "channels": ("signal", "reference"),
+        "matrix": ((1.0, 0.5), (0.0, 1.0)),
+      },
+    ],
+    compensation_bindings=[
+      {"id": "s1-comp", "matrix_id": "identity", "scope": "sample", "target_id": "s1"},
+      {"id": "s2-comp", "matrix_id": "spill", "scope": "sample", "target_id": "s2"},
+    ],
+    gating_strategies_data={strategy.id: strategy},
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (first, second))
+
+  counts = {
+    result.sample_id: result.event_count
+    for result in report.population_results
+    if result.population_id == "signal_15"
+  }
+  assert counts == {"s1": 1, "s2": 0}
+  applied = [
+    diagnostic for diagnostic in report.diagnostics
+    if diagnostic.code == "compensation_matrix_applied"
+  ]
+  assert [(value.sample_id, value.details["matrix_id"]) for value in applied] == [
+    ("s1", "identity"), ("s2", "spill")
+  ]
+  assert applied[0].details["binding_id"] == "s1-comp"
+  assert applied[0].details["channel_order"] == ["signal", "reference"]
+  np.testing.assert_array_equal(first.events, raw)
+  np.testing.assert_array_equal(second.events, raw)
+
+
+def test_condition_warning_is_recorded_with_applied_matrix() -> None:
+  sample = SampleData(
+    "s1",
+    np.array([[1.0, 1e-10]], dtype=np.float64),
+    (
+      ChannelSpec(id="a", name="A", detector="D1"),
+      ChannelSpec(id="b", name="B", detector="D2"),
+    ),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    compensation_matrices=[{
+      "id": "ill",
+      "name": "Ill conditioned",
+      "source": "imported",
+      "channels": ("a", "b"),
+      "matrix": ((1.0, 0.0), (0.0, 1e-10)),
+    }],
+    default_compensation_matrix_id="ill",
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+  diagnostics = {diagnostic.code: diagnostic for diagnostic in report.diagnostics}
+  assert diagnostics["compensation_matrix_applied"].details["matrix_id"] == "ill"
+  warning = diagnostics["compensation_condition_warning"]
+  assert warning.sample_id == "s1"
+  assert warning.details["condition_number"] == pytest.approx(1e10)
+  assert warning.details["binding_scope"] == "project_default"
 
 
 # ---------------------------------------------------------------------------

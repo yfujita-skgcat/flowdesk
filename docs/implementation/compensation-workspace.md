@@ -115,11 +115,37 @@ emission are increments 2 and 3.
   Conversion of these diagnostics into `ExecutionReport` entries remains
   increment 3 work.
 
+## Confirmed contract after A4 increment 3
+
+- `resolve_compensation_binding()` implements sample, execution-profile,
+  group, project-default, then no-compensation priority. Duplicate
+  `(scope, target_id)` definitions, different-matrix group conflicts, and an
+  applicable unknown matrix ID raise stable compensation errors; they never
+  fall through to uncompensated data.
+- Multiple applicable groups may resolve only when every binding names the same
+  matrix. The resolution retains all binding and group IDs for audit. A
+  higher-priority sample or execution-profile binding resolves before group
+  conflicts are evaluated.
+- `PipelineRunner` resolves compensation independently for each sample before
+  derived parameters. It accepts current singular `group_id` metadata and a
+  future-compatible explicit `group_ids` array without inferring group
+  membership from names or paths.
+- Every applied matrix emits `compensation_matrix_applied` with matrix ID,
+  source, persisted channel order, aligned column indices, condition number,
+  binding IDs/targets, and resolution priority. Inspection warnings are copied
+  into `ExecutionReport` with the same context and full event count.
+- Invalid binding or matrix definitions stop the run with their diagnostic code.
+  A selected matrix is never silently skipped. Existing global-default projects
+  retain their numerical execution behavior while gaining report metadata.
+- Two-sample synthetic runner tests prove different sample bindings produce
+  different downstream gate membership while both raw arrays remain unchanged.
+  Project schema declaration and forward migration remain increment 4 work.
+
 ## Increments A4
 
 1. **Done:** Add typed provenance, manual edit record, and binding specs.
 2. **Done:** Validate finite square matrices, unique channels, alignment, and condition number.
-3. Resolve bindings per sample in the runner and record the choice in reports.
+3. **Done:** Resolve bindings per sample in the runner and record the choice in reports.
 4. Migrate the old global default without changing results.
 5. Add matrix list/editor, heat map, duplicate-before-edit, apply action, and badges.
 6. Add compensated/uncompensated preview using core outputs, not Qt calculations.
