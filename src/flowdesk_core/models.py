@@ -13,6 +13,7 @@ SourceStage = Literal["raw", "compensated", "transformed"]
 GateType = Literal["rectangle", "polygon", "range", "boolean"]
 GateAxisScale = Literal["linear", "log10", "asinh"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported"]
+CompensationBindingScope = Literal["sample", "group", "execution_profile"]
 
 
 class DerivedFailurePolicy(StrEnum):
@@ -49,8 +50,74 @@ class SampleSpec:
 
 
 @dataclass(frozen=True)
+class CompensationManualEditSpec:
+  """One auditable cell change made only on a duplicated matrix."""
+
+  row_channel_id: str
+  column_channel_id: str
+  old_value: float
+  new_value: float
+  edited_at: str | None = None
+  edited_by: str | None = None
+  reason: str = ""
+
+  def __post_init__(self) -> None:
+    if not self.row_channel_id or not self.column_channel_id:
+      raise ValueError("manual edit channel IDs must be non-empty")
+
+
+@dataclass(frozen=True)
+class CompensationProvenanceSpec:
+  """Origin and reproducibility metadata kept separate from matrix binding."""
+
+  source_sample_id: str | None = None
+  source_metadata_key: str | None = None
+  control_sample_ids: tuple[str, ...] = field(default_factory=tuple)
+  control_population_ids: tuple[str, ...] = field(default_factory=tuple)
+  algorithm: str | None = None
+  algorithm_version: str | None = None
+  software_version: str | None = None
+  derived_from_matrix_id: str | None = None
+  manual_edits: tuple[CompensationManualEditSpec, ...] = field(default_factory=tuple)
+
+  def __post_init__(self) -> None:
+    for label, values in (
+      ("control sample", self.control_sample_ids),
+      ("control population", self.control_population_ids),
+    ):
+      if any(not value for value in values):
+        raise ValueError(f"{label} IDs must be non-empty")
+      if len(set(values)) != len(values):
+        raise ValueError(f"{label} IDs must be unique")
+    if self.manual_edits and not self.derived_from_matrix_id:
+      raise ValueError(
+        "manual edit history requires derived_from_matrix_id; "
+        "duplicate the source matrix before editing"
+      )
+
+
+@dataclass(frozen=True)
+class CompensationBindingSpec:
+  """Apply one immutable matrix to one explicitly identified project scope."""
+
+  id: str
+  matrix_id: str
+  scope: CompensationBindingScope
+  target_id: str
+  created_at: str | None = None
+  created_by: str | None = None
+  notes: str = ""
+
+  def __post_init__(self) -> None:
+    if self.scope not in {"sample", "group", "execution_profile"}:
+      raise ValueError(f"invalid compensation binding scope: {self.scope!r}")
+    if not self.id or not self.matrix_id or not self.target_id:
+      raise ValueError("binding ID, matrix ID, and target ID must be non-empty")
+
+
+@dataclass(frozen=True)
 class CompensationMatrixSpec:
-  """A spillover or compensation matrix definition aligned to named channels."""
+  """An immutable spillover matrix aligned to stable channel IDs."""
 
   id: str
   name: str
@@ -60,6 +127,9 @@ class CompensationMatrixSpec:
   created_by: str | None = None
   created_at: str | None = None
   notes: str = ""
+  provenance: CompensationProvenanceSpec = field(
+    default_factory=CompensationProvenanceSpec
+  )
 
   def __post_init__(self) -> None:
     size = len(self.channels)

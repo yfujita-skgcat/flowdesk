@@ -183,8 +183,8 @@ git status --short
 
 #### 事前文書
 
-- [ ] `docs/implementation/compensation-workspace.md`を全文読み、binding、provenance、diagnosticの確定事項を追記する。
-- [ ] matrix source、channel alignment、sample/Group binding、provenance、diagnostic schemaを定義する。
+- [x] 済み: `docs/implementation/compensation-workspace.md`を全文読み、binding、provenance、diagnosticの確定事項を追記する。
+- [x] 済み: matrix source、channel alignment、sample/Group binding、provenance、diagnostic schemaを定義する。
 
 #### Core/storage
 

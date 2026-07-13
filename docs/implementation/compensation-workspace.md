@@ -32,9 +32,70 @@ bindings are an error unless profile configuration resolves them.
 Never edit a matrix already referenced by an execution report. Duplicate it and
 record `derived_from_matrix_id` plus manual edit history.
 
+### Confirmed binding resolution contract
+
+Bindings are immutable records with a stable binding ID, matrix ID, one scope
+(`sample`, `group`, or `execution_profile`), and one target ID. Matrix
+provenance is stored on the immutable matrix and never inferred from binding
+location.
+
+For a `(sample, execution profile)` run, resolve in this order:
+
+1. the unique binding targeting the sample;
+2. the unique binding targeting the selected execution profile;
+3. all bindings targeting groups containing the sample;
+4. `default_compensation_matrix_id`;
+5. no compensation.
+
+Duplicate bindings for the same `(scope, target_id)` are invalid even if they
+name the same matrix. If multiple applicable group bindings name different
+matrices, resolution fails with a conflict. Multiple groups naming the same
+matrix are scientifically unambiguous and may resolve to that matrix. A higher
+priority sample or execution-profile binding resolves the run before group
+conflicts are considered. An explicit binding with an unknown matrix ID is an
+error and never falls through to a lower-priority choice.
+
+### Confirmed provenance contract
+
+`CompensationProvenanceSpec` records the source sample and FCS metadata keyword,
+explicit control sample/population IDs, algorithm and algorithm version,
+Flowdesk/software version, duplicate lineage, and an ordered manual edit
+history. Existing `created_by`, `created_at`, source enum, and notes remain on
+`CompensationMatrixSpec` for compatibility.
+
+Each `CompensationManualEditSpec` identifies the row and column by stable
+channel ID and records old/new values, editor, timestamp, and reason. A matrix
+with manual edits must name `derived_from_matrix_id`; editing an original matrix
+in place is structurally invalid. Numeric finiteness and matrix/channel
+validation remain increment 2 work.
+
+### Confirmed diagnostic contract
+
+Compensation diagnostics use `ExecutionDiagnostic(stage="compensation")`. An
+applied-matrix diagnostic will include `matrix_id`, `matrix_source`, resolved
+`channel_order`, `binding_id`, `binding_scope`, `binding_target_id`, resolution
+priority, and condition number in `details`. Stable planned codes are:
+
+- `compensation_matrix_applied` (`info`);
+- `compensation_condition_warning` (`warning`);
+- `compensation_binding_conflict`, `unknown_compensation_matrix`,
+  `missing_compensation_channel`, and `invalid_compensation_matrix` (`error`).
+
+Errors stop the affected analysis according to the runner contract; they are
+never converted to uncompensated results. Threshold selection and report
+emission are increments 2 and 3.
+
+## Confirmed contract after A4 increment 1
+
+- Core models now represent provenance, duplicate-only manual edit history, and
+  explicit sample/group/execution-profile bindings without importing Qt.
+- The original matrix constructor and global default remain API-compatible.
+- No project schema/version or runner behavior changes in this increment;
+  persistence and legacy migration are intentionally deferred to increment 4.
+
 ## Increments A4
 
-1. Add typed provenance, manual edit record, and binding specs.
+1. **Done:** Add typed provenance, manual edit record, and binding specs.
 2. Validate finite square matrices, unique channels, alignment, and condition number.
 3. Resolve bindings per sample in the runner and record the choice in reports.
 4. Migrate the old global default without changing results.
@@ -73,4 +134,3 @@ pytest -q tests/test_compensation.py tests/test_pipeline_runner.py tests/test_pr
 ./tools/run-gui-tests.sh -q
 ruff check src tests
 ```
-

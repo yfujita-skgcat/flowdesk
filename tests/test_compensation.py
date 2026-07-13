@@ -11,7 +11,12 @@ from flowdesk_core.compensation import (
   validate_compensation_matrix,
 )
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import CompensationMatrixSpec
+from flowdesk_core.models import (
+  CompensationBindingSpec,
+  CompensationManualEditSpec,
+  CompensationMatrixSpec,
+  CompensationProvenanceSpec,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -50,6 +55,87 @@ def test_compensation_matrix_model_can_be_created() -> None:
 
 def test_compensation_error_is_flowdesk_error() -> None:
   assert issubclass(CompensationError, FlowdeskError)
+
+
+def test_compensation_provenance_and_manual_edits_are_immutable_typed_records() -> None:
+  edit = CompensationManualEditSpec(
+    row_channel_id="FL1-A",
+    column_channel_id="FL2-A",
+    old_value=0.1,
+    new_value=0.12,
+    edited_at="2026-07-13T12:00:00+09:00",
+    edited_by="operator",
+    reason="Reviewed against control",
+  )
+  provenance = CompensationProvenanceSpec(
+    source_sample_id="control-1",
+    source_metadata_key="$SPILLOVER",
+    control_sample_ids=("control-1", "control-2"),
+    control_population_ids=("positive", "negative"),
+    algorithm="manual_matrix_edit",
+    algorithm_version="1",
+    software_version="flowdesk-0.1.0",
+    derived_from_matrix_id="original-matrix",
+    manual_edits=(edit,),
+  )
+  spec = CompensationMatrixSpec(
+    id="edited-matrix",
+    name="Edited matrix",
+    source="user_defined",
+    channels=("FL1-A", "FL2-A"),
+    matrix=((1.0, 0.12), (0.2, 1.0)),
+    provenance=provenance,
+  )
+
+  assert spec.provenance.manual_edits == (edit,)
+  assert spec.provenance.control_sample_ids == ("control-1", "control-2")
+
+
+def test_manual_edit_history_requires_duplicate_lineage() -> None:
+  edit = CompensationManualEditSpec(
+    row_channel_id="FL1-A",
+    column_channel_id="FL2-A",
+    old_value=0.1,
+    new_value=0.2,
+  )
+
+  with pytest.raises(ValueError, match="derived_from_matrix_id"):
+    CompensationProvenanceSpec(manual_edits=(edit,))
+
+
+@pytest.mark.parametrize(
+  ("scope", "target_id"),
+  (("sample", "sample-1"), ("group", "group-1"), ("execution_profile", "default")),
+)
+def test_compensation_binding_has_explicit_scope_and_target(
+  scope: str, target_id: str
+) -> None:
+  binding = CompensationBindingSpec(
+    id=f"binding-{scope}",
+    matrix_id="matrix-1",
+    scope=scope,
+    target_id=target_id,
+  )
+
+  assert binding.scope == scope
+  assert binding.target_id == target_id
+
+
+def test_compensation_binding_rejects_ambiguous_or_empty_identity() -> None:
+  with pytest.raises(ValueError, match="scope"):
+    CompensationBindingSpec(
+      id="binding", matrix_id="matrix", scope="project", target_id="project"
+    )
+  with pytest.raises(ValueError, match="non-empty"):
+    CompensationBindingSpec(
+      id="binding", matrix_id="", scope="sample", target_id="sample-1"
+    )
+
+
+def test_existing_matrix_constructor_keeps_empty_provenance_compatibility() -> None:
+  spec = _make_spec(("FL1-A",), ((1.0,),))
+
+  assert spec.provenance == CompensationProvenanceSpec()
 
 
 # ---------------------------------------------------------------------------
