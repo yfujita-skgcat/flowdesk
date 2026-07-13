@@ -114,6 +114,7 @@ class MainWindow(QMainWindow):
         self._project_path: Path | None = None
         self._derived_parameters: list[dict[str, Any]] = []
         self._compensation_matrices: list[dict[str, Any]] = []
+        self._compensation_bindings: list[dict[str, Any]] = []
         self._transforms: list[dict[str, Any]] = []
         self._default_compensation_matrix_id: str | None = None
         self._migration_diagnostics: list[dict[str, Any]] = []
@@ -272,6 +273,11 @@ class MainWindow(QMainWindow):
             self._on_edit_derived_parameters
         )
         analysis_menu.addAction(self.action_derived_parameters)
+
+        self.action_compensation = QAction("&Compensation...", self)
+        self.action_compensation.setObjectName("actionCompensation")
+        self.action_compensation.triggered.connect(self._on_edit_compensation)
+        analysis_menu.addAction(self.action_compensation)
 
         self.action_transforms = QAction("Analysis &Transforms...", self)
         self.action_transforms.setObjectName("actionTransforms")
@@ -825,6 +831,7 @@ class MainWindow(QMainWindow):
             "derived_parameters": deepcopy(self._derived_parameters),
             "transforms": deepcopy(self._transforms),
             "compensation_matrices": deepcopy(self._compensation_matrices),
+            "compensation_bindings": deepcopy(self._compensation_bindings),
             "default_compensation_matrix_id": self._default_compensation_matrix_id,
             "migration_diagnostics": deepcopy(self._migration_diagnostics),
             "sample_path_resolution_policy": "relative_to_project_or_absolute",
@@ -981,6 +988,9 @@ class MainWindow(QMainWindow):
         self._compensation_matrices = deepcopy(
             manifest.get("compensation_matrices", [])
         )
+        self._compensation_bindings = deepcopy(
+            manifest.get("compensation_bindings", [])
+        )
 
         resolved_samples = resolve_sample_paths(manifest, project_path)
         self._sample_browser.add_project_samples(resolved_samples)
@@ -1097,6 +1107,37 @@ class MainWindow(QMainWindow):
         self._transforms = updated
         self._mark_results_stale("Analysis transforms changed")
         self._replot()
+
+    def _on_edit_compensation(self) -> None:
+        """Edit compensation matrices and bindings."""
+        from flowdesk_qt.compensation_editor import (
+            CompensationMatrixEditorDialog,
+        )
+
+        channels_by_id = {}
+        for sample in self._sample_browser.samples():
+            for channel in sample.info.channels:
+                channels_by_id.setdefault(channel.id, channel)
+        current = self._sample_data.get(self._current_sample_id or "")
+        if current is not None:
+            channels_by_id.update({channel.id: channel for channel in current.channels})
+
+        sample_ids = [s.id for s in self._sample_browser.samples()]
+        group_ids = []
+
+        dialog = CompensationMatrixEditorDialog(
+            self._compensation_matrices,
+            self._compensation_bindings,
+            tuple(channels_by_id.values()),
+            sample_ids,
+            group_ids,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._compensation_matrices = dialog.matrices()
+        self._compensation_bindings = dialog.bindings()
+        self._mark_results_stale("Compensation changed")
 
     def _on_migrate_gate(self, gate) -> None:
         """Preview and explicitly duplicate or replace one geometric gate."""
