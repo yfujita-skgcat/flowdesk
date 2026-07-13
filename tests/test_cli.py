@@ -6,8 +6,14 @@ import csv
 import json
 from pathlib import Path
 
+import numpy as np
+
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
+from flowdesk_core.models import ChannelSpec
+from flowdesk_core.sample import SampleData
+from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
+from flowdesk_storage.project import save_project
 
 # ---------------------------------------------------------------------------
 # Helper: create a minimal .flowdesk project bundle
@@ -131,6 +137,75 @@ def test_run_project_invalid_manifest(tmp_path: Path) -> None:
 
   exit_code = run_project_command(str(proj_dir))
   assert exit_code == 1
+
+
+def test_run_project_prints_persisted_derived_diagnostic_as_json(
+  tmp_path: Path,
+  monkeypatch,
+  capsys,
+) -> None:
+  project_dir = tmp_path / "derived-diagnostic.flowdesk"
+  manifest = {
+    "project_id": "derived_diagnostic",
+    "project_version": CURRENT_PROJECT_VERSION,
+    "pipeline_version": "0.1",
+    "samples": [{
+      "id": "s1",
+      "path": "sample.fcs",
+      "channels": [
+        {"id": "signal", "name": "Signal", "metadata": {}},
+        {"id": "missing", "name": "Missing", "metadata": {}},
+      ],
+    }],
+    "execution_profiles": [{"id": "default", "name": "Default"}],
+    "derived_parameters": [{
+      "id": "missing_definition",
+      "output_channel_id": "derived_missing",
+      "name": "Missing input",
+      "expression": "missing",
+      "source_stage": "raw",
+      "input_parameters": ["missing"],
+      "unit": None,
+      "invalid_value_policy": "emit_nan_with_warning",
+    }],
+  }
+  save_project(project_dir, manifest)
+  sample = SampleData(
+    "s1",
+    np.array([[1.0], [2.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  monkeypatch.setattr(
+    "flowdesk_cli.run_project.read_fcs_sample",
+    lambda *_args: (None, sample),
+  )
+
+  exit_code = run_project_command(str(project_dir))
+
+  captured = capsys.readouterr()
+  assert exit_code == 0
+  diagnostic_line = next(
+    line for line in captured.err.splitlines()
+    if line.startswith("Diagnostic: ")
+  )
+  diagnostic = json.loads(diagnostic_line.removeprefix("Diagnostic: "))
+  assert diagnostic == {
+    "affected_event_count": 2,
+    "code": "derived_parameter_evaluation_failed",
+    "details": {
+      "expression": "missing",
+      "policy": "emit_nan_with_warning",
+    },
+    "exception_type": "ExpressionError",
+    "message": (
+      "derived parameter 'missing_definition' failed for sample 's1': "
+      "unknown parameter: missing"
+    ),
+    "parameter_id": "missing_definition",
+    "sample_id": "s1",
+    "severity": "warning",
+    "stage": "derived_parameters",
+  }
 
 
 # ---------------------------------------------------------------------------

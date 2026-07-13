@@ -179,6 +179,24 @@ class TestRoundTrip:
     assert params[0]["unit"] is None
     assert params[0]["invalid_value_policy"] == "emit_nan_with_warning"
 
+  @pytest.mark.parametrize(
+    "policy",
+    ("fail_run", "fail_sample", "emit_nan_with_warning"),
+  )
+  def test_derived_failure_policy_preserved(
+    self,
+    tmp_path: Path,
+    policy: str,
+  ) -> None:
+    manifest = migrate_manifest(MINIMAL_MANIFEST_WITH_PROFILE)
+    manifest["derived_parameters"][0]["invalid_value_policy"] = policy
+    bundle = tmp_path / f"policy-{policy}.flowdesk"
+
+    save_project(bundle, manifest)
+    reloaded = load_project(bundle)
+
+    assert reloaded["derived_parameters"][0]["invalid_value_policy"] == policy
+
   def test_unknown_fields_preserved(self, tmp_path: Path) -> None:
     manifest = dict(MINIMAL_MANIFEST)
     manifest["experimental_flag"] = True

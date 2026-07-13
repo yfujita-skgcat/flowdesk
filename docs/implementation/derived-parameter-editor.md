@@ -215,6 +215,18 @@ not silently reinterpret it.
 - A derived channel can be transformed, gated, reported, and exported by stable ID.
 - Save/reload/CLI produces the same values and diagnostics.
 
+## Confirmed persistence and CLI diagnostic contract
+
+- Save/load round trips preserve all three derived failure policies exactly;
+  no policy is silently replaced by the default.
+- `ExecutionDiagnostic.to_mapping()` exposes every structured diagnostic field
+  for non-GUI adapters. The CLI writes one complete, key-sorted JSON object per
+  diagnostic to stderr with the `Diagnostic: ` prefix.
+- Diagnostic display does not change pipeline status or CLI exit-code policy.
+  In particular, `emit_nan_with_warning` remains a successful run while its
+  warning, sample ID, parameter ID, exception type, affected event count,
+  expression, and persisted policy remain visible and machine-readable.
+
 ## Do not do
 
 - Do not use `eval`, `exec`, or unrestricted AST execution.

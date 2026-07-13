@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -85,6 +86,17 @@ def run_project_command(
   if report.messages:
     for msg in report.messages:
       print(f"  {msg}")
+
+  for diagnostic in report.diagnostics:
+    print(
+      "Diagnostic: "
+      + json.dumps(
+        diagnostic.to_mapping(),
+        ensure_ascii=False,
+        sort_keys=True,
+      ),
+      file=sys.stderr,
+    )
 
   # ------------------------------------------------------------------
   # Export results

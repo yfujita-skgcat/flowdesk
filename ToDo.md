@@ -142,7 +142,7 @@ git status --short
 - [x] 済み: 三つのfailure policyをそれぞれtestする。
 - [x] 済み: dependency chainとcycleをtestする。
 - [x] 済み: division by zero、domain error、unknown parameter、all-NaN inputをtestする。
-- [ ] save/load/CLI runでpolicyとdiagnosticが維持される。
+- [x] 済み: save/load/CLI runでpolicyとdiagnosticが維持される。
 - [x] 済み: raw値参照とcompensated値参照が、derived stage後・transform前のcanonical順序を壊さないことをtestする。
 - [x] 済み: derived parameterを後続transform、gate、statisticsで安定ID参照できることをtestする。
 

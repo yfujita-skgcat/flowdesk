@@ -22,6 +22,20 @@ class ExecutionDiagnostic:
   affected_event_count: int | None = None
   details: dict[str, Any] = field(default_factory=dict)
 
+  def to_mapping(self) -> dict[str, Any]:
+    """Return the complete stable diagnostic representation for adapters."""
+    return {
+      "code": self.code,
+      "message": self.message,
+      "severity": self.severity,
+      "stage": self.stage,
+      "sample_id": self.sample_id,
+      "parameter_id": self.parameter_id,
+      "exception_type": self.exception_type,
+      "affected_event_count": self.affected_event_count,
+      "details": dict(self.details),
+    }
+
 
 @dataclass(frozen=True)
 class ExecutionReport:
