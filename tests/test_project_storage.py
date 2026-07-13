@@ -14,6 +14,11 @@ from flowdesk_storage.manifest import (
   load_manifest,
   validate_manifest,
 )
+from flowdesk_storage.migrations import (
+  CURRENT_PROJECT_VERSION,
+  ProjectMigrationError,
+  migrate_manifest,
+)
 from flowdesk_storage.project import (
   load_gating_strategy,
   load_project,
@@ -22,6 +27,9 @@ from flowdesk_storage.project import (
 )
 
 EXAMPLE_PROJECT = Path(__file__).parent.parent / "examples" / "example_project.flowdesk"
+LEGACY_CHANNEL_PROJECT = (
+  Path(__file__).parent / "fixtures" / "project_v0_1_channel_names.json"
+)
 
 MINIMAL_MANIFEST: dict[str, Any] = {
   "project_id": "test_proj",
@@ -179,6 +187,152 @@ class TestRoundTrip:
     reloaded = load_project(bundle)
     assert reloaded["experimental_flag"] is True
     assert reloaded["metadata"]["author"] == "test"
+
+  def test_channel_identity_and_unknown_metadata_preserved(self, tmp_path: Path) -> None:
+    channel = {
+      "id": "fcs_b530_a_123456789abc",
+      "name": "B530-A",
+      "short_name": "CD3 FITC Fluorescence - Area",
+      "detector": "PMT9524",
+      "stain": "CD3",
+      "unit": "a.u.",
+      "fcs_parameter_index": 4,
+      "metadata": {
+        "p4n": "B530-A",
+        "p4s": "CD3 FITC Fluorescence - Area",
+        "vendor_unknown": {"preserve": [1, 2, 3]},
+      },
+      "unknown_channel_extension": "kept",
+    }
+    manifest = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+      "samples": [
+        {
+          "id": "s1",
+          "name": "Sample 1",
+          "path": "data/sample.fcs",
+          "channels": [channel],
+          "unknown_sample_extension": {"kept": True},
+        }
+      ],
+    }
+    bundle = tmp_path / "identity.flowdesk"
+
+    save_project(bundle, manifest)
+    reloaded = load_project(bundle)
+    save_project(bundle, reloaded)
+    reloaded_again = load_project(bundle)
+
+    assert reloaded_again["project_version"] == CURRENT_PROJECT_VERSION
+    assert reloaded_again["samples"][0]["channels"] == [channel]
+    assert reloaded_again["samples"][0]["unknown_sample_extension"] == {
+      "kept": True
+    }
+
+
+class TestChannelIdentityMigration:
+  def test_legacy_unique_channel_names_migrate_without_rewriting_references(
+    self,
+  ) -> None:
+    legacy = json.loads(LEGACY_CHANNEL_PROJECT.read_text(encoding="utf-8"))
+
+    migrated = migrate_manifest(legacy)
+
+    assert migrated["project_version"] == CURRENT_PROJECT_VERSION
+    assert migrated["samples"][0]["channels"] == [
+      {"id": "FSC-A", "name": "FSC-A", "metadata": {"identity_source": "legacy_name"}},
+      {"id": "CD3-A", "name": "CD3-A", "metadata": {"identity_source": "legacy_name"}},
+    ]
+    gate = migrated["gating_strategies_data"]["legacy_strategy"]["gates"][0]
+    assert gate["x_parameter"] == "FSC-A"
+    assert gate["y_parameter"] == "CD3-A"
+    assert migrated["unknown_project_extension"] == {"keep": "unchanged"}
+    assert legacy["project_version"] == "0.1"
+    assert "channels" not in legacy["samples"][0]
+
+  def test_duplicate_legacy_channel_names_raise_typed_error(self) -> None:
+    legacy = json.loads(LEGACY_CHANNEL_PROJECT.read_text(encoding="utf-8"))
+    legacy["samples"][0]["channel_names"] = ["CD3", "CD3"]
+
+    with pytest.raises(ProjectMigrationError) as error:
+      migrate_manifest(legacy)
+
+    assert error.value.code == "ambiguous_legacy_channel_label"
+    assert error.value.sample_id == "s1"
+    assert error.value.candidate_labels == ("CD3",)
+
+  def test_load_project_migrates_legacy_fixture(self, tmp_path: Path) -> None:
+    bundle = tmp_path / "legacy.flowdesk"
+    bundle.mkdir()
+    (bundle / "manifest.json").write_text(
+      LEGACY_CHANNEL_PROJECT.read_text(encoding="utf-8"),
+      encoding="utf-8",
+    )
+
+    migrated = load_project(bundle)
+
+    assert migrated["project_version"] == CURRENT_PROJECT_VERSION
+    assert [
+      channel["id"] for channel in migrated["samples"][0]["channels"]
+    ] == ["FSC-A", "CD3-A"]
+
+  def test_gui_version_without_channel_metadata_migrates_without_guessing(self) -> None:
+    legacy = {
+      **MINIMAL_MANIFEST,
+      "project_version": "1.0.0",
+      "samples": [{"id": "s1", "path": "data/sample.fcs"}],
+    }
+
+    migrated = migrate_manifest(legacy)
+
+    assert migrated["project_version"] == CURRENT_PROJECT_VERSION
+    assert migrated["samples"][0]["channels"] == []
+
+  def test_current_migration_is_idempotent(self) -> None:
+    current = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+      "samples": [{"id": "s1", "channels": []}],
+    }
+
+    migrated = migrate_manifest(current)
+
+    assert migrated == current
+    assert migrated is not current
+    assert migrated["samples"] is not current["samples"]
+
+  def test_unsupported_future_version_is_rejected_without_mutation(self) -> None:
+    future = {
+      **MINIMAL_MANIFEST,
+      "project_version": "99.0.0",
+      "future_extension": {"keep": True},
+    }
+    original = json.loads(json.dumps(future))
+
+    with pytest.raises(ProjectMigrationError) as error:
+      migrate_manifest(future)
+
+    assert error.value.code == "unsupported_project_version"
+    assert future == original
+
+  def test_current_duplicate_channel_ids_fail_validation(self) -> None:
+    manifest = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+      "samples": [
+        {
+          "id": "s1",
+          "channels": [
+            {"id": "cd3", "name": "B530-A"},
+            {"id": "cd3", "name": "B530-H"},
+          ],
+        }
+      ],
+    }
+
+    with pytest.raises(ManifestValidationError, match="duplicate channel ID"):
+      validate_manifest(manifest)
 
 
 # -- Gating strategy --

@@ -85,7 +85,7 @@ git status --short
 
 #### Core/model
 
-- [ ] `ChannelSpec`へ、安定ID、FCS index、primary name、short name、detector、stain、unit、raw metadataを欠落なく表せるfieldを追加する。既存project migrationを用意する。
+- [x] 済み: `ChannelSpec`へ、安定ID、FCS index、primary name、short name、detector、stain、unit、raw metadataを欠落なく表せるfieldを追加する。既存project migrationを用意する。
 - [x] 済み: `SampleData`または同等のGUI非依存input objectを追加し、sample ID、read-only events、sample固有channel specsを一体でrunnerへ渡す。
 - [x] 済み: `PipelineRunner.run()`へsampleごとのchannel mappingを渡す新APIを追加する。既存`event_data + channel_names`はdeprecation-compatible wrapperとして残してよい。
 - [x] 済み: compensation、derived parameter、transform、gateがcolumn positionではなくchannel identityで解決されるようにする。
@@ -94,7 +94,7 @@ git status --short
 
 #### Storage/GUI
 
-- [ ] project schemaとexample projectを新modelへ更新し、old versionからmigrationする。
+- [x] 済み: project schemaとexample projectを新modelへ更新し、old versionからmigrationする。
 - [ ] Sample Browserへ選択可能なmetadata columns、sort/filter、channel mismatch badgeを追加する。
 - [ ] missing fileのreconnect dialogを追加し、hash/metadata一致を表示する。
 
@@ -104,7 +104,7 @@ git status --short
 - [x] 済み: `$PnN`が同じで`$PnS`が異なるcaseと、その逆を明示的にtestする。
 - [x] 済み: ambiguous/missing channelでsilent fallbackしない。
 - [x] 済み: sampleごとのraw arrayがread-onlyかつ変更されない。
-- [ ] old projectをmigrationし、save/reload/headless runできる。
+- [x] 済み: old projectをmigrationし、save/reload/headless runできる。
 - [ ] GUIで表示するchannelとheadless runnerが参照するchannel IDが一致する。
 
 #### 完了確認

@@ -6,11 +6,14 @@
   "required": ["project_id", "project_version", "pipeline_version", "samples"],
   "properties": {
     "project_id": { "type": "string" },
-    "project_version": { "type": "string" },
+    "project_version": { "const": "1.1.0" },
     "pipeline_version": { "type": "string" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" },
-    "samples": { "type": "array", "items": { "type": "object" } },
+    "samples": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sample" }
+    },
     "compensation_matrices": { "type": "array", "items": { "type": "object" } },
     "derived_parameters": { "type": "array", "items": { "type": "object" } },
     "transforms": { "type": "array", "items": { "type": "object" } },
@@ -22,6 +25,40 @@
     "last_execution_report_path": { "type": ["string", "null"] },
     "sample_path_resolution_policy": { "type": "string" },
     "software": { "type": "object" }
+  },
+  "$defs": {
+    "sample": {
+      "type": "object",
+      "required": ["id", "channels"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "channels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/channel" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "channel": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "short_name": { "type": ["string", "null"] },
+        "detector": { "type": ["string", "null"] },
+        "stain": { "type": ["string", "null"] },
+        "unit": { "type": ["string", "null"] },
+        "fcs_parameter_index": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "metadata": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": true
 }

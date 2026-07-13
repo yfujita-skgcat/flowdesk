@@ -47,7 +47,7 @@ metadata, and a stable project ID. Never use the visible label as the only ident
    - Add `PipelineRunner.run_samples(context, samples)` or an equivalent typed API.
    - Keep `run(..., event_data, channel_names)` as a thin compatibility adapter.
    - Pass updated channel specs through every pipeline stage.
-4. **Storage and migration**
+4. **Storage and migration** — implemented
    - Persist stable IDs and FCS identity fields.
    - Add a project-version migration; never guess when duplicate legacy labels exist.
 5. **Catalog GUI**
@@ -122,6 +122,32 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 - The existing derived evaluator's multi-event scalar limitation and broad NaN
   fallback are unchanged. They belong to Phase A2, so the increment 3 test only
   verifies identity propagation with a scalar constant.
+
+## Confirmed contract after increment 4
+
+- Current project version is `1.1.0`. Loading legacy `0.1` and GUI-produced
+  `1.0.0` manifests returns a migrated in-memory copy; loading never rewrites
+  the source bundle. Unsupported versions raise `ProjectMigrationError`.
+- Current samples persist an ordered `channels` array. Each entry preserves
+  stable ID, `$PnN`/`$PnS` fields, detector, stain, unit, one-based FCS index,
+  metadata, and unknown extension fields.
+- Migration is pure and deep-copies parsed JSON. Project-, sample-, channel-,
+  and metadata-level unknown fields survive load-save-load.
+- A legacy sample with unique `channel_names` receives compatibility channel
+  IDs exactly equal to those names and an `identity_source=legacy_name` marker.
+  Existing gate references therefore retain their historical meaning.
+- Duplicate legacy names raise `ProjectMigrationError` with stable code
+  `ambiguous_legacy_channel_label`, sample ID, and candidate labels. No first
+  match or positional ID is chosen.
+- A legacy sample without channel metadata receives an empty `channels` array.
+  Storage does not open the referenced FCS file or invent identities during
+  migration; the catalog import/reconnect layer must populate them explicitly.
+- The current manifest validator rejects missing channel arrays, duplicate
+  stable IDs, malformed metadata, and invalid FCS parameter indexes.
+- The example bundle and JSON schema now describe version `1.1.0`. A synthetic
+  `0.1` fixture proves migration, round-trip preservation, and headless gate
+  execution.
+- Catalog GUI binding and reconnect UX remain increment 5.
 
 ## Required tests
 

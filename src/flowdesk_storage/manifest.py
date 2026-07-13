@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
+from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION, migrate_manifest
 
 REQUIRED_FIELDS = ["project_id", "project_version", "pipeline_version", "samples"]
 
@@ -41,6 +42,62 @@ def validate_manifest(data: dict[str, Any]) -> None:
   if not isinstance(data["samples"], list):
     raise ManifestValidationError("samples must be an array")
 
+  if data["project_version"] == CURRENT_PROJECT_VERSION:
+    _validate_current_samples(data["samples"])
+
+
+def _validate_current_samples(samples: list[Any]) -> None:
+  """Validate sample/channel identity fields required by the current version."""
+  for sample_index, sample in enumerate(samples):
+    if not isinstance(sample, dict):
+      raise ManifestValidationError(
+        f"samples[{sample_index}] must be an object"
+      )
+    sample_id = sample.get("id")
+    if not isinstance(sample_id, str) or not sample_id:
+      raise ManifestValidationError(
+        f"samples[{sample_index}].id must be a non-empty string"
+      )
+    channels = sample.get("channels")
+    if not isinstance(channels, list):
+      raise ManifestValidationError(
+        f"sample {sample_id!r} channels must be an array"
+      )
+    channel_ids: set[str] = set()
+    for channel_index, channel in enumerate(channels):
+      if not isinstance(channel, dict):
+        raise ManifestValidationError(
+          f"sample {sample_id!r} channel {channel_index} must be an object"
+        )
+      channel_id = channel.get("id")
+      name = channel.get("name")
+      if not isinstance(channel_id, str) or not channel_id:
+        raise ManifestValidationError(
+          f"sample {sample_id!r} channel {channel_index} id must be non-empty"
+        )
+      if channel_id in channel_ids:
+        raise ManifestValidationError(
+          f"sample {sample_id!r} has duplicate channel ID {channel_id!r}"
+        )
+      channel_ids.add(channel_id)
+      if not isinstance(name, str) or not name:
+        raise ManifestValidationError(
+          f"sample {sample_id!r} channel {channel_id!r} name must be non-empty"
+        )
+      metadata = channel.get("metadata", {})
+      if not isinstance(metadata, dict):
+        raise ManifestValidationError(
+          f"sample {sample_id!r} channel {channel_id!r} metadata must be an object"
+        )
+      fcs_index = channel.get("fcs_parameter_index")
+      if fcs_index is not None and (
+        not isinstance(fcs_index, int) or isinstance(fcs_index, bool) or fcs_index < 1
+      ):
+        raise ManifestValidationError(
+          f"sample {sample_id!r} channel {channel_id!r} "
+          "fcs_parameter_index must be a positive integer or null"
+        )
+
 
 def load_manifest(path: str | Path) -> dict[str, Any]:
   """Load and validate a manifest.json from a .flowdesk directory."""
@@ -56,4 +113,6 @@ def load_manifest(path: str | Path) -> dict[str, Any]:
     raise ManifestValidationError(f"invalid JSON in manifest.json: {exc}") from exc
 
   validate_manifest(data)
-  return data
+  migrated = migrate_manifest(data)
+  validate_manifest(migrated)
+  return migrated

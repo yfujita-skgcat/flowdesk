@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, TypeAlias
 
-from flowdesk_storage.manifest import ManifestValidationError, load_manifest
+from flowdesk_storage.manifest import (
+  ManifestValidationError,
+  load_manifest,
+  validate_manifest,
+)
+from flowdesk_storage.migrations import migrate_manifest
 from flowdesk_storage.serialization import now_iso, write_json
 
 ProjectManifest: TypeAlias = dict[str, Any]
@@ -39,7 +44,8 @@ def save_project(
   (project_path / "exports").mkdir(parents=True, exist_ok=True)
   (project_path / "gates").mkdir(parents=True, exist_ok=True)
 
-  manifest = dict(manifest)
+  manifest = migrate_manifest(manifest)
+  validate_manifest(manifest)
   manifest["updated_at"] = now_iso()
   write_json(manifest_path, manifest)
 

@@ -1,0 +1,44 @@
+{
+  "project_id": "legacy_channel_project",
+  "project_version": "0.1",
+  "pipeline_version": "0.1",
+  "samples": [
+    {
+      "id": "s1",
+      "name": "Legacy sample",
+      "path": "data/legacy.fcs",
+      "channel_names": ["FSC-A", "CD3-A"],
+      "legacy_sample_extension": {"keep": true}
+    }
+  ],
+  "execution_profiles": [
+    {
+      "id": "default",
+      "sample_selector": "all",
+      "gating_strategy_id": "legacy_strategy"
+    }
+  ],
+  "gating_strategies_data": {
+    "legacy_strategy": {
+      "id": "legacy_strategy",
+      "name": "Legacy strategy",
+      "gates": [
+        {
+          "id": "cd3_gate",
+          "name": "CD3 gate",
+          "gate_type": "rectangle",
+          "parent_population_id": "all_events",
+          "x_parameter": "FSC-A",
+          "y_parameter": "CD3-A",
+          "thresholds": {
+            "x_min": 0.0,
+            "x_max": 5.0,
+            "y_min": 10.0,
+            "y_max": 30.0
+          }
+        }
+      ]
+    }
+  },
+  "unknown_project_extension": {"keep": "unchanged"}
+}
