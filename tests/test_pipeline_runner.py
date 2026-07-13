@@ -236,7 +236,16 @@ def test_pipeline_with_derived_parameters() -> None:
   assert "derived_params=done" in " ".join(report.messages)
 
 
-def test_derived_failure_policy_fail_run_stops_pipeline() -> None:
+def test_derived_failure_policy_fail_run_stops_pipeline(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  def failing_evaluator(*_args, **_kwargs):
+    raise TypeError("synthetic vector evaluation failure")
+
+  monkeypatch.setattr(
+    "flowdesk_core.pipeline_runner.evaluate_array_expression",
+    failing_evaluator,
+  )
   sample = SampleData(
     "s1",
     np.ones((3, 1), dtype=np.float64),
@@ -266,10 +275,10 @@ def test_derived_failure_policy_fail_sample_continues_other_samples(
   def sample_specific_evaluator(_expression, variables, **_kwargs):
     if "other" in variables:
       raise ExpressionError("synthetic sample-specific failure")
-    return 2.0
+    return np.full(len(variables["signal"]), 2.0, dtype=np.float64)
 
   monkeypatch.setattr(
-    "flowdesk_core.pipeline_runner.evaluate_expression",
+    "flowdesk_core.pipeline_runner.evaluate_array_expression",
     sample_specific_evaluator,
   )
   valid = SampleData(
@@ -307,7 +316,16 @@ def test_derived_failure_policy_fail_sample_continues_other_samples(
   assert diagnostic.details["policy"] == "fail_sample"
 
 
-def test_derived_failure_policy_emit_nan_records_full_diagnostic() -> None:
+def test_derived_failure_policy_emit_nan_records_full_diagnostic(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  def failing_evaluator(*_args, **_kwargs):
+    raise TypeError("synthetic vector evaluation failure")
+
+  monkeypatch.setattr(
+    "flowdesk_core.pipeline_runner.evaluate_array_expression",
+    failing_evaluator,
+  )
   sample = SampleData(
     "s1",
     np.ones((4, 1), dtype=np.float64),
@@ -396,7 +414,7 @@ def test_runner_evaluates_dependent_definitions_in_topological_order(
     return variables["first"] + 1
 
   monkeypatch.setattr(
-    "flowdesk_core.pipeline_runner.evaluate_expression", vector_evaluator
+    "flowdesk_core.pipeline_runner.evaluate_array_expression", vector_evaluator
   )
   sample = SampleData(
     "s1",
@@ -878,9 +896,11 @@ def test_run_samples_gate_count_is_stable_across_channel_permutation() -> None:
 
 
 def test_run_samples_passes_derived_channel_identity_to_gating() -> None:
+  source_events = np.array([[2.0, 1.0]], dtype=np.float64)
+  source_before = source_events.copy()
   sample = SampleData(
     "s1",
-    np.array([[2.0, 1.0]], dtype=np.float64),
+    source_events,
     (
       ChannelSpec(id="signal", name="Signal-A"),
       ChannelSpec(id="denominator", name="Reference-A"),
@@ -909,11 +929,11 @@ def test_run_samples_passes_derived_channel_identity_to_gating() -> None:
   project = _make_project(
     samples=[{"id": "s1"}],
     derived_parameters=[
-      {
-        "id": "ratio",
-        "name": "Signal ratio",
-        "expression": "2.0",
-        "input_parameters": [],
+          {
+            "id": "ratio",
+            "name": "Signal ratio",
+            "expression": "signal / denominator",
+            "input_parameters": ["signal", "denominator"],
       }
     ],
     transforms=[
@@ -942,3 +962,5 @@ def test_run_samples_passes_derived_channel_identity_to_gating() -> None:
     if result.population_id == "ratio_near_two"
   )
   assert result.event_count == 1
+  np.testing.assert_array_equal(source_events, source_before)
+  np.testing.assert_array_equal(sample.events, source_before)

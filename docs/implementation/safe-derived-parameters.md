@@ -19,7 +19,9 @@ Implement a safe expression evaluator for derived parameters such as `FL1-A / FL
 - Parameter names such as `FL1-A` must be handled unambiguously. If Python identifier syntax is used internally, create a safe mapping layer.
 - Division by zero must produce `NaN`, not crash.
 - Invalid input values must follow `invalid_value_policy`.
-- The evaluator must work on scalar values first; vectorized array evaluation can be a later layer.
+- Keep the scalar API compatible and provide a separate vectorized evaluator for
+  full event-aligned `float64` columns. Validate shape and row count before a
+  derived column can enter downstream analysis.
 
 ## Required Behavior
 

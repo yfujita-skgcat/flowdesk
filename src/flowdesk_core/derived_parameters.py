@@ -10,8 +10,11 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+from numpy.typing import NDArray
+
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import DerivedParameterSpec
+from flowdesk_core.models import ChannelSpec, DerivedParameterSpec
 
 
 class ExpressionError(FlowdeskError):
@@ -45,6 +48,105 @@ class DerivedParameterPlanningError(FlowdeskError):
       "references": self.references,
       "cycle_ids": self.cycle_ids,
     }
+
+
+class DerivedParameterStageError(FlowdeskError):
+  """Structured error for an invalid derived-stage event/channel result."""
+
+  def __init__(
+    self,
+    code: str,
+    message: str,
+    *,
+    parameter_id: str | None = None,
+  ) -> None:
+    self.code = code
+    self.parameter_id = parameter_id
+    super().__init__(message)
+
+
+@dataclass(frozen=True)
+class DerivedParameterStageResult:
+  """Immutable event table paired with its ordered channel definitions."""
+
+  events: NDArray[np.float64]
+  channels: tuple[ChannelSpec, ...]
+
+  def __post_init__(self) -> None:
+    if not isinstance(self.events, np.ndarray):
+      raise DerivedParameterStageError(
+        "derived_stage_events_not_array",
+        "derived stage events must be a NumPy array",
+      )
+    if self.events.dtype != np.dtype(np.float64):
+      raise DerivedParameterStageError(
+        "derived_stage_invalid_dtype",
+        f"derived stage events must use float64, got {self.events.dtype}",
+      )
+    if self.events.ndim != 2:
+      raise DerivedParameterStageError(
+        "derived_stage_invalid_shape",
+        f"derived stage events must be 2D, got shape {self.events.shape}",
+      )
+    if self.events.shape[1] != len(self.channels):
+      raise DerivedParameterStageError(
+        "derived_stage_channel_count_mismatch",
+        "derived stage event columns must match ordered channel definitions",
+      )
+    channel_ids = tuple(channel.id for channel in self.channels)
+    if len(channel_ids) != len(set(channel_ids)):
+      raise DerivedParameterStageError(
+        "derived_stage_duplicate_channel_id",
+        "derived stage channel IDs must be unique",
+      )
+    immutable_events = np.array(self.events, dtype=np.float64, copy=True, order="C")
+    immutable_events.setflags(write=False)
+    object.__setattr__(self, "events", immutable_events)
+
+  def append_channel(
+    self,
+    values: NDArray[np.float64],
+    channel: ChannelSpec,
+  ) -> DerivedParameterStageResult:
+    """Return a new validated result with one event-aligned channel appended."""
+    if not isinstance(values, np.ndarray):
+      raise DerivedParameterStageError(
+        "derived_result_not_array",
+        f"derived parameter {channel.id!r} result must be a NumPy array",
+        parameter_id=channel.id,
+      )
+    if values.dtype != np.dtype(np.float64):
+      raise DerivedParameterStageError(
+        "derived_result_invalid_dtype",
+        f"derived parameter {channel.id!r} must return float64, got {values.dtype}",
+        parameter_id=channel.id,
+      )
+    if values.ndim != 1:
+      raise DerivedParameterStageError(
+        "derived_result_invalid_shape",
+        f"derived parameter {channel.id!r} returned shape {values.shape}; expected 1D",
+        parameter_id=channel.id,
+      )
+    if values.shape[0] != self.events.shape[0]:
+      raise DerivedParameterStageError(
+        "derived_result_row_count_mismatch",
+        f"derived parameter {channel.id!r} returned {values.shape[0]} rows; "
+        f"expected {self.events.shape[0]}",
+        parameter_id=channel.id,
+      )
+    if channel.id in {existing.id for existing in self.channels}:
+      raise DerivedParameterStageError(
+        "derived_stage_duplicate_channel_id",
+        f"derived channel ID already exists: {channel.id!r}",
+        parameter_id=channel.id,
+      )
+    combined = np.column_stack((self.events, values))
+    return DerivedParameterStageResult(combined, (*self.channels, channel))
+
+  @property
+  def channel_ids(self) -> list[str]:
+    """Return stable IDs in the exact order of the event columns."""
+    return [channel.id for channel in self.channels]
 
 
 @dataclass(frozen=True)
@@ -109,6 +211,22 @@ SAFE_FUNCTIONS: dict[str, Any] = {
   "ceil": math.ceil,
 }
 
+_ARRAY_FUNCTIONS: dict[str, Callable[..., Any]] = {
+  "log10": np.log10,
+  "log": np.log,
+  "sqrt": np.sqrt,
+  "abs": np.abs,
+  "exp": np.exp,
+  "sin": np.sin,
+  "cos": np.cos,
+  "tan": np.tan,
+  "asin": np.arcsin,
+  "acos": np.arccos,
+  "atan": np.arctan,
+  "floor": np.floor,
+  "ceil": np.ceil,
+}
+
 # ---------------------------------------------------------------------------
 # AST node whitelist
 # ---------------------------------------------------------------------------
@@ -151,6 +269,18 @@ _UNARY_OPS: dict[type[ast.AST], Callable[[float], float]] = {
   ast.USub: operator.neg,
 }
 
+_ARRAY_BINARY_OPS: dict[type[ast.AST], Callable[[Any, Any], Any]] = {
+  ast.Add: operator.add,
+  ast.Sub: operator.sub,
+  ast.Mult: operator.mul,
+  ast.Pow: operator.pow,
+}
+
+_ARRAY_UNARY_OPS: dict[type[ast.AST], Callable[[Any], Any]] = {
+  ast.UAdd: operator.pos,
+  ast.USub: operator.neg,
+}
+
 # ---------------------------------------------------------------------------
 # Parameter name normalization
 # ---------------------------------------------------------------------------
@@ -188,7 +318,7 @@ def _build_safe_variables(
 
 def _preprocess_expression(
   expression: str,
-  known_params: Mapping[str, float],
+  known_params: Mapping[str, Any],
 ) -> str:
   """Replace parameter names in the expression with safe Python identifiers.
 
@@ -289,6 +419,73 @@ def _safe_eval_node(
       raise ExpressionError("module must contain exactly one expression")
     return _safe_eval_node(node.body[0], variables, _depth + 1)
 
+  raise ExpressionError(
+    f"unsupported expression node: {type(node).__name__}"
+  )
+
+
+def _safe_eval_array_node(
+  node: ast.AST,
+  variables: Mapping[str, NDArray[np.float64]],
+  _depth: int = 0,
+) -> float | NDArray[np.float64]:
+  """Evaluate a restricted expression over complete event columns."""
+  if _depth > 64:
+    raise ExpressionError("expression too deeply nested")
+  if isinstance(node, ast.Constant):
+    if isinstance(node.value, (int, float)):
+      return float(node.value)
+    raise ExpressionError(
+      f"unsupported constant type: {type(node.value).__name__}"
+    )
+  if isinstance(node, ast.Name):
+    if node.id not in variables:
+      raise ExpressionError(f"unknown parameter: {node.id}")
+    return variables[node.id]
+  if isinstance(node, ast.BinOp):
+    if type(node.op) not in _BINARY_OPS:
+      raise ExpressionError(
+        f"unsupported binary operator: {type(node.op).__name__}"
+      )
+    left = _safe_eval_array_node(node.left, variables, _depth + 1)
+    right = _safe_eval_array_node(node.right, variables, _depth + 1)
+    with np.errstate(all="ignore"):
+      if isinstance(node.op, ast.Div):
+        result = np.asarray(np.divide(left, right), dtype=np.float64)
+        result = np.where(np.equal(right, 0), np.nan, result)
+      else:
+        result = np.asarray(
+          _ARRAY_BINARY_OPS[type(node.op)](left, right), dtype=np.float64
+        )
+    return float(result) if result.ndim == 0 else result
+  if isinstance(node, ast.UnaryOp):
+    if type(node.op) not in _UNARY_OPS:
+      raise ExpressionError(
+        f"unsupported unary operator: {type(node.op).__name__}"
+      )
+    operand = _safe_eval_array_node(node.operand, variables, _depth + 1)
+    result = np.asarray(
+      _ARRAY_UNARY_OPS[type(node.op)](operand), dtype=np.float64
+    )
+    return float(result) if result.ndim == 0 else result
+  if isinstance(node, ast.Call):
+    if not isinstance(node.func, ast.Name):
+      raise ExpressionError("function calls must reference a top-level name")
+    function = _ARRAY_FUNCTIONS.get(node.func.id)
+    if function is None:
+      raise ExpressionError(f"function not allowed: {node.func.id}")
+    if node.keywords:
+      raise ExpressionError("keyword arguments are not supported")
+    args = [
+      _safe_eval_array_node(argument, variables, _depth + 1)
+      for argument in node.args
+    ]
+    with np.errstate(all="ignore"):
+      result = np.asarray(function(*args), dtype=np.float64)
+    result = np.where(np.isfinite(result), result, np.nan)
+    return float(result) if result.ndim == 0 else result
+  if isinstance(node, ast.Expression):
+    return _safe_eval_array_node(node.body, variables, _depth + 1)
   raise ExpressionError(
     f"unsupported expression node: {type(node).__name__}"
   )
@@ -476,6 +673,53 @@ def plan_derived_parameters(
       for spec in display_order
     ),
   )
+
+
+def evaluate_array_expression(
+  expression: str,
+  values: Mapping[str, NDArray[np.float64]],
+  *,
+  row_count: int,
+  allow_functions: bool = True,
+) -> NDArray[np.float64]:
+  """Safely evaluate one expression over event-aligned float64 columns."""
+  if row_count < 0:
+    raise ExpressionError("row_count must be non-negative")
+  normalized_values: dict[str, NDArray[np.float64]] = {}
+  for parameter_id, column in values.items():
+    if not isinstance(column, np.ndarray):
+      raise ExpressionError(f"parameter {parameter_id!r} is not a NumPy array")
+    if column.dtype != np.dtype(np.float64):
+      raise ExpressionError(
+        f"parameter {parameter_id!r} must use float64, got {column.dtype}"
+      )
+    if column.shape != (row_count,):
+      raise ExpressionError(
+        f"parameter {parameter_id!r} has shape {column.shape}; "
+        f"expected ({row_count},)"
+      )
+    normalized_values[_normalize_parameter_name(parameter_id)] = column
+
+  safe_expr = _preprocess_expression(expression, values)
+  try:
+    tree = ast.parse(safe_expr, mode="eval")
+  except SyntaxError as exc:
+    raise ExpressionError(f"invalid expression syntax: {exc}") from exc
+  _check_ast_safety(tree)
+  if not allow_functions and any(
+    isinstance(node, ast.Call) for node in ast.walk(tree)
+  ):
+    raise ExpressionError("function calls are not allowed in this context")
+
+  evaluated = _safe_eval_array_node(tree, normalized_values)
+  result = np.asarray(evaluated, dtype=np.float64)
+  if result.ndim == 0:
+    result = np.full(row_count, float(result), dtype=np.float64)
+  elif result.shape != (row_count,):
+    raise ExpressionError(
+      f"expression returned shape {result.shape}; expected ({row_count},)"
+    )
+  return np.array(result, dtype=np.float64, copy=True, order="C")
 
 
 def evaluate_expression(

@@ -4,19 +4,23 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 from flowdesk_core.derived_parameters import (
     DerivedParameterPlanningError,
+    DerivedParameterStageError,
+    DerivedParameterStageResult,
     ExpressionError,
     describe_derived_parameter,
+    evaluate_array_expression,
     evaluate_binary_expression,
     evaluate_expression,
     extract_parameter_references,
     plan_derived_parameters,
 )
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import DerivedFailurePolicy, DerivedParameterSpec
+from flowdesk_core.models import ChannelSpec, DerivedFailurePolicy, DerivedParameterSpec
 
 VALUES = {
     "FL1-A": 10.0,
@@ -146,6 +150,67 @@ def test_cycle_diagnostic_excludes_nodes_only_blocked_by_cycle() -> None:
         plan_derived_parameters((first, second, blocked), ())
 
     assert error.value.cycle_ids == ("first", "second")
+
+
+def test_array_expression_evaluates_full_event_vector_without_mutating_inputs() -> None:
+    signal = np.array([2.0, 4.0, 6.0], dtype=np.float64)
+    reference = np.array([1.0, 0.0, 3.0], dtype=np.float64)
+    signal_before = signal.copy()
+    reference_before = reference.copy()
+
+    result = evaluate_array_expression(
+        "signal / reference",
+        {"signal": signal, "reference": reference},
+        row_count=3,
+    )
+
+    np.testing.assert_allclose(result[[0, 2]], [2.0, 2.0])
+    assert np.isnan(result[1])
+    np.testing.assert_array_equal(signal, signal_before)
+    np.testing.assert_array_equal(reference, reference_before)
+
+
+def test_stage_result_copies_events_and_keeps_columns_aligned() -> None:
+    events = np.array([[1.0], [2.0]], dtype=np.float64)
+    initial = DerivedParameterStageResult(
+        events,
+        (ChannelSpec(id="signal", name="Signal"),),
+    )
+    derived = initial.append_channel(
+        np.array([2.0, 4.0], dtype=np.float64),
+        ChannelSpec(id="double", name="Double"),
+    )
+
+    events[0, 0] = 99.0
+    assert initial.events[0, 0] == 1.0
+    assert derived.events.tolist() == [[1.0, 2.0], [2.0, 4.0]]
+    assert [channel.id for channel in derived.channels] == ["signal", "double"]
+    assert not initial.events.flags.writeable
+    assert not derived.events.flags.writeable
+
+
+@pytest.mark.parametrize(
+    ("values", "code"),
+    [
+        (np.ones((2, 1), dtype=np.float64), "derived_result_invalid_shape"),
+        (np.ones(2, dtype=np.float32), "derived_result_invalid_dtype"),
+        (np.ones(3, dtype=np.float64), "derived_result_row_count_mismatch"),
+    ],
+)
+def test_stage_result_rejects_invalid_derived_columns(
+    values: np.ndarray,
+    code: str,
+) -> None:
+    stage = DerivedParameterStageResult(
+        np.ones((2, 1), dtype=np.float64),
+        (ChannelSpec(id="signal", name="Signal"),),
+    )
+
+    with pytest.raises(DerivedParameterStageError) as error:
+        stage.append_channel(values, ChannelSpec(id="derived", name="Derived"))
+
+    assert error.value.code == code
+    assert error.value.parameter_id == "derived"
 
 
 def test_describe_derived_parameter() -> None:

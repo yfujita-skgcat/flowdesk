@@ -22,8 +22,10 @@ from flowdesk_core.compensation import apply_compensation, validate_compensation
 from flowdesk_core.derived_parameters import (
   DerivedParameterPlan,
   DerivedParameterPlanningError,
+  DerivedParameterStageError,
+  DerivedParameterStageResult,
   ExpressionError,
-  evaluate_expression,
+  evaluate_array_expression,
   plan_derived_parameters,
 )
 from flowdesk_core.errors import FlowdeskError
@@ -368,35 +370,45 @@ class PipelineRunner:
     data: _AnalysisData,
     sample_id: str,
     plan: DerivedParameterPlan,
-  ) -> tuple[_AnalysisData, tuple[ExecutionDiagnostic, ...]]:
+  ) -> tuple[DerivedParameterStageResult, tuple[ExecutionDiagnostic, ...]]:
     """Evaluate derived parameter expressions and append as new columns."""
+    stage_result = DerivedParameterStageResult(data.events, data.channels)
     if not plan.execution_order:
-      return data, ()
+      return stage_result, ()
 
-    current_channels = list(data.channels)
-    current_data = data.events
     diagnostics: list[ExecutionDiagnostic] = []
 
     for spec in plan.execution_order:
       label = spec.output_label or spec.name
+      output_channel = ChannelSpec(
+        id=spec.id,
+        name=label,
+        metadata={
+          "kind": "derived_parameter",
+          "source_stage": spec.source_stage,
+        },
+      )
 
       # Build variable dict from current columns.
       variables: dict[str, NDArray[np.float64]] = {}
-      for i, channel in enumerate(current_channels):
-        variables[channel.id] = current_data[:, i]
+      for i, channel in enumerate(stage_result.channels):
+        variables[channel.id] = stage_result.events[:, i]
 
       try:
-        result_any = evaluate_expression(spec.expression, variables,  # type: ignore[arg-type]
-                                         allow_functions=True)
-        result = np.asarray(result_any, dtype=np.float64)
-        if result.ndim == 0:
-          result = np.full(current_data.shape[0], float(result), dtype=np.float64)
-        elif result.shape != (current_data.shape[0],):
-          raise ValueError(
-            f"expression returned shape {result.shape}, expected "
-            f"({current_data.shape[0]},)"
-          )
-      except (ExpressionError, ArithmeticError, TypeError, ValueError) as exc:
+        result = evaluate_array_expression(
+          spec.expression,
+          variables,
+          row_count=stage_result.events.shape[0],
+          allow_functions=True,
+        )
+        next_stage_result = stage_result.append_channel(result, output_channel)
+      except (
+        DerivedParameterStageError,
+        ExpressionError,
+        ArithmeticError,
+        TypeError,
+        ValueError,
+      ) as exc:
         diagnostic = ExecutionDiagnostic(
           code="derived_parameter_evaluation_failed",
           message=(
@@ -413,7 +425,7 @@ class PipelineRunner:
           sample_id=sample_id,
           parameter_id=spec.id,
           exception_type=type(exc).__name__,
-          affected_event_count=int(current_data.shape[0]),
+          affected_event_count=int(stage_result.events.shape[0]),
           details={
             "expression": spec.expression,
             "policy": spec.invalid_value_policy.value,
@@ -427,22 +439,13 @@ class PipelineRunner:
             spec.invalid_value_policy, diagnostic
           ) from exc
         diagnostics.append(diagnostic)
-        result = np.full(current_data.shape[0], np.nan, dtype=np.float64)
-
-      new_col = result.reshape(-1, 1)
-      current_data = np.hstack([current_data, new_col])
-      current_channels.append(
-        ChannelSpec(
-          id=spec.id,
-          name=label,
-          metadata={
-            "kind": "derived_parameter",
-            "source_stage": spec.source_stage,
-          },
+        next_stage_result = stage_result.append_channel(
+          np.full(stage_result.events.shape[0], np.nan, dtype=np.float64),
+          output_channel,
         )
-      )
+      stage_result = next_stage_result
 
-    return _AnalysisData(current_data, tuple(current_channels)), tuple(diagnostics)
+    return stage_result, tuple(diagnostics)
 
   def _derived_parameter_specs(self) -> tuple[DerivedParameterSpec, ...]:
     """Parse project definitions once before any sample is processed."""
@@ -478,8 +481,8 @@ class PipelineRunner:
 
   def _step_transforms(
     self,
-    data: _AnalysisData,
-  ) -> _AnalysisData:
+    data: _AnalysisData | DerivedParameterStageResult,
+  ) -> _AnalysisData | DerivedParameterStageResult:
     """Apply transforms to specified parameters."""
     specs = self._project.get("transforms", [])
     if not specs:
@@ -508,7 +511,7 @@ class PipelineRunner:
   def _step_gating(
     self,
     strategy_id: str,
-    data: _AnalysisData,
+    data: _AnalysisData | DerivedParameterStageResult,
     sample_id: str,
   ) -> tuple[list[PopulationResult], list[PopulationMembership]]:
     """Evaluate the gating strategy on transformed data.

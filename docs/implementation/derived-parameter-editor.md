@@ -129,6 +129,28 @@ not silently reinterpret it.
   project definition order remains unchanged. Full vectorized evaluator and
   typed stage-result validation remain increment 3 work.
 
+## Confirmed contract after increment 3
+
+- `evaluate_array_expression()` uses the same restricted AST and exact stable-ID
+  normalization as scalar evaluation, but operates on complete event-aligned
+  `float64` columns. Numeric constants are expanded to the sample row count.
+- Vector division by zero and invalid whitelisted-function domains produce NaN
+  at only the affected events. Expression inputs are validated as one-dimensional
+  `float64` arrays with the declared row count and are never mutated.
+- `DerivedParameterStageResult` is the public typed result for the derived stage.
+  It owns an immutable copy of a two-dimensional `float64` event table and the
+  ordered `ChannelSpec` tuple aligned to its columns.
+- Appending a result validates NumPy type, `float64` dtype, one-dimensional
+  shape, row count, and stable channel-ID uniqueness. Failures carry a stable
+  `DerivedParameterStageError.code` and parameter ID and follow the persisted
+  evaluation failure policy in the runner.
+- The runner passes the typed result directly into transforms and gating. A
+  synthetic ratio test proves that the same derived stable ID is transformed,
+  gated, and counted without position-based lookup, while raw input events stay
+  unchanged.
+- Unit/output-ID persistence and raw/compensated source-view semantics remain
+  increment 4 work; this increment does not reinterpret `source_stage`.
+
 ## Required tests
 
 - Ratio and dependent-derived chain work after compensation.
