@@ -150,10 +150,10 @@ git status --short
 
 #### 事前調査・文書
 
-- [ ] `docs/implementation/scientific-transforms-v2.md`を全文読み、選択した式、reference、toleranceを追記する。
-- [ ] Logicleのprimary paperまたは検証済みreference implementationを記載する。
-- [ ] parameter `T/W/M/A`、domain、inverse、tick generation、numeric toleranceを定義する。
-- [ ] FlowJo Biexと同値を保証しない場合、その名称を使用しないことを明記する。
+- [x] 済み: `docs/implementation/scientific-transforms-v2.md`を全文読み、選択した式、reference、toleranceを追記する。
+- [x] 済み: Logicleのprimary paperまたは検証済みreference implementationを記載する。
+- [x] 済み: parameter `T/W/M/A`、domain、inverse、tick generation、numeric toleranceを定義する。
+- [x] 済み: FlowJo Biexと同値を保証しない場合、その名称を使用しないことを明記する。
 
 #### Core
 

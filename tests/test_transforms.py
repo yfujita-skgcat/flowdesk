@@ -12,6 +12,8 @@ from flowdesk_core.transforms import (
   TransformError,
   apply_transform,
   apply_transform_to_column,
+  inverse_transform,
+  validate_transform,
 )
 
 # ---------------------------------------------------------------------------
@@ -251,6 +253,109 @@ def test_asinh_negative_cofactor_raises() -> None:
   values = np.array([1.0], dtype=np.float64)
   with pytest.raises(TransformError, match="cofactor must be positive"):
     apply_transform(spec, values)
+
+
+@pytest.mark.parametrize(
+  ("spec", "values"),
+  [
+    (
+      TransformSpec(
+        id="linear_inverse",
+        name="linear inverse",
+        transform_type="linear",
+        parameter="signal",
+        settings={"scale": 2.5, "offset": -7.0},
+      ),
+      np.array([-10.0, 0.0, 10.0], dtype=np.float64),
+    ),
+    (
+      TransformSpec(
+        id="log_inverse",
+        name="log inverse",
+        transform_type="log",
+        parameter="signal",
+        settings={"base": 10.0},
+      ),
+      np.array([0.1, 1.0, 10.0, 1e6], dtype=np.float64),
+    ),
+    (
+      TransformSpec(
+        id="asinh_inverse",
+        name="asinh inverse",
+        transform_type="asinh",
+        parameter="signal",
+        settings={"cofactor": 150.0},
+      ),
+      np.array([-1e5, -150.0, 0.0, 150.0, 1e5], dtype=np.float64),
+    ),
+  ],
+  ids=("linear", "log", "asinh"),
+)
+def test_forward_inverse_round_trip(
+  spec: TransformSpec,
+  values: np.ndarray,
+) -> None:
+  transformed = apply_transform(spec, values)
+  restored = inverse_transform(spec, transformed)
+
+  np.testing.assert_allclose(restored, values, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+  "spec",
+  [
+    TransformSpec(
+      id="zero_scale",
+      name="zero scale",
+      transform_type="linear",
+      parameter="signal",
+      settings={"scale": 0.0},
+    ),
+    TransformSpec(
+      id="infinite_scale",
+      name="infinite scale",
+      transform_type="linear",
+      parameter="signal",
+      settings={"scale": np.inf},
+    ),
+    TransformSpec(
+      id="nan_base",
+      name="NaN base",
+      transform_type="log",
+      parameter="signal",
+      settings={"base": np.nan},
+    ),
+    TransformSpec(
+      id="infinite_cofactor",
+      name="infinite cofactor",
+      transform_type="asinh",
+      parameter="signal",
+      settings={"cofactor": np.inf},
+    ),
+  ],
+  ids=("zero-linear-scale", "infinite-linear-scale", "nan-log-base", "infinite-asinh-cofactor"),
+)
+def test_transform_protocol_rejects_noninvertible_or_nonfinite_settings(
+  spec: TransformSpec,
+) -> None:
+  with pytest.raises(TransformError) as error:
+    validate_transform(spec)
+
+  assert error.value.code == "invalid_transform_settings"
+
+
+def test_legacy_logicle_approximation_has_no_claimed_inverse() -> None:
+  spec = TransformSpec(
+    id="legacy_logicle",
+    name="legacy logicle approximation",
+    transform_type="logicle_like",
+    parameter="signal",
+  )
+
+  with pytest.raises(TransformError) as error:
+    inverse_transform(spec, np.array([0.0], dtype=np.float64))
+
+  assert error.value.code == "transform_inverse_unavailable"
 
 
 # ---------------------------------------------------------------------------

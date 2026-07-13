@@ -31,6 +31,108 @@ version. The same definition converts events, gate coordinates, and axis ticks.
 Rename existing `logicle_like` through migration to an honest legacy type. Do not
 claim FlowJo Biex compatibility without versioned reference fixtures.
 
+## Selected Logicle definition and references
+
+Flowdesk will implement the normalized Gating-ML 2.0 Logicle definition, not a
+product-specific “Biexponential” mode. The normative scientific source is Wayne
+A. Moore and David R. Parks, “Update for the logicle data scale including
+operational code implementations,” *Cytometry Part A* 81A (2012), 273–277,
+[doi:10.1002/cyto.a.22030](https://doi.org/10.1002/cyto.a.22030). The original
+display rationale is Parks, Roederer, and Moore (2006),
+[doi:10.1002/cyto.a.20258](https://doi.org/10.1002/cyto.a.20258).
+
+The interoperability definition is section 6.5 of
+[Gating-ML 2.0](https://sourceforge.net/projects/flowcyt/files/Gating-ML/Gating-ML%202.0/GatingML_2.0_Specification.20130122.pdf/download),
+whose standard and cross-implementation rationale are described by
+[Spidlen et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC4874733/). Numeric
+fixtures will be checked independently against the Moore–Parks C++ reference
+implementation distributed under the Revised BSD license with the 2012 paper,
+also maintained in Bioconductor flowCore as `Logicle.cpp` and `FastLogicle.cpp`.
+No optional binary dependency is selected for the core implementation.
+
+### Equation and coordinate convention
+
+The inverse mapping from normalized display coordinate `y` to event value `x`
+is the modified biexponential
+
+```text
+B(y) = a exp(b y) - c exp(-d y) - f
+```
+
+and the forward Logicle transform is the unique root `y` satisfying `B(y)=x`.
+For parameters `T`, `W`, `M`, and `A`:
+
+```text
+w  = W / (M + A)
+x2 = A / (M + A)
+x1 = x2 + w
+x0 = x2 + 2w
+b  = (M + A) ln(10)
+```
+
+`d` is the positive solution of
+`2(ln(d)-ln(b)) + w(d+b) = 0`. Coefficients `a`, `c`, and `f` use the
+Moore–Parks/Gating-ML construction so that `B(1)=T`, `B(x1)=0`, and the
+linear-region constraint is satisfied. Increment 3 must transcribe and test
+those coefficients against the BSD reference code; it must not rederive or
+approximate them independently.
+
+The public convention will be:
+
+- `forward(x)` returns normalized Gating-ML coordinates; `forward(T)=1` and
+  `forward(0)=x1`.
+- `inverse(y)` returns `B(y)` in original event units.
+- The mathematical input domain is every finite real event value. Coordinates
+  outside `[0, 1]` are mathematically allowed for values outside the nominal
+  display interval and are not clipped implicitly.
+- Nonfinite input propagation and solver non-convergence will use explicit
+  typed outcomes defined in increment 3; they will never be converted to zero.
+
+### Parameter validity and persistence
+
+- `T > 0` and finite: nominal top-of-scale event value.
+- `M > 0` and finite: asymptotic positive logarithmic range in decades.
+- `0 <= W <= M/2` and finite: width of the approximately linear region.
+- `-W <= A <= M - 2W` and finite: additional negative range in decades.
+- All four values and an implementation identifier
+  `logicle-gml2-moore-parks-2012-v1` must be persisted. Defaults may be offered
+  by a UI, but the runner must never estimate them again from current events.
+
+### Reference tolerance
+
+Reference vectors will include negative values, zero, both sides of the linear
+region, the transition region, `T`, and values outside the nominal range. For
+finite `float64` inputs the acceptance limits are:
+
+- reference forward coordinates: absolute error `<= 1e-12`;
+- `inverse(forward(x))`: `rtol <= 1e-12` and
+  `atol <= max(1, abs(T)) * 1e-12`;
+- exact anchors `forward(0)=x1` and `forward(T)=1` are tested with absolute
+  tolerance `8 * numpy.finfo(float64).eps`.
+
+If the independent BSD implementation cannot meet these limits on the same
+fixture and platform, the tolerance must be justified from measured error and
+recorded before relaxing it. Gate-membership tests additionally place events
+on both sides of every boundary so tolerance cannot silently change a count.
+
+### Tick generation
+
+Ticks are defined in event-value space and mapped with the same transform
+object used for events and gates. Major candidates are zero plus positive and
+negative signed powers of ten within the visible inverse-mapped interval;
+duplicate or nonfinite coordinates are removed. `T` may be added as an endpoint
+tick when it is not already a decade. Tick generation must not use an
+independent approximation or infer different `T/W/M/A` values.
+
+### FlowJo compatibility statement
+
+Flowdesk’s future type will be named `logicle`, meaning the published
+Moore–Parks/Gating-ML transform. It will not be named `biex`, `FlowJo Biex`, or
+described as numerically equivalent to FlowJo. FlowJo’s product-specific
+parameter selection and rendering have not been verified with licensed,
+versioned reference fixtures. The current `logicle_like` implementation is an
+unrelated legacy approximation and must never be relabeled as formal Logicle.
+
 ## Increments
 
 1. **Transform protocol**
@@ -60,6 +162,26 @@ claim FlowJo Biex compatibility without versioned reference fixtures.
 - Logicle-drawn rectangle/polygon has identical GUI/headless membership.
 - Project transform plus gate reference is applied exactly once.
 
+## Confirmed contract after increment 1
+
+- `TransformImplementation` defines one typed validation, forward, and inverse
+  protocol. `apply_transform()` remains the compatibility forward adapter;
+  `inverse_transform()` and `validate_transform()` are GUI-independent core APIs.
+- Linear, log, and asinh retain their previous forward equations. Their inverse
+  equations are `(y-offset)/scale`, `base**y`, and
+  `sinh(y/cofactor)*cofactor`, respectively.
+- Complete normalized settings are built without mutating persisted settings.
+  Zero linear scale and nonfinite numeric settings fail with stable code
+  `invalid_transform_settings` because an invertible definition cannot represent
+  them.
+- Log invalid-value policies still control forward values outside the positive
+  domain. The inverse is the coordinate inverse on the valid logarithmic range;
+  policies such as `to_zero` are intentionally not claimed to be bijective for
+  invalid original values.
+- The legacy `logicle_like` forward path is unchanged. Its inverse raises
+  `transform_inverse_unavailable`; inventing an inverse would falsely imply a
+  scientific transform contract.
+
 ## Stop condition
 
 If no licensed/reference implementation or equation can be verified, stop after the
@@ -73,4 +195,3 @@ pytest -q tests/test_transforms.py tests/test_gates.py tests/test_qt_plot_widget
 ruff check src tests
 mypy src/flowdesk_core src/flowdesk_storage src/flowdesk_cli
 ```
-

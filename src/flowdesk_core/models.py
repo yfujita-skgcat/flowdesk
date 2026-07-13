@@ -135,7 +135,7 @@ class TransformSpec:
   name: str
   transform_type: Literal["linear", "log", "asinh", "logicle_like"]
   parameter: str
-  settings: dict[str, float] = field(default_factory=dict)
+  settings: dict[str, Any] = field(default_factory=dict)
   notes: str = ""
 
 

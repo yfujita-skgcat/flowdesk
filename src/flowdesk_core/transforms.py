@@ -7,7 +7,9 @@ All parameters needed to reproduce a transform are stored in the spec.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,6 +20,10 @@ from flowdesk_core.models import TransformSpec
 
 class TransformError(FlowdeskError):
   """Raised when a transform definition or application is invalid."""
+
+  def __init__(self, code: str, message: str) -> None:
+    self.code = code
+    super().__init__(message)
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +40,7 @@ _INVALID_VALUE_POLICIES = frozenset({"to_nan", "to_zero", "clip_to_one"})
 
 def _apply_linear(
   values: NDArray[np.float64],
-  settings: dict[str, float],
+  settings: Mapping[str, Any],
 ) -> NDArray[np.float64]:
   """Linear transform: y = x * scale + offset."""
   scale = float(settings.get("scale", 1.0))
@@ -44,7 +50,7 @@ def _apply_linear(
 
 def _apply_log(
   values: NDArray[np.float64],
-  settings: dict[str, float],
+  settings: Mapping[str, Any],
 ) -> NDArray[np.float64]:
   """Log transform with configurable base and invalid-value policy.
 
@@ -58,12 +64,14 @@ def _apply_log(
 
   if policy not in _INVALID_VALUE_POLICIES:
     raise TransformError(
+      "invalid_transform_settings",
       f"unknown invalid_value_policy: {policy!r}. "
       f"Must be one of {sorted(_INVALID_VALUE_POLICIES)}"
     )
 
   if base <= 0 or base == 1.0:
     raise TransformError(
+      "invalid_transform_settings",
       f"log base must be positive and != 1, got {base}"
     )
 
@@ -87,7 +95,7 @@ def _apply_log(
 
 def _apply_asinh(
   values: NDArray[np.float64],
-  settings: dict[str, float],
+  settings: Mapping[str, Any],
 ) -> NDArray[np.float64]:
   """Arcsinh transform: y = asinh(x / cofactor) * cofactor.
 
@@ -98,6 +106,7 @@ def _apply_asinh(
 
   if cofactor <= 0:
     raise TransformError(
+      "invalid_transform_settings",
       f"asinh cofactor must be positive, got {cofactor}"
     )
 
@@ -106,7 +115,7 @@ def _apply_asinh(
 
 def _apply_logicle_like(
   values: NDArray[np.float64],
-  settings: dict[str, float],
+  settings: Mapping[str, Any],
 ) -> NDArray[np.float64]:
   """Approximate logicle transform.
 
@@ -124,13 +133,22 @@ def _apply_logicle_like(
   tn = float(settings.get("tn", 1e4))
 
   if w < 0 or w >= 1:
-    raise TransformError(f"logicle w must be in [0, 1), got {w}")
+    raise TransformError(
+      "invalid_transform_settings",
+      f"logicle w must be in [0, 1), got {w}",
+    )
 
   if td <= 0:
-    raise TransformError(f"logicle td must be positive, got {td}")
+    raise TransformError(
+      "invalid_transform_settings",
+      f"logicle td must be positive, got {td}",
+    )
 
   if tn <= 0:
-    raise TransformError(f"logicle tn must be positive, got {tn}")
+    raise TransformError(
+      "invalid_transform_settings",
+      f"logicle tn must be positive, got {tn}",
+    )
 
   # Simplified logicle: scale to [0, 1], apply transformation, rescale.
   log_td = math.log10(td) if td > 0 else 0.0
@@ -157,17 +175,209 @@ def _apply_logicle_like(
 # Dispatcher
 # ---------------------------------------------------------------------------
 
+TransformSettings = Mapping[str, Any]
+NormalizedTransformSettings = dict[str, Any]
 TransformFn = Callable[
-  [NDArray[np.float64], dict[str, float]],
+  [NDArray[np.float64], TransformSettings],
   NDArray[np.float64],
 ]
+SettingsValidator = Callable[
+  [TransformSettings],
+  NormalizedTransformSettings,
+]
 
-_TRANSFORM_REGISTRY: dict[str, TransformFn] = {
-  "linear": _apply_linear,
-  "log": _apply_log,
-  "asinh": _apply_asinh,
-  "logicle_like": _apply_logicle_like,
+
+class TransformImplementation(Protocol):
+  """Typed numeric contract shared by analysis transform implementations."""
+
+  def validate_settings(
+    self,
+    settings: TransformSettings,
+  ) -> NormalizedTransformSettings:
+    """Validate and return complete settings without mutating the input."""
+
+  def forward(
+    self,
+    values: NDArray[np.float64],
+    settings: TransformSettings,
+  ) -> NDArray[np.float64]:
+    """Map event values into transform coordinates."""
+
+  def inverse(
+    self,
+    values: NDArray[np.float64],
+    settings: TransformSettings,
+  ) -> NDArray[np.float64]:
+    """Map transform coordinates back into event-value coordinates."""
+
+
+@dataclass(frozen=True)
+class _RegisteredTransform:
+  validator: SettingsValidator
+  forward_fn: TransformFn
+  inverse_fn: TransformFn | None
+
+  def validate_settings(
+    self,
+    settings: TransformSettings,
+  ) -> NormalizedTransformSettings:
+    return self.validator(settings)
+
+  def forward(
+    self,
+    values: NDArray[np.float64],
+    settings: TransformSettings,
+  ) -> NDArray[np.float64]:
+    return self.forward_fn(values, settings)
+
+  def inverse(
+    self,
+    values: NDArray[np.float64],
+    settings: TransformSettings,
+  ) -> NDArray[np.float64]:
+    if self.inverse_fn is None:
+      raise TransformError(
+        "transform_inverse_unavailable",
+        "transform has no scientifically defined inverse",
+      )
+    return self.inverse_fn(values, settings)
+
+
+def _finite_setting(
+  settings: TransformSettings,
+  name: str,
+  default: float,
+) -> float:
+  try:
+    value = float(settings.get(name, default))
+  except (TypeError, ValueError) as exc:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"transform setting {name!r} must be numeric",
+    ) from exc
+  if not math.isfinite(value):
+    raise TransformError(
+      "invalid_transform_settings",
+      f"transform setting {name!r} must be finite, got {value}",
+    )
+  return value
+
+
+def _validate_linear(settings: TransformSettings) -> NormalizedTransformSettings:
+  scale = _finite_setting(settings, "scale", 1.0)
+  offset = _finite_setting(settings, "offset", 0.0)
+  if scale == 0:
+    raise TransformError(
+      "invalid_transform_settings",
+      "linear scale must be non-zero for an invertible transform",
+    )
+  return {"scale": scale, "offset": offset}
+
+
+def _validate_log(settings: TransformSettings) -> NormalizedTransformSettings:
+  base = _finite_setting(settings, "base", 10.0)
+  if base <= 0 or base == 1:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"log base must be positive and != 1, got {base}",
+    )
+  policy = settings.get("invalid_value_policy", "to_nan")
+  if policy not in _INVALID_VALUE_POLICIES:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"unknown invalid_value_policy: {policy!r}. "
+      f"Must be one of {sorted(_INVALID_VALUE_POLICIES)}",
+    )
+  return {"base": base, "invalid_value_policy": policy}
+
+
+def _validate_asinh(settings: TransformSettings) -> NormalizedTransformSettings:
+  cofactor = _finite_setting(settings, "cofactor", 1.0)
+  if cofactor <= 0:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"asinh cofactor must be positive, got {cofactor}",
+    )
+  return {"cofactor": cofactor}
+
+
+def _validate_logicle_like(
+  settings: TransformSettings,
+) -> NormalizedTransformSettings:
+  normalized = {
+    "w": _finite_setting(settings, "w", 0.25),
+    "td": _finite_setting(settings, "td", 1e6),
+    "tn": _finite_setting(settings, "tn", 1e4),
+  }
+  w = normalized["w"]
+  if w < 0 or w >= 1:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"logicle w must be in [0, 1), got {w}",
+    )
+  if normalized["td"] <= 0:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"logicle td must be positive, got {normalized['td']}",
+    )
+  if normalized["tn"] <= 0:
+    raise TransformError(
+      "invalid_transform_settings",
+      f"logicle tn must be positive, got {normalized['tn']}",
+    )
+  return normalized
+
+
+def _inverse_linear(
+  values: NDArray[np.float64],
+  settings: TransformSettings,
+) -> NDArray[np.float64]:
+  return (values - float(settings["offset"])) / float(settings["scale"])
+
+
+def _inverse_log(
+  values: NDArray[np.float64],
+  settings: TransformSettings,
+) -> NDArray[np.float64]:
+  return np.power(float(settings["base"]), values)
+
+
+def _inverse_asinh(
+  values: NDArray[np.float64],
+  settings: TransformSettings,
+) -> NDArray[np.float64]:
+  cofactor = float(settings["cofactor"])
+  return np.sinh(values / cofactor) * cofactor
+
+
+_TRANSFORM_REGISTRY: dict[str, TransformImplementation] = {
+  "linear": _RegisteredTransform(
+    _validate_linear, _apply_linear, _inverse_linear
+  ),
+  "log": _RegisteredTransform(_validate_log, _apply_log, _inverse_log),
+  "asinh": _RegisteredTransform(
+    _validate_asinh, _apply_asinh, _inverse_asinh
+  ),
+  "logicle_like": _RegisteredTransform(
+    _validate_logicle_like, _apply_logicle_like, None
+  ),
 }
+
+
+def _implementation_for(spec: TransformSpec) -> TransformImplementation:
+  implementation = _TRANSFORM_REGISTRY.get(spec.transform_type)
+  if implementation is None:
+    raise TransformError(
+      "unknown_transform_type",
+      f"unknown transform type: {spec.transform_type!r}. "
+      f"Supported: {sorted(_TRANSFORM_REGISTRY.keys())}",
+    )
+  return implementation
+
+
+def validate_transform(spec: TransformSpec) -> None:
+  """Validate a transform definition without applying it to event data."""
+  _implementation_for(spec).validate_settings(spec.settings)
 
 
 def apply_transform(
@@ -187,14 +397,19 @@ def apply_transform(
     TransformError: If the transform type is unknown or settings are invalid.
   """
 
-  if spec.transform_type not in _TRANSFORM_REGISTRY:
-    raise TransformError(
-      f"unknown transform type: {spec.transform_type!r}. "
-      f"Supported: {sorted(_TRANSFORM_REGISTRY.keys())}"
-    )
+  implementation = _implementation_for(spec)
+  settings = implementation.validate_settings(spec.settings)
+  return implementation.forward(values, settings)
 
-  func = _TRANSFORM_REGISTRY[spec.transform_type]
-  return func(values, spec.settings)
+
+def inverse_transform(
+  spec: TransformSpec,
+  values: NDArray[np.float64],
+) -> NDArray[np.float64]:
+  """Apply the inverse of a validated transform definition."""
+  implementation = _implementation_for(spec)
+  settings = implementation.validate_settings(spec.settings)
+  return implementation.inverse(values, settings)
 
 
 def apply_transform_to_column(
@@ -221,6 +436,7 @@ def apply_transform_to_column(
 
   if spec.parameter not in channel_names:
     raise TransformError(
+      "unknown_transform_parameter",
       f"parameter {spec.parameter!r} not found in channel names: "
       f"{channel_names}"
     )
