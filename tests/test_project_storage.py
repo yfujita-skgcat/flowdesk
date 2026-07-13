@@ -310,6 +310,78 @@ class TestChannelIdentityMigration:
     assert migrated["project_version"] == CURRENT_PROJECT_VERSION
     assert migrated["samples"][0]["channels"] == []
 
+  def test_v1_2_logicle_like_is_renamed_without_changing_settings(self) -> None:
+    legacy = {
+      **MINIMAL_MANIFEST,
+      "project_version": "1.2.0",
+      "samples": [{"id": "s1", "channels": []}],
+      "transforms": [{
+        "id": "legacy_scale",
+        "name": "Legacy scale",
+        "transform_type": "logicle_like",
+        "parameter": "signal",
+        "settings": {"w": 0.3, "td": 500000.0, "tn": 5000.0},
+        "vendor_extension": {"keep": True},
+      }, {
+        "id": "existing_log",
+        "name": "Existing log",
+        "transform_type": "log",
+        "parameter": "signal",
+        "settings": {
+          "base": 10.0,
+          "invalid_value_policy": "to_nan",
+        },
+      }],
+    }
+
+    migrated = migrate_manifest(legacy)
+
+    transform = migrated["transforms"][0]
+    assert migrated["project_version"] == CURRENT_PROJECT_VERSION
+    assert transform == {
+      "id": "legacy_scale",
+      "name": "Legacy scale",
+      "transform_type": "legacy_logicle_approximation",
+      "parameter": "signal",
+      "settings": {"w": 0.3, "td": 500000.0, "tn": 5000.0},
+      "vendor_extension": {"keep": True},
+    }
+    assert migrated["migration_diagnostics"] == [{
+      "code": "legacy_logicle_approximation",
+      "severity": "warning",
+      "stage": "migration",
+      "message": (
+        "Transform 'legacy_scale' used the historical logicle_like "
+        "approximation; it was renamed without changing numeric behavior"
+      ),
+      "transform_id": "legacy_scale",
+      "details": {
+        "old_type": "logicle_like",
+        "new_type": "legacy_logicle_approximation",
+        "numeric_behavior_preserved": True,
+      },
+    }]
+    assert legacy["transforms"][0]["transform_type"] == "logicle_like"
+    assert migrated["transforms"][1] == legacy["transforms"][1]
+    assert migrate_manifest(migrated) == migrated
+
+  def test_current_project_rejects_ambiguous_logicle_like_name(self) -> None:
+    current = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+      "samples": [],
+      "transforms": [{
+        "id": "ambiguous",
+        "name": "Ambiguous",
+        "transform_type": "logicle_like",
+        "parameter": "signal",
+        "settings": {},
+      }],
+    }
+
+    with pytest.raises(ManifestValidationError, match="transform_type"):
+      validate_manifest(current)
+
   def test_v1_1_derived_parameters_migrate_with_explicit_source_semantics(
     self,
     tmp_path: Path,

@@ -16,3 +16,7 @@ Samples initially use path references instead of copying FCS data into the proje
 `manifest.json` stores project id, project version, pipeline version, timestamps, samples, compensation matrices, derived parameters, transforms, gating strategies, export settings, execution profiles, software metadata, sample path resolution policy, and the last execution report path.
 
 Execution profiles allow one project to store multiple run configurations.
+
+The current project format is `1.3.0`. Version `1.2.0` transform definitions
+named `logicle_like` migrate to `legacy_logicle_approximation` with a persisted
+warning and unchanged numeric settings.

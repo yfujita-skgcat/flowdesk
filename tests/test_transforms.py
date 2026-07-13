@@ -1,4 +1,4 @@
-"""Tests for transform functions: linear, log, asinh, logicle_like."""
+"""Tests for linear, log, asinh, and the legacy Logicle approximation."""
 
 from __future__ import annotations
 
@@ -348,7 +348,7 @@ def test_legacy_logicle_approximation_has_no_claimed_inverse() -> None:
   spec = TransformSpec(
     id="legacy_logicle",
     name="legacy logicle approximation",
-    transform_type="logicle_like",
+    transform_type="legacy_logicle_approximation",
     parameter="signal",
   )
 
@@ -363,11 +363,11 @@ def test_legacy_logicle_approximation_has_no_claimed_inverse() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_logicle_like_preserves_shape() -> None:
+def test_legacy_logicle_approximation_preserves_shape() -> None:
   spec = TransformSpec(
     id="t15",
     name="logicle",
-    transform_type="logicle_like",
+    transform_type="legacy_logicle_approximation",
     parameter="FL1-A",
   )
   values = np.array([0.0, 100.0, 10000.0, 100000.0], dtype=np.float64)
@@ -375,12 +375,12 @@ def test_logicle_like_preserves_shape() -> None:
   assert result.shape == values.shape
 
 
-def test_logicle_like_handles_negative() -> None:
+def test_legacy_logicle_approximation_handles_negative() -> None:
   """Logicle-like must handle negative values without error or NaN."""
   spec = TransformSpec(
     id="t16",
     name="logicle_neg",
-    transform_type="logicle_like",
+    transform_type="legacy_logicle_approximation",
     parameter="FL1-A",
   )
   values = np.array([-100.0, -10.0, 0.0, 10.0, 1000.0], dtype=np.float64)
@@ -388,11 +388,11 @@ def test_logicle_like_handles_negative() -> None:
   assert np.all(np.isfinite(result))
 
 
-def test_logicle_like_bad_w_raises() -> None:
+def test_legacy_logicle_approximation_bad_w_raises() -> None:
   spec = TransformSpec(
     id="t17",
     name="logicle_bad_w",
-    transform_type="logicle_like",
+    transform_type="legacy_logicle_approximation",
     parameter="FL1-A",
     settings={"w": 2.0},
   )

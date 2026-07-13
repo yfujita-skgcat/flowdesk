@@ -8,8 +8,8 @@ from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
 
-CURRENT_PROJECT_VERSION = "1.2.0"
-LEGACY_PROJECT_VERSIONS = frozenset({"0.1", "1.0.0", "1.1.0"})
+CURRENT_PROJECT_VERSION = "1.3.0"
+LEGACY_PROJECT_VERSIONS = frozenset({"0.1", "1.0.0", "1.1.0", "1.2.0"})
 
 
 class ProjectMigrationError(FlowdeskError):
@@ -145,6 +145,45 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
       }
       if diagnostic not in diagnostics:
         diagnostics.append(diagnostic)
+
+  transforms = migrated.get("transforms", [])
+  if not isinstance(transforms, list):
+    raise ProjectMigrationError(
+      "invalid_legacy_transforms",
+      "legacy project transforms must be an array",
+    )
+  for transform in transforms:
+    if not isinstance(transform, dict):
+      raise ProjectMigrationError(
+        "invalid_legacy_transform",
+        "legacy project transform must be an object",
+      )
+    transform_id = transform.get("id")
+    if not isinstance(transform_id, str) or not transform_id:
+      raise ProjectMigrationError(
+        "invalid_legacy_transform_id",
+        "legacy transform ID must be a non-empty string",
+      )
+    if transform.get("transform_type") != "logicle_like":
+      continue
+    transform["transform_type"] = "legacy_logicle_approximation"
+    diagnostic = {
+      "code": "legacy_logicle_approximation",
+      "severity": "warning",
+      "stage": "migration",
+      "message": (
+        f"Transform {transform_id!r} used the historical logicle_like "
+        "approximation; it was renamed without changing numeric behavior"
+      ),
+      "transform_id": transform_id,
+      "details": {
+        "old_type": "logicle_like",
+        "new_type": "legacy_logicle_approximation",
+        "numeric_behavior_preserved": True,
+      },
+    }
+    if diagnostic not in diagnostics:
+      diagnostics.append(diagnostic)
   if diagnostics:
     migrated["migration_diagnostics"] = diagnostics
 

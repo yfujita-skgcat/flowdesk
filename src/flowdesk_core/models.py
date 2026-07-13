@@ -133,7 +133,12 @@ class TransformSpec:
 
   id: str
   name: str
-  transform_type: Literal["linear", "log", "asinh", "logicle_like"]
+  transform_type: Literal[
+    "linear",
+    "log",
+    "asinh",
+    "legacy_logicle_approximation",
+  ]
   parameter: str
   settings: dict[str, Any] = field(default_factory=dict)
   notes: str = ""

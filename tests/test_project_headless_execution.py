@@ -60,3 +60,69 @@ def test_migrated_project_round_trip_runs_headlessly(tmp_path: Path) -> None:
   assert json.loads(
     (saved_bundle / "manifest.json").read_text(encoding="utf-8")
   )["unknown_project_extension"] == {"keep": "unchanged"}
+
+
+def test_legacy_logicle_migration_preserves_headless_gate_membership(
+  tmp_path: Path,
+) -> None:
+  legacy = {
+    "project_id": "legacy_logicle",
+    "project_version": "1.2.0",
+    "pipeline_version": "0.1",
+    "samples": [{
+      "id": "s1",
+      "channels": [{"id": "signal", "name": "Signal", "metadata": {}}],
+    }],
+    "execution_profiles": [{
+      "id": "default",
+      "gating_strategy_id": "strategy",
+    }],
+    "transforms": [{
+      "id": "legacy_scale",
+      "name": "Legacy scale",
+      "transform_type": "logicle_like",
+      "parameter": "signal",
+      "settings": {"w": 0.25, "td": 1e6, "tn": 1e4},
+    }],
+    "gating_strategies_data": {
+      "strategy": {
+        "id": "strategy",
+        "name": "Strategy",
+        "gates": [{
+          "id": "legacy_range",
+          "name": "Legacy range",
+          "gate_type": "range",
+          "parent_population_id": "all_events",
+          "x_parameter": "signal",
+          "thresholds": {"min": 40000.0, "max": 50000.0},
+        }],
+      },
+    },
+  }
+  bundle = tmp_path / "legacy-logicle.flowdesk"
+  bundle.mkdir()
+  (bundle / "manifest.json").write_text(
+    json.dumps(legacy),
+    encoding="utf-8",
+  )
+
+  migrated = load_project(bundle)
+  sample = SampleData(
+    "s1",
+    np.array([[-10.0], [0.0], [10.0], [1000.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  report = PipelineRunner(migrated).run_samples(
+    ExecutionContext(execution_profile_id="default"),
+    (sample,),
+  )
+
+  assert migrated["transforms"][0]["transform_type"] == (
+    "legacy_logicle_approximation"
+  )
+  membership = next(
+    item.mask
+    for item in report.population_membership
+    if item.population_id == "legacy_range"
+  )
+  assert membership.tolist() == [False, False, True, False]

@@ -113,7 +113,7 @@ def _apply_asinh(
   return np.arcsinh(values / cofactor) * cofactor
 
 
-def _apply_logicle_like(
+def _apply_legacy_logicle_approximation(
   values: NDArray[np.float64],
   settings: Mapping[str, Any],
 ) -> NDArray[np.float64]:
@@ -301,7 +301,7 @@ def _validate_asinh(settings: TransformSettings) -> NormalizedTransformSettings:
   return {"cofactor": cofactor}
 
 
-def _validate_logicle_like(
+def _validate_legacy_logicle_approximation(
   settings: TransformSettings,
 ) -> NormalizedTransformSettings:
   normalized = {
@@ -358,8 +358,10 @@ _TRANSFORM_REGISTRY: dict[str, TransformImplementation] = {
   "asinh": _RegisteredTransform(
     _validate_asinh, _apply_asinh, _inverse_asinh
   ),
-  "logicle_like": _RegisteredTransform(
-    _validate_logicle_like, _apply_logicle_like, None
+  "legacy_logicle_approximation": _RegisteredTransform(
+    _validate_legacy_logicle_approximation,
+    _apply_legacy_logicle_approximation,
+    None,
   ),
 }
 

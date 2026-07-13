@@ -178,9 +178,26 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
   domain. The inverse is the coordinate inverse on the valid logarithmic range;
   policies such as `to_zero` are intentionally not claimed to be bijective for
   invalid original values.
-- The legacy `logicle_like` forward path is unchanged. Its inverse raises
+- The legacy approximation forward path is unchanged. Its inverse raises
   `transform_inverse_unavailable`; inventing an inverse would falsely imply a
   scientific transform contract.
+
+## Confirmed contract after increment 2
+
+- Project format `1.3.0` renames persisted `logicle_like` definitions to
+  `legacy_logicle_approximation`. The migration deep-copies the manifest and
+  preserves transform ID, parameter ID, settings, notes, and unknown fields.
+- The renamed type is backed by the exact previous numeric function. A
+  headless fixture fixes the resulting gate-membership mask so a future formal
+  Logicle implementation cannot silently change legacy populations.
+- Migration records warning `legacy_logicle_approximation` with the transform
+  ID, old/new type names, and `numeric_behavior_preserved=true`. Reloading the
+  current project is idempotent and does not duplicate the warning.
+- Current manifests reject the ambiguous `logicle_like` name. Formal `logicle`
+  remains unavailable until increment 3 supplies independent reference vectors;
+  migration never converts a legacy approximation into formal Logicle.
+- Linear, log, and asinh names, settings, implementations, and persistence are
+  unchanged by this migration.
 
 ## Stop condition
 

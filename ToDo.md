@@ -157,7 +157,7 @@ git status --short
 
 #### Core
 
-- [ ] 現在の`logicle_like`を`legacy_logicle_approximation`へrenameするschema migrationを作る。
+- [x] 済み: 現在の`logicle_like`を`legacy_logicle_approximation`へrenameするschema migrationを作る。
 - [ ] published Logicleのforward/inverseを実装する。optional dependencyを使う場合もversionとparameter mappingを保存する。
 - [ ] linear、log、asinh、logicleを共通Transform protocol/APIで扱う。
 - [ ] gate evaluator、plot coordinate conversion、tick生成が同じimplementationを使う。
@@ -168,7 +168,7 @@ git status --short
 #### GUI/migration
 
 - [ ] Transform Editorでtypeと全parameterを編集し、previewとinverse round-trip errorを表示する。
-- [ ] legacy project読込時に近似typeを勝手に正式Logicleへ変換しない。
+- [x] 済み: legacy project読込時に近似typeを勝手に正式Logicleへ変換しない。
 - [ ] legacy gateを正式Logicleへ移す場合は明示的duplicate/migrate operationと差分previewを提供する。
 
 #### 必須test

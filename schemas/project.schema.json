@@ -6,7 +6,7 @@
   "required": ["project_id", "project_version", "pipeline_version", "samples"],
   "properties": {
     "project_id": { "type": "string" },
-    "project_version": { "const": "1.2.0" },
+    "project_version": { "const": "1.3.0" },
     "pipeline_version": { "type": "string" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" },
@@ -19,7 +19,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/derivedParameter" }
     },
-    "transforms": { "type": "array", "items": { "type": "object" } },
+    "transforms": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/transform" }
+    },
     "gating_strategies": { "type": "array", "items": { "type": "object" } },
     "default_gating_strategy_id": { "type": "string" },
     "default_compensation_matrix_id": { "type": ["string", "null"] },
@@ -39,6 +42,7 @@
           "stage": { "const": "migration" },
           "message": { "type": "string", "minLength": 1 },
           "parameter_id": { "type": "string" },
+          "transform_id": { "type": "string" },
           "details": { "type": "object" }
         },
         "additionalProperties": true
@@ -46,6 +50,26 @@
     }
   },
   "$defs": {
+    "transform": {
+      "type": "object",
+      "required": ["id", "transform_type", "parameter"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "transform_type": {
+          "enum": [
+            "linear",
+            "log",
+            "asinh",
+            "legacy_logicle_approximation"
+          ]
+        },
+        "parameter": { "type": "string", "minLength": 1 },
+        "settings": { "type": "object" },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
     "derivedParameter": {
       "type": "object",
       "required": [

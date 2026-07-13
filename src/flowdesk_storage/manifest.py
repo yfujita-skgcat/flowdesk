@@ -45,6 +45,47 @@ def validate_manifest(data: dict[str, Any]) -> None:
   if data["project_version"] == CURRENT_PROJECT_VERSION:
     _validate_current_samples(data["samples"])
     _validate_current_derived_parameters(data.get("derived_parameters", []))
+    _validate_current_transforms(data.get("transforms", []))
+
+
+def _validate_current_transforms(transforms: Any) -> None:
+  """Validate unambiguous transform types in the current project format."""
+  if not isinstance(transforms, list):
+    raise ManifestValidationError("transforms must be an array")
+  valid_types = {
+    "linear",
+    "log",
+    "asinh",
+    "legacy_logicle_approximation",
+  }
+  transform_ids: set[str] = set()
+  for index, transform in enumerate(transforms):
+    if not isinstance(transform, dict):
+      raise ManifestValidationError(f"transforms[{index}] must be an object")
+    transform_id = transform.get("id")
+    if not isinstance(transform_id, str) or not transform_id:
+      raise ManifestValidationError(
+        f"transforms[{index}].id must be a non-empty string"
+      )
+    if transform_id in transform_ids:
+      raise ManifestValidationError(f"duplicate transform ID {transform_id!r}")
+    transform_ids.add(transform_id)
+    transform_type = transform.get("transform_type")
+    if transform_type not in valid_types:
+      raise ManifestValidationError(
+        f"transform {transform_id!r} has invalid transform_type "
+        f"{transform_type!r}"
+      )
+    parameter = transform.get("parameter")
+    if not isinstance(parameter, str) or not parameter:
+      raise ManifestValidationError(
+        f"transform {transform_id!r} parameter must be a non-empty string"
+      )
+    settings = transform.get("settings", {})
+    if not isinstance(settings, dict):
+      raise ManifestValidationError(
+        f"transform {transform_id!r} settings must be an object"
+      )
 
 
 def _validate_current_derived_parameters(definitions: Any) -> None:

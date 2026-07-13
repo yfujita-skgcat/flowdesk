@@ -6,7 +6,10 @@
 
 `DerivedParameterSpec` stores an id, name, expression, source stage, input parameters, output label, invalid value policy, and notes. Derived parameters should behave like regular channels after computation.
 
-`TransformSpec` stores a transform id, type, parameter, and parameters for linear, log, asinh, or logicle-like transforms.
+`TransformSpec` stores a transform id, type, parameter, and complete settings
+for linear, log, asinh, or the explicitly named
+`legacy_logicle_approximation`. Formal Gating-ML Logicle is a separate type and
+must never be inferred from the legacy approximation.
 
 `GateSpec` is an analysis object in data coordinates or transformed data coordinates. It is not a screen-pixel shape. `GatingStrategySpec` stores a collection of gates and a population hierarchy.
 
