@@ -6,15 +6,22 @@ spillover matrix. Raw events are never mutated; a new array is always returned.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import CompensationBindingSpec, CompensationMatrixSpec
+from flowdesk_core.models import (
+  CompensationBindingSpec,
+  CompensationCalculationControlSpec,
+  CompensationCalculationSpec,
+  CompensationMatrixSpec,
+  CompensationProvenanceSpec,
+)
 
 
 class CompensationError(FlowdeskError):
@@ -404,3 +411,356 @@ def apply_compensation(
   compensated[:, col_indices] = comp_block.T  # (n_events, n_fl)
 
   return compensated
+
+
+# ---------------------------------------------------------------------------
+# Calculation diagnostics
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CompensationCalculationChannelDiagnostic:
+  """Per-detector diagnostic produced during spillover matrix calculation."""
+
+  detector_channel_id: str
+  positive_event_count: int
+  negative_event_count: int
+  median_positive: float
+  median_negative: float
+  median_background_subtracted: float
+  spillover_row: tuple[float, ...]
+  outlier_count: int = 0
+  warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CompensationCalculationResult:
+  """Full result of a spillover matrix calculation."""
+
+  matrix_spec: CompensationMatrixSpec
+  channel_diagnostics: tuple[CompensationCalculationChannelDiagnostic, ...]
+  condition_number: float
+  overall_warnings: tuple[str, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Calculation
+# ---------------------------------------------------------------------------
+
+
+def _remove_outliers_iqr(
+  values: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], int]:
+  """Return values with IQR-based outliers removed and the outlier count."""
+  q1 = float(np.percentile(values, 25))
+  q3 = float(np.percentile(values, 75))
+  iqr = q3 - q1
+  if iqr <= 0:
+    return values, 0
+  lower = q1 - 1.5 * iqr
+  upper = q3 + 1.5 * iqr
+  mask = (values >= lower) & (values <= upper)
+  outlier_count = int((~mask).sum())
+  return values[mask], outlier_count
+
+
+def _remove_outliers_zscore(
+  values: NDArray[np.float64],
+  threshold: float = 3.0,
+) -> tuple[NDArray[np.float64], int]:
+  """Return values with z-score outliers removed and the outlier count."""
+  mean = float(np.mean(values))
+  std = float(np.std(values, ddof=1))
+  if std <= 0:
+    return values, 0
+  z = np.abs((values - mean) / std)
+  mask = z <= threshold
+  outlier_count = int((~mask).sum())
+  return values[mask], outlier_count
+
+
+def _remove_outliers(
+  values: NDArray[np.float64],
+  policy: str,
+) -> tuple[NDArray[np.float64], int]:
+  """Apply the requested outlier policy and return cleaned values."""
+  if policy == "iqr":
+    return _remove_outliers_iqr(values)
+  elif policy == "zscore":
+    return _remove_outliers_zscore(values)
+  else:
+    return values, 0
+
+
+def _compute_spillover_coefficient(
+  positive_medians: NDArray[np.float64],
+  reference_median: float,
+) -> NDArray[np.float64]:
+  """Compute spillover coefficients: fraction of reference signal in each detector."""
+  if reference_median <= 0:
+    return np.zeros(len(positive_medians), dtype=np.float64)
+  return positive_medians / reference_median
+
+
+def _build_spillover_matrix(
+  spec: CompensationCalculationSpec,
+  population_medians: Mapping[str, NDArray[np.float64]],
+  all_channel_ids: Sequence[str],
+  detector_ids: list[str],
+) -> tuple[NDArray[np.float64], list[CompensationCalculationChannelDiagnostic]]:
+  """Build the spillover matrix from per-population median fluorescence.
+
+  Args:
+    spec: Calculation specification with detector × control assignments.
+    population_medians: Mapping from population ID to median fluorescence
+      vector aligned with ``all_channel_ids``.
+    all_channel_ids: All channel IDs aligned with median vectors.
+    detector_ids: Ordered detector channel IDs (subset of all_channel_ids).
+
+  Returns:
+    The spillover matrix (detector_rows × detector_columns) and per-detector
+    diagnostics.
+  """
+  channel_index = {ch: i for i, ch in enumerate(all_channel_ids)}
+  n = len(spec.controls)
+  matrix = np.zeros((n, n), dtype=np.float64)
+  diagnostics: list[CompensationCalculationChannelDiagnostic] = []
+
+  for row_idx, control in enumerate(spec.controls):
+    det_id = control.detector_channel_id
+    if det_id not in channel_index:
+      raise CompensationError(
+        f"detector channel {det_id!r} not found in data channels",
+        code="calculation_channel_missing",
+      )
+
+    pos_med = population_medians[control.positive_population_id]
+    neg_med = population_medians[control.negative_population_id]
+    background = neg_med.copy()
+    background_sub = pos_med - background
+
+    # Select only detector channels for the spillover row.
+    detector_medians = np.array([
+      float(background_sub[channel_index[d]]) for d in detector_ids
+    ])
+    reference_median = float(background_sub[channel_index[det_id]])
+
+    spillover_row = _compute_spillover_coefficient(
+      detector_medians,
+      reference_median,
+    )
+    matrix[row_idx] = spillover_row
+
+    warnings: list[str] = []
+    if reference_median < 10.0:
+      warnings.append(f"very low reference median for {det_id!r}: {reference_median:.2f}")
+
+    diagnostics.append(CompensationCalculationChannelDiagnostic(
+      detector_channel_id=det_id,
+      positive_event_count=0,  # filled by caller
+      negative_event_count=0,
+      median_positive=float(pos_med[channel_index[det_id]]),
+      median_negative=float(neg_med[channel_index[det_id]]),
+      median_background_subtracted=reference_median,
+      spillover_row=tuple(float(v) for v in spillover_row),
+      warnings=tuple(warnings),
+    ))
+
+  return matrix, diagnostics
+
+
+def calculate_spillover_matrix(
+  spec: CompensationCalculationSpec,
+  events: NDArray[np.float64],
+  channel_ids: Sequence[str],
+  population_masks: Mapping[str, NDArray[np.bool_]],
+) -> CompensationCalculationResult:
+  """Calculate a spillover matrix from single-stain control data.
+
+  For each detector channel, the positive and negative control populations
+  are used to determine background-subtracted median fluorescence across
+  all detectors. The spillover coefficient for each detector pair is the
+  ratio of background-subtracted median to the reference detector median.
+
+  Args:
+    spec: Calculation configuration with detector × population assignments.
+    events: Raw (pre-compensation) event array of shape (n_events, n_channels).
+    channel_ids: Ordered channel IDs aligned with ``events`` columns.
+    population_masks: Mapping from population ID to a boolean mask identifying
+      events belonging to that population.
+
+  Returns:
+    ``CompensationCalculationResult`` containing the new ``CompensationMatrixSpec``
+    and per-detector diagnostics.
+
+  Raises:
+    CompensationError: If a referenced population is missing, has too few
+      events, or the resulting matrix is not invertible.
+  """
+  if events.ndim != 2:
+    raise CompensationError("events must be a 2-D array")
+  if events.shape[1] != len(channel_ids):
+    raise CompensationError("events columns must match channel_ids length")
+
+  # Validate all population masks exist.
+  required_pops = set()
+  for control in spec.controls:
+    required_pops.add(control.positive_population_id)
+    required_pops.add(control.negative_population_id)
+  missing_pops = required_pops - set(population_masks)
+  if missing_pops:
+    raise CompensationError(
+      f"population masks missing: {', '.join(sorted(missing_pops))}",
+      code="calculation_population_missing",
+    )
+
+  # Validate detector channels exist in data.
+  channel_index = {ch: i for i, ch in enumerate(channel_ids)}
+  for control in spec.controls:
+    if control.detector_channel_id not in channel_index:
+      raise CompensationError(
+        f"detector channel {control.detector_channel_id!r} not found in data",
+        code="calculation_channel_missing",
+      )
+
+  # Compute per-population median fluorescence with outlier removal.
+  population_medians: dict[str, NDArray[np.float64]] = {}
+  population_event_counts: dict[str, int] = {}
+  outlier_counts: dict[str, int] = {}
+
+  for pop_id in required_pops:
+    mask = population_masks[pop_id]
+    pop_events = events[mask]
+    count = int(mask.sum())
+    population_event_counts[pop_id] = count
+
+    pop_values = pop_events.astype(np.float64)
+    cleaned, n_outliers = _remove_outliers(
+      pop_values[:, channel_index[list(channel_ids)[0]]] if len(channel_ids) > 0
+      else pop_values[:, 0],
+      spec.outlier_policy,
+    )
+    outlier_counts[pop_id] = n_outliers
+
+    # Compute median per channel after outlier removal on each channel independently.
+    medians = np.zeros(len(channel_ids), dtype=np.float64)
+    total_outliers = 0
+    for ch_idx in range(len(channel_ids)):
+      ch_values = pop_values[:, ch_idx]
+      ch_cleaned, ch_outliers = _remove_outliers(ch_values, spec.outlier_policy)
+      total_outliers += ch_outliers
+      medians[ch_idx] = float(np.median(ch_cleaned)) if len(ch_cleaned) > 0 else 0.0
+    outlier_counts[pop_id] = total_outliers
+
+    population_medians[pop_id] = medians
+
+  # Check minimum event counts.
+  overall_warnings: list[str] = []
+  for control in spec.controls:
+    pos_count = population_event_counts[control.positive_population_id]
+    neg_count = population_event_counts[control.negative_population_id]
+    if pos_count < spec.minimum_positive_events:
+      overall_warnings.append(
+        f"positive control {control.positive_population_id!r} has only "
+        f"{pos_count} events (minimum {spec.minimum_positive_events})"
+      )
+    if neg_count < spec.minimum_negative_events:
+      overall_warnings.append(
+        f"negative control {control.negative_population_id!r} has only "
+        f"{neg_count} events (minimum {spec.minimum_negative_events})"
+      )
+
+  # Build spillover matrix.
+  detector_ids = [c.detector_channel_id for c in spec.controls]
+  detector_channel_ids = tuple(detector_ids)
+  try:
+    matrix_array, channel_diags = _build_spillover_matrix(
+      spec, population_medians, channel_ids, detector_ids,
+    )
+  except CompensationError:
+    raise
+
+  # Ensure diagonal is 1.0.
+  for i in range(len(detector_ids)):
+    matrix_array[i, i] = 1.0
+
+  # Check invertibility.
+  try:
+    cond = float(np.linalg.cond(matrix_array))
+  except np.linalg.LinAlgError:
+    raise CompensationError(
+      "calculated spillover matrix is singular and cannot be inverted",
+      code="calculation_singular_matrix",
+    )
+
+  if not np.isfinite(cond) or cond >= COMPENSATION_NUMERICAL_SINGULARITY_THRESHOLD:
+    raise CompensationError(
+      f"calculated spillover matrix is numerically singular (condition={cond:.2e})",
+      code="calculation_singular_matrix",
+    )
+
+  if cond >= COMPENSATION_CONDITION_WARNING_THRESHOLD:
+    overall_warnings.append(
+      f"calculated matrix is ill-conditioned (condition={cond:.2e})"
+    )
+
+  # Update diagnostics with actual event counts.
+  updated_diags: list[CompensationCalculationChannelDiagnostic] = []
+  for diag in channel_diags:
+    pos_count = population_event_counts[
+      next(c.positive_population_id for c in spec.controls
+           if c.detector_channel_id == diag.detector_channel_id)
+    ]
+    neg_count = population_event_counts[
+      next(c.negative_population_id for c in spec.controls
+           if c.detector_channel_id == diag.detector_channel_id)
+    ]
+    updated_diags.append(CompensationCalculationChannelDiagnostic(
+      detector_channel_id=diag.detector_channel_id,
+      positive_event_count=pos_count,
+      negative_event_count=neg_count,
+      median_positive=diag.median_positive,
+      median_negative=diag.median_negative,
+      median_background_subtracted=diag.median_background_subtracted,
+      spillover_row=diag.spillover_row,
+      outlier_count=outlier_counts.get(
+        next(c.positive_population_id for c in spec.controls
+             if c.detector_channel_id == diag.detector_channel_id),
+        0,
+      ),
+      warnings=diag.warnings,
+    ))
+
+  # Create the resulting matrix spec.
+  now = datetime.now(timezone.utc).isoformat()
+  matrix_spec = CompensationMatrixSpec(
+    id=f"calculated-{spec.id}",
+    name=f"Calculated: {spec.name}",
+    source="calculated",
+    channels=detector_channel_ids,
+    matrix=tuple(tuple(float(v) for v in row) for row in matrix_array),
+    created_by=spec.created_by,
+    created_at=now,
+    notes=f"Auto-calculated from {spec.id}. Method={spec.regression_method}, outlier={spec.outlier_policy}.",
+    provenance=CompensationProvenanceSpec(
+      source_sample_id=None,
+      source_metadata_key=None,
+      control_sample_ids=tuple(),
+      control_population_ids=tuple(dict.fromkeys(
+        list(c.positive_population_id for c in spec.controls) +
+        list(c.negative_population_id for c in spec.controls)
+      )),
+      algorithm="spillover_median",
+      algorithm_version="1.0.0",
+      software_version="1.5.0",
+      derived_from_matrix_id=None,
+      manual_edits=(),
+    ),
+  )
+
+  return CompensationCalculationResult(
+    matrix_spec=matrix_spec,
+    channel_diagnostics=tuple(updated_diags),
+    condition_number=cond,
+    overall_warnings=tuple(overall_warnings),
+  )

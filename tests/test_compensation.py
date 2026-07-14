@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from flowdesk_core.compensation import (
+  COMPENSATION_CONDITION_WARNING_THRESHOLD,
   CompensationError,
   apply_compensation,
   inspect_compensation_matrix,
@@ -15,6 +16,8 @@ from flowdesk_core.compensation import (
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.models import (
   CompensationBindingSpec,
+  CompensationCalculationControlSpec,
+  CompensationCalculationSpec,
   CompensationManualEditSpec,
   CompensationMatrixSpec,
   CompensationProvenanceSpec,
@@ -633,3 +636,427 @@ def test_multiple_events_compensated_independently() -> None:
 
   # Shape preserved.
   assert result.shape == events.shape
+
+
+# ---------------------------------------------------------------------------
+# CompensationCalculationSpec model
+# ---------------------------------------------------------------------------
+
+
+def test_calculation_spec_basic() -> None:
+  control = CompensationCalculationControlSpec(
+    detector_channel_id="FL1-A",
+    positive_population_id="pos_FL1",
+    negative_population_id="neg_FL1",
+  )
+  spec = CompensationCalculationSpec(
+    id="calc1",
+    name="Single-stain calculation",
+    controls=(control,),
+  )
+  assert spec.regression_method == "linear"
+  assert spec.outlier_policy == "iqr"
+  assert spec.minimum_positive_events == 100
+  assert spec.minimum_negative_events == 50
+
+
+def test_calculation_spec_multiple_detectors() -> None:
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="pos_FL1",
+      negative_population_id="neg",
+    ),
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL2-A",
+      positive_population_id="pos_FL2",
+      negative_population_id="neg",
+    ),
+  )
+  spec = CompensationCalculationSpec(
+    id="calc2",
+    name="Two-color",
+    controls=controls,
+    regression_method="median",
+    outlier_policy="zscore",
+  )
+  assert len(spec.controls) == 2
+  assert spec.regression_method == "median"
+  assert spec.outlier_policy == "zscore"
+
+
+def test_calculation_spec_rejects_empty_id() -> None:
+  control = CompensationCalculationControlSpec(
+    detector_channel_id="FL1-A",
+    positive_population_id="pos",
+    negative_population_id="neg",
+  )
+  with pytest.raises(ValueError, match="non-empty"):
+    CompensationCalculationSpec(id="", name="x", controls=(control,))
+
+
+def test_calculation_spec_rejects_no_controls() -> None:
+  with pytest.raises(ValueError, match="at least one"):
+    CompensationCalculationSpec(id="x", name="x", controls=())
+
+
+def test_calculation_spec_rejects_duplicate_detectors() -> None:
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="pos",
+      negative_population_id="neg",
+    ),
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="pos2",
+      negative_population_id="neg2",
+    ),
+  )
+  with pytest.raises(ValueError, match="unique"):
+    CompensationCalculationSpec(id="x", name="x", controls=controls)
+
+
+def test_calculation_spec_rejects_empty_detector_id() -> None:
+  control = CompensationCalculationControlSpec(
+    detector_channel_id="",
+    positive_population_id="pos",
+    negative_population_id="neg",
+  )
+  with pytest.raises(ValueError, match="detector"):
+    CompensationCalculationSpec(id="x", name="x", controls=(control,))
+
+
+def test_calculation_spec_rejects_empty_population_id() -> None:
+  control = CompensationCalculationControlSpec(
+    detector_channel_id="FL1-A",
+    positive_population_id="",
+    negative_population_id="neg",
+  )
+  with pytest.raises(ValueError, match="positive"):
+    CompensationCalculationSpec(id="x", name="x", controls=(control,))
+
+
+def test_calculation_spec_rejects_invalid_regression_method() -> None:
+  control = CompensationCalculationControlSpec(
+    detector_channel_id="FL1-A",
+    positive_population_id="pos",
+    negative_population_id="neg",
+  )
+  with pytest.raises(ValueError, match="regression"):
+    CompensationCalculationSpec(
+      id="x", name="x", controls=(control,),
+      regression_method="ols",  # type: ignore[arg-type]
+    )
+
+
+def test_calculation_spec_rejects_invalid_outlier_policy() -> None:
+  control = CompensationCalculationControlSpec(
+    detector_channel_id="FL1-A",
+    positive_population_id="pos",
+    negative_population_id="neg",
+  )
+  with pytest.raises(ValueError, match="outlier"):
+    CompensationCalculationSpec(
+      id="x", name="x", controls=(control,),
+      outlier_policy="mad",  # type: ignore[arg-type]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Spillover matrix calculation - synthetic fixtures
+# ---------------------------------------------------------------------------
+
+
+def _make_synthetic_single_stain_events(
+  rng: np.random.Generator,
+  n_per_stain: int = 1000,
+  fl1_median: float = 10000.0,
+  fl2_median: float = 8000.0,
+  spillover_fl1_to_fl2: float = 0.2,
+  spillover_fl2_to_fl1: float = 0.1,
+  background: float = 100.0,
+) -> tuple[NDArray[np.float64], dict[str, NDArray[np.bool_]]]:
+  """Create synthetic single-stain control events for 2 detectors.
+
+  Three populations: FL1-positive, FL2-positive, negative (unlabeled).
+  Returns (events, population_masks_dict).
+  """
+  total = n_per_stain * 3
+  events = np.zeros((total, 3), dtype=np.float64)
+  events[:, 2] = rng.exponential(1000, total)
+
+  masks: dict[str, NDArray[np.bool_]] = {}
+
+  # FL1-positive single-stain control.
+  idx = 0
+  fl1_pos_mask = np.zeros(total, dtype=np.bool_)
+  fl1_pos_mask[idx:idx+n_per_stain] = True
+  masks["pos_FL1"] = fl1_pos_mask
+  events[idx:idx+n_per_stain, 0] = rng.normal(fl1_median, fl1_median*0.05, n_per_stain)
+  events[idx:idx+n_per_stain, 1] = rng.normal(
+    background + spillover_fl1_to_fl2 * fl1_median, background * 0.2, n_per_stain,
+  )
+  idx += n_per_stain
+
+  # FL2-positive single-stain control.
+  fl2_pos_mask = np.zeros(total, dtype=np.bool_)
+  fl2_pos_mask[idx:idx+n_per_stain] = True
+  masks["pos_FL2"] = fl2_pos_mask
+  events[idx:idx+n_per_stain, 0] = rng.normal(
+    background + spillover_fl2_to_fl1 * fl2_median, background * 0.2, n_per_stain,
+  )
+  events[idx:idx+n_per_stain, 1] = rng.normal(fl2_median, fl2_median*0.05, n_per_stain)
+  idx += n_per_stain
+
+  # Negative (unlabeled) control.
+  neg_mask = np.zeros(total, dtype=np.bool_)
+  neg_mask[idx:idx+n_per_stain] = True
+  masks["neg"] = neg_mask
+  events[idx:idx+n_per_stain, 0] = rng.normal(background, background*0.1, n_per_stain)
+  events[idx:idx+n_per_stain, 1] = rng.normal(background, background*0.1, n_per_stain)
+
+  return events, masks
+
+
+def _make_synthetic_2color_events(
+  rng: np.random.Generator,
+  n_events: int = 2000,
+  positive_fraction: float = 0.5,
+  fl1_median: float = 10000.0,
+  spillover_fl1_to_fl2: float = 0.2,
+  background: float = 100.0,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_]]:
+  """Create synthetic 2-color events with known spillover.
+
+  Returns (events, positive_mask, negative_mask).
+  """
+  pos_count = int(n_events * positive_fraction)
+  neg_count = n_events - pos_count
+
+  neg_fl1 = rng.normal(background, background * 0.1, neg_count)
+  neg_fl2 = rng.normal(background, background * 0.1, neg_count)
+
+  pos_fl1 = rng.normal(fl1_median, fl1_median * 0.05, pos_count)
+  pos_fl2 = rng.normal(
+    background + spillover_fl1_to_fl2 * fl1_median,
+    background * 0.2,
+    pos_count,
+  )
+
+  events = np.zeros((n_events, 3), dtype=np.float64)
+  events[:, 2] = rng.exponential(1000, n_events)
+
+  pos_mask = np.zeros(n_events, dtype=np.bool_)
+  neg_mask = np.zeros(n_events, dtype=np.bool_)
+
+  events[:pos_count, 0] = pos_fl1
+  events[:pos_count, 1] = pos_fl2
+  pos_mask[:pos_count] = True
+
+  events[pos_count:, 0] = neg_fl1
+  events[pos_count:, 1] = neg_fl2
+  neg_mask[pos_count:] = True
+
+  return events, pos_mask, neg_mask
+
+
+def test_calculate_spillover_matrix_produces_invertible_matrix() -> None:
+  rng = np.random.default_rng(123)
+  events, masks = _make_synthetic_single_stain_events(
+    rng,
+    spillover_fl1_to_fl2=0.15,
+    spillover_fl2_to_fl1=0.1,
+  )
+  channels = ["FL1-A", "FL2-A", "FSC-A"]
+
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="pos_FL1",
+      negative_population_id="neg",
+    ),
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL2-A",
+      positive_population_id="pos_FL2",
+      negative_population_id="neg",
+    ),
+  )
+  spec = CompensationCalculationSpec(
+    id="calc_inv",
+    name="Invertibility test",
+    controls=controls,
+  )
+
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  result = calculate_spillover_matrix(spec, events, channels, masks)
+
+  matrix = np.array(result.matrix_spec.matrix)
+  assert matrix[0, 0] == pytest.approx(1.0)
+  assert matrix[1, 1] == pytest.approx(1.0)
+  assert result.condition_number < COMPENSATION_CONDITION_WARNING_THRESHOLD
+
+
+def test_calculate_spillover_matrix_captures_spillover() -> None:
+  rng = np.random.default_rng(456)
+  events, masks = _make_synthetic_single_stain_events(
+    rng,
+    spillover_fl1_to_fl2=0.2,
+    spillover_fl2_to_fl1=0.0,
+  )
+  channels = ["FL1-A", "FL2-A", "FSC-A"]
+
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="pos_FL1",
+      negative_population_id="neg",
+    ),
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL2-A",
+      positive_population_id="pos_FL2",
+      negative_population_id="neg",
+    ),
+  )
+  spec = CompensationCalculationSpec(
+    id="calc_spill",
+    name="Spillover capture test",
+    controls=controls,
+  )
+
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  result = calculate_spillover_matrix(spec, events, channels, masks)
+
+  matrix = np.array(result.matrix_spec.matrix)
+  # Row i is computed from fluorochrome i's single-stain control.
+  # S[0,1]: FL1 fluorochrome spillover into FL2 detector ≈ 0.2
+  assert matrix[0, 1] > 0.1
+  # S[1,0]: FL2 fluorochrome spillover into FL1 detector ≈ 0.0
+  assert matrix[1, 0] < 0.05
+
+
+def test_calculate_spillover_matrix_missing_population_raises() -> None:
+  rng = np.random.default_rng(789)
+  events, masks = _make_synthetic_single_stain_events(rng)
+  channels = ["FL1-A", "FL2-A", "FSC-A"]
+
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="missing",
+      negative_population_id="neg",
+    ),
+  )
+  spec = CompensationCalculationSpec(
+    id="calc_miss",
+    name="Missing pop test",
+    controls=controls,
+  )
+
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  with pytest.raises(CompensationError, match="population"):
+    calculate_spillover_matrix(spec, events, channels, masks)
+
+
+def test_calculate_spillover_matrix_missing_channel_raises() -> None:
+  rng = np.random.default_rng(790)
+  events, masks = _make_synthetic_single_stain_events(rng)
+  channels = ["FL1-A", "FL2-A", "FSC-A"]
+
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL99-A",
+      positive_population_id="pos_FL1",
+      negative_population_id="neg",
+    ),
+  )
+  spec = CompensationCalculationSpec(
+    id="calc_miss_ch",
+    name="Missing channel test",
+    controls=controls,
+  )
+
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  with pytest.raises(CompensationError, match="channel"):
+    calculate_spillover_matrix(spec, events, channels, masks)
+
+
+def test_calculate_spillover_matrix_source_is_calculated() -> None:
+  rng = np.random.default_rng(999)
+  events, masks = _make_synthetic_single_stain_events(rng)
+  channels = ["FL1-A", "FL2-A", "FSC-A"]
+
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="pos_FL1",
+      negative_population_id="neg",
+    ),
+  )
+  spec = CompensationCalculationSpec(
+    id="calc_src",
+    name="Source test",
+    controls=controls,
+  )
+
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  result = calculate_spillover_matrix(spec, events, channels, masks)
+  assert result.matrix_spec.source == "calculated"
+  assert result.matrix_spec.provenance.algorithm == "spillover_median"
+
+
+def test_calculate_spillover_matrix_diagnostics_populated() -> None:
+  rng = np.random.default_rng(111)
+  events, masks = _make_synthetic_single_stain_events(rng, n_per_stain=500)
+  channels = ["FL1-A", "FL2-A", "FSC-A"]
+
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="pos_FL1",
+      negative_population_id="neg",
+    ),
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL2-A",
+      positive_population_id="pos_FL2",
+      negative_population_id="neg",
+    ),
+  )
+  spec = CompensationCalculationSpec(
+    id="calc_diag",
+    name="Diagnostics test",
+    controls=controls,
+  )
+
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  result = calculate_spillover_matrix(spec, events, channels, masks)
+
+  assert len(result.channel_diagnostics) == 2
+  for diag in result.channel_diagnostics:
+    assert diag.positive_event_count > 0
+    assert diag.negative_event_count > 0
+    assert diag.median_positive > 0
+    assert diag.median_negative > 0
+
+
+def test_calculate_spillover_matrix_low_events_warns() -> None:
+  rng = np.random.default_rng(222)
+  events, masks = _make_synthetic_single_stain_events(rng, n_per_stain=10)
+  channels = ["FL1-A", "FL2-A", "FSC-A"]
+
+  controls = (
+    CompensationCalculationControlSpec(
+      detector_channel_id="FL1-A",
+      positive_population_id="pos_FL1",
+      negative_population_id="neg",
+    ),
+  )
+  spec = CompensationCalculationSpec(
+    id="calc_warn",
+    name="Low events test",
+    controls=controls,
+  )
+
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  result = calculate_spillover_matrix(spec, events, channels, masks)
+  assert len(result.overall_warnings) > 0

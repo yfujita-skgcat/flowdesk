@@ -12,8 +12,10 @@ from numpy.typing import NDArray
 SourceStage = Literal["raw", "compensated", "transformed"]
 GateType = Literal["rectangle", "polygon", "range", "boolean"]
 GateAxisScale = Literal["linear", "log10", "asinh"]
-CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported"]
+CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
 CompensationBindingScope = Literal["sample", "group", "execution_profile"]
+CompensationRegressionMethod = Literal["linear", "median", "mode"]
+CompensationOutlierPolicy = Literal["iqr", "zscore", "none"]
 
 
 class DerivedFailurePolicy(StrEnum):
@@ -135,6 +137,57 @@ class CompensationMatrixSpec:
     size = len(self.channels)
     if len(self.matrix) != size or any(len(row) != size for row in self.matrix):
       raise ValueError("compensation matrix must be square and match channels")
+
+
+@dataclass(frozen=True)
+class CompensationCalculationControlSpec:
+  """One detector's assigned positive and negative control populations."""
+
+  detector_channel_id: str
+  positive_population_id: str
+  negative_population_id: str
+
+
+@dataclass(frozen=True)
+class CompensationCalculationSpec:
+  """Configuration for calculating a spillover matrix from single-stain controls.
+
+  References control samples and their positive/negative populations,
+  specifies the regression method, outlier policy, and minimum event
+  thresholds. The result of calculation is an immutable CompensationMatrixSpec
+  with source='calculated' and full provenance.
+  """
+
+  id: str
+  name: str
+  controls: tuple[CompensationCalculationControlSpec, ...]
+  regression_method: CompensationRegressionMethod = "linear"
+  outlier_policy: CompensationOutlierPolicy = "iqr"
+  minimum_positive_events: int = 100
+  minimum_negative_events: int = 50
+  created_by: str | None = None
+  created_at: str | None = None
+  notes: str = ""
+
+  def __post_init__(self) -> None:
+    if not self.id:
+      raise ValueError("calculation ID must be non-empty")
+    if not self.controls:
+      raise ValueError("calculation must have at least one control assignment")
+    detector_ids = [c.detector_channel_id for c in self.controls]
+    if len(set(detector_ids)) != len(detector_ids):
+      raise ValueError("detector channel IDs must be unique across controls")
+    for c in self.controls:
+      if not c.detector_channel_id:
+        raise ValueError("detector channel ID must be non-empty")
+      if not c.positive_population_id:
+        raise ValueError("positive population ID must be non-empty")
+      if not c.negative_population_id:
+        raise ValueError("negative population ID must be non-empty")
+    if self.regression_method not in {"linear", "median", "mode"}:
+      raise ValueError(f"invalid regression method: {self.regression_method!r}")
+    if self.outlier_policy not in {"iqr", "zscore", "none"}:
+      raise ValueError(f"invalid outlier policy: {self.outlier_policy!r}")
 
 
 @dataclass(frozen=True)
