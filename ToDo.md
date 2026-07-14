@@ -188,27 +188,27 @@ git status --short
 
 #### Core/storage
 
-- [ ] global `default_compensation_matrix_id`だけでなく、sample/Group/execution profile単位のbindingを追加する。
+- [x] 済み: global `default_compensation_matrix_id`だけでなく、sample/Group/execution profile単位のbindingを追加する。
 - [x] 済み: binding priorityとconflict ruleを定義し、headless resolverで曖昧なgroup/duplicate target/unknown matrixを拒否する。
-- [ ] matrix ID、source、control IDs、algorithm/version、manual edits、created metadataを保存する。
+- [x] 済み: matrix ID、source、control IDs、algorithm/version、manual edits、created metadataを保存する。
 - [x] 済み: finite、square、channel set、duplicate channel、condition numberを構造化diagnostic付きで検証する。
 - [x] 済み: sampleごとにcompensated outputと構造化diagnosticsを生成し、raw inputを不変にする。
 - [x] 済み: ExecutionReportへmatrix ID、source、channel order/index、binding根拠、condition warningを記録する。
 
 #### GUI
 
-- [ ] Compensation Matrix list/editorを追加する。
-- [ ] matrix heat map、numeric cell editor、duplicate-before-edit、sample/Group applyを提供する。
-- [ ] compensated/uncompensated previewを同じPopulationで表示する。
-- [ ] applied matrix badgeとinvalid/stale statusをWorkspaceへ表示する。
+- [x] 済み: Compensation Matrix list/editorを追加する。
+- [x] 済み: matrix heat map、numeric cell editor、duplicate-before-edit、sample/Group applyを提供する。
+- [x] 済み: compensated/uncompensated previewを同じPopulationで表示する。
+- [x] 済み: applied matrix badgeとinvalid/stale statusをWorkspaceへ表示する。
 
 #### 必須test
 
 - [x] 済み: sample別に異なるmatrixを適用する。
 - [x] 済み: channel permutationで同じ結果を得る。
-- [ ] singular、ill-conditioned、NaN、missing detectorをtestする。
-- [ ] manual editで元matrixが変わらない。
-- [ ] GUI previewとheadless compensated valuesが一致する。
+- [x] 済み: singular、ill-conditioned、NaN、missing detectorをtestする。
+- [x] 済み: manual editで元matrixが変わらない。
+- [x] 済み: GUI previewとheadless compensated valuesが一致する。
 
 ### Phase A5: Traditional compensation calculation [S03-P1]
 

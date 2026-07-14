@@ -11,7 +11,7 @@ import uuid
 from copy import deepcopy
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -20,6 +20,8 @@ from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QSplitter,
@@ -27,10 +29,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from flowdesk_core.compensation import (
+    inspect_compensation_matrix,
+    resolve_compensation_binding,
+)
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
-from flowdesk_core.models import TransformSpec
+from flowdesk_core.models import CompensationMatrixSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
@@ -43,6 +49,80 @@ from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import load_project, resolve_sample_paths, save_project
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Compensation status indicator
+# ---------------------------------------------------------------------------
+
+
+class _CompensationStatusIndicator(QWidget):
+    """Persistent status-bar widget showing compensation matrix status.
+
+    Displays a badge indicating:
+    - 🟢 Valid matrix applied
+    - 🟡 Ill-conditioned matrix applied (warning)
+    - 🔴 No matrix applied or invalid matrix
+    - ⚠️ Results stale
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("compensationStatusIndicator")
+        self._label = QLabel()
+        self._label.setObjectName("compensationStatusLabel")
+        self._label.setStyleSheet(
+            "QLabel { font-weight: bold; padding: 2px 6px; }"
+        )
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.addWidget(self._label)
+        self._set_state("none", "", stale=False)
+
+    def _set_state(
+        self,
+        status: Literal["valid", "warning", "none", "error"],
+        matrix_name: str,
+        stale: bool = False,
+    ) -> None:
+        icon_map = {
+            "valid": "🟢",
+            "warning": "🟡",
+            "none": "🔴",
+            "error": "⚠️",
+        }
+        icon = icon_map.get(status, "⚠️")
+        stale_marker = " (stale)" if stale else ""
+        if matrix_name:
+            text = f"{icon} Comp: {matrix_name}{stale_marker}"
+        else:
+            text = f"{icon} Comp: none{stale_marker}"
+        self._label.setText(text)
+
+    def set_valid(self, matrix_name: str, stale: bool = False) -> None:
+        self._set_state("valid", matrix_name, stale)
+
+    def set_warning(self, matrix_name: str, condition_number: float, stale: bool = False) -> None:
+        text = f"Comp: {matrix_name} (cond={condition_number:.0e})"
+        self._set_state("warning", text, stale)
+
+    def set_none(self, stale: bool = False) -> None:
+        self._set_state("none", "", stale)
+
+    def set_error(self, message: str, stale: bool = False) -> None:
+        self._set_state("error", message, stale)
+
+    def mark_stale(self) -> None:
+        """Re-render with stale flag."""
+        current = self._label.text()
+        if " (stale)" not in current:
+            self._label.setText(current + " (stale)")
+
+    def clear_stale(self) -> None:
+        """Remove stale marker."""
+        current = self._label.text()
+        if " (stale)" in current:
+            self._label.setText(current.replace(" (stale)", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -121,11 +201,13 @@ class MainWindow(QMainWindow):
         # Display-only: selected population for plot filtering.
         self._selected_population_id: str = "all_events"
 
+        self._compensation_status_indicator = _CompensationStatusIndicator()
         self._build_menu()
         self._build_toolbar()
         self._build_central_widget()
         self._connect_signals()
         self._update_status("Ready")
+        self._update_compensation_status()
 
     # -- public API ----------------------------------------------------------
 
@@ -358,6 +440,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(splitter2)
         self.statusBar().setObjectName("mainStatusBar")
+        self.statusBar().addPermanentWidget(self._compensation_status_indicator)
 
     def _create_center_pane(self) -> QWidget:
         from PySide6.QtWidgets import QVBoxLayout, QWidget
@@ -459,6 +542,7 @@ class MainWindow(QMainWindow):
 
         # Replot with current channel selection
         self._replot()
+        self._update_compensation_status()
 
     def _on_sample_removed(self, sample: _SampleInfo) -> None:
         """Called when a sample is removed from the browser."""
@@ -867,10 +951,12 @@ class MainWindow(QMainWindow):
             self._population_tree.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
+            self._compensation_status_indicator.clear_stale()
             self._validate_population_selection(report)
             self._update_status(f"Pipeline complete: {report.summary}")
             # Replot to apply the now-valid population membership mask.
             self._replot()
+            self._update_compensation_status()
         else:
             self._update_status("Pipeline finished with no report")
 
@@ -1478,6 +1564,7 @@ class MainWindow(QMainWindow):
         self._population_tree.clear()
         self._gate_editor.clear_population_results()
         self._selected_population_id = "all_events"
+        self._compensation_status_indicator.mark_stale()
         self._update_status(f"{reason} (results stale; rerun pipeline)")
 
     # -- help ----------------------------------------------------------------
@@ -1497,3 +1584,178 @@ class MainWindow(QMainWindow):
     def _update_status(self, message: str) -> None:
         """Update the status bar."""
         self.statusBar().showMessage(message)
+
+    # -- compensation status -------------------------------------------------
+
+    def _update_compensation_status(self) -> None:
+        """Update the compensation status indicator based on current project state.
+
+        Shows which matrix is applied to the current sample and its validity.
+        """
+        sample_id = self._current_sample_id
+        if not sample_id:
+            self._compensation_status_indicator.set_none(stale=self._results_stale)
+            return
+
+        # Build matrix specs from current compensation definitions
+        matrix_specs = self._build_compensation_matrix_specs()
+        if not matrix_specs:
+            self._compensation_status_indicator.set_none(stale=self._results_stale)
+            return
+
+        # Resolve which matrix applies to the current sample
+        known_ids = {spec.id for spec in matrix_specs}
+        resolution = self._resolve_current_sample_binding(
+            sample_id, known_ids, matrix_specs
+        )
+
+        if resolution is None:
+            self._compensation_status_indicator.set_none(stale=self._results_stale)
+            return
+
+        matrix_id, matrix_name = resolution
+        if not matrix_id:
+            self._compensation_status_indicator.set_none(stale=self._results_stale)
+            return
+
+        # Inspect the matrix for validity
+        spec = next(
+            (s for s in matrix_specs if s.id == matrix_id),
+            None,
+        )
+        if spec is None:
+            self._compensation_status_indicator.set_error(
+                f"Unknown matrix: {matrix_id}",
+                stale=self._results_stale,
+            )
+            return
+
+        channel_ids = self._get_current_channel_ids()
+        try:
+            inspection = inspect_compensation_matrix(spec, channel_ids)
+            if not inspection.is_valid:
+                error_msg = next(
+                    (d.message for d in inspection.diagnostics if d.severity == "error"),
+                    "Invalid compensation matrix",
+                )
+                self._compensation_status_indicator.set_error(
+                    error_msg,
+                    stale=self._results_stale,
+                )
+            elif inspection.condition_number is not None:
+                from flowdesk_core.compensation import (
+                    COMPENSATION_CONDITION_WARNING_THRESHOLD,
+                )
+                if (
+                    inspection.condition_number
+                    >= COMPENSATION_CONDITION_WARNING_THRESHOLD
+                ):
+                    self._compensation_status_indicator.set_warning(
+                        matrix_name,
+                        inspection.condition_number,
+                        stale=self._results_stale,
+                    )
+                else:
+                    self._compensation_status_indicator.set_valid(
+                        matrix_name,
+                        stale=self._results_stale,
+                    )
+            else:
+                self._compensation_status_indicator.set_valid(
+                    matrix_name,
+                    stale=self._results_stale,
+                )
+        except Exception:
+            self._compensation_status_indicator.set_error(
+                "Matrix inspection failed",
+                stale=self._results_stale,
+            )
+
+    def _build_compensation_matrix_specs(
+        self,
+    ) -> tuple[CompensationMatrixSpec, ...]:
+        """Build CompensationMatrixSpec objects from current UI state."""
+        specs = []
+        for matrix_dict in self._compensation_matrices:
+            try:
+                specs.append(CompensationMatrixSpec(
+                    id=matrix_dict["id"],
+                    name=matrix_dict.get("name", matrix_dict["id"]),
+                    source=matrix_dict.get("source", "user_defined"),
+                    channels=tuple(matrix_dict.get("channels", [])),
+                    matrix=tuple(
+                        tuple(row) for row in matrix_dict.get("matrix", [])
+                    ),
+                    created_by=matrix_dict.get("created_by"),
+                    created_at=matrix_dict.get("created_at"),
+                    notes=matrix_dict.get("notes", ""),
+                ))
+            except (ValueError, KeyError):
+                continue
+        return tuple(specs)
+
+    def _resolve_current_sample_binding(
+        self,
+        sample_id: str,
+        known_matrix_ids: set[str],
+        matrix_specs: tuple[CompensationMatrixSpec, ...],
+    ) -> tuple[str | None, str] | None:
+        """Resolve which compensation matrix applies to the current sample.
+
+        Returns (matrix_id, matrix_name) or None if no binding.
+        """
+        from flowdesk_core.models import CompensationBindingSpec as BindingSpec
+
+        bindings = []
+        for binding_dict in self._compensation_bindings:
+            try:
+                bindings.append(BindingSpec(
+                    id=binding_dict["id"],
+                    matrix_id=binding_dict["matrix_id"],
+                    scope=binding_dict.get("scope", "sample"),
+                    target_id=binding_dict["target_id"],
+                    created_at=binding_dict.get("created_at"),
+                    created_by=binding_dict.get("created_by"),
+                    notes=binding_dict.get("notes", ""),
+                ))
+            except (ValueError, KeyError):
+                continue
+
+        if not bindings:
+            default_id = self._default_compensation_matrix_id
+            if default_id:
+                default_name = next(
+                    (s.name for s in matrix_specs if s.id == default_id),
+                    default_id,
+                )
+                return (default_id, default_name)
+            return None
+
+        try:
+            resolution = resolve_compensation_binding(
+                bindings,
+                sample_id=sample_id,
+                execution_profile_id="default",
+                group_ids=[],
+                default_matrix_id=self._default_compensation_matrix_id,
+                known_matrix_ids=known_matrix_ids,
+            )
+            if resolution.matrix_id is None:
+                return None
+            matrix_name = next(
+                (s.name for s in matrix_specs if s.id == resolution.matrix_id),
+                resolution.matrix_id,
+            )
+            return (resolution.matrix_id, matrix_name)
+        except Exception:
+            return None
+
+    def _get_current_channel_ids(self) -> list[str]:
+        """Get the channel IDs for the currently selected sample."""
+        sample = self._sample_data.get(self._current_sample_id or "")
+        if sample is not None:
+            return [ch.id for ch in sample.channels]
+        selected = self._sample_browser.selected_sample()
+        if selected is not None:
+            return [ch.id for ch in selected.info.channels]
+        return []
