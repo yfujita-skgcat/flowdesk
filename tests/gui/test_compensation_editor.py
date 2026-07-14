@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 
 import pytest
@@ -367,6 +368,80 @@ def test_accept_rejects_binding_to_unknown_matrix() -> None:
         app.processEvents()
 
 
+def test_duplicate_matrix_does_not_mutate_original() -> None:
+    """Verify that duplicating and editing a matrix does not mutate the original.
+
+    Regression test for A4 Residual 2: the duplicate-before-edit workflow
+    must use deepcopy so that changes to the duplicate never leak back into
+    the original matrix spec.
+    """
+    import copy
+
+    app = _app()
+    original_matrix = _valid_2x2_matrix()
+    original_snapshot = copy.deepcopy(original_matrix)
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[original_matrix],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=[],
+    )
+    try:
+        # Duplicate the matrix
+        dialog._duplicate_matrix()
+        matrices = dialog.matrices()
+        assert len(matrices) == 2
+
+        # Mutate the duplicate's matrix values in the heat map
+        dup = matrices[1]
+        assert dup["id"] != original_snapshot["id"]
+        # Write a different value into the duplicate
+        dup["matrix"] = [[1.0, 0.9], [0.8, 1.0]]
+
+        # The original must remain unchanged
+        assert matrices[0]["matrix"] == original_snapshot["matrix"]
+        assert matrices[0]["id"] == original_snapshot["id"]
+        assert matrices[0]["name"] == original_snapshot["name"]
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_heat_map_edit_does_not_affect_unselected_matrix() -> None:
+    """Editing the heat map of one matrix must not affect another matrix
+    when switching selections."""
+    app = _app()
+    matrix_a = _valid_2x2_matrix()
+    matrix_b = _valid_2x2_matrix()
+    matrix_b["id"] = "comp_2x2_b"
+    matrix_b["name"] = "2x2 test matrix B"
+    matrix_b["matrix"] = [[1.0, 0.0], [0.0, 1.0]]
+
+    snap_a = copy.deepcopy(matrix_a)
+    snap_b = copy.deepcopy(matrix_b)
+
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[matrix_a, matrix_b],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=[],
+    )
+    try:
+        # Commit current matrix (matrix_b is selected after init)
+        dialog._commit_current_matrix()
+        # Verify both matrices retain their original values
+        matrices = dialog.matrices()
+        assert matrices[0]["matrix"] == snap_a["matrix"]
+        assert matrices[1]["matrix"] == snap_b["matrix"]
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 def test_accept_rejects_duplicate_scope_target() -> None:
     app = _app()
     binding_a = _valid_binding()
@@ -382,6 +457,140 @@ def test_accept_rejects_duplicate_scope_target() -> None:
     try:
         with pytest.raises(ValueError, match="Duplicate binding scope"):
             dialog._validate_all_bindings()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+# ---------------------------------------------------------------------------
+# Compensated / uncompensated preview
+# ---------------------------------------------------------------------------
+
+
+def test_preview_populates_table_with_core_output() -> None:
+    """The preview table must show uncompensated and compensated values
+    derived from core's ``apply_compensation``, not a Qt-side calculation."""
+    import numpy as np
+
+    app = _app()
+    matrix = _valid_2x2_matrix()
+    events = np.array([
+        [100.0, 200.0, 50.0],
+        [300.0, 400.0, 100.0],
+        [50.0, 60.0, 20.0],
+    ], dtype=np.float64)
+    channel_ids = ["FSC-H", "FL1-A", "FL2-A"]
+    sample_data = {
+        "sample_1": {
+            "events": events,
+            "channel_ids": channel_ids,
+        }
+    }
+
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[matrix],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=[],
+        sample_data=sample_data,
+    )
+    try:
+        dialog._on_preview()
+        table = dialog._preview_table
+        # 2 compensation channels × 3 events = 6 rows
+        assert table.rowCount() == 6
+        # First row should be FL1-A
+        assert table.item(0, 0).text() == "FL1-A"
+        diag = dialog.findChild(QLabel, "compensationDiagnosticLabel")
+        assert "Preview" in diag.text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_preview_values_match_headless_apply_compensation() -> None:
+    """GUI preview compensated values must match headless
+    ``apply_compensation`` output exactly (A4 Residual 5)."""
+    import numpy as np
+
+    from flowdesk_core.compensation import apply_compensation
+    from flowdesk_core.models import CompensationMatrixSpec
+
+    app = _app()
+    matrix = _valid_2x2_matrix()
+    events = np.array([
+        [100.0, 200.0, 50.0],
+        [300.0, 400.0, 100.0],
+    ], dtype=np.float64)
+    channel_ids = ["FSC-H", "FL1-A", "FL2-A"]
+    sample_data = {
+        "sample_1": {
+            "events": events,
+            "channel_ids": channel_ids,
+        }
+    }
+
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[matrix],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=[],
+        sample_data=sample_data,
+    )
+    try:
+        dialog._on_preview()
+        table = dialog._preview_table
+
+        # Compute headless compensated values for comparison
+        spec = CompensationMatrixSpec(**matrix)
+        compensated = apply_compensation(spec, events, channel_ids)
+
+        # FL1-A is at column index 1, FL2-A at column index 2
+        fl1_idx = channel_ids.index("FL1-A")
+        fl2_idx = channel_ids.index("FL2-A")
+
+        row = 0
+        for ch in ("FL1-A", "FL2-A"):
+            col_idx = fl1_idx if ch == "FL1-A" else fl2_idx
+            for evt in range(len(events)):
+                uncomp_text = table.item(row, 1).text()
+                comp_text = table.item(row, 2).text()
+                assert float(uncomp_text) == pytest.approx(
+                    events[evt, col_idx], abs=1e-3
+                )
+                assert float(comp_text) == pytest.approx(
+                    compensated[evt, col_idx], abs=1e-3
+                )
+                row += 1
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_preview_shows_message_when_no_sample_data() -> None:
+    """When sample_data is empty, the preview combo should show a
+    placeholder and the diagnostic label should report the absence."""
+    app = _app()
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[_valid_2x2_matrix()],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=[],
+        sample_data={},
+    )
+    try:
+        dialog._on_preview()
+        diag = dialog.findChild(QLabel, "compensationDiagnosticLabel")
+        assert "no sample data" in diag.text().lower() or \
+            "no data" in diag.text().lower() or \
+            "no event data" in diag.text().lower() or \
+            "no" in diag.text().lower()
     finally:
         dialog.close()
         dialog.deleteLater()

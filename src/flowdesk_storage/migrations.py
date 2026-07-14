@@ -254,7 +254,7 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
   _migrate_compensation_matrices(migrated, diagnostics)
 
   # Ensure compensation_bindings array exists for new projects.
-  _ensure_compensation_bindings(migrated)
+  _ensure_compensation_bindings(migrated, diagnostics)
 
   if diagnostics:
     migrated["migration_diagnostics"] = diagnostics
@@ -292,14 +292,35 @@ def _migrate_compensation_matrices(
         diagnostics.append(diagnostic)
 
 
-def _ensure_compensation_bindings(migrated: dict[str, Any]) -> None:
-  """Initialize compensation_bindings if absent.
+def _ensure_compensation_bindings(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Initialize compensation_bindings and emit diagnostics for legacy fields.
 
-  The legacy ``default_compensation_matrix_id`` field is preserved as-is
-  and remains the authoritative fallback for the resolver.
-  ``compensation_bindings`` is only initialized as an empty array so that
-  the schema and storage layer always have the field present.
+  If the legacy ``default_compensation_matrix_id`` field is present and
+  ``compensation_bindings`` is empty, emit an info diagnostic noting that
+  the legacy default matrix ID is still the authoritative fallback.
+  The field is preserved as-is and remains usable by the pipeline runner.
   """
 
   if "compensation_bindings" not in migrated:
     migrated["compensation_bindings"] = []
+
+  default_matrix_id = migrated.get("default_compensation_matrix_id")
+  if not default_matrix_id:
+    return
+  bindings = migrated.get("compensation_bindings", [])
+  if not bindings:
+    diagnostic = {
+      "code": "legacy_default_compensation_preserved",
+      "severity": "info",
+      "stage": "migration",
+      "message": (
+        f"Legacy default_compensation_matrix_id {default_matrix_id!r} "
+        "preserved as project default fallback"
+      ),
+      "details": {"default_matrix_id": default_matrix_id},
+    }
+    if diagnostic not in diagnostics:
+      diagnostics.append(diagnostic)

@@ -1214,6 +1214,34 @@ class TestCompensationMigration:
 
     assert migrated["default_compensation_matrix_id"] == "legacy_comp"
     assert migrated["compensation_bindings"] == []
+    # Verify diagnostic was emitted
+    diag_codes = [d["code"] for d in migrated.get("migration_diagnostics", [])]
+    assert "legacy_default_compensation_preserved" in diag_codes
+
+  def test_default_compensation_matrix_id_no_diag_when_bindings_exist(self) -> None:
+    """When bindings already exist, no legacy default diagnostic is emitted."""
+    legacy = {
+      "project_id": "test",
+      "project_version": "1.4.0",
+      "pipeline_version": "1.0",
+      "samples": [{"id": "s1", "channels": []}],
+      "compensation_matrices": [self._legacy_matrix],
+      "default_compensation_matrix_id": "legacy_comp",
+      "compensation_bindings": [
+        {
+          "id": "bind_1",
+          "matrix_id": "legacy_comp",
+          "scope": "sample",
+          "target_id": "s1",
+        }
+      ],
+    }
+
+    migrated = migrate_manifest(legacy)
+
+    assert migrated["default_compensation_matrix_id"] == "legacy_comp"
+    diag_codes = [d["code"] for d in migrated.get("migration_diagnostics", [])]
+    assert "legacy_default_compensation_preserved" not in diag_codes
 
 
 # -- Compensation round-trip --

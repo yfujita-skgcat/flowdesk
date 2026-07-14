@@ -36,7 +36,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from flowdesk_core.compensation import inspect_compensation_matrix
+from flowdesk_core.compensation import (
+    apply_compensation,
+    inspect_compensation_matrix,
+)
 from flowdesk_core.models import (
     CompensationBindingSpec,
     CompensationMatrixSpec,
@@ -128,8 +131,22 @@ class CompensationMatrixEditorDialog(QDialog):
         sample_ids: Sequence[str],
         group_ids: Sequence[str],
         *,
+        sample_data: dict[str, dict[str, Any]] | None = None,
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize the compensation editor dialog.
+
+        Args:
+            matrices: Compensation matrix definitions.
+            bindings: Compensation binding definitions.
+            available_channels: Channel metadata available in the project.
+            sample_ids: Sample identifiers.
+            group_ids: Group identifiers.
+            sample_data: Optional mapping from sample_id to a dict with keys
+                ``events`` (NDArray[np.float64]) and ``channel_ids`` (list[str])
+                for compensated/uncompensated preview.
+            parent: Qt parent widget.
+        """
         super().__init__(parent)
         self.setObjectName("compensationMatrixEditorDialog")
         self.setWindowTitle("Compensation Matrices")
@@ -140,6 +157,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._channels = tuple(available_channels)
         self._sample_ids = tuple(sample_ids)
         self._group_ids = tuple(group_ids)
+        self._sample_data = sample_data or {}
         self._loading = False
         self._current_matrix_row = -1
         self._current_binding_row = -1
@@ -281,6 +299,10 @@ class CompensationMatrixEditorDialog(QDialog):
         self._diag_label.setObjectName("compensationDiagnosticLabel")
         self._diag_label.setWordWrap(True)
         right_layout.addWidget(self._diag_label)
+
+        # Compensated / uncompensated preview
+        self._build_preview_section(right_layout)
+
         right_layout.addStretch(1)
 
         splitter.addWidget(left)
@@ -341,6 +363,117 @@ class CompensationMatrixEditorDialog(QDialog):
 
         # Populate matrix combo
         self._refresh_matrix_combo()
+
+    # -- Preview section -----------------------------------------------------
+
+    def _build_preview_section(self, layout: QVBoxLayout) -> None:
+        """Build the compensated / uncompensated preview widget."""
+        preview_group = QGroupBox("Compensated / Uncompensated Preview")
+        preview_layout = QVBoxLayout(preview_group)
+
+        # Sample selector
+        sel_row = QHBoxLayout()
+        sel_row.addWidget(QLabel("Sample:"))
+        self._preview_sample_combo = QComboBox()
+        self._preview_sample_combo.setObjectName(
+            "compensationPreviewSampleCombo"
+        )
+        preview_available = [
+            sid for sid in self._sample_ids if sid in self._sample_data
+        ]
+        if preview_available:
+            self._preview_sample_combo.addItems(preview_available)
+        else:
+            self._preview_sample_combo.insertItem(
+                0, "(no data available)"
+            )
+        sel_row.addWidget(self._preview_sample_combo)
+        sel_row.addStretch(1)
+        preview_layout.addLayout(sel_row)
+
+        self._preview_btn = QPushButton("Preview")
+        self._preview_btn.setObjectName("compensationPreviewButton")
+        preview_layout.addWidget(self._preview_btn)
+
+        # Preview table: columns = channel, uncompensated, compensated
+        self._preview_table = QTableWidget()
+        self._preview_table.setObjectName("compensationPreviewTable")
+        self._preview_table.setColumnCount(3)
+        self._preview_table.setHorizontalHeaderLabels([
+            "Channel", "Uncompensated", "Compensated",
+        ])
+        self._preview_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+        preview_layout.addWidget(self._preview_table)
+
+        layout.addWidget(preview_group)
+        self._preview_btn.clicked.connect(self._on_preview)
+
+    def _on_preview(self) -> None:
+        """Execute compensated/uncompensated preview using core apply_compensation."""
+        idx = self._preview_sample_combo.currentIndex()
+        if idx < 0:
+            return
+        sample_id = str(self._preview_sample_combo.itemText(idx))
+        if sample_id == "(no data available)":
+            self._diag_label.setText("No sample data available for preview")
+            return
+
+        self._commit_current_matrix()
+        if self._current_matrix_row < 0 or self._current_matrix_row >= len(
+            self._matrices
+        ):
+            self._diag_label.setText("No matrix selected for preview")
+            return
+
+        matrix_mapping = self._matrices[self._current_matrix_row]
+        sample_info = self._sample_data.get(sample_id)
+        if sample_info is None:
+            self._diag_label.setText(
+                f"No event data for sample {sample_id}"
+            )
+            return
+
+        try:
+            spec = CompensationMatrixSpec(**matrix_mapping)
+            events = sample_info["events"]
+            channel_ids = sample_info["channel_ids"]
+            compensated = apply_compensation(spec, events, channel_ids)
+
+            # Show first 10 events for each compensation channel
+            preview_channels = spec.channels
+            n_show = min(10, compensated.shape[0])
+            self._preview_table.setRowCount(n_show * len(preview_channels))
+            row = 0
+            for ch in preview_channels:
+                try:
+                    col_idx = channel_ids.index(ch)
+                except ValueError:
+                    continue
+                for evt in range(n_show):
+                    uncomp = compensated[evt, col_idx]
+                    self._preview_table.setItem(
+                        row, 0, QTableWidgetItem(ch)
+                    )
+                    self._preview_table.setItem(
+                        row, 1, QTableWidgetItem(
+                            f"{events[evt, col_idx]:.4f}"
+                        )
+                    )
+                    self._preview_table.setItem(
+                        row, 2, QTableWidgetItem(
+                            f"{uncomp:.4f}"
+                        )
+                    )
+                    row += 1
+
+            self._preview_table.setRowCount(row)
+            self._diag_label.setText(
+                f"Preview: {row} cells (matrix {spec.id}, sample {sample_id})"
+            )
+        except Exception as exc:
+            self._diag_label.setText(f"Preview failed: {exc}")
 
     # -- Matrix list ---------------------------------------------------------
 
