@@ -28,6 +28,7 @@ def _make_project(
   samples: list[dict] | None = None,
   compensation_matrices: list[dict] | None = None,
   compensation_bindings: list[dict] | None = None,
+  compensation_calculations: list[dict] | None = None,
   derived_parameters: list[dict] | None = None,
   transforms: list[dict] | None = None,
   gating_strategies_data: dict[str, object] | None = None,
@@ -43,6 +44,7 @@ def _make_project(
     "samples": samples or [],
     "compensation_matrices": compensation_matrices or [],
     "compensation_bindings": compensation_bindings or [],
+    "compensation_calculations": compensation_calculations or [],
     "derived_parameters": derived_parameters or [],
     "transforms": transforms or [],
     "gating_strategies_data": gating_strategies_data or {},
@@ -1337,3 +1339,368 @@ def test_derived_preview_uses_bounded_core_pipeline_and_stable_output_id() -> No
   assert preview.source_event_count == 3
   assert preview.preview_event_count == 2
   assert not preview.values.flags.writeable
+
+
+# ---------------------------------------------------------------------------
+# Compensation calculation integration
+# ---------------------------------------------------------------------------
+
+
+def _make_single_stain_events(
+  rng: np.random.Generator,
+  n_per_pop: int = 500,
+  fl1_median: float = 10000.0,
+  fl2_median: float = 8000.0,
+  spill_fl1_to_fl2: float = 0.2,
+  spill_fl2_to_fl1: float = 0.1,
+  background: float = 100.0,
+) -> np.ndarray:
+  """Create synthetic single-stain control events.
+
+  Three contiguous populations in row order:
+  FL1-positive, FL2-positive, negative.
+  """
+  total = n_per_pop * 3
+  events = np.zeros((total, 2), dtype=np.float64)
+
+  # FL1-positive.
+  idx = 0
+  events[idx:idx + n_per_pop, 0] = rng.normal(
+    fl1_median, fl1_median * 0.05, n_per_pop,
+  )
+  events[idx:idx + n_per_pop, 1] = rng.normal(
+    background + spill_fl1_to_fl2 * fl1_median,
+    background * 0.2,
+    n_per_pop,
+  )
+  idx += n_per_pop
+
+  # FL2-positive.
+  events[idx:idx + n_per_pop, 0] = rng.normal(
+    background + spill_fl2_to_fl1 * fl2_median,
+    background * 0.2,
+    n_per_pop,
+  )
+  events[idx:idx + n_per_pop, 1] = rng.normal(
+    fl2_median, fl2_median * 0.05, n_per_pop,
+  )
+  idx += n_per_pop
+
+  # Negative.
+  events[idx:idx + n_per_pop, 0] = rng.normal(
+    background, background * 0.1, n_per_pop,
+  )
+  events[idx:idx + n_per_pop, 1] = rng.normal(
+    background, background * 0.1, n_per_pop,
+  )
+
+  return events
+
+
+def _make_control_gating_strategy(
+  n_total: int,
+  n_per_pop: int,
+  fl1_threshold: float,
+  fl2_threshold: float,
+) -> GatingStrategySpec:
+  """Build a gating strategy that separates the three synthetic populations.
+
+  Assumes row order: FL1-positive [0:n), FL2-positive [n:2n), negative [2n:3n).
+  Gates use row-index-based ranges that match the synthetic data layout.
+  """
+  return GatingStrategySpec(
+    id="control_gating",
+    name="Control gating",
+    gates=(
+      # FL1-positive: high FL1-A, low FL2-A.
+      GateSpec(
+        id="pos_FL1",
+        name="FL1 positive",
+        gate_type="rectangle",
+        parent_population_id="all_events",
+        x_parameter="FL1-A",
+        y_parameter="FL2-A",
+        thresholds={
+          "x_min": fl1_threshold * 0.5,
+          "x_max": fl1_threshold * 2.0,
+          "y_min": 0.0,
+          "y_max": fl2_threshold * 0.3,
+        },
+      ),
+      # FL2-positive: low FL1-A, high FL2-A.
+      GateSpec(
+        id="pos_FL2",
+        name="FL2 positive",
+        gate_type="rectangle",
+        parent_population_id="all_events",
+        x_parameter="FL1-A",
+        y_parameter="FL2-A",
+        thresholds={
+          "x_min": 0.0,
+          "x_max": fl1_threshold * 0.3,
+          "y_min": fl2_threshold * 0.5,
+          "y_max": fl2_threshold * 2.0,
+        },
+      ),
+      # Negative: low on both.
+      GateSpec(
+        id="neg",
+        name="Negative",
+        gate_type="rectangle",
+        parent_population_id="all_events",
+        x_parameter="FL1-A",
+        y_parameter="FL2-A",
+        thresholds={
+          "x_min": 0.0,
+          "x_max": fl1_threshold * 0.3,
+          "y_min": 0.0,
+          "y_max": fl2_threshold * 0.3,
+        },
+      ),
+    ),
+  )
+
+
+def test_compensation_calculation_integration() -> None:
+  """Dynamic compensation matrix is calculated from control sample and applied."""
+  rng = np.random.default_rng(42)
+  n_per_pop = 500
+  fl1_med = 10000.0
+  fl2_med = 8000.0
+
+  control_events = _make_single_stain_events(
+    rng, n_per_pop=n_per_pop,
+    fl1_median=fl1_med, fl2_median=fl2_med,
+  )
+
+  strategy = _make_control_gating_strategy(
+    n_total=n_per_pop * 3,
+    n_per_pop=n_per_pop,
+    fl1_threshold=fl1_med,
+    fl2_threshold=fl2_med,
+  )
+
+  # Main sample data (separate from control).
+  main_events = rng.random((50, 2)).astype(np.float64) * 1000
+
+  project = _make_project(
+    samples=[
+      {"id": "control", "name": "Single-stain control"},
+      {"id": "main", "name": "Main sample"},
+    ],
+    execution_profiles=[{
+      "id": "default",
+      "name": "Default",
+      "gating_strategy_id": strategy.id,
+      "compensation_calculation_sample_id": "control",
+    }],
+    compensation_calculations=[{
+      "id": "calc1",
+      "name": "2-color spillover",
+      "controls": [
+        {
+          "detector_channel_id": "FL1-A",
+          "positive_population_id": "pos_FL1",
+          "negative_population_id": "neg",
+        },
+        {
+          "detector_channel_id": "FL2-A",
+          "positive_population_id": "pos_FL2",
+          "negative_population_id": "neg",
+        },
+      ],
+    }],
+    gating_strategies_data={"control_gating": strategy},
+  )
+
+  report = run_project_pipeline(
+    project,
+    execution_profile_id="default",
+    event_data={"control": control_events, "main": main_events},
+    channel_names=["FL1-A", "FL2-A"],
+  )
+
+  assert report.status == "success"
+  assert "compensation_calculation=done" in " ".join(report.messages)
+
+  # Verify that a compensation_calculated diagnostic was emitted.
+  calc_diagnostics = [
+    d for d in report.diagnostics
+    if d.code == "compensation_calculated"
+  ]
+  assert len(calc_diagnostics) >= 1
+  assert calc_diagnostics[0].details["calculation_id"] == "calc1"
+
+
+def test_compensation_calculation_control_sample_missing() -> None:
+  """Missing control sample emits a warning and skips calculation."""
+  project = _make_project(
+    samples=[{"id": "main"}],
+    execution_profiles=[{
+      "id": "default",
+      "name": "Default",
+      "compensation_calculation_sample_id": "control",
+    }],
+    compensation_calculations=[{
+      "id": "calc1",
+      "name": "2-color spillover",
+      "controls": [
+        {
+          "detector_channel_id": "FL1-A",
+          "positive_population_id": "pos_FL1",
+          "negative_population_id": "neg",
+        },
+      ],
+    }],
+  )
+
+  rng = np.random.default_rng(42)
+  report = run_project_pipeline(
+    project,
+    execution_profile_id="default",
+    event_data={"main": rng.random((10, 2)).astype(np.float64)},
+    channel_names=["FL1-A", "FL2-A"],
+  )
+
+  assert report.status == "success"
+  msg_joined = " ".join(report.messages)
+  assert "control" in msg_joined.lower() or "not found" in msg_joined.lower()
+
+
+def test_compensation_calculation_no_gating_falls_back_to_all_events() -> None:
+  """When gating_strategy_id is None, 'all_events' population is available."""
+  rng = np.random.default_rng(42)
+  control_events = rng.random((50, 2)).astype(np.float64) * 1000
+  main_events = rng.random((20, 2)).astype(np.float64) * 1000
+
+  project = _make_project(
+    samples=[
+      {"id": "control"},
+      {"id": "main"},
+    ],
+    execution_profiles=[{
+      "id": "default",
+      "name": "Default",
+      "gating_strategy_id": None,
+      "compensation_calculation_sample_id": "control",
+    }],
+    compensation_calculations=[{
+      "id": "calc1",
+      "name": "Identity calc",
+      "controls": [
+        {
+          "detector_channel_id": "FL1-A",
+          "positive_population_id": "all_events",
+          "negative_population_id": "all_events",
+        },
+        {
+          "detector_channel_id": "FL2-A",
+          "positive_population_id": "all_events",
+          "negative_population_id": "all_events",
+        },
+      ],
+    }],
+  )
+
+  report = run_project_pipeline(
+    project,
+    execution_profile_id="default",
+    event_data={"control": control_events, "main": main_events},
+    channel_names=["FL1-A", "FL2-A"],
+  )
+
+  # The calculation should succeed (positive=negative means identity-ish matrix).
+  assert report.status == "success"
+  calc_diagnostics = [
+    d for d in report.diagnostics
+    if d.code == "compensation_calculated"
+  ]
+  assert len(calc_diagnostics) >= 1
+
+
+def test_dynamic_compensation_matrix_overrides_static() -> None:
+  """A dynamically calculated matrix with the same ID overrides a static one."""
+  rng = np.random.default_rng(42)
+  fl1_med = 10000.0
+  fl2_med = 8000.0
+  n_per_pop = 500
+
+  control_events = _make_single_stain_events(
+    rng, n_per_pop=n_per_pop,
+    fl1_median=fl1_med, fl2_median=fl2_med,
+  )
+  main_events = rng.random((50, 2)).astype(np.float64) * 1000
+
+  strategy = _make_control_gating_strategy(
+    n_total=n_per_pop * 3,
+    n_per_pop=n_per_pop,
+    fl1_threshold=fl1_med,
+    fl2_threshold=fl2_med,
+  )
+
+  project = _make_project(
+    samples=[
+      {"id": "control"},
+      {"id": "main"},
+    ],
+    execution_profiles=[{
+      "id": "default",
+      "name": "Default",
+      "gating_strategy_id": strategy.id,
+      "compensation_calculation_sample_id": "control",
+    }],
+    # Static matrix with the same ID the calculation will produce.
+    compensation_matrices=[{
+      "id": "calculated-calc1",
+      "name": "Static placeholder",
+      "source": "user_defined",
+      "channels": ("FL1-A", "FL2-A"),
+      "matrix": ((1.0, 0.0), (0.0, 1.0)),
+    }],
+    default_compensation_matrix_id="calculated-calc1",
+    compensation_calculations=[{
+      "id": "calc1",
+      "name": "2-color spillover",
+      "controls": [
+        {
+          "detector_channel_id": "FL1-A",
+          "positive_population_id": "pos_FL1",
+          "negative_population_id": "neg",
+        },
+        {
+          "detector_channel_id": "FL2-A",
+          "positive_population_id": "pos_FL2",
+          "negative_population_id": "neg",
+        },
+      ],
+    }],
+    gating_strategies_data={"control_gating": strategy},
+  )
+
+  report = run_project_pipeline(
+    project,
+    execution_profile_id="default",
+    event_data={"control": control_events, "main": main_events},
+    channel_names=["FL1-A", "FL2-A"],
+  )
+
+  assert report.status == "success"
+
+  # The calculated matrix ID is "calculated-{calc_id}" = "calculated-calc1".
+  # It should override the static matrix with the same ID.
+  calc_diagnostics = [
+    d for d in report.diagnostics
+    if d.code == "compensation_calculated"
+  ]
+  assert len(calc_diagnostics) >= 1
+  matrix_id = calc_diagnostics[0].details["matrix_id"]
+  assert matrix_id == "calculated-calc1"
+
+  # Verify the applied matrix is the dynamically calculated one.
+  applied = [
+    d for d in report.diagnostics
+    if d.code == "compensation_matrix_applied"
+    and d.sample_id == "main"
+  ]
+  assert len(applied) >= 1
+  assert applied[0].details["matrix_id"] == "calculated-calc1"

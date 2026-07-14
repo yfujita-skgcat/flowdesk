@@ -23,6 +23,7 @@ from flowdesk_core.compensation import (
   CompensationError,
   CompensationValidationResult,
   apply_compensation,
+  calculate_spillover_matrix,
   inspect_compensation_matrix,
   resolve_compensation_binding,
 )
@@ -46,6 +47,8 @@ from flowdesk_core.gating_strategy import (
 from flowdesk_core.models import (
   ChannelSpec,
   CompensationBindingSpec,
+  CompensationCalculationControlSpec,
+  CompensationCalculationSpec,
   CompensationMatrixSpec,
   DerivedFailurePolicy,
   DerivedParameterSpec,
@@ -348,6 +351,40 @@ class PipelineRunner:
     diagnostics: list[ExecutionDiagnostic] = []
     failed_sample_count = 0
 
+    # --- Pre-step: Execute compensation calculations ---
+    # If the project defines compensation_calculations and the profile
+    # specifies a control sample, gate that sample first (without
+    # compensation) to obtain population masks, then calculate matrices.
+    extra_matrices: dict[str, Mapping[str, Any]] = {}
+    calc_sample_id = profile.get("compensation_calculation_sample_id")
+    if calc_sample_id is not None:
+      calc_spec_list = self._compensation_calculation_specs()
+      if calc_spec_list:
+        calc_sample = sample_data.get(calc_sample_id)
+        if calc_sample is None:
+          messages.append(
+            f"warning: compensation control sample {calc_sample_id!r} "
+            "not found, skipping calculation"
+          )
+        else:
+          try:
+            extra_matrices, calc_diagnostics = (
+              self._execute_compensation_calculations_with_gating(
+                calc_sample_id,
+                calc_sample,
+                gating_strategy_id,
+              )
+            )
+            diagnostics.extend(calc_diagnostics)
+            messages.append(
+              f"compensation_calculation=done n_matrices={len(extra_matrices)}"
+            )
+          except PipelineError as exc:
+            messages.append(
+              f"compensation_calculation=failed: {exc}"
+            )
+            raise
+
     for sample_meta in selected_samples:
       sid = str(sample_meta.get("id", "unknown"))
       sample = sample_data.get(sid)
@@ -366,6 +403,7 @@ class PipelineRunner:
         sample_id=sid,
         execution_profile_id=context.execution_profile_id,
         group_ids=self._sample_group_ids(sample_meta),
+        extra_matrices=extra_matrices if extra_matrices else None,
       )
       compensated = compensation.data
       diagnostics.extend(compensation.diagnostics)
@@ -447,9 +485,21 @@ class PipelineRunner:
     sample_id: str,
     execution_profile_id: str,
     group_ids: Sequence[str] = (),
+    extra_matrices: dict[str, Mapping[str, Any]] | None = None,
   ) -> _CompensationStepResult:
-    """Resolve and apply one matrix before derived parameter evaluation."""
+    """Resolve and apply one matrix before derived parameter evaluation.
+
+    Args:
+      data: Analysis data with events and channel identity.
+      sample_id: Target sample identifier.
+      execution_profile_id: Active execution profile ID.
+      group_ids: Group membership of the sample.
+      extra_matrices: Dynamically computed matrices (e.g., from
+          compensation calculations) to merge with static definitions.
+    """
     matrices = self._compensation_matrix_mappings()
+    if extra_matrices:
+      matrices = {**matrices, **extra_matrices}
     bindings = self._compensation_bindings()
     try:
       resolution = resolve_compensation_binding(
@@ -556,6 +606,186 @@ class PipelineRunner:
       except (KeyError, TypeError, ValueError) as exc:
         raise PipelineError(f"invalid_compensation_binding: {exc}") from exc
     return tuple(result)
+
+  def _compensation_calculation_specs(
+    self,
+  ) -> tuple[CompensationCalculationSpec, ...]:
+    """Parse compensation calculation definitions from the project manifest."""
+    definitions = self._project.get("compensation_calculations", [])
+    parsed: list[CompensationCalculationSpec] = []
+    for definition in definitions:
+      if not isinstance(definition, Mapping):
+        raise PipelineError(
+          "invalid_compensation_calculation: definition must be an object"
+        )
+      try:
+        calc_id = definition["id"]
+        controls_raw = definition.get("controls", [])
+        controls = tuple(
+          CompensationCalculationControlSpec(
+            detector_channel_id=c["detector_channel_id"],
+            positive_population_id=c["positive_population_id"],
+            negative_population_id=c["negative_population_id"],
+          )
+          for c in controls_raw
+        )
+        parsed.append(
+          CompensationCalculationSpec(
+            id=calc_id,
+            name=definition.get("name", calc_id),
+            controls=controls,
+            regression_method=definition.get("regression_method", "linear"),
+            outlier_policy=definition.get("outlier_policy", "iqr"),
+            minimum_positive_events=definition.get(
+              "minimum_positive_events", 100
+            ),
+            minimum_negative_events=definition.get(
+              "minimum_negative_events", 50
+            ),
+            created_by=definition.get("created_by"),
+            created_at=definition.get("created_at"),
+            notes=str(definition.get("notes", "")),
+          )
+        )
+      except (KeyError, TypeError, ValueError) as exc:
+        calc_id = definition.get("id", "unknown")
+        raise PipelineError(
+          f"invalid_compensation_calculation: {calc_id!r}: {exc}"
+        ) from exc
+    return tuple(parsed)
+
+  def _execute_compensation_calculations(
+    self,
+    events: NDArray[np.float64],
+    channel_ids: tuple[str, ...],
+    population_masks: Mapping[str, NDArray[np.bool_]],
+  ) -> tuple[dict[str, Mapping[str, Any]], list[ExecutionDiagnostic]]:
+    """Execute compensation calculations and return resulting matrix mappings.
+
+    For each calculation spec, call ``calculate_spillover_matrix`` and collect
+    the resulting ``CompensationMatrixSpec`` as a dynamic matrix mapping.
+    Returns a dict of ``{matrix_id: mapping_dict}`` and a list of diagnostics.
+
+    Args:
+      events: Raw event array aligned with ``channel_ids``.
+      channel_ids: Ordered channel IDs.
+      population_masks: Mapping from population ID to boolean mask.
+
+    Returns:
+      Tuple of (matrix_mappings, diagnostics).
+    """
+    specs = self._compensation_calculation_specs()
+    if not specs:
+      return {}, []
+
+    matrix_mappings: dict[str, Mapping[str, Any]] = {}
+    diagnostics: list[ExecutionDiagnostic] = []
+
+    for spec in specs:
+      try:
+        result = calculate_spillover_matrix(
+          spec,
+          events,
+          channel_ids,
+          population_masks,
+        )
+      except CompensationError as exc:
+        diagnostics.append(ExecutionDiagnostic(
+          code=exc.code if hasattr(exc, "code") else "compensation_calculation_error",
+          message=f"compensation calculation {spec.id!r} failed: {exc}",
+          severity="error",
+          stage="compensation_calculation",
+          details={"calculation_id": spec.id},
+        ))
+        continue
+
+      # Register the calculated matrix as a dynamic mapping.
+      mapping: dict[str, Any] = {
+        "id": result.matrix_spec.id,
+        "name": result.matrix_spec.name,
+        "source": result.matrix_spec.source,
+        "channels": list(result.matrix_spec.channels),
+        "matrix": result.matrix_spec.matrix,
+        "created_by": result.matrix_spec.created_by,
+        "created_at": result.matrix_spec.created_at,
+        "notes": result.matrix_spec.notes,
+      }
+      matrix_mappings[result.matrix_spec.id] = mapping
+
+      details = {
+        "calculation_id": spec.id,
+        "matrix_id": result.matrix_spec.id,
+        "condition_number": result.condition_number,
+        "n_detectors": len(spec.controls),
+      }
+      diagnostics.append(ExecutionDiagnostic(
+        code="compensation_calculated",
+        message=f"calculated compensation matrix {result.matrix_spec.id!r} from {spec.id!r}",
+        severity="info",
+        stage="compensation_calculation",
+        affected_event_count=int(events.shape[0]),
+        details=details,
+      ))
+
+      # Emit warnings from the calculation result.
+      for warning in result.overall_warnings:
+        diagnostics.append(ExecutionDiagnostic(
+          code="compensation_calculation_warning",
+          message=warning,
+          severity="warning",
+          stage="compensation_calculation",
+          affected_event_count=int(events.shape[0]),
+          details={**details, "warning": warning},
+        ))
+
+    return matrix_mappings, diagnostics
+
+  def _execute_compensation_calculations_with_gating(
+    self,
+    sample_id: str,
+    sample: SampleData,
+    gating_strategy_id: str | None,
+  ) -> tuple[dict[str, Mapping[str, Any]], list[ExecutionDiagnostic]]:
+    """Gate a control sample to obtain population masks, then calculate.
+
+    Args:
+      sample_id: ID of the control sample containing populations.
+      sample: Typed sample data for the control.
+      gating_strategy_id: Strategy ID to gate the control sample.
+
+    Returns:
+      Tuple of (matrix_mappings, diagnostics).
+    """
+    events = sample.events
+    channel_ids = tuple(c.id for c in sample.channels)
+
+    # Gate the control sample to get population masks.
+    population_masks: dict[str, NDArray[np.bool_]] = {}
+    if gating_strategy_id is not None:
+      analysis_data = _AnalysisData(events, sample.channels)
+      transformed = self._step_transforms(analysis_data)
+      try:
+        _, pop_membership = self._step_gating(
+          gating_strategy_id, transformed, sample_id
+        )
+        for membership in pop_membership:
+          population_masks[membership.population_id] = membership.mask
+      except GatingStrategyError as exc:
+        raise PipelineError(
+          f"gating strategy {gating_strategy_id!r} failed on control "
+          f"sample {sample_id!r}"
+        ) from exc
+    else:
+      # Fallback: only "all_events" population available.
+      all_mask = np.ones(int(events.shape[0]), dtype=np.bool_)
+      all_mask.setflags(write=False)
+      population_masks["all_events"] = all_mask
+
+    return self._execute_compensation_calculations(
+      events,
+      channel_ids,
+      population_masks,
+    )
 
   @staticmethod
   def _sample_group_ids(sample_meta: Mapping[str, Any]) -> tuple[str, ...]:
