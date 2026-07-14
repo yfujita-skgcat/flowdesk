@@ -61,6 +61,9 @@ def validate_manifest(data: dict[str, Any]) -> None:
       {m["id"] for m in data.get("compensation_matrices", [])
        if isinstance(m, dict) and isinstance(m.get("id"), str)},
     )
+    _validate_current_compensation_calculations(
+      data.get("compensation_calculations", []),
+    )
 
 
 def _validate_current_transforms(transforms: Any) -> dict[str, tuple[str, str]]:
@@ -311,7 +314,7 @@ def _validate_current_compensation_matrices(matrices: Any) -> None:
   if not isinstance(matrices, list):
     raise ManifestValidationError("compensation_matrices must be an array")
   matrix_ids: set[str] = set()
-  valid_sources = {"fcs_metadata_spillover", "user_defined", "imported"}
+  valid_sources = {"fcs_metadata_spillover", "user_defined", "imported", "calculated"}
   for index, matrix in enumerate(matrices):
     if not isinstance(matrix, dict):
       raise ManifestValidationError(
@@ -467,6 +470,99 @@ def _validate_current_compensation_bindings(
         f"duplicate compensation binding target ({scope}, {target_id!r})"
       )
     binding_keys.add(key)
+
+
+def _validate_current_compensation_calculations(calculations: Any) -> None:
+  """Validate compensation calculation definitions in the current project format."""
+
+  if not isinstance(calculations, list):
+    raise ManifestValidationError("compensation_calculations must be an array")
+  calc_ids: set[str] = set()
+  valid_methods = {"linear", "median", "mode"}
+  valid_policies = {"iqr", "zscore", "none"}
+  for index, calc in enumerate(calculations):
+    if not isinstance(calc, dict):
+      raise ManifestValidationError(
+        f"compensation_calculations[{index}] must be an object"
+      )
+
+    # --- id ---
+    calc_id = calc.get("id")
+    if not isinstance(calc_id, str) or not calc_id:
+      raise ManifestValidationError(
+        f"compensation_calculations[{index}] id must be a non-empty string"
+      )
+    if calc_id in calc_ids:
+      raise ManifestValidationError(
+        f"duplicate calculation id {calc_id!r}"
+      )
+    calc_ids.add(calc_id)
+
+    # --- name ---
+    calc_name = calc.get("name")
+    if not isinstance(calc_name, str) or not calc_name:
+      raise ManifestValidationError(
+        f"compensation_calculations[{index}] name must be a non-empty string"
+      )
+
+    # --- controls ---
+    controls = calc.get("controls")
+    if not isinstance(controls, list) or len(controls) == 0:
+      raise ManifestValidationError(
+        f"compensation_calculations[{index}] controls must be a non-empty array"
+      )
+    detector_ids: set[str] = set()
+    for ci, ctrl in enumerate(controls):
+      if not isinstance(ctrl, dict):
+        raise ManifestValidationError(
+          f"compensation_calculations[{index}].controls[{ci}] must be an object"
+        )
+      for field in ("detector_channel_id", "positive_population_id",
+                    "negative_population_id"):
+        val = ctrl.get(field)
+        if not isinstance(val, str) or not val:
+          raise ManifestValidationError(
+            f"compensation_calculations[{index}].controls[{ci}] "
+            f"{field} must be a non-empty string"
+          )
+      det = ctrl["detector_channel_id"]
+      if det in detector_ids:
+        raise ManifestValidationError(
+          f"duplicate detector_channel_id {det!r} in calculation {calc_id!r}"
+        )
+      detector_ids.add(det)
+
+    # --- regression_method ---
+    method = calc.get("regression_method", "linear")
+    if method not in valid_methods:
+      raise ManifestValidationError(
+        f"compensation_calculations[{index}] invalid regression_method "
+        f"{method!r}"
+      )
+
+    # --- outlier_policy ---
+    policy = calc.get("outlier_policy", "iqr")
+    if policy not in valid_policies:
+      raise ManifestValidationError(
+        f"compensation_calculations[{index}] invalid outlier_policy "
+        f"{policy!r}"
+      )
+
+    # --- minimum_positive_events ---
+    mpe = calc.get("minimum_positive_events", 100)
+    if not isinstance(mpe, int) or isinstance(mpe, bool) or mpe < 1:
+      raise ManifestValidationError(
+        f"compensation_calculations[{index}] minimum_positive_events "
+        f"must be a positive integer"
+      )
+
+    # --- minimum_negative_events ---
+    mne = calc.get("minimum_negative_events", 50)
+    if not isinstance(mne, int) or isinstance(mne, bool) or mne < 1:
+      raise ManifestValidationError(
+        f"compensation_calculations[{index}] minimum_negative_events "
+        f"must be a positive integer"
+      )
 
 
 def _validate_file_fingerprint(sample_id: str, value: Any) -> None:

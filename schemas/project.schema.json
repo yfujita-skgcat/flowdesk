@@ -22,6 +22,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/compensationBinding" }
     },
+    "compensation_calculations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/compensationCalculation" }
+    },
     "derived_parameters": {
       "type": "array",
       "items": { "$ref": "#/$defs/derivedParameter" }
@@ -262,7 +266,7 @@
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
         "source": {
-          "enum": ["fcs_metadata_spillover", "user_defined", "imported"]
+          "enum": ["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
         },
         "channels": {
           "type": "array",
@@ -332,6 +336,54 @@
         "target_id": { "type": "string", "minLength": 1 },
         "created_at": { "type": ["string", "null"] },
         "created_by": { "type": ["string", "null"] },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "compensationCalculationControl": {
+      "type": "object",
+      "required": ["detector_channel_id", "positive_population_id",
+                   "negative_population_id"],
+      "properties": {
+        "detector_channel_id": { "type": "string", "minLength": 1 },
+        "positive_population_id": { "type": "string", "minLength": 1 },
+        "negative_population_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "compensationCalculation": {
+      "type": "object",
+      "required": ["id", "name", "controls"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "controls": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/compensationCalculationControl" },
+          "minItems": 1
+        },
+        "regression_method": {
+          "type": "string",
+          "enum": ["linear", "median", "mode"],
+          "default": "linear"
+        },
+        "outlier_policy": {
+          "type": "string",
+          "enum": ["iqr", "zscore", "none"],
+          "default": "iqr"
+        },
+        "minimum_positive_events": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100
+        },
+        "minimum_negative_events": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 50
+        },
+        "created_by": { "type": ["string", "null"] },
+        "created_at": { "type": ["string", "null"] },
         "notes": { "type": "string" }
       },
       "additionalProperties": true

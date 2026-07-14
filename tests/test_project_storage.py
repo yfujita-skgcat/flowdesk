@@ -1503,3 +1503,157 @@ class TestCompensationRoundTrip:
     assert len(reloaded["compensation_matrices"]) == 2
     assert len(reloaded["compensation_bindings"]) == 2
     assert reloaded["default_compensation_matrix_id"] == "comp_2"
+
+
+class TestCompensationCalculationValidation:
+  """Manifest validation for compensation_calculations."""
+
+  _minimal_manifest: dict[str, Any] = {
+    "project_id": "test",
+    "project_version": "1.5.0",
+    "pipeline_version": "1.0",
+    "samples": [
+      {
+        "id": "s1",
+        "name": "Sample 1",
+        "channels": [
+          {"id": "FL1-A", "name": "FL1-A"},
+          {"id": "FL2-A", "name": "FL2-A"},
+        ],
+      }
+    ],
+  }
+
+  def _make_valid_calc(self) -> dict[str, Any]:
+    return {
+      "id": "calc1",
+      "name": "Single-stain calc",
+      "controls": [
+        {
+          "detector_channel_id": "FL1-A",
+          "positive_population_id": "pos_FL1",
+          "negative_population_id": "neg",
+        },
+      ],
+    }
+
+  def test_valid_calculation_accepted(self) -> None:
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [self._make_valid_calc()]
+    assert validate_manifest(manifest) is None
+
+  def test_valid_calculation_with_all_options(self) -> None:
+    calc = self._make_valid_calc()
+    calc["regression_method"] = "median"
+    calc["outlier_policy"] = "zscore"
+    calc["minimum_positive_events"] = 200
+    calc["minimum_negative_events"] = 100
+    calc["created_by"] = "test_user"
+    calc["created_at"] = "2025-01-01T00:00:00Z"
+    calc["notes"] = "test"
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    assert validate_manifest(manifest) is None
+
+  def test_empty_calculations_accepted(self) -> None:
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = []
+    assert validate_manifest(manifest) is None
+
+  def test_missing_calculations_accepted(self) -> None:
+    assert validate_manifest(self._minimal_manifest) is None
+
+  def test_rejects_non_array(self) -> None:
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = "not an array"
+    with pytest.raises(ManifestValidationError, match="array"):
+      validate_manifest(manifest)
+
+  def test_rejects_empty_id(self) -> None:
+    calc = self._make_valid_calc()
+    calc["id"] = ""
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    with pytest.raises(ManifestValidationError, match="id"):
+      validate_manifest(manifest)
+
+  def test_rejects_duplicate_id(self) -> None:
+    manifest = dict(self._minimal_manifest)
+    calc = self._make_valid_calc()
+    manifest["compensation_calculations"] = [calc, calc]
+    with pytest.raises(ManifestValidationError, match="duplicate"):
+      validate_manifest(manifest)
+
+  def test_rejects_empty_name(self) -> None:
+    calc = self._make_valid_calc()
+    calc["name"] = ""
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    with pytest.raises(ManifestValidationError, match="name"):
+      validate_manifest(manifest)
+
+  def test_rejects_empty_controls(self) -> None:
+    calc = self._make_valid_calc()
+    calc["controls"] = []
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    with pytest.raises(ManifestValidationError, match="controls"):
+      validate_manifest(manifest)
+
+  def test_rejects_duplicate_detector(self) -> None:
+    calc = self._make_valid_calc()
+    calc["controls"].append({
+      "detector_channel_id": "FL1-A",
+      "positive_population_id": "pos2",
+      "negative_population_id": "neg2",
+    })
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    with pytest.raises(ManifestValidationError, match="duplicate.*detector"):
+      validate_manifest(manifest)
+
+  def test_rejects_invalid_regression_method(self) -> None:
+    calc = self._make_valid_calc()
+    calc["regression_method"] = "ols"
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    with pytest.raises(ManifestValidationError, match="regression_method"):
+      validate_manifest(manifest)
+
+  def test_rejects_invalid_outlier_policy(self) -> None:
+    calc = self._make_valid_calc()
+    calc["outlier_policy"] = "mad"
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    with pytest.raises(ManifestValidationError, match="outlier_policy"):
+      validate_manifest(manifest)
+
+  def test_rejects_non_positive_min_events(self) -> None:
+    calc = self._make_valid_calc()
+    calc["minimum_positive_events"] = 0
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    with pytest.raises(ManifestValidationError, match="minimum_positive"):
+      validate_manifest(manifest)
+
+  def test_rejects_empty_detector_channel_id(self) -> None:
+    calc = self._make_valid_calc()
+    calc["controls"][0]["detector_channel_id"] = ""
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_calculations"] = [calc]
+    with pytest.raises(ManifestValidationError, match="detector_channel_id"):
+      validate_manifest(manifest)
+
+  def test_calculated_source_accepted_in_matrix(self) -> None:
+    """A matrix with source='calculated' must pass validation."""
+    manifest = dict(self._minimal_manifest)
+    manifest["compensation_matrices"] = [
+      {
+        "id": "calc_matrix",
+        "name": "Calculated matrix",
+        "source": "calculated",
+        "channels": ["FL1-A"],
+        "matrix": [[1.0]],
+      }
+    ]
+    assert validate_manifest(manifest) is None
