@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.execution_report import ExecutionReport
-from flowdesk_core.models import PopulationResult
+from flowdesk_core.models import PopulationResult, StatisticResult
 from flowdesk_qt.diagnostics import invoke_callback
 
 # ---------------------------------------------------------------------------
@@ -47,8 +47,14 @@ class PopulationTree(QWidget):
         """Populate the table from an ``ExecutionReport``."""
         self._last_report = report
         self._populate_table(report.population_results)
+        self._populate_statistics(report.statistic_results)
         self._status_label.setText(
             f"Status: {report.status}  |  Populations: {len(report.population_results)}"
+            + (
+                f"  |  Statistics: {len(report.statistic_results)}"
+                if report.statistic_results
+                else ""
+            )
         )
 
     def last_report(self) -> ExecutionReport | None:
@@ -115,6 +121,7 @@ class PopulationTree(QWidget):
         self._last_report = None
         self._population_names.clear()
         self._table.setRowCount(0)
+        self._statistics_table.setRowCount(0)
         self._status_label.setText("No execution results")
 
     # -- private ------------------------------------------------------------
@@ -147,6 +154,41 @@ class PopulationTree(QWidget):
             freq_total = f"{r.frequency_of_total:.4f}" if r.frequency_of_total is not None else "-"
             self._table.setItem(row, 4, QTableWidgetItem(freq_parent))
             self._table.setItem(row, 5, QTableWidgetItem(freq_total))
+
+    def _populate_statistics(
+        self, results: tuple[StatisticResult, ...]
+    ) -> None:
+        self._statistics_table.setRowCount(len(results))
+        for row, r in enumerate(results):
+            pop_display = self._population_names.get(
+                r.population_id, r.population_id
+            )
+            self._statistics_table.setItem(
+                row, 0, QTableWidgetItem(r.statistic_id)
+            )
+            self._statistics_table.setItem(
+                row, 1, QTableWidgetItem(pop_display)
+            )
+            self._statistics_table.setItem(
+                row, 2, QTableWidgetItem(r.metric)
+            )
+            value_str = "-"
+            if r.value is not None:
+                if isinstance(r.value, float):
+                    value_str = f"{r.value:.6g}"
+                else:
+                    value_str = str(r.value)
+            self._statistics_table.setItem(row, 3, QTableWidgetItem(value_str))
+
+            status_text = r.status
+            if r.status == "undefined" and r.undefined_reason is not None:
+                status_text = f"undefined ({r.undefined_reason})"
+            status_item = QTableWidgetItem(status_text)
+            if r.status == "ok":
+                status_item.setForeground(Qt.GlobalColor.darkGreen)
+            elif r.status in ("error", "undefined"):
+                status_item.setForeground(Qt.GlobalColor.red)
+            self._statistics_table.setItem(row, 4, status_item)
 
     def _on_selection_changed(self) -> None:
         population_id = self.get_selected_population_id()
@@ -196,5 +238,28 @@ class PopulationTree(QWidget):
         box_layout.addWidget(self._table)
         box_layout.addWidget(self._status_label)
 
+        # --- Custom statistics table ---
+        self._statistics_table = QTableWidget()
+        self._statistics_table.setObjectName("populationStatisticsTable")
+        self._statistics_table.setColumnCount(5)
+        self._statistics_table.setHorizontalHeaderLabels(
+            [
+                "Statistic",
+                "Population",
+                "Metric",
+                "Value",
+                "Status",
+            ]
+        )
+        self._statistics_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._statistics_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+
+        stat_box = QGroupBox("Custom Statistics")
+        stat_box_layout = QVBoxLayout(stat_box)
+        stat_box_layout.addWidget(self._statistics_table)
+
         layout = QVBoxLayout(self)
         layout.addWidget(box)
+        layout.addWidget(stat_box)

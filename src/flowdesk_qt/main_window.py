@@ -196,6 +196,7 @@ class MainWindow(QMainWindow):
         self._compensation_matrices: list[dict[str, Any]] = []
         self._compensation_bindings: list[dict[str, Any]] = []
         self._transforms: list[dict[str, Any]] = []
+        self._statistics: list[dict[str, Any]] = []
         self._default_compensation_matrix_id: str | None = None
         self._migration_diagnostics: list[dict[str, Any]] = []
         # Display-only: selected population for plot filtering.
@@ -365,6 +366,11 @@ class MainWindow(QMainWindow):
         self.action_transforms.setObjectName("actionTransforms")
         self.action_transforms.triggered.connect(self._on_edit_transforms)
         analysis_menu.addAction(self.action_transforms)
+
+        self.action_statistics = QAction("Population &Statistics...", self)
+        self.action_statistics.setObjectName("actionStatistics")
+        self.action_statistics.triggered.connect(self._on_edit_statistics)
+        analysis_menu.addAction(self.action_statistics)
 
         analysis_menu.addSeparator()
 
@@ -916,6 +922,7 @@ class MainWindow(QMainWindow):
             "transforms": deepcopy(self._transforms),
             "compensation_matrices": deepcopy(self._compensation_matrices),
             "compensation_bindings": deepcopy(self._compensation_bindings),
+            "statistics": deepcopy(self._statistics),
             "default_compensation_matrix_id": self._default_compensation_matrix_id,
             "migration_diagnostics": deepcopy(self._migration_diagnostics),
             "sample_path_resolution_policy": "relative_to_project_or_absolute",
@@ -1077,6 +1084,7 @@ class MainWindow(QMainWindow):
         self._compensation_bindings = deepcopy(
             manifest.get("compensation_bindings", [])
         )
+        self._statistics = deepcopy(manifest.get("statistics", []))
 
         resolved_samples = resolve_sample_paths(manifest, project_path)
         self._sample_browser.add_project_samples(resolved_samples)
@@ -1224,6 +1232,36 @@ class MainWindow(QMainWindow):
         self._compensation_matrices = dialog.matrices()
         self._compensation_bindings = dialog.bindings()
         self._mark_results_stale("Compensation changed")
+
+    def _on_edit_statistics(self) -> None:
+        """Edit population statistic definitions."""
+        from flowdesk_qt.statistics_editor import StatisticsEditorDialog
+
+        channels_by_id = {}
+        for sample in self._sample_browser.samples():
+            for channel in sample.info.channels:
+                channels_by_id.setdefault(channel.id, channel)
+        current = self._sample_data.get(self._current_sample_id or "")
+        if current is not None:
+            channels_by_id.update(
+                {channel.id: channel for channel in current.channels}
+            )
+
+        population_ids = ["all_events"]
+        for gate in self._gate_editor.gates():
+            if gate.id not in population_ids:
+                population_ids.append(gate.id)
+
+        dialog = StatisticsEditorDialog(
+            self._statistics,
+            tuple(channels_by_id.values()),
+            population_ids,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._statistics = dialog.definitions()
+        self._mark_results_stale("Statistics changed")
 
     def _on_migrate_gate(self, gate) -> None:
         """Preview and explicitly duplicate or replace one geometric gate."""

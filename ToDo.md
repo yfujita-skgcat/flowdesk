@@ -229,27 +229,27 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 
 #### 事前文書
 
-- [ ] `docs/implementation/statistics-definitions.md`を全文読み、raw-eventとdisplay-binned statisticsの選択を追記する。
+- [x] 済み: `docs/implementation/statistics-definitions.md`を全文読み、raw-eventとdisplay-binned statisticsの選択を追記する。
 
 #### Model/core
 
-- [ ] `StatisticSpec`を追加する。Population ID、parameter ID、metric、source stage、transform/binning policy、settings、formatを保持する。
-- [ ] count、frequency parent/total、mean、median、geometric mean、SD、CV、MAD、percentileを実装する。
-- [ ] empty、zero denominator、negative valuesを含むgeometric mean、NaN/Infのpolicyをmetricごとに定義する。
-- [ ] gate/matrix/transform変更時のdependency invalidationを実装する。
-- [ ] ExecutionReportへtyped statistic resultsとundefined reasonを追加する。
+- [x] 済み: `StatisticSpec`を追加する。Population ID、parameter ID、metric、source stage、transform/binning policy、settings、formatを保持する。
+- [x] 済み: count、frequency parent/total、mean、median、geometric mean、SD、CV、MAD、percentileを実装する。
+- [x] 済み: empty、zero denominator、negative valuesを含むgeometric mean、NaN/Infのpolicyをmetricごとに定義する。
+- [x] 済み: gate/matrix/transform変更時のdependency invalidationを実装する。
+- [x] 済み: ExecutionReportへtyped statistic resultsとundefined reasonを追加する。
 
 #### GUI/export
 
-- [ ] Add Statistic dialogをPopulation TreeとGraphから開けるようにする。
-- [ ] statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
+- [x] 済み: Add Statistic dialogをPopulation TreeとGraphから開けるようにする。
+- [x] 済み: statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
 - [ ] CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
 
 #### 必須test
 
-- [ ] 各metricのknown values、empty、NaN/Infをtestする。
-- [ ] statistics定義のsave/load round-tripをtestする。
-- [ ] gate編集後stale、pipeline後更新をtestする。
+- [x] 済み: 各metricのknown values、empty、NaN/Infをtestする。
+- [x] 済み: statistics定義のsave/load round-tripをtestする。
+- [x] 済み: gate編集後stale、pipeline後更新をtestする。
 - [ ] GUI値、CLI export、Python API値を一致させる。
 
 ### Phase A7: Schema migration、atomic save、structured diagnostics [S14/S23]
