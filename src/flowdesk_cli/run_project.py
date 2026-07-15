@@ -10,6 +10,7 @@ from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.export import (
   ExportError,
   write_population_results_wide,
+  write_statistic_results,
 )
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.pipeline_runner import PipelineError, run_project_pipeline
@@ -20,6 +21,7 @@ from flowdesk_storage.project import load_project, resolve_sample_paths
 def run_project_command(
   project_path: str,
   output: str | None = None,
+  statistics_output: str | None = None,
   execution_profile_id: str = "default",
 ) -> int:
   """CLI adapter for headless project execution.
@@ -108,6 +110,16 @@ def run_project_command(
       print(f"Exported {len(results)} population rows to {output}")
     except ExportError as exc:
       print("Error: export failed:", file=sys.stderr)
+      print(f"  {exc}", file=sys.stderr)
+      return 1
+
+  if statistics_output is not None:
+    try:
+      stats = list(report.statistic_results)
+      write_statistic_results(stats, statistics_output)
+      print(f"Exported {len(stats)} statistic rows to {statistics_output}")
+    except ExportError as exc:
+      print("Error: statistics export failed:", file=sys.stderr)
       print(f"  {exc}", file=sys.stderr)
       return 1
 

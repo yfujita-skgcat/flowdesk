@@ -29,6 +29,11 @@ def main() -> int:
     help="Path for the TSV export file.",
   )
   run_parser.add_argument(
+    "--statistics-output",
+    default=None,
+    help="Path for the statistics TSV export file.",
+  )
+  run_parser.add_argument(
     "--execution-profile",
     default="default",
     help="Execution profile id to use (default: default).",
@@ -77,7 +82,7 @@ def main() -> int:
 
   if args.command == "run":
     return run_project_command(
-      args.project, args.output, args.execution_profile
+      args.project, args.output, args.statistics_output, args.execution_profile
     )
   if args.command == "inspect":
     return inspect_fcs_command(args.fcs_file)

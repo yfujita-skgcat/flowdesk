@@ -243,14 +243,14 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 
 - [x] 済み: Add Statistic dialogをPopulation TreeとGraphから開けるようにする。
 - [x] 済み: statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
-- [ ] CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
+- [x] 済み: CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
 
 #### 必須test
 
 - [x] 済み: 各metricのknown values、empty、NaN/Infをtestする。
 - [x] 済み: statistics定義のsave/load round-tripをtestする。
 - [x] 済み: gate編集後stale、pipeline後更新をtestする。
-- [ ] GUI値、CLI export、Python API値を一致させる。
+- [x] 済み: GUI値、CLI export、Python API値を一致させる。
 
 ### Phase A7: Schema migration、atomic save、structured diagnostics [S14/S23]
 

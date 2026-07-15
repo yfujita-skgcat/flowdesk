@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import ExportRecord, PopulationResult
+from flowdesk_core.models import ExportRecord, PopulationResult, StatisticResult
 from flowdesk_core.statistics import population_results_to_export_records
 
 NaNPolicy = Literal["string_nan", "empty", "zero"]
@@ -222,3 +222,64 @@ def write_population_results_csv(
   write_population_results_wide(
     results, path, delimiter=",", nan_policy=nan_policy
   )
+
+
+# ---------------------------------------------------------------------------
+# StatisticResult -> delimited file
+# ---------------------------------------------------------------------------
+
+
+def write_statistic_results(
+  results: list[StatisticResult],
+  path: str | Path,
+  delimiter: str = "\t",
+  nan_policy: NaNPolicy = "string_nan",
+) -> None:
+  """Write ``StatisticResult`` objects to a delimited text file.
+
+  Each statistic becomes one row with columns:
+  ``sample_id``, ``statistic_id``, ``population_id``, ``metric``,
+  ``value``, ``unit``, ``status``, ``undefined_reason``.
+
+  Args:
+    results: Statistic results to write.
+    path: Destination file path.
+    delimiter: Field delimiter (``\\t`` for TSV, ``','`` for CSV).
+    nan_policy: How to represent NaN / None values.
+
+  Raises:
+    ExportError: If the file cannot be written.
+  """
+  header = [
+    "sample_id",
+    "statistic_id",
+    "population_id",
+    "metric",
+    "value",
+    "unit",
+    "status",
+    "undefined_reason",
+  ]
+
+  try:
+    out_path = Path(path)
+    with out_path.open("w", encoding="utf-8", newline="") as fh:
+      writer = csv.writer(fh, delimiter=delimiter)
+      writer.writerow(header)
+      for rec in results:
+        writer.writerow(
+          [
+            rec.sample_id,
+            rec.statistic_id,
+            rec.population_id,
+            rec.metric,
+            _format_value(rec.value, nan_policy),
+            rec.unit if rec.unit is not None else "",
+            rec.status,
+            rec.undefined_reason if rec.undefined_reason is not None else "",
+          ]
+        )
+  except OSError as exc:
+    raise ExportError(f"Failed to write export file: {path}") from exc
+  except Exception as exc:
+    raise ExportError(f"Failed to write export file: {path}") from exc

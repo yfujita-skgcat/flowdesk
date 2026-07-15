@@ -331,6 +331,11 @@ class MainWindow(QMainWindow):
         self.action_export_results.triggered.connect(self._on_export_population_results)
         file_menu.addAction(self.action_export_results)
 
+        self.action_export_statistics = QAction("Export &Statistics...", self)
+        self.action_export_statistics.setObjectName("actionExportStatistics")
+        self.action_export_statistics.triggered.connect(self._on_export_statistics)
+        file_menu.addAction(self.action_export_statistics)
+
         file_menu.addSeparator()
 
         self.action_quit = QAction("E&xit", self)
@@ -1596,6 +1601,56 @@ class MainWindow(QMainWindow):
         from flowdesk_core.export import write_population_results
 
         write_population_results(list(report.population_results), path, delimiter=delimiter)
+
+    def _on_export_statistics(self) -> None:
+        """Export custom statistics from the latest non-stale report."""
+        report = self._population_tree.last_report()
+        if report is None or not report.statistic_results:
+            QMessageBox.information(
+                self,
+                "No results",
+                "Run Pipeline before exporting Statistics.",
+            )
+            return
+        if self._results_stale:
+            QMessageBox.information(
+                self,
+                "Results stale",
+                "Results are stale. Run Pipeline again before exporting.",
+            )
+            return
+
+        path_str, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export Statistics",
+            "",
+            "TSV files (*.tsv);;CSV files (*.csv);;All files (*)",
+        )
+        if not path_str:
+            return
+        delimiter = "," if selected_filter.startswith("CSV") or path_str.endswith(".csv") else "\t"
+        try:
+            self._export_statistics_to_path(path_str, delimiter=delimiter)
+            self._update_status(f"Statistics exported to {path_str}")
+        except Exception as exc:
+            logger.error("Statistics export failed: %s", exc)
+            QMessageBox.critical(self, "Export Error", str(exc))
+
+    def _export_statistics_to_path(
+        self,
+        path: str | Path,
+        delimiter: str = "\t",
+    ) -> None:
+        """Write current non-stale statistic results using core export helpers."""
+        if self._results_stale:
+            raise RuntimeError("Results are stale; rerun pipeline before export")
+        report = self._population_tree.last_report()
+        if report is None or not report.statistic_results:
+            raise RuntimeError("No Statistics available for export")
+
+        from flowdesk_core.export import write_statistic_results
+
+        write_statistic_results(list(report.statistic_results), path, delimiter=delimiter)
 
     def _mark_results_stale(self, reason: str) -> None:
         self._results_stale = True
