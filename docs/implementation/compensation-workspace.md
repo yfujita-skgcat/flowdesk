@@ -152,12 +152,31 @@ emission are increments 2 and 3.
 
 ## Increments A5
 
-1. Add a calculation spec referencing control samples and positive/negative populations.
-2. Define regression/background method, minimum events, and outlier policy.
-3. Write known synthetic single-stain fixtures and expected spill coefficients.
-4. Implement the traditional calculation in core with residual diagnostics.
+1. **Done:** Add a calculation spec referencing explicit control samples and positive/negative populations.
+2. **Done:** Define linear or median background-subtracted methods, minimum events, and outlier policy.
+3. **Done:** Write known asymmetric synthetic single-stain fixtures and expected spill coefficients.
+4. **Done:** Implement the traditional calculation in core with residual diagnostics.
 5. Add detector × control assignment UI and stale invalidation after gate edits.
 6. Save the calculated matrix as an immutable result with full provenance.
+
+## Confirmed contract after A5 core calculation repair
+
+- Each detector assignment names its control sample explicitly. The runner never
+  infers a control sample from a filename or a profile-wide fallback.
+- Calculated matrices use the same convention as `apply_compensation`: matrix
+  rows are receiving detectors and columns are single-stain source detectors.
+  A non-symmetric synthetic fixture verifies that compensation restores a
+  single-stain event to its source detector.
+- `linear` is a background-subtracted, through-origin least-squares slope;
+  `median` is the background-subtracted median ratio. Unsupported methods are
+  rejected rather than silently calculated as median.
+- Minimum positive/negative event thresholds and a non-positive reference signal
+  are fatal calculation errors. A requested calculation never becomes an
+  identity matrix or an uncompensated successful run.
+- Calculated matrix values, provenance, condition number, and residual-aware
+  channel diagnostics are retained in execution diagnostics. Persisting an
+  immutable calculated result in the project and its GUI workflow remain the
+  next increments.
 
 ## Required tests
 

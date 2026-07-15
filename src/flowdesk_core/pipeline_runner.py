@@ -352,38 +352,24 @@ class PipelineRunner:
     failed_sample_count = 0
 
     # --- Pre-step: Execute compensation calculations ---
-    # If the project defines compensation_calculations and the profile
-    # specifies a control sample, gate that sample first (without
-    # compensation) to obtain population masks, then calculate matrices.
+    # Control samples and populations are explicit in the persisted calculation
+    # spec. They are gated from raw events before a calculated matrix is applied.
     extra_matrices: dict[str, Mapping[str, Any]] = {}
-    calc_sample_id = profile.get("compensation_calculation_sample_id")
-    if calc_sample_id is not None:
-      calc_spec_list = self._compensation_calculation_specs()
-      if calc_spec_list:
-        calc_sample = sample_data.get(calc_sample_id)
-        if calc_sample is None:
-          messages.append(
-            f"warning: compensation control sample {calc_sample_id!r} "
-            "not found, skipping calculation"
+    calc_spec_list = self._compensation_calculation_specs()
+    if calc_spec_list:
+      try:
+        extra_matrices, calc_diagnostics = (
+          self._execute_compensation_calculations_with_gating(
+            calc_spec_list, sample_data, gating_strategy_id,
           )
-        else:
-          try:
-            extra_matrices, calc_diagnostics = (
-              self._execute_compensation_calculations_with_gating(
-                calc_sample_id,
-                calc_sample,
-                gating_strategy_id,
-              )
-            )
-            diagnostics.extend(calc_diagnostics)
-            messages.append(
-              f"compensation_calculation=done n_matrices={len(extra_matrices)}"
-            )
-          except PipelineError as exc:
-            messages.append(
-              f"compensation_calculation=failed: {exc}"
-            )
-            raise
+        )
+        diagnostics.extend(calc_diagnostics)
+        messages.append(
+          f"compensation_calculation=done n_matrices={len(extra_matrices)}"
+        )
+      except PipelineError as exc:
+        messages.append(f"compensation_calculation=failed: {exc}")
+        raise
 
     for sample_meta in selected_samples:
       sid = str(sample_meta.get("id", "unknown"))
@@ -623,6 +609,7 @@ class PipelineRunner:
         controls_raw = definition.get("controls", [])
         controls = tuple(
           CompensationCalculationControlSpec(
+            sample_id=c["sample_id"],
             detector_channel_id=c["detector_channel_id"],
             positive_population_id=c["positive_population_id"],
             negative_population_id=c["negative_population_id"],
@@ -656,9 +643,10 @@ class PipelineRunner:
 
   def _execute_compensation_calculations(
     self,
-    events: NDArray[np.float64],
-    channel_ids: tuple[str, ...],
-    population_masks: Mapping[str, NDArray[np.bool_]],
+    specs: Sequence[CompensationCalculationSpec],
+    events_by_sample: Mapping[str, NDArray[np.float64]],
+    channel_ids_by_sample: Mapping[str, Sequence[str]],
+    population_masks_by_sample: Mapping[str, Mapping[str, NDArray[np.bool_]]],
   ) -> tuple[dict[str, Mapping[str, Any]], list[ExecutionDiagnostic]]:
     """Execute compensation calculations and return resulting matrix mappings.
 
@@ -674,20 +662,19 @@ class PipelineRunner:
     Returns:
       Tuple of (matrix_mappings, diagnostics).
     """
-    specs = self._compensation_calculation_specs()
-    if not specs:
-      return {}, []
-
     matrix_mappings: dict[str, Mapping[str, Any]] = {}
     diagnostics: list[ExecutionDiagnostic] = []
+    affected_event_count = sum(
+      int(events.shape[0]) for events in events_by_sample.values()
+    )
 
     for spec in specs:
       try:
         result = calculate_spillover_matrix(
           spec,
-          events,
-          channel_ids,
-          population_masks,
+          events_by_sample,
+          channel_ids_by_sample,
+          population_masks_by_sample,
         )
       except CompensationError as exc:
         diagnostics.append(ExecutionDiagnostic(
@@ -697,7 +684,7 @@ class PipelineRunner:
           stage="compensation_calculation",
           details={"calculation_id": spec.id},
         ))
-        continue
+        raise PipelineError(f"{exc.code}: {exc}") from exc
 
       # Register the calculated matrix as a dynamic mapping.
       mapping: dict[str, Any] = {
@@ -709,6 +696,17 @@ class PipelineRunner:
         "created_by": result.matrix_spec.created_by,
         "created_at": result.matrix_spec.created_at,
         "notes": result.matrix_spec.notes,
+        "provenance": {
+          "control_sample_ids": list(
+            result.matrix_spec.provenance.control_sample_ids
+          ),
+          "control_population_ids": list(
+            result.matrix_spec.provenance.control_population_ids
+          ),
+          "algorithm": result.matrix_spec.provenance.algorithm,
+          "algorithm_version": result.matrix_spec.provenance.algorithm_version,
+          "software_version": result.matrix_spec.provenance.software_version,
+        },
       }
       matrix_mappings[result.matrix_spec.id] = mapping
 
@@ -717,13 +715,15 @@ class PipelineRunner:
         "matrix_id": result.matrix_spec.id,
         "condition_number": result.condition_number,
         "n_detectors": len(spec.controls),
+        "matrix": [list(row) for row in result.matrix_spec.matrix],
+        "provenance": mapping["provenance"],
       }
       diagnostics.append(ExecutionDiagnostic(
         code="compensation_calculated",
         message=f"calculated compensation matrix {result.matrix_spec.id!r} from {spec.id!r}",
         severity="info",
         stage="compensation_calculation",
-        affected_event_count=int(events.shape[0]),
+        affected_event_count=affected_event_count,
         details=details,
       ))
 
@@ -734,7 +734,7 @@ class PipelineRunner:
           message=warning,
           severity="warning",
           stage="compensation_calculation",
-          affected_event_count=int(events.shape[0]),
+          affected_event_count=affected_event_count,
           details={**details, "warning": warning},
         ))
 
@@ -742,8 +742,8 @@ class PipelineRunner:
 
   def _execute_compensation_calculations_with_gating(
     self,
-    sample_id: str,
-    sample: SampleData,
+    specs: Sequence[CompensationCalculationSpec],
+    sample_data: Mapping[str, SampleData],
     gating_strategy_id: str | None,
   ) -> tuple[dict[str, Mapping[str, Any]], list[ExecutionDiagnostic]]:
     """Gate a control sample to obtain population masks, then calculate.
@@ -756,35 +756,40 @@ class PipelineRunner:
     Returns:
       Tuple of (matrix_mappings, diagnostics).
     """
-    events = sample.events
-    channel_ids = tuple(c.id for c in sample.channels)
-
-    # Gate the control sample to get population masks.
-    population_masks: dict[str, NDArray[np.bool_]] = {}
-    if gating_strategy_id is not None:
-      analysis_data = _AnalysisData(events, sample.channels)
-      transformed = self._step_transforms(analysis_data)
-      try:
-        _, pop_membership = self._step_gating(
-          gating_strategy_id, transformed, sample_id
+    sample_ids = {control.sample_id for spec in specs for control in spec.controls}
+    events_by_sample: dict[str, NDArray[np.float64]] = {}
+    channel_ids_by_sample: dict[str, Sequence[str]] = {}
+    masks_by_sample: dict[str, Mapping[str, NDArray[np.bool_]]] = {}
+    for sample_id in sample_ids:
+      sample = sample_data.get(sample_id)
+      if sample is None:
+        raise PipelineError(
+          f"calculation_control_sample_missing: control sample {sample_id!r} "
+          "was not supplied"
         )
-        for membership in pop_membership:
-          population_masks[membership.population_id] = membership.mask
+      events_by_sample[sample_id] = sample.events
+      channel_ids_by_sample[sample_id] = tuple(channel.id for channel in sample.channels)
+      if gating_strategy_id is None:
+        all_mask = np.ones(int(sample.events.shape[0]), dtype=np.bool_)
+        all_mask.setflags(write=False)
+        masks_by_sample[sample_id] = {"all_events": all_mask}
+        continue
+      try:
+        transformed = self._step_transforms(_AnalysisData(sample.events, sample.channels))
+        _, membership = self._step_gating(gating_strategy_id, transformed, sample_id)
       except GatingStrategyError as exc:
         raise PipelineError(
           f"gating strategy {gating_strategy_id!r} failed on control "
           f"sample {sample_id!r}"
         ) from exc
-    else:
-      # Fallback: only "all_events" population available.
-      all_mask = np.ones(int(events.shape[0]), dtype=np.bool_)
-      all_mask.setflags(write=False)
-      population_masks["all_events"] = all_mask
-
+      masks_by_sample[sample_id] = {
+        item.population_id: item.mask for item in membership
+      }
     return self._execute_compensation_calculations(
-      events,
-      channel_ids,
-      population_masks,
+      specs,
+      events_by_sample,
+      channel_ids_by_sample,
+      masks_by_sample,
     )
 
   @staticmethod

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from flowdesk_core.compensation import (
   COMPENSATION_CONDITION_WARNING_THRESHOLD,
@@ -928,11 +929,88 @@ def test_calculate_spillover_matrix_captures_spillover() -> None:
   result = calculate_spillover_matrix(spec, events, channels, masks)
 
   matrix = np.array(result.matrix_spec.matrix)
-  # Row i is computed from fluorochrome i's single-stain control.
-  # S[0,1]: FL1 fluorochrome spillover into FL2 detector ≈ 0.2
-  assert matrix[0, 1] > 0.1
-  # S[1,0]: FL2 fluorochrome spillover into FL1 detector ≈ 0.0
-  assert matrix[1, 0] < 0.05
+  # Rows are receiving detectors and columns are single-stain sources, matching
+  # apply_compensation's inverse @ event-column-vector convention.
+  assert matrix[1, 0] > 0.1  # FL1 source spills into FL2 detector.
+  assert matrix[0, 1] < 0.05  # FL2 source barely spills into FL1 detector.
+
+
+def test_calculated_matrix_removes_known_asymmetric_single_stain_spillover() -> None:
+  events = np.array([
+    [1000.0, 200.0], [1000.0, 200.0],
+    [100.0, 1000.0], [100.0, 1000.0],
+    [0.0, 0.0], [0.0, 0.0],
+  ])
+  masks = {
+    "pos_a": np.array([True, True, False, False, False, False]),
+    "pos_b": np.array([False, False, True, True, False, False]),
+    "neg": np.array([False, False, False, False, True, True]),
+  }
+  spec = CompensationCalculationSpec(
+    id="asymmetric",
+    name="Asymmetric",
+    controls=(
+      CompensationCalculationControlSpec("A", "pos_a", "neg"),
+      CompensationCalculationControlSpec("B", "pos_b", "neg"),
+    ),
+    outlier_policy="none",
+    minimum_positive_events=2,
+    minimum_negative_events=2,
+  )
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  result = calculate_spillover_matrix(spec, events, ("A", "B"), masks)
+
+  compensated = apply_compensation(
+    result.matrix_spec, np.array([[1000.0, 200.0]]), ("A", "B")
+  )
+  np.testing.assert_allclose(compensated, [[1000.0, 0.0]], atol=1e-10)
+
+
+def test_calculate_spillover_matrix_uses_each_control_sample_and_channel_ids() -> None:
+  """Separate single-stain files may use different visible channel orders."""
+  sample_a = np.array([
+    [1000.0, 200.0], [1000.0, 200.0], [0.0, 0.0], [0.0, 0.0],
+  ])
+  # This sample is stored as B, A rather than A, B.
+  sample_b = np.array([
+    [1000.0, 100.0], [1000.0, 100.0], [0.0, 0.0], [0.0, 0.0],
+  ])
+  masks = {
+    "control-a": {
+      "positive": np.array([True, True, False, False]),
+      "negative": np.array([False, False, True, True]),
+    },
+    "control-b": {
+      "positive": np.array([True, True, False, False]),
+      "negative": np.array([False, False, True, True]),
+    },
+  }
+  spec = CompensationCalculationSpec(
+    id="multi-sample",
+    name="Two control samples",
+    controls=(
+      CompensationCalculationControlSpec("A", "positive", "negative", "control-a"),
+      CompensationCalculationControlSpec("B", "positive", "negative", "control-b"),
+    ),
+    outlier_policy="none",
+    minimum_positive_events=2,
+    minimum_negative_events=2,
+  )
+
+  from flowdesk_core.compensation import calculate_spillover_matrix
+  result = calculate_spillover_matrix(
+    spec,
+    {"control-a": sample_a, "control-b": sample_b},
+    {"control-a": ("A", "B"), "control-b": ("B", "A")},
+    masks,
+  )
+
+  np.testing.assert_allclose(
+    result.matrix_spec.matrix, ((1.0, 0.1), (0.2, 1.0)), atol=1e-10
+  )
+  assert result.matrix_spec.provenance.control_sample_ids == (
+    "control-a", "control-b"
+  )
 
 
 def test_calculate_spillover_matrix_missing_population_raises() -> None:
@@ -1002,7 +1080,9 @@ def test_calculate_spillover_matrix_source_is_calculated() -> None:
   from flowdesk_core.compensation import calculate_spillover_matrix
   result = calculate_spillover_matrix(spec, events, channels, masks)
   assert result.matrix_spec.source == "calculated"
-  assert result.matrix_spec.provenance.algorithm == "spillover_median"
+  assert result.matrix_spec.provenance.algorithm == (
+    "traditional_linear_background_subtracted"
+  )
 
 
 def test_calculate_spillover_matrix_diagnostics_populated() -> None:
@@ -1039,7 +1119,7 @@ def test_calculate_spillover_matrix_diagnostics_populated() -> None:
     assert diag.median_negative > 0
 
 
-def test_calculate_spillover_matrix_low_events_warns() -> None:
+def test_calculate_spillover_matrix_low_events_is_rejected() -> None:
   rng = np.random.default_rng(222)
   events, masks = _make_synthetic_single_stain_events(rng, n_per_stain=10)
   channels = ["FL1-A", "FL2-A", "FSC-A"]
@@ -1058,5 +1138,6 @@ def test_calculate_spillover_matrix_low_events_warns() -> None:
   )
 
   from flowdesk_core.compensation import calculate_spillover_matrix
-  result = calculate_spillover_matrix(spec, events, channels, masks)
-  assert len(result.overall_warnings) > 0
+  with pytest.raises(CompensationError) as error:
+    calculate_spillover_matrix(spec, events, channels, masks)
+  assert error.value.code == "calculation_insufficient_positive_events"

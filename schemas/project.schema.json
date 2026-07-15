@@ -342,9 +342,10 @@
     },
     "compensationCalculationControl": {
       "type": "object",
-      "required": ["detector_channel_id", "positive_population_id",
+      "required": ["sample_id", "detector_channel_id", "positive_population_id",
                    "negative_population_id"],
       "properties": {
+        "sample_id": { "type": "string", "minLength": 1 },
         "detector_channel_id": { "type": "string", "minLength": 1 },
         "positive_population_id": { "type": "string", "minLength": 1 },
         "negative_population_id": { "type": "string", "minLength": 1 }
@@ -364,7 +365,7 @@
         },
         "regression_method": {
           "type": "string",
-          "enum": ["linear", "median", "mode"],
+          "enum": ["linear", "median"],
           "default": "linear"
         },
         "outlier_policy": {

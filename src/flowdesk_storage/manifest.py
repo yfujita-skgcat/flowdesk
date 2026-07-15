@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -56,13 +57,16 @@ def validate_manifest(data: dict[str, Any]) -> None:
       transform_parameters,
     )
     _validate_current_compensation_matrices(data.get("compensation_matrices", []))
+    calculated_matrix_ids = _validate_current_compensation_calculations(
+      data.get("compensation_calculations", []),
+      {sample["id"] for sample in data["samples"] if isinstance(sample, dict)},
+    )
     _validate_current_compensation_bindings(
       data.get("compensation_bindings", []),
-      {m["id"] for m in data.get("compensation_matrices", [])
-       if isinstance(m, dict) and isinstance(m.get("id"), str)},
-    )
-    _validate_current_compensation_calculations(
-      data.get("compensation_calculations", []),
+      {
+        m["id"] for m in data.get("compensation_matrices", [])
+        if isinstance(m, dict) and isinstance(m.get("id"), str)
+      } | calculated_matrix_ids,
     )
 
 
@@ -369,7 +373,10 @@ def _validate_current_compensation_matrices(matrices: Any) -> None:
           f"must have {n} elements"
         )
       for val_idx, val in enumerate(row):
-        if not isinstance(val, (int, float)) or isinstance(val, bool):
+        if (
+          not isinstance(val, (int, float)) or isinstance(val, bool)
+          or not math.isfinite(val)
+        ):
           raise ManifestValidationError(
             f"compensation matrix {matrix_id!r} row {row_idx} "
             f"col {val_idx} must be a number"
@@ -472,13 +479,16 @@ def _validate_current_compensation_bindings(
     binding_keys.add(key)
 
 
-def _validate_current_compensation_calculations(calculations: Any) -> None:
+def _validate_current_compensation_calculations(
+  calculations: Any,
+  known_sample_ids: set[str],
+) -> set[str]:
   """Validate compensation calculation definitions in the current project format."""
 
   if not isinstance(calculations, list):
     raise ManifestValidationError("compensation_calculations must be an array")
   calc_ids: set[str] = set()
-  valid_methods = {"linear", "median", "mode"}
+  valid_methods = {"linear", "median"}
   valid_policies = {"iqr", "zscore", "none"}
   for index, calc in enumerate(calculations):
     if not isinstance(calc, dict):
@@ -517,7 +527,7 @@ def _validate_current_compensation_calculations(calculations: Any) -> None:
         raise ManifestValidationError(
           f"compensation_calculations[{index}].controls[{ci}] must be an object"
         )
-      for field in ("detector_channel_id", "positive_population_id",
+      for field in ("sample_id", "detector_channel_id", "positive_population_id",
                     "negative_population_id"):
         val = ctrl.get(field)
         if not isinstance(val, str) or not val:
@@ -525,6 +535,11 @@ def _validate_current_compensation_calculations(calculations: Any) -> None:
             f"compensation_calculations[{index}].controls[{ci}] "
             f"{field} must be a non-empty string"
           )
+      if ctrl["sample_id"] not in known_sample_ids:
+        raise ManifestValidationError(
+          f"compensation_calculations[{index}].controls[{ci}] references "
+          f"unknown sample {ctrl['sample_id']!r}"
+        )
       det = ctrl["detector_channel_id"]
       if det in detector_ids:
         raise ManifestValidationError(
@@ -563,6 +578,7 @@ def _validate_current_compensation_calculations(calculations: Any) -> None:
         f"compensation_calculations[{index}] minimum_negative_events "
         f"must be a positive integer"
       )
+  return {f"calculated-{calc_id}" for calc_id in calc_ids}
 
 
 def _validate_file_fingerprint(sample_id: str, value: Any) -> None:

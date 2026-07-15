@@ -1530,6 +1530,7 @@ class TestCompensationCalculationValidation:
       "name": "Single-stain calc",
       "controls": [
         {
+          "sample_id": "s1",
           "detector_channel_id": "FL1-A",
           "positive_population_id": "pos_FL1",
           "negative_population_id": "neg",
@@ -1603,6 +1604,7 @@ class TestCompensationCalculationValidation:
   def test_rejects_duplicate_detector(self) -> None:
     calc = self._make_valid_calc()
     calc["controls"].append({
+      "sample_id": "s1",
       "detector_channel_id": "FL1-A",
       "positive_population_id": "pos2",
       "negative_population_id": "neg2",

@@ -1492,18 +1492,19 @@ def test_compensation_calculation_integration() -> None:
       "id": "default",
       "name": "Default",
       "gating_strategy_id": strategy.id,
-      "compensation_calculation_sample_id": "control",
     }],
     compensation_calculations=[{
       "id": "calc1",
       "name": "2-color spillover",
       "controls": [
         {
+          "sample_id": "control",
           "detector_channel_id": "FL1-A",
           "positive_population_id": "pos_FL1",
           "negative_population_id": "neg",
         },
         {
+          "sample_id": "control",
           "detector_channel_id": "FL2-A",
           "positive_population_id": "pos_FL2",
           "negative_population_id": "neg",
@@ -1532,20 +1533,20 @@ def test_compensation_calculation_integration() -> None:
   assert calc_diagnostics[0].details["calculation_id"] == "calc1"
 
 
-def test_compensation_calculation_control_sample_missing() -> None:
-  """Missing control sample emits a warning and skips calculation."""
+def test_compensation_calculation_control_sample_missing_stops_pipeline() -> None:
+  """A missing explicit control sample must not silently skip calculation."""
   project = _make_project(
     samples=[{"id": "main"}],
     execution_profiles=[{
       "id": "default",
       "name": "Default",
-      "compensation_calculation_sample_id": "control",
     }],
     compensation_calculations=[{
       "id": "calc1",
       "name": "2-color spillover",
       "controls": [
         {
+          "sample_id": "control",
           "detector_channel_id": "FL1-A",
           "positive_population_id": "pos_FL1",
           "negative_population_id": "neg",
@@ -1555,20 +1556,17 @@ def test_compensation_calculation_control_sample_missing() -> None:
   )
 
   rng = np.random.default_rng(42)
-  report = run_project_pipeline(
-    project,
-    execution_profile_id="default",
-    event_data={"main": rng.random((10, 2)).astype(np.float64)},
-    channel_names=["FL1-A", "FL2-A"],
-  )
-
-  assert report.status == "success"
-  msg_joined = " ".join(report.messages)
-  assert "control" in msg_joined.lower() or "not found" in msg_joined.lower()
+  with pytest.raises(PipelineError, match="calculation_control_sample_missing"):
+    run_project_pipeline(
+      project,
+      execution_profile_id="default",
+      event_data={"main": rng.random((10, 2)).astype(np.float64)},
+      channel_names=["FL1-A", "FL2-A"],
+    )
 
 
-def test_compensation_calculation_no_gating_falls_back_to_all_events() -> None:
-  """When gating_strategy_id is None, 'all_events' population is available."""
+def test_compensation_calculation_identical_positive_negative_is_rejected() -> None:
+  """An all-events positive/negative pair is not a valid control."""
   rng = np.random.default_rng(42)
   control_events = rng.random((50, 2)).astype(np.float64) * 1000
   main_events = rng.random((20, 2)).astype(np.float64) * 1000
@@ -1582,18 +1580,21 @@ def test_compensation_calculation_no_gating_falls_back_to_all_events() -> None:
       "id": "default",
       "name": "Default",
       "gating_strategy_id": None,
-      "compensation_calculation_sample_id": "control",
     }],
     compensation_calculations=[{
       "id": "calc1",
       "name": "Identity calc",
+      "minimum_positive_events": 1,
+      "minimum_negative_events": 1,
       "controls": [
         {
+          "sample_id": "control",
           "detector_channel_id": "FL1-A",
           "positive_population_id": "all_events",
           "negative_population_id": "all_events",
         },
         {
+          "sample_id": "control",
           "detector_channel_id": "FL2-A",
           "positive_population_id": "all_events",
           "negative_population_id": "all_events",
@@ -1602,20 +1603,13 @@ def test_compensation_calculation_no_gating_falls_back_to_all_events() -> None:
     }],
   )
 
-  report = run_project_pipeline(
-    project,
-    execution_profile_id="default",
-    event_data={"control": control_events, "main": main_events},
-    channel_names=["FL1-A", "FL2-A"],
-  )
-
-  # The calculation should succeed (positive=negative means identity-ish matrix).
-  assert report.status == "success"
-  calc_diagnostics = [
-    d for d in report.diagnostics
-    if d.code == "compensation_calculated"
-  ]
-  assert len(calc_diagnostics) >= 1
+  with pytest.raises(PipelineError, match="calculation_invalid_reference_signal"):
+    run_project_pipeline(
+      project,
+      execution_profile_id="default",
+      event_data={"control": control_events, "main": main_events},
+      channel_names=["FL1-A", "FL2-A"],
+    )
 
 
 def test_dynamic_compensation_matrix_overrides_static() -> None:
@@ -1647,7 +1641,6 @@ def test_dynamic_compensation_matrix_overrides_static() -> None:
       "id": "default",
       "name": "Default",
       "gating_strategy_id": strategy.id,
-      "compensation_calculation_sample_id": "control",
     }],
     # Static matrix with the same ID the calculation will produce.
     compensation_matrices=[{
@@ -1663,11 +1656,13 @@ def test_dynamic_compensation_matrix_overrides_static() -> None:
       "name": "2-color spillover",
       "controls": [
         {
+          "sample_id": "control",
           "detector_channel_id": "FL1-A",
           "positive_population_id": "pos_FL1",
           "negative_population_id": "neg",
         },
         {
+          "sample_id": "control",
           "detector_channel_id": "FL2-A",
           "positive_population_id": "pos_FL2",
           "negative_population_id": "neg",
