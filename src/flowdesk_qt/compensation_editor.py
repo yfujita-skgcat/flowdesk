@@ -42,6 +42,7 @@ from flowdesk_core.compensation import (
 )
 from flowdesk_core.models import (
     CompensationBindingSpec,
+    CompensationCalculationSpec,
     CompensationMatrixSpec,
 )
 
@@ -871,3 +872,405 @@ class CompensationMatrixEditorDialog(QDialog):
                     f"Duplicate binding scope+target: {spec.scope} -> {spec.target_id}"
                 )
             scope_targets.add(key)
+
+
+# ---------------------------------------------------------------------------
+# Empty factory for calculations
+# ---------------------------------------------------------------------------
+
+
+def _empty_calculation_mapping() -> dict[str, Any]:
+    """Return a minimal compensation calculation mapping ready for editing."""
+    return {
+        "id": "",
+        "name": "",
+        "controls": [],
+        "regression_method": "linear",
+        "outlier_policy": "iqr",
+        "minimum_positive_events": 100,
+        "minimum_negative_events": 50,
+        "created_by": None,
+        "created_at": None,
+        "notes": "",
+    }
+
+
+def _empty_control_mapping() -> dict[str, Any]:
+    """Return a minimal control assignment mapping."""
+    return {
+        "detector_channel_id": "",
+        "positive_population_id": "",
+        "negative_population_id": "",
+        "sample_id": "",
+    }
+
+
+# ---------------------------------------------------------------------------
+# CompensationCalculationEditorDialog
+# ---------------------------------------------------------------------------
+
+
+class CompensationCalculationEditorDialog(QDialog):
+    """Edit compensation calculation specs (detector × control assignments).
+
+    Provides:
+    - A list of compensation calculation definitions (add/edit/delete).
+    - A detector × control assignment table where each row is a
+      ``CompensationCalculationControlSpec``.
+    - Global settings per calculation: regression_method, outlier_policy,
+      minimum_positive/negative_events.
+    """
+
+    def __init__(
+        self,
+        calculations: Sequence[dict[str, Any]],
+        available_channels: Sequence[dict[str, Any]],
+        population_ids: Sequence[str],
+        sample_ids: Sequence[str],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("compensationCalculationEditorDialog")
+        self.setWindowTitle("Compensation Calculations")
+        self.resize(900, 600)
+
+        self._calculations = deepcopy(list(calculations))
+        self._channels = tuple(available_channels)
+        self._population_ids = tuple(population_ids)
+        self._sample_ids = tuple(sample_ids)
+        self._loading = False
+        self._current_calc_row = -1
+
+        self._channel_ids = [
+            ch.get("id", ch.get("name", "")) if isinstance(ch, dict)
+            else getattr(ch, "id", getattr(ch, "name", ""))
+            for ch in self._channels
+        ]
+
+        self._build_ui()
+
+        if not self._calculations:
+            self._calculations.append(_empty_calculation_mapping())
+        self._refresh_calc_list(0)
+
+    # -- Public API ----------------------------------------------------------
+
+    def calculations(self) -> list[dict[str, Any]]:
+        """Return a deep copy of the current calculation definitions."""
+        self._commit_current_calculation()
+        return deepcopy(self._calculations)
+
+    # -- UI construction -----------------------------------------------------
+
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # --- Left side: calculation list ---
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+
+        calc_group = QGroupBox("Calculations")
+        calc_layout = QVBoxLayout(calc_group)
+        self._calc_list = QListWidget()
+        self._calc_list.setObjectName("compensationCalculationList")
+        calc_layout.addWidget(self._calc_list)
+
+        calc_btns = QHBoxLayout()
+        self._new_calc_btn = QPushButton("New")
+        self._new_calc_btn.setObjectName("compensationNewCalcButton")
+        self._delete_calc_btn = QPushButton("Delete")
+        self._delete_calc_btn.setObjectName("compensationDeleteCalcButton")
+        calc_btns.addWidget(self._new_calc_btn)
+        calc_btns.addWidget(self._delete_calc_btn)
+        calc_layout.addLayout(calc_btns)
+        left_layout.addWidget(calc_group)
+        left_layout.addStretch(1)
+
+        splitter.addWidget(left)
+
+        # --- Right side: form + control table ---
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+
+        form = QFormLayout()
+        self._id_edit = QLineEdit()
+        self._id_edit.setObjectName("compensationCalcIdEdit")
+        self._name_edit = QLineEdit()
+        self._name_edit.setObjectName("compensationCalcNameEdit")
+        self._regression_combo = QComboBox()
+        self._regression_combo.setObjectName("compensationCalcRegressionCombo")
+        self._regression_combo.addItems(["linear", "median"])
+        self._outlier_combo = QComboBox()
+        self._outlier_combo.setObjectName("compensationCalcOutlierCombo")
+        self._outlier_combo.addItems(["iqr", "zscore", "none"])
+        self._min_pos_edit = QLineEdit("100")
+        self._min_pos_edit.setObjectName("compensationCalcMinPosEdit")
+        self._min_neg_edit = QLineEdit("50")
+        self._min_neg_edit.setObjectName("compensationCalcMinNegEdit")
+        self._notes_edit = QLineEdit()
+        self._notes_edit.setObjectName("compensationCalcNotesEdit")
+
+        form.addRow("Calculation ID:", self._id_edit)
+        form.addRow("Name:", self._name_edit)
+        form.addRow("Regression:", self._regression_combo)
+        form.addRow("Outlier Policy:", self._outlier_combo)
+        form.addRow("Min Positive Events:", self._min_pos_edit)
+        form.addRow("Min Negative Events:", self._min_neg_edit)
+        form.addRow("Notes:", self._notes_edit)
+        right_layout.addLayout(form)
+
+        # --- Control assignment table ---
+        ctrl_group = QGroupBox("Detector × Control Assignments")
+        ctrl_layout = QVBoxLayout(ctrl_group)
+
+        self._control_table = QTableWidget()
+        self._control_table.setObjectName("compensationControlTable")
+        self._control_table.setColumnCount(4)
+        self._control_table.setHorizontalHeaderLabels([
+            "Detector Channel",
+            "Control Sample",
+            "Positive Population",
+            "Negative Population",
+        ])
+        self._control_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        ctrl_layout.addWidget(self._control_table)
+
+        table_btns = QHBoxLayout()
+        self._add_ctrl_btn = QPushButton("Add Control")
+        self._add_ctrl_btn.setObjectName("compensationAddControlButton")
+        self._delete_ctrl_btn = QPushButton("Delete Control")
+        self._delete_ctrl_btn.setObjectName("compensationDeleteControlButton")
+        table_btns.addWidget(self._add_ctrl_btn)
+        table_btns.addWidget(self._delete_ctrl_btn)
+        table_btns.addStretch(1)
+        ctrl_layout.addLayout(table_btns)
+        right_layout.addWidget(ctrl_group)
+
+        # Validation label
+        self._diag_label = QLabel("Not validated")
+        self._diag_label.setObjectName("compensationCalcDiagnosticLabel")
+        self._diag_label.setWordWrap(True)
+        right_layout.addWidget(self._diag_label)
+
+        right_layout.addStretch(1)
+
+        splitter.addWidget(right)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 3)
+        outer.addWidget(splitter)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.setObjectName("compensationCalcDialogButtons")
+        outer.addWidget(buttons)
+
+        # --- Signal connections ---
+        self._calc_list.currentRowChanged.connect(self._on_calc_row_changed)
+        self._new_calc_btn.clicked.connect(self._add_calculation)
+        self._delete_calc_btn.clicked.connect(self._delete_calculation)
+        self._add_ctrl_btn.clicked.connect(self._add_control)
+        self._delete_ctrl_btn.clicked.connect(self._delete_control)
+        buttons.accepted.connect(self._accept_if_valid)
+        buttons.rejected.connect(self.reject)
+
+    # -- Calculation list ----------------------------------------------------
+
+    def _refresh_calc_list(self, selected_row: int) -> None:
+        self._loading = True
+        try:
+            self._calc_list.clear()
+            for calc in self._calculations:
+                name = calc.get("name") or calc.get("id") or "New calculation"
+                n_ctrl = len(calc.get("controls", []))
+                self._calc_list.addItem(f"{name} ({n_ctrl} controls)")
+            if self._calculations:
+                self._calc_list.setCurrentRow(
+                    min(max(selected_row, 0), len(self._calculations) - 1)
+                )
+        finally:
+            self._loading = False
+        if self._calculations:
+            self._load_calc_row(self._calc_list.currentRow())
+        else:
+            self._clear_calc_fields()
+
+    def _load_calc_row(self, row: int) -> None:
+        if row < 0 or row >= len(self._calculations):
+            return
+        self._loading = True
+        try:
+            self._current_calc_row = row
+            value = self._calculations[row]
+            self._id_edit.setText(str(value.get("id", "")))
+            self._name_edit.setText(str(value.get("name", "")))
+            self._regression_combo.setCurrentText(
+                str(value.get("regression_method", "linear"))
+            )
+            self._outlier_combo.setCurrentText(
+                str(value.get("outlier_policy", "iqr"))
+            )
+            self._min_pos_edit.setText(
+                str(value.get("minimum_positive_events", 100))
+            )
+            self._min_neg_edit.setText(
+                str(value.get("minimum_negative_events", 50))
+            )
+            self._notes_edit.setText(str(value.get("notes", "")))
+            self._update_control_table(value.get("controls", []))
+            self._diag_label.setText("Not validated")
+        finally:
+            self._loading = False
+
+    def _clear_calc_fields(self) -> None:
+        self._loading = True
+        try:
+            self._current_calc_row = -1
+            self._id_edit.clear()
+            self._name_edit.clear()
+            self._regression_combo.setCurrentIndex(0)
+            self._outlier_combo.setCurrentIndex(0)
+            self._min_pos_edit.setText("100")
+            self._min_neg_edit.setText("50")
+            self._notes_edit.clear()
+            self._control_table.setRowCount(0)
+            self._diag_label.setText("No calculation selected")
+        finally:
+            self._loading = False
+
+    def _on_calc_row_changed(self, row: int) -> None:
+        if self._loading:
+            return
+        self._commit_current_calculation()
+        self._load_calc_row(row)
+
+    def _add_calculation(self) -> None:
+        self._commit_current_calculation()
+        self._calculations.append(_empty_calculation_mapping())
+        self._refresh_calc_list(len(self._calculations) - 1)
+
+    def _delete_calculation(self) -> None:
+        row = self._current_calc_row
+        if row < 0:
+            return
+        self._calculations.pop(row)
+        self._current_calc_row = -1
+        if self._calculations:
+            self._refresh_calc_list(
+                min(max(row - 1, 0), len(self._calculations) - 1)
+            )
+        else:
+            self._refresh_calc_list(0)
+
+    # -- Control table -------------------------------------------------------
+
+    def _update_control_table(self, controls: list[dict[str, Any]]) -> None:
+        self._loading = True
+        try:
+            self._control_table.setRowCount(len(controls))
+            for row_idx, ctrl in enumerate(controls):
+                self._set_control_row(row_idx, ctrl)
+        finally:
+            self._loading = False
+
+    def _set_control_row(self, row_idx: int, ctrl: dict[str, Any]) -> None:
+        det_combo = QComboBox()
+        det_combo.addItems(self._channel_ids)
+        det_combo.setCurrentText(str(ctrl.get("detector_channel_id", "")))
+        self._control_table.setCellWidget(row_idx, 0, det_combo)
+
+        sample_combo = QComboBox()
+        sample_combo.addItems(list(self._sample_ids))
+        sample_combo.setCurrentText(str(ctrl.get("sample_id", "")))
+        self._control_table.setCellWidget(row_idx, 1, sample_combo)
+
+        pos_combo = QComboBox()
+        pos_combo.addItems(list(self._population_ids))
+        pos_combo.setCurrentText(str(ctrl.get("positive_population_id", "")))
+        self._control_table.setCellWidget(row_idx, 2, pos_combo)
+
+        neg_combo = QComboBox()
+        neg_combo.addItems(list(self._population_ids))
+        neg_combo.setCurrentText(str(ctrl.get("negative_population_id", "")))
+        self._control_table.setCellWidget(row_idx, 3, neg_combo)
+
+    def _read_control_row(self, row_idx: int) -> dict[str, Any]:
+        result = {}
+        for col, key in [
+            (0, "detector_channel_id"),
+            (1, "sample_id"),
+            (2, "positive_population_id"),
+            (3, "negative_population_id"),
+        ]:
+            widget = self._control_table.cellWidget(row_idx, col)
+            if isinstance(widget, QComboBox):
+                result[key] = widget.currentText()
+            else:
+                result[key] = ""
+        return result
+
+    def _add_control(self) -> None:
+        current_count = self._control_table.rowCount()
+        self._control_table.setRowCount(current_count + 1)
+        self._set_control_row(current_count, _empty_control_mapping())
+        self._control_table.setCurrentCell(current_count, 0)
+
+    def _delete_control(self) -> None:
+        current_row = self._control_table.currentRow()
+        if current_row < 0:
+            return
+        self._control_table.removeRow(current_row)
+
+    # -- Commit --------------------------------------------------------------
+
+    def _commit_current_calculation(self) -> None:
+        if not (0 <= self._current_calc_row < len(self._calculations)):
+            return
+        original = self._calculations[self._current_calc_row]
+        original["id"] = self._id_edit.text().strip()
+        original["name"] = self._name_edit.text().strip()
+        original["regression_method"] = self._regression_combo.currentText()
+        original["outlier_policy"] = self._outlier_combo.currentText()
+        try:
+            original["minimum_positive_events"] = int(self._min_pos_edit.text())
+        except ValueError:
+            original["minimum_positive_events"] = 100
+        try:
+            original["minimum_negative_events"] = int(self._min_neg_edit.text())
+        except ValueError:
+            original["minimum_negative_events"] = 50
+        original["notes"] = self._notes_edit.text().strip()
+
+        controls = []
+        for row_idx in range(self._control_table.rowCount()):
+            controls.append(self._read_control_row(row_idx))
+        original["controls"] = controls
+
+    # -- Validation & accept -------------------------------------------------
+
+    def _accept_if_valid(self) -> None:
+        try:
+            self._commit_current_calculation()
+            self._validate_all()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid calculation", str(exc))
+            return
+        self.accept()
+
+    def _validate_all(self) -> None:
+        ids: set[str] = set()
+        for mapping in self._calculations:
+            try:
+                spec = CompensationCalculationSpec(**mapping)
+            except ValueError as exc:
+                calc_id = mapping.get("id", "(unnamed)")
+                raise ValueError(
+                    f"Validation failed for '{calc_id}': {exc}"
+                ) from exc
+            if spec.id in ids:
+                raise ValueError(f"Duplicate calculation ID: {spec.id}")
+            ids.add(spec.id)

@@ -217,7 +217,7 @@ Phase A4完了後に開始する。
 - [x] 済み: explicit control sampleとpositive/negative Populationを入力とするcalculation specをmodel化する。
 - [x] 済み: linear/median background-subtracted method、minimum events、outlier policyを明示する。
 - [x] 済み: asymmetric synthetic single-stain controlsからknown spill matrixを復元するcore algorithmを実装する。
-- [ ] detector × control assignment tableをGUIへ追加する。
+- [x] 済み: detector × control assignment tableをGUIへ追加する。
 - [ ] cleanup/positive/negative gateをGraph Windowで編集するとcalculationをstale化する。
 - [ ] residual、slope、event count、condition numberをdiagnostic panelへ表示する。
 - [ ] calculated matrixをimmutable resultとして保存し、編集はduplicateで行う。

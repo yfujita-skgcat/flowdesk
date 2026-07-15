@@ -195,6 +195,7 @@ class MainWindow(QMainWindow):
         self._derived_parameters: list[dict[str, Any]] = []
         self._compensation_matrices: list[dict[str, Any]] = []
         self._compensation_bindings: list[dict[str, Any]] = []
+        self._compensation_calculations: list[dict[str, Any]] = []
         self._transforms: list[dict[str, Any]] = []
         self._statistics: list[dict[str, Any]] = []
         self._default_compensation_matrix_id: str | None = None
@@ -366,6 +367,17 @@ class MainWindow(QMainWindow):
         self.action_compensation.setObjectName("actionCompensation")
         self.action_compensation.triggered.connect(self._on_edit_compensation)
         analysis_menu.addAction(self.action_compensation)
+
+        self.action_compensation_calculations = QAction(
+            "Compensation &Calculations...", self
+        )
+        self.action_compensation_calculations.setObjectName(
+            "actionCompensationCalculations"
+        )
+        self.action_compensation_calculations.triggered.connect(
+            self._on_edit_compensation_calculations
+        )
+        analysis_menu.addAction(self.action_compensation_calculations)
 
         self.action_transforms = QAction("Analysis &Transforms...", self)
         self.action_transforms.setObjectName("actionTransforms")
@@ -927,6 +939,9 @@ class MainWindow(QMainWindow):
             "transforms": deepcopy(self._transforms),
             "compensation_matrices": deepcopy(self._compensation_matrices),
             "compensation_bindings": deepcopy(self._compensation_bindings),
+            "compensation_calculations": deepcopy(
+                self._compensation_calculations
+            ),
             "statistics": deepcopy(self._statistics),
             "default_compensation_matrix_id": self._default_compensation_matrix_id,
             "migration_diagnostics": deepcopy(self._migration_diagnostics),
@@ -1089,6 +1104,9 @@ class MainWindow(QMainWindow):
         self._compensation_bindings = deepcopy(
             manifest.get("compensation_bindings", [])
         )
+        self._compensation_calculations = deepcopy(
+            manifest.get("compensation_calculations", [])
+        )
         self._statistics = deepcopy(manifest.get("statistics", []))
 
         resolved_samples = resolve_sample_paths(manifest, project_path)
@@ -1237,6 +1255,41 @@ class MainWindow(QMainWindow):
         self._compensation_matrices = dialog.matrices()
         self._compensation_bindings = dialog.bindings()
         self._mark_results_stale("Compensation changed")
+
+    def _on_edit_compensation_calculations(self) -> None:
+        """Edit compensation calculation specs (detector × control table)."""
+        from flowdesk_qt.compensation_editor import (
+            CompensationCalculationEditorDialog,
+        )
+
+        channels_by_id = {}
+        for sample in self._sample_browser.samples():
+            for channel in sample.info.channels:
+                channels_by_id.setdefault(channel.id, channel)
+        current = self._sample_data.get(self._current_sample_id or "")
+        if current is not None:
+            channels_by_id.update(
+                {channel.id: channel for channel in current.channels}
+            )
+
+        population_ids = ["all_events"]
+        for gate in self._gate_editor.gates():
+            if gate.id not in population_ids:
+                population_ids.append(gate.id)
+
+        sample_ids = [s.id for s in self._sample_browser.samples()]
+
+        dialog = CompensationCalculationEditorDialog(
+            self._compensation_calculations,
+            tuple(channels_by_id.values()),
+            population_ids,
+            sample_ids,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._compensation_calculations = dialog.calculations()
+        self._mark_results_stale("Compensation calculations changed")
 
     def _on_edit_statistics(self) -> None:
         """Edit population statistic definitions."""
