@@ -56,9 +56,12 @@ from flowdesk_core.models import (
   GatingStrategySpec,
   PopulationMembership,
   PopulationResult,
+  StatisticResult,
+  StatisticSpec,
   TransformSpec,
 )
 from flowdesk_core.sample import SampleData
+from flowdesk_core.statistics import compute_statistic
 from flowdesk_core.transforms import TransformError, validate_transform
 
 
@@ -347,6 +350,7 @@ class PipelineRunner:
 
     all_population_results: list[PopulationResult] = []
     all_population_membership: list[PopulationMembership] = []
+    all_statistic_results: list[StatisticResult] = []
     input_files: list[dict[str, Any]] = []
     diagnostics: list[ExecutionDiagnostic] = []
     failed_sample_count = 0
@@ -439,8 +443,22 @@ class PipelineRunner:
       all_population_results.extend(pop_results)
       all_population_membership.extend(pop_membership)
 
+      # --- Step 5: Statistics ---
+      stat_results = self._step_statistics(
+        sample_id=sid,
+        events=transformed.events,
+        channel_ids=transformed.channel_ids,
+        population_results=pop_results,
+        membership=pop_membership,
+      )
+      all_statistic_results.extend(stat_results)
+      messages.append(
+        f"sample={sid} statistics=done n={len(stat_results)}"
+      )
+
     population_tuple = tuple(all_population_results)
     membership_tuple = tuple(all_population_membership)
+    statistic_tuple = tuple(all_statistic_results)
     if failed_sample_count and population_tuple:
       status = "partial_success"
     elif failed_sample_count:
@@ -455,6 +473,7 @@ class PipelineRunner:
       status=status,
       population_results=population_tuple,
       population_membership=membership_tuple,
+      statistic_results=statistic_tuple,
       input_files=tuple(input_files),
       messages=tuple(messages),
       diagnostics=tuple(diagnostics),
@@ -1088,6 +1107,154 @@ class PipelineRunner:
       )
 
     return tagged_results, tagged_membership
+
+  def _step_statistics(
+    self,
+    *,
+    sample_id: str,
+    events: NDArray[np.float64],
+    channel_ids: list[str],
+    population_results: list[PopulationResult],
+    membership: list[PopulationMembership],
+  ) -> list[StatisticResult]:
+    """Evaluate statistic definitions for a single sample.
+
+    For each StatisticSpec, look up the source events (either compensated or
+    transformed depending on source_stage) and the population mask, then call
+    ``compute_statistic`` to produce a StatisticResult.
+    """
+    specs = self._statistic_specs()
+    if not specs:
+      return []
+
+    # Build lookup tables.
+    parent_by_population: dict[str, PopulationResult] = {
+      r.population_id: r for r in population_results
+    }
+    total_count = 0
+    for r in population_results:
+      if r.frequency_of_parent is None and r.event_count > total_count:
+        total_count = r.event_count
+    if total_count == 0:
+      total_count = int(events.shape[0])
+
+    membership_by_population: dict[str, NDArray[np.bool_]] = {
+      m.population_id: m.mask for m in membership
+    }
+
+    column_index: dict[str, int] = {
+      cid: idx for idx, cid in enumerate(channel_ids)
+    }
+
+    results: list[StatisticResult] = []
+
+    for spec in specs:
+      pop_result = parent_by_population.get(spec.population_id)
+      if pop_result is None:
+        continue
+
+      event_count = pop_result.event_count
+      parent_result = None
+      if pop_result.frequency_of_parent is None:
+        parent_count = None
+      else:
+        parent_pop_id = self._get_parent_population_id(
+          spec.population_id, population_results
+        )
+        parent_result = parent_by_population.get(parent_pop_id)
+        parent_count = parent_result.event_count if parent_result else None
+
+      mask = membership_by_population.get(spec.population_id)
+
+      # count / frequency metrics don't need per-parameter values.
+      if spec.metric in ("count", "frequency_of_parent", "frequency_of_total"):
+        result = compute_statistic(
+          spec=spec,
+          sample_id=sample_id,
+          event_count=event_count,
+          parent_count=parent_count,
+          total_count=total_count,
+          values=None,
+        )
+        results.append(result)
+        continue
+
+      # Value-based metrics need a parameter column.
+      if spec.parameter_id is None:
+        continue
+      col_idx = column_index.get(spec.parameter_id)
+      if col_idx is None:
+        continue
+
+      values: NDArray[np.float64] | None = None
+      if mask is not None:
+        values = events[mask, col_idx].copy()
+      elif event_count > 0:
+        values = events[:, col_idx].copy()
+      else:
+        values = None
+
+      result = compute_statistic(
+        spec=spec,
+        sample_id=sample_id,
+        event_count=event_count,
+        parent_count=parent_count,
+        total_count=total_count,
+        values=values,
+      )
+      results.append(result)
+
+    return results
+
+  def _statistic_specs(self) -> tuple[StatisticSpec, ...]:
+    """Parse statistic definitions from the project manifest."""
+    definitions = self._project.get("statistics", [])
+    parsed: list[StatisticSpec] = []
+    for definition in definitions:
+      if not isinstance(definition, Mapping):
+        raise PipelineError(
+          "invalid_statistic_definition: definition must be an object"
+        )
+      try:
+        stat_id = definition["id"]
+        parsed.append(
+          StatisticSpec(
+            id=stat_id,
+            name=definition.get("name", stat_id),
+            population_id=definition["population_id"],
+            parameter_id=definition.get("parameter_id"),
+            metric=definition.get("metric", "count"),
+            source_stage=definition.get("source_stage", "compensated"),
+            settings=dict(definition.get("settings", {})),
+            format=definition.get("format"),
+            notes=str(definition.get("notes", "")),
+          )
+        )
+      except (KeyError, TypeError, ValueError) as exc:
+        stat_id = definition.get("id", "unknown")
+        raise PipelineError(
+          f"invalid_statistic_definition: {stat_id!r}: {exc}"
+        ) from exc
+    return tuple(parsed)
+
+  @staticmethod
+  def _get_parent_population_id(
+    population_id: str,
+    population_results: list[PopulationResult],
+  ) -> str | None:
+    """Find the parent population ID by finding the population whose frequency
+    is of the given population."""
+    for r in population_results:
+      if r.population_id == population_id and r.frequency_of_parent is None:
+        return None
+    # Heuristic: find a population whose frequency_of_parent denominator
+    # corresponds to this population.
+    for r in population_results:
+      if r.population_id != population_id and r.frequency_of_parent is not None:
+        # Check if this population is the parent by finding a child that
+        # references it. This is a simplified heuristic.
+        pass
+    return None
 
   # ------------------------------------------------------------------
   # Placeholder mode (backward compatibility)

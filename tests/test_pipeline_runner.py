@@ -34,6 +34,7 @@ def _make_project(
   gating_strategies_data: dict[str, object] | None = None,
   population_results: list[dict] | None = None,
   default_compensation_matrix_id: str | None = None,
+  statistics: list[dict] | None = None,
 ) -> dict:
   return {
     "project_id": project_id,
@@ -48,6 +49,7 @@ def _make_project(
     "derived_parameters": derived_parameters or [],
     "transforms": transforms or [],
     "gating_strategies_data": gating_strategies_data or {},
+    "statistics": statistics or [],
     "population_results": population_results or [],
     "default_compensation_matrix_id": default_compensation_matrix_id,
   }
@@ -1699,3 +1701,202 @@ def test_dynamic_compensation_matrix_overrides_static() -> None:
   ]
   assert len(applied) >= 1
   assert applied[0].details["matrix_id"] == "calculated-calc1"
+
+
+# ---------------------------------------------------------------------------
+# Statistics pipeline integration
+# ---------------------------------------------------------------------------
+
+def test_pipeline_statistics_in_report() -> None:
+  """Statistics defined in the project manifest appear in ExecutionReport."""
+  stats = [
+    {
+      "id": "stat_count",
+      "name": "Count live",
+      "population_id": "all_events",
+      "metric": "count",
+      "source_stage": "compensated",
+    },
+    {
+      "id": "stat_mean",
+      "name": "Mean FL1",
+      "population_id": "all_events",
+      "parameter_id": "FSC-H",
+      "metric": "mean",
+      "source_stage": "compensated",
+    },
+  ]
+  project = _make_project(
+    project_id="stat_test",
+    execution_profiles=[
+      {"id": "default", "name": "Default", "gating_strategy_id": None},
+    ],
+    samples=[{"id": "s1", "group_id": "test", "channels": [
+      {"id": "FSC-H", "name": "FSC-H"},
+      {"id": "SSC-H", "name": "SSC-H"},
+    ]}],
+    statistics=stats,
+  )
+
+  events = np.array([
+    [1.0, 2.0],
+    [3.0, 4.0],
+    [5.0, 6.0],
+  ], dtype=np.float64)
+  channels = tuple(
+    ChannelSpec(id=cid, name=cid)
+    for cid in ["FSC-H", "SSC-H"]
+  )
+  sample = SampleData(sample_id="s1", events=events, channels=channels)
+
+  ctx = ExecutionContext(execution_profile_id="default")
+  runner = PipelineRunner(project)
+  report = runner.run_samples(ctx, [sample])
+
+  assert report.status == "success"
+  assert len(report.statistic_results) == 2
+
+  by_id = {r.statistic_id: r for r in report.statistic_results}
+
+  count_r = by_id["stat_count"]
+  assert count_r.value == 3
+  assert count_r.status == "ok"
+
+  mean_r = by_id["stat_mean"]
+  assert mean_r.value == pytest.approx(3.0)
+  assert mean_r.status == "ok"
+
+
+def test_pipeline_statistics_empty() -> None:
+  """No statistics in manifest produces empty statistic_results."""
+  project = _make_project(
+    project_id="no_stat",
+    execution_profiles=[
+      {"id": "default", "name": "Default", "gating_strategy_id": None},
+    ],
+    samples=[{"id": "s1", "group_id": "test", "channels": [
+      {"id": "FSC-H", "name": "FSC-H"},
+    ]}],
+  )
+
+  events = np.array([[1.0]], dtype=np.float64)
+  channels = (ChannelSpec(id="FSC-H", name="FSC-H"),)
+  sample = SampleData(sample_id="s1", events=events, channels=channels)
+
+  ctx = ExecutionContext(execution_profile_id="default")
+  runner = PipelineRunner(project)
+  report = runner.run_samples(ctx, [sample])
+
+  assert report.statistic_results == ()
+
+
+def test_pipeline_statistics_with_gating_strategy() -> None:
+  """Statistics are computed per-gated population."""
+  # Create a gating strategy with a threshold gate on FSC-H.
+  strategy = GatingStrategySpec(
+    id="strat1",
+    name="Strategy",
+    gates=(
+      GateSpec(
+        id="g1",
+        name="Live",
+        gate_type="range",
+        parent_population_id="all_events",
+        x_parameter="FSC-H",
+        thresholds={"min": 2.0, "max": 100.0},
+      ),
+    ),
+    root_population_id="all_events",
+  )
+
+  stats = [
+    {
+      "id": "stat_count_all",
+      "name": "Count all",
+      "population_id": "all_events",
+      "metric": "count",
+      "source_stage": "compensated",
+    },
+    {
+      "id": "stat_count_live",
+      "name": "Count live",
+      "population_id": "g1",
+      "metric": "count",
+      "source_stage": "compensated",
+    },
+    {
+      "id": "stat_mean_live",
+      "name": "Mean FL1 live",
+      "population_id": "g1",
+      "parameter_id": "FSC-H",
+      "metric": "mean",
+      "source_stage": "compensated",
+    },
+  ]
+  project = _make_project(
+    project_id="stat_gate_test",
+    execution_profiles=[
+      {"id": "default", "name": "Default", "gating_strategy_id": "strat1"},
+    ],
+    samples=[{"id": "s1", "group_id": "test", "channels": [
+      {"id": "FSC-H", "name": "FSC-H"},
+      {"id": "SSC-H", "name": "SSC-H"},
+    ]}],
+    gating_strategies_data={"strat1": strategy},
+    statistics=stats,
+  )
+
+  events = np.array([
+    [1.0, 2.0],   # FSC-H < 2 -> not in g1
+    [3.0, 4.0],   # FSC-H >= 2 -> in g1
+    [5.0, 6.0],   # FSC-H >= 2 -> in g1
+  ], dtype=np.float64)
+  channels = tuple(
+    ChannelSpec(id=cid, name=cid)
+    for cid in ["FSC-H", "SSC-H"]
+  )
+  sample = SampleData(sample_id="s1", events=events, channels=channels)
+
+  ctx = ExecutionContext(execution_profile_id="default")
+  runner = PipelineRunner(project)
+  report = runner.run_samples(ctx, [sample])
+
+  assert report.status == "success"
+  by_id = {r.statistic_id: r for r in report.statistic_results}
+
+  count_all = by_id["stat_count_all"]
+  assert count_all.value == 3
+  assert count_all.status == "ok"
+
+  count_live = by_id["stat_count_live"]
+  assert count_live.value == 2
+  assert count_live.status == "ok"
+
+  mean_live = by_id["stat_mean_live"]
+  assert mean_live.value == pytest.approx(4.0)  # mean of [3.0, 5.0]
+  assert mean_live.status == "ok"
+
+
+def test_pipeline_statistics_invalid_spec_raises() -> None:
+  """Invalid statistic definition raises PipelineError."""
+  project = _make_project(
+    project_id="bad_stat",
+    execution_profiles=[
+      {"id": "default", "name": "Default", "gating_strategy_id": None},
+    ],
+    samples=[{"id": "s1", "group_id": "test", "channels": [
+      {"id": "FSC-H", "name": "FSC-H"},
+    ]}],
+    statistics=[
+      {"id": "stat1", "name": "Bad", "population_id": "", "metric": "count"},
+    ],
+  )
+
+  events = np.array([[1.0]], dtype=np.float64)
+  channels = (ChannelSpec(id="FSC-H", name="FSC-H"),)
+  sample = SampleData(sample_id="s1", events=events, channels=channels)
+
+  ctx = ExecutionContext(execution_profile_id="default")
+  runner = PipelineRunner(project)
+  with pytest.raises(PipelineError, match="invalid_statistic_definition"):
+    runner.run_samples(ctx, [sample])

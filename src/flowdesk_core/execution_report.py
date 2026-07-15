@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from flowdesk_core.models import PopulationMembership, PopulationResult
+from flowdesk_core.models import (
+  PopulationMembership,
+  PopulationResult,
+  StatisticResult,
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,7 @@ class ExecutionReport:
   population_membership: tuple[PopulationMembership, ...] = field(
     default_factory=tuple
   )
+  statistic_results: tuple[StatisticResult, ...] = field(default_factory=tuple)
   input_files: tuple[dict[str, Any], ...] = field(default_factory=tuple)
   messages: tuple[str, ...] = field(default_factory=tuple)
   diagnostics: tuple[ExecutionDiagnostic, ...] = field(default_factory=tuple)

@@ -68,6 +68,7 @@ def validate_manifest(data: dict[str, Any]) -> None:
         if isinstance(m, dict) and isinstance(m.get("id"), str)
       } | calculated_matrix_ids,
     )
+    _validate_current_statistics(data.get("statistics", []))
 
 
 def _validate_current_transforms(transforms: Any) -> dict[str, tuple[str, str]]:
@@ -579,6 +580,85 @@ def _validate_current_compensation_calculations(
         f"must be a positive integer"
       )
   return {f"calculated-{calc_id}" for calc_id in calc_ids}
+
+
+def _validate_current_statistics(statistics: Any) -> None:
+  """Validate persisted statistic definitions in the current project format."""
+
+  if not isinstance(statistics, list):
+    raise ManifestValidationError("statistics must be an array")
+  valid_metrics = {
+    "count",
+    "frequency_of_parent",
+    "frequency_of_total",
+    "mean",
+    "median",
+    "geometric_mean",
+    "stddev",
+    "cv",
+    "mad",
+    "percentile",
+  }
+  valid_stages = {"raw", "compensated", "transformed"}
+  stat_ids: set[str] = set()
+  for index, stat in enumerate(statistics):
+    if not isinstance(stat, dict):
+      raise ManifestValidationError(
+        f"statistics[{index}] must be an object"
+      )
+    stat_id = stat.get("id")
+    if not isinstance(stat_id, str) or not stat_id:
+      raise ManifestValidationError(
+        f"statistics[{index}].id must be a non-empty string"
+      )
+    if stat_id in stat_ids:
+      raise ManifestValidationError(
+        f"duplicate statistic ID {stat_id!r}"
+      )
+    stat_ids.add(stat_id)
+    name = stat.get("name")
+    if not isinstance(name, str) or not name:
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} name must be a non-empty string"
+      )
+    population_id = stat.get("population_id")
+    if not isinstance(population_id, str) or not population_id:
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} population_id must be a non-empty string"
+      )
+    metric = stat.get("metric")
+    if metric not in valid_metrics:
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} has invalid metric {metric!r}"
+      )
+    source_stage = stat.get("source_stage")
+    if source_stage not in valid_stages:
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} has invalid source_stage {source_stage!r}"
+      )
+    settings = stat.get("settings", {})
+    if not isinstance(settings, dict):
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} settings must be an object"
+      )
+    if metric == "percentile":
+      q = settings.get("q")
+      if q is None:
+        raise ManifestValidationError(
+          f"statistic {stat_id!r} percentile metric requires 'q' in settings"
+        )
+      if not isinstance(q, (int, float)) or isinstance(q, bool):
+        raise ManifestValidationError(
+          f"statistic {stat_id!r} percentile 'q' must be a number"
+        )
+      if not math.isfinite(q):
+        raise ManifestValidationError(
+          f"statistic {stat_id!r} percentile 'q' must be finite"
+        )
+      if q < 0 or q > 100:
+        raise ManifestValidationError(
+          f"statistic {stat_id!r} percentile 'q' must be in [0, 100]"
+        )
 
 
 def _validate_file_fingerprint(sample_id: str, value: Any) -> None:

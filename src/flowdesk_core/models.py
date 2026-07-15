@@ -16,6 +16,28 @@ CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported
 CompensationBindingScope = Literal["sample", "group", "execution_profile"]
 CompensationRegressionMethod = Literal["linear", "median"]
 CompensationOutlierPolicy = Literal["iqr", "zscore", "none"]
+StatisticMetric = Literal[
+    "count",
+    "frequency_of_parent",
+    "frequency_of_total",
+    "mean",
+    "median",
+    "geometric_mean",
+    "stddev",
+    "cv",
+    "mad",
+    "percentile",
+]
+StatisticSource = Literal["raw", "compensated", "transformed"]
+StatisticStatus = Literal["ok", "empty", "undefined", "error"]
+StatisticUndefinedReason = Literal[
+    "empty_population",
+    "all_nan",
+    "all_nonpositive_geometric_mean",
+    "zero_mean_for_cv",
+    "invalid_percentile",
+    "calculation_error",
+]
 
 
 class DerivedFailurePolicy(StrEnum):
@@ -355,3 +377,81 @@ class ExportRecord:
   population_id: str
   metric: str
   value: int | float | str | None
+
+
+@dataclass(frozen=True)
+class StatisticSpec:
+  """A persisted definition of a population parameter statistic.
+
+  Specifies which population and parameter to measure, the metric to compute,
+  the data source stage (raw/compensated/transformed), optional settings for
+  parameterized metrics (e.g. percentile q), and a display format.
+  """
+
+  id: str
+  name: str
+  population_id: str
+  parameter_id: str | None = None
+  metric: StatisticMetric = "count"
+  source_stage: StatisticSource = "compensated"
+  settings: dict[str, Any] = field(default_factory=dict)
+  format: str | None = None
+  notes: str = ""
+
+  def __post_init__(self) -> None:
+    if not self.id:
+      raise ValueError("statistic ID must be non-empty")
+    if not self.population_id:
+      raise ValueError("statistic population_id must be non-empty")
+    valid_metrics: set[str] = {
+      "count",
+      "frequency_of_parent",
+      "frequency_of_total",
+      "mean",
+      "median",
+      "geometric_mean",
+      "stddev",
+      "cv",
+      "mad",
+      "percentile",
+    }
+    if self.metric not in valid_metrics:
+      raise ValueError(f"invalid statistic metric {self.metric!r}")
+    valid_stages: set[str] = {"raw", "compensated", "transformed"}
+    if self.source_stage not in valid_stages:
+      raise ValueError(
+        f"invalid statistic source_stage {self.source_stage!r}"
+      )
+    if self.metric == "percentile":
+      q = self.settings.get("q")
+      if q is None:
+        raise ValueError(
+          "percentile metric requires 'q' in settings"
+        )
+      if not isinstance(q, (int, float)):
+        raise ValueError(
+          "percentile 'q' setting must be a number"
+        )
+      if q < 0 or q > 100:
+        raise ValueError(
+          "percentile 'q' setting must be in [0, 100]"
+        )
+
+
+@dataclass(frozen=True)
+class StatisticResult:
+  """Computed result of a single statistic definition for one sample.
+
+  ``value`` is ``None`` when the statistic cannot be computed (e.g. empty
+  population).  ``status`` distinguishes between a valid zero, an empty
+  population, an undefined calculation, and a hard error.
+  """
+
+  sample_id: str
+  statistic_id: str
+  population_id: str
+  metric: str
+  value: float | int | None = None
+  unit: str | None = None
+  status: StatisticStatus = "ok"
+  undefined_reason: StatisticUndefinedReason | None = None

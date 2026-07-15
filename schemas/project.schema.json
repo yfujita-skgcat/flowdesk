@@ -47,6 +47,10 @@
     "sample_path_resolution_policy": { "type": "string" },
     "software": { "type": "object" },
     "plot_display_settings": { "$ref": "#/$defs/plotDisplaySettings" },
+    "statistics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/statistic" }
+    },
     "migration_diagnostics": {
       "type": "array",
       "items": {
@@ -385,6 +389,37 @@
         },
         "created_by": { "type": ["string", "null"] },
         "created_at": { "type": ["string", "null"] },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "statistic": {
+      "type": "object",
+      "required": ["id", "name", "population_id", "metric", "source_stage"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "population_id": { "type": "string", "minLength": 1 },
+        "parameter_id": { "type": ["string", "null"] },
+        "metric": {
+          "enum": [
+            "count",
+            "frequency_of_parent",
+            "frequency_of_total",
+            "mean",
+            "median",
+            "geometric_mean",
+            "stddev",
+            "cv",
+            "mad",
+            "percentile"
+          ]
+        },
+        "source_stage": {
+          "enum": ["raw", "compensated", "transformed"]
+        },
+        "settings": { "type": "object" },
+        "format": { "type": ["string", "null"] },
         "notes": { "type": "string" }
       },
       "additionalProperties": true
