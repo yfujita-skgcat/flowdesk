@@ -1282,6 +1282,7 @@ class PipelineRunner:
             parameter_id=definition.get("parameter_id"),
             metric=definition.get("metric", "count"),
             source_stage=definition.get("source_stage", "compensated"),
+            value_policy=definition.get("value_policy", "full_events"),
             settings=dict(definition.get("settings", {})),
             format=definition.get("format"),
             notes=str(definition.get("notes", "")),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
@@ -29,6 +30,7 @@ StatisticMetric = Literal[
     "percentile",
 ]
 StatisticSource = Literal["raw", "compensated", "transformed"]
+StatisticValuePolicy = Literal["full_events"]
 StatisticStatus = Literal["ok", "empty", "undefined", "error"]
 StatisticUndefinedReason = Literal[
     "empty_population",
@@ -395,6 +397,7 @@ class StatisticSpec:
   parameter_id: str | None = None
   metric: StatisticMetric = "count"
   source_stage: StatisticSource = "compensated"
+  value_policy: StatisticValuePolicy = "full_events"
   settings: dict[str, Any] = field(default_factory=dict)
   format: str | None = None
   notes: str = ""
@@ -402,6 +405,8 @@ class StatisticSpec:
   def __post_init__(self) -> None:
     if not self.id:
       raise ValueError("statistic ID must be non-empty")
+    if not self.name:
+      raise ValueError("statistic name must be non-empty")
     if not self.population_id:
       raise ValueError("statistic population_id must be non-empty")
     valid_metrics: set[str] = {
@@ -423,16 +428,26 @@ class StatisticSpec:
       raise ValueError(
         f"invalid statistic source_stage {self.source_stage!r}"
       )
+    if self.value_policy != "full_events":
+      raise ValueError(
+        f"invalid statistic value_policy {self.value_policy!r}"
+      )
+    if not isinstance(self.settings, dict):
+      raise ValueError("statistic settings must be an object")
+    if self.format is not None and not isinstance(self.format, str):
+      raise ValueError("statistic format must be a string or None")
     if self.metric == "percentile":
       q = self.settings.get("q")
       if q is None:
         raise ValueError(
           "percentile metric requires 'q' in settings"
         )
-      if not isinstance(q, (int, float)):
+      if not isinstance(q, (int, float)) or isinstance(q, bool):
         raise ValueError(
           "percentile 'q' setting must be a number"
         )
+      if not math.isfinite(q):
+        raise ValueError("percentile 'q' setting must be finite")
       if q < 0 or q > 100:
         raise ValueError(
           "percentile 'q' setting must be in [0, 100]"

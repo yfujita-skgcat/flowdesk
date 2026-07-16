@@ -632,6 +632,12 @@ def _validate_current_statistics(
     "percentile",
   }
   valid_stages = {"raw", "compensated", "transformed"}
+  valid_value_policies = {"full_events"}
+  value_metrics = valid_metrics - {
+    "count",
+    "frequency_of_parent",
+    "frequency_of_total",
+  }
   stat_ids: set[str] = set()
   for index, stat in enumerate(statistics):
     if not isinstance(stat, dict):
@@ -668,6 +674,22 @@ def _validate_current_statistics(
       raise ManifestValidationError(
         f"statistic {stat_id!r} has invalid source_stage {source_stage!r}"
       )
+    value_policy = stat.get("value_policy", "full_events")
+    if value_policy not in valid_value_policies:
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} has invalid value_policy {value_policy!r}"
+      )
+    parameter_id = stat.get("parameter_id")
+    if parameter_id is not None and (
+      not isinstance(parameter_id, str) or not parameter_id
+    ):
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} parameter_id must be a non-empty string or null"
+      )
+    if metric in value_metrics and parameter_id is None:
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} metric {metric!r} requires parameter_id"
+      )
     settings = stat.get("settings", {})
     if not isinstance(settings, dict):
       raise ManifestValidationError(
@@ -691,6 +713,11 @@ def _validate_current_statistics(
         raise ManifestValidationError(
           f"statistic {stat_id!r} percentile 'q' must be in [0, 100]"
         )
+    display_format = stat.get("format")
+    if display_format is not None and not isinstance(display_format, str):
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} format must be a string or null"
+      )
 
 
 def _validate_current_gate_parent_references(

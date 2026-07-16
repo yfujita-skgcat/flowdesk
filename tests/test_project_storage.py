@@ -163,6 +163,28 @@ class TestSaveProject:
 
 
 class TestRoundTrip:
+  def test_statistic_definition_preserved(self, tmp_path: Path) -> None:
+    manifest = migrate_manifest(MINIMAL_MANIFEST)
+    statistic = {
+      "id": "stat_mean_fl1",
+      "name": "Mean FL1",
+      "population_id": "all_events",
+      "parameter_id": "FL1-A",
+      "metric": "mean",
+      "source_stage": "transformed",
+      "value_policy": "full_events",
+      "settings": {},
+      "format": ".3f",
+      "notes": "publication statistic",
+    }
+    manifest["statistics"] = [statistic]
+    bundle = tmp_path / "statistics.flowdesk"
+
+    save_project(bundle, manifest)
+    reloaded = load_project(bundle)
+
+    assert reloaded["statistics"] == [statistic]
+
   def test_execution_profiles_preserved(self, tmp_path: Path) -> None:
     bundle = tmp_path / "rt.flowdesk"
     save_project(bundle, MINIMAL_MANIFEST_WITH_PROFILE)

@@ -431,12 +431,22 @@ class TestStatisticSpec:
         source_stage="invalid",  # type: ignore[arg-type]
       )
 
+  def test_reject_invalid_value_policy(self) -> None:
+    with pytest.raises(ValueError, match="invalid statistic value_policy"):
+      StatisticSpec(
+        id="stat1",
+        name="bad",
+        population_id="live",
+        value_policy="display_bins",  # type: ignore[arg-type]
+      )
+
   def test_reject_percentile_without_q(self) -> None:
     with pytest.raises(ValueError, match="percentile metric requires"):
       StatisticSpec(
         id="stat1",
         name="bad",
         population_id="live",
+        parameter_id="FL1-A",
         metric="percentile",
       )
 
@@ -446,6 +456,7 @@ class TestStatisticSpec:
         id="stat1",
         name="bad",
         population_id="live",
+        parameter_id="FL1-A",
         metric="percentile",
         settings={"q": 101},
       )
@@ -456,6 +467,7 @@ class TestStatisticSpec:
         id="stat1",
         name="bad",
         population_id="live",
+        parameter_id="FL1-A",
         metric="percentile",
         settings={"q": -1},
       )
@@ -466,6 +478,7 @@ class TestStatisticSpec:
         id="stat1",
         name="bad",
         population_id="live",
+        parameter_id="FL1-A",
         metric="percentile",
         settings={"q": "fifty"},
       )
@@ -478,6 +491,7 @@ class TestStatisticSpec:
       parameter_id="FL1-A",
       metric="geometric_mean",
       source_stage="transformed",
+      value_policy="full_events",
       settings={},
       format=".3e",
       notes="geometric mean for log-normal data",
@@ -489,6 +503,7 @@ class TestStatisticSpec:
       "parameter_id": spec.parameter_id,
       "metric": spec.metric,
       "source_stage": spec.source_stage,
+      "value_policy": spec.value_policy,
       "settings": spec.settings,
       "format": spec.format,
       "notes": spec.notes,
@@ -497,6 +512,7 @@ class TestStatisticSpec:
     assert spec2.id == spec.id
     assert spec2.metric == spec.metric
     assert spec2.source_stage == spec.source_stage
+    assert spec2.value_policy == spec.value_policy
     assert spec2.format == spec.format
     assert spec2.notes == spec.notes
 
@@ -1243,11 +1259,14 @@ class TestManifestStatisticsValidation:
         "metric": m,
         "source_stage": "compensated",
       }
+      if m not in {"count", "frequency_of_parent", "frequency_of_total"}:
+        stat["parameter_id"] = "FL1-A"
       stats.append(stat)
     stats.append({
       "id": "stat_percentile",
       "name": "P25",
       "population_id": "live",
+      "parameter_id": "FL1-A",
       "metric": "percentile",
       "source_stage": "compensated",
       "settings": {"q": 25},
@@ -1302,8 +1321,9 @@ class TestManifestStatisticsValidation:
   def test_percentile_missing_q_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
       {
-        "id": "stat1", "name": "A", "population_id": "live",
-        "metric": "percentile", "source_stage": "compensated",
+          "id": "stat1", "name": "A", "population_id": "live",
+          "parameter_id": "FL1-A",
+          "metric": "percentile", "source_stage": "compensated",
       },
     ])
     with pytest.raises(ManifestValidationError, match="percentile metric requires"):
@@ -1312,8 +1332,9 @@ class TestManifestStatisticsValidation:
   def test_percentile_q_out_of_range_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
       {
-        "id": "stat1", "name": "A", "population_id": "live",
-        "metric": "percentile", "source_stage": "compensated",
+          "id": "stat1", "name": "A", "population_id": "live",
+          "parameter_id": "FL1-A",
+          "metric": "percentile", "source_stage": "compensated",
         "settings": {"q": 101},
       },
     ])
@@ -1323,8 +1344,9 @@ class TestManifestStatisticsValidation:
   def test_percentile_q_negative_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
       {
-        "id": "stat1", "name": "A", "population_id": "live",
-        "metric": "percentile", "source_stage": "compensated",
+          "id": "stat1", "name": "A", "population_id": "live",
+          "parameter_id": "FL1-A",
+          "metric": "percentile", "source_stage": "compensated",
         "settings": {"q": -5},
       },
     ])
@@ -1334,8 +1356,9 @@ class TestManifestStatisticsValidation:
   def test_percentile_q_infinite_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
       {
-        "id": "stat1", "name": "A", "population_id": "live",
-        "metric": "percentile", "source_stage": "compensated",
+          "id": "stat1", "name": "A", "population_id": "live",
+          "parameter_id": "FL1-A",
+          "metric": "percentile", "source_stage": "compensated",
         "settings": {"q": float("inf")},
       },
     ])
@@ -1387,9 +1410,38 @@ class TestManifestStatisticsValidation:
         "id": "stat1",
         "name": "Mean FL1",
         "population_id": "live",
+        "parameter_id": "FL1-A",
         "metric": "mean",
         "source_stage": "compensated",
         "format": None,
       },
     ])
     validate_manifest(manifest)
+
+  def test_invalid_value_policy_fails(self) -> None:
+    manifest = self._minimal_manifest(statistics=[
+      {
+        "id": "stat1",
+        "name": "Mean FL1",
+        "population_id": "live",
+        "parameter_id": "FL1-A",
+        "metric": "mean",
+        "source_stage": "compensated",
+        "value_policy": "display_bins",
+      },
+    ])
+    with pytest.raises(ManifestValidationError, match="invalid value_policy"):
+      validate_manifest(manifest)
+
+  def test_value_metric_without_parameter_id_fails(self) -> None:
+    manifest = self._minimal_manifest(statistics=[
+      {
+        "id": "stat1",
+        "name": "Mean FL1",
+        "population_id": "live",
+        "metric": "mean",
+        "source_stage": "compensated",
+      },
+    ])
+    with pytest.raises(ManifestValidationError, match="requires parameter_id"):
+      validate_manifest(manifest)

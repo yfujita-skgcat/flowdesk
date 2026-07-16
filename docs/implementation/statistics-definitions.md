@@ -25,7 +25,9 @@ Read `population-statistics.md`, `pipeline-runner.md`, and
 ## Model contract
 
 `StatisticSpec` contains stable ID/name, population ID, optional parameter ID,
-metric, source/value-space policy, settings, and display format. `StatisticResult`
+metric, source/value-space policy, settings, and display format. Its persisted
+`value_policy` is currently only `full_events`; display histogram bins are not a
+valid source for numeric statistics. `StatisticResult`
 contains sample/spec IDs, value, unit, status, and optional undefined reason.
 
 Default numeric statistics operate on full event values after the configured
