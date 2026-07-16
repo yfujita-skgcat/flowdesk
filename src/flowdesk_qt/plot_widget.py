@@ -1406,7 +1406,9 @@ class PlotWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self._status_banner = QLabel()
         self._status_banner.setObjectName("plotStatusBanner")
-        self._status_banner.setStyleSheet("QLabel { padding: 3px; color: #7a3e00; background: #fff0d0; }")
+        self._status_banner.setStyleSheet(
+            "QLabel { padding: 3px; color: #7a3e00; background: #fff0d0; }"
+        )
         self._status_banner.setVisible(False)
         layout.addWidget(self._status_banner)
 

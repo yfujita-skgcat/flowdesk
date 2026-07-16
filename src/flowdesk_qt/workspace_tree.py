@@ -92,7 +92,9 @@ class WorkspaceTree(QWidget):
         sample_results = results.get(sample_id, ())
         by_parent: dict[str | None, list[PopulationResult]] = {}
         for result in sample_results:
-          by_parent.setdefault(self._population_parents.get(result.population_id), []).append(result)
+          by_parent.setdefault(
+            self._population_parents.get(result.population_id), []
+          ).append(result)
         self._add_populations(sample_item, by_parent, "all_events", stats, sample_id)
         sample_item.setExpanded(True)
     finally:

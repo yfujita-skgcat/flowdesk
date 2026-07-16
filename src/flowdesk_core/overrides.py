@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from copy import deepcopy
 from dataclasses import asdict
 from typing import Any
 
@@ -106,7 +105,11 @@ def resolve_gate_overrides(
     if not override.enabled or override.sample_id != sample_id:
       continue
     if override.base_gate_id in by_gate:
-      raise GateOverrideError("duplicate_override", "multiple overrides target one gate", gate_id=override.base_gate_id)
+      raise GateOverrideError(
+        "duplicate_override",
+        "multiple overrides target one gate",
+        gate_id=override.base_gate_id,
+      )
     by_gate[override.base_gate_id] = override
 
   resolved: list[GateSpec] = []
@@ -129,8 +132,16 @@ def resolve_gate_overrides(
       coordinates = override.coordinates or gate.coordinates
       thresholds = dict(gate.thresholds)
       thresholds.update(override.thresholds)
-    resolved.append(GateSpec(**{**asdict(gate), "coordinates": coordinates, "thresholds": thresholds}))
+    resolved.append(GateSpec(**{
+      **asdict(gate),
+      "coordinates": coordinates,
+      "thresholds": thresholds,
+    }))
   unknown = set(by_gate) - {gate.id for gate in strategy.gates}
   if unknown:
-    raise GateOverrideError("missing_base_gate", "override references a missing gate", gate_ids=tuple(sorted(unknown)))
+    raise GateOverrideError(
+      "missing_base_gate",
+      "override references a missing gate",
+      gate_ids=tuple(sorted(unknown)),
+    )
   return GatingStrategySpec(**{**asdict(strategy), "gates": tuple(resolved)})

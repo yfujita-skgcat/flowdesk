@@ -9,18 +9,18 @@ import pytest
 from flowdesk_core.models import GateSpec
 from flowdesk_core.project_commands import (
   CopyGateOverrideToSelectedCommand,
-  CreateGateOverrideCommand,
   CopySubtreeAnalysisCommand,
   CopySubtreeCommand,
   CreateGateCommand,
+  CreateGateOverrideCommand,
   DeleteGateCommand,
   DuplicateGateCommand,
   ProjectCommandError,
   PromoteGateOverrideCommand,
   RebaseGateOverrideCommand,
-  ResetGateOverrideCommand,
   RenameGateCommand,
   ReparentGateCommand,
+  ResetGateOverrideCommand,
   UndoStack,
 )
 

@@ -52,11 +52,6 @@ from flowdesk_core.groups import (
   resolve_group_strategy_bindings,
   sample_group_specs_from_mapping,
 )
-from flowdesk_core.overrides import (
-  GateOverrideError,
-  override_spec_from_mapping,
-  resolve_gate_overrides,
-)
 from flowdesk_core.models import (
   ChannelSpec,
   CompensationBindingSpec,
@@ -73,6 +68,11 @@ from flowdesk_core.models import (
   StatisticResult,
   StatisticSpec,
   TransformSpec,
+)
+from flowdesk_core.overrides import (
+  GateOverrideError,
+  override_spec_from_mapping,
+  resolve_gate_overrides,
 )
 from flowdesk_core.sample import SampleData
 from flowdesk_core.statistics import compute_statistic
@@ -629,7 +629,11 @@ class PipelineRunner:
         strategy = asdict(strategy)
       if not isinstance(strategy, Mapping):
         continue
-      expected = {str(gate.get("id")) for gate in strategy.get("gates", []) if isinstance(gate, Mapping)}
+      expected = {
+        str(gate.get("id"))
+        for gate in strategy.get("gates", [])
+        if isinstance(gate, Mapping)
+      }
       missing = sorted(expected - by_sample.get(sample_id, set()))
       for population_id in missing:
         diagnostics.append(ExecutionDiagnostic(
@@ -654,22 +658,31 @@ class PipelineRunner:
       sample = sample_data.get(sample_id)
       if sample is None:
         continue
-      values = {channel.id: sample.events[:, index] for index, channel in enumerate(sample.channels)}
+      values = {
+        channel.id: sample.events[:, index]
+        for index, channel in enumerate(sample.channels)
+      }
       for gate in strategy.get("gates", []):
         if not isinstance(gate, Mapping):
           continue
         thresholds = gate.get("thresholds", {})
-        axis_thresholds = ((gate.get("x_parameter"), "min", "max"),) if gate.get("gate_type") == "range" else (
-          (gate.get("x_parameter"), "x_min", "x_max"),
-          (gate.get("y_parameter"), "y_min", "y_max"),
-        )
+        if gate.get("gate_type") == "range":
+          axis_thresholds = ((gate.get("x_parameter"), "min", "max"),)
+        else:
+          axis_thresholds = (
+            (gate.get("x_parameter"), "x_min", "x_max"),
+            (gate.get("y_parameter"), "y_min", "y_max"),
+          )
         for parameter, low_key, high_key in axis_thresholds:
           if parameter not in values or not isinstance(thresholds, Mapping):
             continue
           finite = values[parameter][np.isfinite(values[parameter])]
           if finite.size == 0:
             continue
-          if thresholds.get(low_key) == float(np.min(finite)) or thresholds.get(high_key) == float(np.max(finite)):
+          if (
+            thresholds.get(low_key) == float(np.min(finite))
+            or thresholds.get(high_key) == float(np.max(finite))
+          ):
             diagnostics.append(ExecutionDiagnostic(
               code="gate_boundary_clipping", severity="warning", stage="qc",
               sample_id=sample_id, parameter_id=str(gate.get("id")),
