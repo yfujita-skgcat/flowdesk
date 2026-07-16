@@ -220,8 +220,8 @@ Phase A4完了後に開始する。
 - [x] 済み: detector × control assignment tableをGUIへ追加する。
 - [x] 済み: cleanup/positive/negative gateをGraph Windowで編集するとcalculationをstale化する。
 - [x] 済み: residual、slope、event count、condition numberをdiagnostic panelへ表示する。
-- [x] 済み: calculated matrixをimmutable resultとして保存し、編集はduplicateで行う。
-- [x] 済み: known synthetic fixturesとindependent calculationで数値検証する。
+- [ ] calculated matrixをimmutable resultとして保存し、編集はduplicateで行う。
+- [ ] known synthetic fixturesとindependent calculationで数値検証する。
 
 AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混ぜない。
 
@@ -229,37 +229,38 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 
 #### 事前文書
 
-- [x] 済み: `docs/implementation/statistics-definitions.md`を全文読み、raw-eventとdisplay-binned statisticsの選択を追記する。
+- [ ] `docs/implementation/statistics-definitions.md`を全文読み、raw-eventとdisplay-binned statisticsの選択を追記する。
 
 #### Model/core
 
-- [x] 済み: `StatisticSpec`を追加する。Population ID、parameter ID、metric、source stage、transform/binning policy、settings、formatを保持する。
-- [x] 済み: count、frequency parent/total、mean、median、geometric mean、SD、CV、MAD、percentileを実装する。
-- [x] 済み: empty、zero denominator、negative valuesを含むgeometric mean、NaN/Infのpolicyをmetricごとに定義する。
+- [ ] `StatisticSpec`を追加する。Population ID、parameter ID、metric、source stage、transform/binning policy、settings、formatを保持する。
+- [ ] count、frequency parent/total、mean、median、geometric mean、SD、CV、MAD、percentileを実装する。
+- [ ] empty、zero denominator、negative valuesを含むgeometric mean、NaN/Infのpolicyをmetricごとに定義する。
 - [x] 済み: gate/matrix/transform変更時のdependency invalidationを実装する。
 - [x] 済み: ExecutionReportへtyped statistic resultsとundefined reasonを追加する。
 
 #### GUI/export
 
-- [x] 済み: Add Statistic dialogをPopulation TreeとGraphから開けるようにする。
-- [x] 済み: statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
-- [x] 済み: CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
+- [ ] Add Statistic dialogをPopulation TreeとGraphから開けるようにする。
+- [ ] statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
+- [ ] CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
 
 #### 必須test
 
-- [x] 済み: 各metricのknown values、empty、NaN/Infをtestする。
-- [x] 済み: statistics定義のsave/load round-tripをtestする。
-- [x] 済み: gate編集後stale、pipeline後更新をtestする。
-- [x] 済み: GUI値、CLI export、Python API値を一致させる。
+- [ ] 各metricのknown values、empty、NaN/Infをtestする。
+- [ ] statistics定義のsave/load round-tripをtestする。
+- [ ] gate編集後stale、pipeline後更新をtestする。
+- [ ] GUI値、CLI export、Python API値を一致させる。
 
 ### Phase A7: Schema migration、atomic save、structured diagnostics [S14/S23]
 
-- [x] 済み: `docs/implementation/project-migration-and-recovery.md`を全文読み、対象versionとmigration経路を追記する。
+- [ ] `docs/implementation/project-migration-and-recovery.md`を全文読み、対象versionとmigration経路を追記する。
 - [x] 済み: project schemaを厳密化し、ID reference integrityをvalidatorで検証する。(gate parent_population_id, statistics population_id, compensation bindings/calculations)
-- [x] 済み: versionごとのmigration registryを作り、migration reportとbackupを生成する。(MigrationReport, _get_migration_path, ALL_KNOWN_VERSIONS)
-- [x] 済み: temp pathへwrite、fsync、atomic replaceするsave手順を実装する。(atomic_write_json)
+- [ ] versionごとのmigration registryを作り、migration reportとbackupを生成する。(MigrationReport, _get_migration_path, ALL_KNOWN_VERSIONS)
+- [ ] temp pathへwrite、fsync、atomic replaceするsave手順を実装する。(atomic_write_json)
 - [x] 済み: newer unsupported schemaをread-only以外で開かない。(migration前にreject、save前にvalidate)
 - [x] 済み: ExecutionDiagnostic modelを追加し、severity、code、sample、population、stage、message、detailsを保持する。(既存: execution_report.py)
+- [ ] GUI diagnostics panelを追加する。
 - [x] 済み: CLI machine-readable JSON outputを追加する。(既存: run_project.py でstderrへJSON出力)
 - [x] 済み: interrupted save、invalid reference、old schema、newer schemaをtestする。
 
