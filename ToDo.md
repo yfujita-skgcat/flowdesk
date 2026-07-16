@@ -311,7 +311,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 ### Phase B3: Gate hierarchy UXとUndo/Redo [S07/S14]
 
-- [ ] `docs/implementation/workspace-tree-and-undo.md`を全文読み、今回追加するcommand contractを追記する。
+- [x] 済み: `docs/implementation/workspace-tree-and-undo.md`を全文読み、JSON互換project-state、定義のみのcommand payload、clean marker、依存invalid化のcommand contractを追記する。
 - [ ] project mutation commandとUndo stackをGUI非依存modelまたはapplication layerに実装する。
 - [ ] gate create/edit/rename/delete/reparent/duplicate/subtree copyをUndo/Redo可能にする。
 - [ ] sample、Population、statisticsを一つのhierarchy viewへ統合する。
