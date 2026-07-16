@@ -73,7 +73,9 @@ def validate_expression(
       if ref_id != root_id and ref_id not in available_ids:
         raise BooleanExpressionError(f"Boolean expression references unknown id: {ref_id!r}")
       if owner_id is not None and ref_id == owner_id:
-        raise BooleanExpressionError(f"Boolean expression self-reference: {owner_id!r}")
+        raise BooleanExpressionError(
+          f"Boolean expression cycle/self-reference: {owner_id!r}"
+        )
       references.add(ref_id)
     elif op == "not":
       child = node.get("child")

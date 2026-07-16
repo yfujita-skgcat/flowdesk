@@ -10,6 +10,7 @@ This widget contains NO scientific execution logic.  It produces
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import asdict, replace
 from typing import Any
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -237,6 +239,13 @@ class _GateDialog(QDialog):
             root.setExpanded(True)
             layout.addRow("Operation:", self._operation_combo)
             layout.addRow("Source populations:", self._source_tree)
+            self._expression_edit = QPlainTextEdit()
+            self._expression_edit.setObjectName("booleanExpressionEditor")
+            self._expression_edit.setPlaceholderText(
+                '{"op":"and","children":[{"op":"ref","id":"gate-a"},...]} '
+            )
+            self._expression_edit.setMaximumHeight(100)
+            layout.addRow("Nested expression JSON (optional):", self._expression_edit)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -257,6 +266,7 @@ class _GateDialog(QDialog):
         """Gather threshold values from widgets into self._thresholds."""
         self._name = self._name_edit.text() or f"gate_{self._gate_type}"
         self._thresholds.clear()
+        self._expression_error = ""
 
         if self._gate_type == "rectangle":
             self._thresholds["x_min"] = self._x_min.value()
@@ -300,9 +310,20 @@ class _GateDialog(QDialog):
             )
             self._thresholds["operation"] = self._operation_combo.currentText()
             self._thresholds["source_ids"] = sorted(source_ids)
+            expression_text = self._expression_edit.toPlainText().strip()
+            if expression_text:
+                try:
+                    expression = json.loads(expression_text)
+                except json.JSONDecodeError as exc:
+                    self._expression_error = f"Invalid Boolean expression JSON: {exc.msg}"
+                else:
+                    self._thresholds["expression"] = expression
 
     def _on_ok(self) -> None:
         self._collect_ok_values()
+        if getattr(self, "_expression_error", ""):
+            QMessageBox.warning(self, "Invalid Boolean expression", self._expression_error)
+            return
         self.accept()
 
 
@@ -880,7 +901,7 @@ class GateEditor(QWidget):
             source_ids = thresholds.get("source_ids", [])
             operation = thresholds.get("operation")
             min_sources = 1 if operation == "not" else 2
-            if len(source_ids) < min_sources:
+            if "expression" not in thresholds and len(source_ids) < min_sources:
                 QMessageBox.warning(
                     self,
                     "Boolean gate incomplete",
@@ -1234,6 +1255,10 @@ class GateEditor(QWidget):
         dialog._name_edit.setText(gate.name)
         operation = str(gate.thresholds.get("operation", "and"))
         dialog._operation_combo.setCurrentText(operation)
+        if "expression" in gate.thresholds:
+            dialog._expression_edit.setPlainText(
+                json.dumps(gate.thresholds["expression"], indent=2)
+            )
         source_ids = set(gate.thresholds.get("source_ids", []))
         for row in range(dialog._source_list.count()):
             item = dialog._source_list.item(row)
@@ -1246,14 +1271,22 @@ class GateEditor(QWidget):
         if dialog.exec() != QDialog.Accepted:
             return
         try:
-            self.update_boolean_gate(
-                gate.id,
-                str(dialog.thresholds().get("operation")),
-                list(dialog.thresholds().get("source_ids", [])),
-            )
+            thresholds = dialog.thresholds()
             index = next(i for i, value in enumerate(self._gates) if value.id == gate.id)
-            renamed = replace(self._gates[index], name=dialog.name())
-            self.update_gate(index, renamed, notify=True)
+            if "expression" in thresholds:
+                self.update_gate(
+                    index,
+                    replace(gate, name=dialog.name(), thresholds=thresholds),
+                    notify=True,
+                )
+            else:
+                self.update_boolean_gate(
+                    gate.id,
+                    str(thresholds.get("operation")),
+                    list(thresholds.get("source_ids", [])),
+                )
+                renamed = replace(self._gates[index], name=dialog.name())
+                self.update_gate(index, renamed, notify=True)
         except GatingStrategyError as exc:
             QMessageBox.warning(self, "Invalid Boolean gate", str(exc))
 

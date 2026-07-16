@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from dataclasses import asdict
@@ -854,6 +855,28 @@ def test_geometric_gate_numeric_editor_round_trips_ellipse_and_polygon() -> None
   finally:
     for dialog in dialogs:
       dialog.deleteLater()
+    app.processEvents()
+
+
+def test_boolean_expression_json_editor_round_trips_nested_tree() -> None:
+  app = _app()
+  dialog = _GateDialog("boolean", "X", "Y")
+  try:
+    expression = {
+      "op": "or",
+      "children": [
+        {"op": "ref", "id": "a"},
+        {"op": "not", "child": {"op": "ref", "id": "b"}},
+      ],
+    }
+    dialog._expression_edit.setPlainText(json.dumps(expression))
+    dialog._collect_ok_values()
+    assert dialog.thresholds()["expression"] == expression
+    dialog._expression_edit.setPlainText("{")
+    dialog._collect_ok_values()
+    assert dialog._expression_error
+  finally:
+    dialog.deleteLater()
     app.processEvents()
 
 

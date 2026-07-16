@@ -283,12 +283,41 @@ def test_show_gate_is_display_only(qapp) -> None:
         qapp.processEvents()
 
 
-def test_three_level_gui_manifest_matches_headless_counts(qapp) -> None:
+def test_nested_boolean_gui_manifest_matches_headless_after_roundtrip(
+    qapp, tmp_path
+) -> None:
     window = MainWindow()
     try:
-        window._gate_editor.set_gates(_three_level_gates(), notify=False)
+        gates = [
+            GateSpec(
+                id="a", name="A", gate_type="range", x_parameter="X",
+                thresholds={"min": 2.0, "max": 8.0},
+            ),
+            GateSpec(
+                id="b", name="B", gate_type="range", x_parameter="Y",
+                thresholds={"min": 5.0},
+            ),
+            GateSpec(
+                id="nested", name="Nested", gate_type="boolean",
+                thresholds={
+                    "expression": {
+                        "op": "or",
+                        "children": [
+                            {"op": "ref", "id": "a"},
+                            {"op": "not", "child": {"op": "ref", "id": "b"}},
+                        ],
+                    }
+                },
+            ),
+        ]
+        window._gate_editor.set_gates(gates, notify=False)
         manifest = window._build_project_manifest()
-        manifest["samples"] = [{"id": "sample"}]
+        manifest["samples"] = [{"id": "sample", "path": "sample.fcs", "channels": []}]
+        project_path = tmp_path / "nested.flowdesk"
+        from flowdesk_storage.project import save_project
+
+        save_project(project_path, manifest)
+        manifest = load_project(project_path)
         data = np.array([
             [0.0, 1.0], [2.0, 9.0], [3.0, 7.0], [6.0, 6.0], [8.0, 10.0]
         ])
@@ -296,12 +325,8 @@ def test_three_level_gui_manifest_matches_headless_counts(qapp) -> None:
             ExecutionContext(), {"sample": data}, ["X", "Y"]
         )
         counts = {result.population_id: result.event_count for result in report.population_results}
-        assert counts == {
-            "all_events": 5,
-            "cells": 4,
-            "singlets": 2,
-            "positive": 1,
-        }
+        assert counts["all_events"] == 5
+        assert counts["nested"] == 5
     finally:
         window.close()
         window.deleteLater()

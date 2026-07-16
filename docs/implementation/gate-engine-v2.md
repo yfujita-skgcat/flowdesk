@@ -63,6 +63,9 @@ its root population); nested cycles and missing references fail before a run.
    center/radii/rotation at creation and edit, and polygon vertices as an
    editable data-coordinate table. Editing always writes a `GateSpec` and
    reuses the core validation path; it never evaluates membership in Qt.
+   The Boolean dialog additionally accepts an optional JSON expression tree;
+   malformed JSON is rejected in the dialog and valid trees are validated only
+   by the core strategy before persistence.
 
 ## Increments B5
 
