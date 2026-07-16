@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QTreeWidget,
     QTreeWidgetItem,
     QTreeWidgetItemIterator,
@@ -55,6 +57,7 @@ class _GateDialog(QDialog):
         available_populations: list[tuple[str, str]] | None = None,
         population_parents: dict[str, str | None] | None = None,
         parent: QWidget | None = None,
+        initial_gate: GateSpec | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Create Gate")
@@ -63,6 +66,7 @@ class _GateDialog(QDialog):
         self._y_channel = y_channel
         self._available_populations = available_populations or []
         self._population_parents = population_parents or {}
+        self._initial_gate = initial_gate
         self._name: str = ""
         self._thresholds: dict[str, Any] = {}
         self._coordinates: list[tuple[float, float]] = []
@@ -102,6 +106,12 @@ class _GateDialog(QDialog):
             self._y_max = QDoubleSpinBox()
             self._y_max.setRange(-1e10, 1e10)
             self._y_max.setValue(10000.0)
+            if self._initial_gate is not None:
+                values = self._initial_gate.thresholds
+                self._x_min.setValue(float(values.get("x_min", 0.0)))
+                self._x_max.setValue(float(values.get("x_max", 10000.0)))
+                self._y_min.setValue(float(values.get("y_min", 0.0)))
+                self._y_max.setValue(float(values.get("y_max", 10000.0)))
 
             layout.addRow(f"X ({self._x_channel}) min:", self._x_min)
             layout.addRow(f"X ({self._x_channel}) max:", self._x_max)
@@ -115,6 +125,10 @@ class _GateDialog(QDialog):
             self._r_max = QDoubleSpinBox()
             self._r_max.setRange(-1e10, 1e10)
             self._r_max.setValue(10000.0)
+            if self._initial_gate is not None:
+                values = self._initial_gate.thresholds
+                self._r_min.setValue(float(values.get("min", 0.0)))
+                self._r_max.setValue(float(values.get("max", 10000.0)))
 
             layout.addRow(f"Parameter ({self._x_channel}) min:", self._r_min)
             layout.addRow(f"Parameter ({self._x_channel}) max:", self._r_max)
@@ -128,6 +142,47 @@ class _GateDialog(QDialog):
             )
             info.setWordWrap(True)
             layout.addRow(info)
+            self._coordinates_table = QTableWidget(0, 2)
+            self._coordinates_table.setHorizontalHeaderLabels(["X", "Y"])
+            self._coordinates_table.setObjectName("polygonCoordinatesTable")
+            for x_value, y_value in (
+                self._initial_gate.coordinates if self._initial_gate else ()
+            ):
+                row = self._coordinates_table.rowCount()
+                self._coordinates_table.insertRow(row)
+                self._coordinates_table.setItem(row, 0, QTableWidgetItem(str(x_value)))
+                self._coordinates_table.setItem(row, 1, QTableWidgetItem(str(y_value)))
+            layout.addRow("Vertices (data coordinates):", self._coordinates_table)
+
+        elif self._gate_type == "ellipse":
+            self._center_x = QDoubleSpinBox()
+            self._center_y = QDoubleSpinBox()
+            self._radius_x = QDoubleSpinBox()
+            self._radius_y = QDoubleSpinBox()
+            self._rotation = QDoubleSpinBox()
+            for editor in (
+                self._center_x,
+                self._center_y,
+                self._radius_x,
+                self._radius_y,
+                self._rotation,
+            ):
+                editor.setRange(-1e10, 1e10)
+                editor.setDecimals(8)
+            self._radius_x.setValue(10000.0)
+            self._radius_y.setValue(10000.0)
+            if self._initial_gate is not None:
+                values = self._initial_gate.thresholds
+                self._center_x.setValue(float(values.get("center_x", 0.0)))
+                self._center_y.setValue(float(values.get("center_y", 0.0)))
+                self._radius_x.setValue(float(values.get("radius_x", 10000.0)))
+                self._radius_y.setValue(float(values.get("radius_y", 10000.0)))
+                self._rotation.setValue(float(values.get("rotation", 0.0)))
+            layout.addRow(f"Center X ({self._x_channel}):", self._center_x)
+            layout.addRow(f"Center Y ({self._y_channel}):", self._center_y)
+            layout.addRow("Radius X:", self._radius_x)
+            layout.addRow("Radius Y:", self._radius_y)
+            layout.addRow("Rotation (radians):", self._rotation)
 
         elif self._gate_type == "boolean":
             self._operation_combo = QComboBox()
@@ -201,6 +256,27 @@ class _GateDialog(QDialog):
         elif self._gate_type == "range":
             self._thresholds["min"] = self._r_min.value()
             self._thresholds["max"] = self._r_max.value()
+
+        elif self._gate_type == "ellipse":
+            self._thresholds.update(
+                {
+                    "center_x": self._center_x.value(),
+                    "center_y": self._center_y.value(),
+                    "radius_x": self._radius_x.value(),
+                    "radius_y": self._radius_y.value(),
+                    "rotation": self._rotation.value(),
+                }
+            )
+
+        elif self._gate_type == "polygon":
+            self._coordinates = []
+            for row in range(self._coordinates_table.rowCount()):
+                try:
+                    x_value = float(self._coordinates_table.item(row, 0).text())
+                    y_value = float(self._coordinates_table.item(row, 1).text())
+                except (AttributeError, ValueError):
+                    continue
+                self._coordinates.append((x_value, y_value))
 
         elif self._gate_type == "boolean":
             source_ids = {
@@ -662,6 +738,7 @@ class GateEditor(QWidget):
                 if gate_type not in {"range", "boolean"} else None
             ),
             thresholds=thresholds,
+            coordinates=tuple(dlg.coordinates()),
         )
         try:
             self._validate_gates([*self._gates, gate])
@@ -675,6 +752,44 @@ class GateEditor(QWidget):
         self._refresh_all_views(select_gate_id=gate.id)
         self._emit_gates_changed()
         self._finish_child_gate_mode()
+
+    def _on_edit_geometry_clicked(self) -> None:
+        """Edit geometric thresholds/vertices in data coordinates."""
+        gate = self.selected_gate()
+        if gate is None or gate.gate_type not in {
+            "rectangle",
+            "range",
+            "polygon",
+            "ellipse",
+        }:
+            QMessageBox.information(
+                self,
+                "Select geometric gate",
+                "Select a rectangle, range, polygon, or ellipse gate.",
+            )
+            return
+        dialog = _GateDialog(
+            gate.gate_type,
+            gate.x_parameter or self._x_channel,
+            gate.y_parameter or self._y_channel,
+            initial_gate=gate,
+            parent=self,
+        )
+        dialog.setWindowTitle("Edit Gate Geometry")
+        dialog._name_edit.setText(gate.name)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        updated = replace(
+            gate,
+            name=dialog.name(),
+            thresholds=dialog.thresholds(),
+            coordinates=tuple(dialog.coordinates()),
+        )
+        index = next(i for i, value in enumerate(self._gates) if value.id == gate.id)
+        try:
+            self.update_gate(index, updated, notify=True)
+        except GatingStrategyError as exc:
+            QMessageBox.warning(self, "Invalid gate geometry", str(exc))
 
     def _delete_selected_gate(self) -> None:
         idx = self._list_widget.currentRow()
@@ -998,7 +1113,9 @@ class GateEditor(QWidget):
         # Gate type selector
         self._type_combo = QComboBox()
         self._type_combo.setObjectName("gateTypeCombo")
-        self._type_combo.addItems(["rectangle", "range", "polygon", "boolean"])
+        self._type_combo.addItems(
+            ["rectangle", "range", "polygon", "ellipse", "boolean"]
+        )
 
         self._parent_combo = QComboBox()
         self._parent_combo.setObjectName("parentPopulationCombo")
@@ -1043,6 +1160,10 @@ class GateEditor(QWidget):
         self._btn_edit_boolean = QPushButton("Edit Boolean")
         self._btn_edit_boolean.setObjectName("editBooleanGateButton")
         self._btn_edit_boolean.clicked.connect(self._on_edit_boolean_clicked)
+
+        self._btn_edit_geometry = QPushButton("Edit Geometry")
+        self._btn_edit_geometry.setObjectName("editGateGeometryButton")
+        self._btn_edit_geometry.clicked.connect(self._on_edit_geometry_clicked)
 
         self._reparent_combo = QComboBox()
         self._reparent_combo.setObjectName("selectedGateParentCombo")
@@ -1092,6 +1213,7 @@ class GateEditor(QWidget):
         detail_row.addWidget(self._reparent_combo)
         detail_row.addWidget(self._btn_apply_parent)
         detail_row.addWidget(self._btn_edit_boolean)
+        detail_row.addWidget(self._btn_edit_geometry)
         box_layout.addLayout(detail_row)
         box_layout.addWidget(self._list_widget)
         box_layout.addWidget(self._status_label)

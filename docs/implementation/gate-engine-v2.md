@@ -51,7 +51,11 @@ readability, but evaluation must not depend on GUI list order.
 2. Implement ellipse vectorized membership and boundary tests.
 3. Implement quadrant membership/results atomically.
 4. Implement nested Boolean parser/model/evaluator and legacy migration.
-5. Add numeric editors and Qt drawing/overlays one gate type at a time.
+5. Add numeric editors and Qt drawing/overlays one gate type at a time. The
+   current editor exposes rectangle/range thresholds at creation, ellipse
+   center/radii/rotation at creation and edit, and polygon vertices as an
+   editable data-coordinate table. Editing always writes a `GateSpec` and
+   reuses the core validation path; it never evaluates membership in Qt.
 
 ## Increments B5
 

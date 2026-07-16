@@ -301,7 +301,7 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 - [x] 済み: `docs/implementation/gate-engine-v2.md`を全文読み、ellipseの座標系、inclusive boundary、NaN/Inf、degenerate geometry semanticsを追記する。
 - [x] 済み (ellipse): ellipseをcore model/evaluator/schemaへ追加する。center/radius/rotationをdata coordinatesで保存し、GUI近似polygonを解析に使わない。
 - [x] 済み: rectangle/range/polygon/ellipseのinclusive boundary、有限値、NaN/Inf除外、ordered/non-degenerate geometryを定義しtestする。重複geometryの共有領域は意図的に両populationへ入り得ること、quadrantのexact shared threshold ownershipはquadrant実装で定義することを文書化する。
-- [ ] 全geometric gateのnumeric editorを追加する。
+- [x] 済み: 全geometric gate（rectangle/range/polygon/ellipse）のnumeric editorを追加する。作成・編集値はdata coordinatesで保存し、coreのgeometry validationを再利用する。
 - [ ] Boolean gateをnested expression treeへmigrationし、AND/OR/NOTを任意に組み合わせる。
 - [ ] expression treeのcycle、missing reference、scope violationをrun前に拒否する。
 - [ ] GUI toolbarへ新gate typeとBoolean expression tree editorを追加する。

@@ -42,7 +42,7 @@ from flowdesk_core.transforms import (  # noqa: E402
   apply_transform,
 )
 from flowdesk_qt.annotation_editor import AnnotationEditorDialog  # noqa: E402
-from flowdesk_qt.gate_editor import GateEditor  # noqa: E402
+from flowdesk_qt.gate_editor import GateEditor, _GateDialog  # noqa: E402
 from flowdesk_qt.group_panel import GroupPanel  # noqa: E402
 from flowdesk_qt.main_window import MainWindow  # noqa: E402
 from flowdesk_qt.plot_widget import PlotWidget  # noqa: E402
@@ -806,7 +806,6 @@ def test_gate_editor_defined_gate_item_rename_updates_gate_name() -> None:
     item = editor._list_widget.item(0)
     item.setText("new_name")
     app.processEvents()
-
     gates = editor.gates()
     assert len(gates) == 1
     assert gates[0].name == "new_name"
@@ -814,6 +813,47 @@ def test_gate_editor_defined_gate_item_rename_updates_gate_name() -> None:
   finally:
     editor.close()
     editor.deleteLater()
+    app.processEvents()
+
+
+def test_geometric_gate_numeric_editor_round_trips_ellipse_and_polygon() -> None:
+  app = _app()
+  ellipse = GateSpec(
+    id="ellipse-1",
+    name="ellipse",
+    gate_type="ellipse",
+    x_parameter="FSC-A",
+    y_parameter="SSC-A",
+    thresholds={
+      "center_x": 12.5,
+      "center_y": 20.0,
+      "radius_x": 4.0,
+      "radius_y": 8.0,
+      "rotation": 0.25,
+    },
+  )
+  polygon = GateSpec(
+    id="polygon-1",
+    name="polygon",
+    gate_type="polygon",
+    x_parameter="FSC-A",
+    y_parameter="SSC-A",
+    coordinates=((1.0, 2.0), (5.0, 2.0), (3.0, 6.0)),
+  )
+  dialogs = []
+  try:
+    ellipse_dialog = _GateDialog("ellipse", "FSC-A", "SSC-A", initial_gate=ellipse)
+    ellipse_dialog._collect_ok_values()
+    assert ellipse_dialog.thresholds() == ellipse.thresholds
+    dialogs.append(ellipse_dialog)
+
+    polygon_dialog = _GateDialog("polygon", "FSC-A", "SSC-A", initial_gate=polygon)
+    polygon_dialog._collect_ok_values()
+    assert polygon_dialog.coordinates() == list(polygon.coordinates)
+    dialogs.append(polygon_dialog)
+  finally:
+    for dialog in dialogs:
+      dialog.deleteLater()
     app.processEvents()
 
 
