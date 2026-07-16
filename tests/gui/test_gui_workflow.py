@@ -11,6 +11,7 @@ from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import GateSpec
 from flowdesk_core.overrides import gate_version_hash
 from flowdesk_core.pipeline_runner import PipelineRunner
+from flowdesk_core.project_commands import RebaseGateOverrideCommand
 from flowdesk_qt.main_window import MainWindow
 
 pytestmark = [pytest.mark.gui, pytest.mark.gui_e2e]
@@ -373,6 +374,7 @@ def test_technical_override_gui_report_matches_headless_report(
     window._on_run_pipeline()
     _wait_for_worker(window)
     qapp.processEvents()
+
     gui_report = window._population_tree.last_report()
     assert gui_report is not None
     headless_report = PipelineRunner(window._build_project_manifest()).run_samples(
@@ -390,6 +392,74 @@ def test_technical_override_gui_report_matches_headless_report(
     }
     assert gui_counts == headless_counts == {"all_events": 4, "positive": 1}
     assert window._display_gates()[0].thresholds["min"] == 4.0
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_comparison_warning_and_stale_rebase_are_visible_in_gui(
+  qapp,
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  fcs_path = tmp_path / "warning.fcs"
+  write_fcs_file(fcs_path, np.array([[1.0], [2.0]], dtype=np.float64), ["X"])
+  window = MainWindow()
+  critical: list[str] = []
+  try:
+    monkeypatch.setattr(
+      "flowdesk_qt.main_window.QMessageBox.critical",
+      lambda _parent, _title, message: critical.append(message),
+    )
+    window._sample_browser.add_samples_from_paths([str(fcs_path)])
+    sample = window._sample_browser.samples()[0]
+    window._sample_browser.select_sample(sample.id)
+    gate = GateSpec(
+      id="gate", name="Gate", gate_type="range",
+      parent_population_id="all_events", x_parameter=sample.info.channels[0].id,
+      thresholds={"min": 1.0, "max": 2.0},
+    )
+    window._gate_editor.set_gates([gate])
+    override = {
+      "id": "critical", "sample_id": sample.id, "base_gate_id": gate.id,
+      "base_version_hash": gate_version_hash(gate), "geometry_mode": "delta",
+      "thresholds": {"min": 2.0}, "author": "analyst",
+      "created_at": "2026-07-17T00:00:00+00:00", "reason": "comparison",
+      "gate_purpose": "comparison_critical",
+    }
+    window._gate_overrides = [override]
+    window._on_run_pipeline()
+    _wait_for_worker(window)
+    qapp.processEvents()
+    assert window._population_tree.last_report() is not None
+    diagnostic_codes = {
+      window._diagnostics_panel._table.item(row, 1).text()
+      for row in range(window._diagnostics_panel._table.rowCount())
+      if window._diagnostics_panel._table.item(row, 1) is not None
+    }
+    assert "comparison_critical_override" in diagnostic_codes
+
+    stale = dict(override, base_version_hash="stale")
+    window._gate_overrides = [stale]
+    window._on_run_pipeline()
+    _wait_for_worker(window)
+    qapp.processEvents()
+    assert critical and "stale_override" in critical[-1]
+
+    manifest = window._build_project_manifest()
+    rebased_state = RebaseGateOverrideCommand(
+      "default_strategy", "critical"
+    ).apply({
+      "gating_strategies_data": manifest["gating_strategies_data"],
+      "gate_overrides": [stale],
+    })
+    window._gate_overrides = rebased_state["gate_overrides"]
+    window._on_run_pipeline()
+    _wait_for_worker(window)
+    qapp.processEvents()
+    assert window._population_tree.last_report() is not None
+    assert window._worker is None
   finally:
     window.close()
     window.deleteLater()

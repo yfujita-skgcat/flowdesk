@@ -66,6 +66,12 @@ reason, typed geometry JSON, purpose, and an explicit impact confirmation. It
 invokes `CreateGateOverrideCommand`; `GateEditor` continues to own shared gates,
 while `MainWindow` resolves override geometry only for plot overlays.
 
+GUI regression coverage now verifies technical override count agreement,
+comparison-critical warning visibility, and stale-base failure followed by an
+explicit rebase and successful rerun. Missing-channel behavior remains covered
+by the GUI-independent atomic subtree preflight because this GUI has no subtree
+application control to exercise.
+
 ## Required tests
 
 - Two samples share a strategy but produce different intended override geometry.

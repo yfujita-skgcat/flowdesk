@@ -334,7 +334,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] reset-to-group、promote-to-group、copy-to-selectedを別commandにする。comparison-critical gate のoverride/promoteは強いwarningと監査記録を必須にする。
 - [x] Groupへsubtree適用前にchannel mappingを全sampleでvalidateする。
 - [x] frequency outlier、gate boundary clipping、missing Population、override一覧、comparison-critical override warningをQC panelへ表示する。`missing` は0 eventsやdisplay fallbackと区別する。
-- [ ] GUI確認値とbatch headless resultsを一致させるE2E testを追加する。Group共通geometry、technical overrideは検証済み。comparison-critical override warning、stale base/rebase、missing channelのGUI E2Eは未完了。
+- [ ] GUI確認値とbatch headless resultsを一致させるE2E testを追加する。Group共通geometry、technical override、comparison-critical warning、stale base/rebaseは検証済み。missing channelはGUI subtree操作が存在しないためcore atomic preflightで検証済み。
 
 ### Phase B5: Auto、magnetic、tethered、clone gates [S06]
 
