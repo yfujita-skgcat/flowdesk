@@ -15,8 +15,10 @@ from flowdesk_storage.manifest import (
   validate_manifest,
 )
 from flowdesk_storage.migrations import (
-  CURRENT_PROJECT_VERSION,
-  LEGACY_PROJECT_VERSIONS,
+    ALL_KNOWN_VERSIONS,
+    CURRENT_PROJECT_VERSION,
+    LEGACY_PROJECT_VERSIONS,
+    MIGRATION_REGISTRY,
   MigrationReport,
   ProjectMigrationError,
   _get_migration_path,
@@ -1766,6 +1768,7 @@ class TestMigrationReport:
     assert mapping["from_version"] == "0.1"
     assert mapping["to_version"] == CURRENT_PROJECT_VERSION
     assert mapping["was_migrated"] is True
+    assert mapping["migration_path"] == []
     assert len(mapping["diagnostics"]) == 1
     assert mapping["diagnostics"][0]["code"] == "test"
 
@@ -2023,6 +2026,14 @@ class TestMigrationRegistry:
     path = _get_migration_path("1.4.0")
     assert path == [CURRENT_PROJECT_VERSION]
 
+  def test_every_adjacent_transition_has_a_registered_migration(self) -> None:
+    for from_version, to_version in zip(
+      ALL_KNOWN_VERSIONS,
+      ALL_KNOWN_VERSIONS[1:],
+      strict=False,
+    ):
+      assert (from_version, to_version) in MIGRATION_REGISTRY
+
   def test_all_legacy_versions_migrate_to_current(self, tmp_path: Path) -> None:
     """Every legacy version migrates and validates at the current version."""
     for version in LEGACY_PROJECT_VERSIONS:
@@ -2036,6 +2047,7 @@ class TestMigrationRegistry:
       assert report.from_version == version
       assert report.to_version == CURRENT_PROJECT_VERSION
       assert report.was_migrated is True
+      assert report.migration_path == tuple(_get_migration_path(version))
       assert report.migrated["project_version"] == CURRENT_PROJECT_VERSION
       # The migrated manifest should validate.
       validate_manifest(report.migrated)
@@ -2168,3 +2180,18 @@ class TestNewerSchemaRejection:
 
     tmp_files = list(bundle.rglob("*.tmp"))
     assert tmp_files == []
+
+  def test_legacy_save_preserves_pre_migration_backup(self, tmp_path: Path) -> None:
+    bundle = tmp_path / "legacy.flowdesk"
+    legacy = {
+      "project_id": "legacy-project",
+      "project_version": "1.4.0",
+      "pipeline_version": "1.0",
+      "samples": [{"id": "s1", "channels": []}],
+    }
+
+    save_project(bundle, legacy)
+
+    backup_path = bundle / "backups" / "manifest.pre-migration-1.4.0.json"
+    assert json.loads(backup_path.read_text(encoding="utf-8")) == legacy
+    assert load_project(bundle)["project_version"] == CURRENT_PROJECT_VERSION

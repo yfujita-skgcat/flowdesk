@@ -39,6 +39,20 @@ Read `project-storage.md`, `pipeline-runner.md`, and `qt-gui-debugging.md`.
 4. Implement atomic manifest/gate writes and failure cleanup.
 5. Add CLI JSON diagnostics and GUI diagnostics panel.
 
+## Supported migration path
+
+The current project schema is `1.5.0`. Historical manifests migrate through
+the registered adjacent-version path:
+
+```text
+0.1 -> 1.0.0 -> 1.1.0 -> 1.2.0 -> 1.3.0 -> 1.4.0 -> 1.5.0
+```
+
+Every registered transition is pure and idempotent. The `MigrationReport`
+records the traversed target versions and diagnostics. Saving a legacy manifest
+creates `backups/manifest.pre-migration-<from-version>.json` before the
+migrated manifest is written; the backup is never used as an analysis input.
+
 ## Increments B8
 
 1. Add global autosave settings and project dirty-state tracking.
@@ -71,4 +85,3 @@ pytest -q tests/test_project_storage.py tests/test_project_headless_execution.py
 ruff check src tests
 mypy src/flowdesk_storage src/flowdesk_core src/flowdesk_cli
 ```
-

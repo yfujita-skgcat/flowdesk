@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, TypeAlias
 
@@ -10,7 +11,7 @@ from flowdesk_storage.manifest import (
   load_manifest,
   validate_manifest,
 )
-from flowdesk_storage.migrations import migrate_manifest
+from flowdesk_storage.migrations import migrate_manifest_with_report
 from flowdesk_storage.serialization import atomic_write_json, now_iso
 
 ProjectManifest: TypeAlias = dict[str, Any]
@@ -40,13 +41,26 @@ def save_project(
   manifest_path = project_path / "manifest.json"
 
   # Migrate and validate BEFORE creating any files.
-  manifest = migrate_manifest(manifest)
+  original_manifest = deepcopy(manifest)
+  migration_report = migrate_manifest_with_report(manifest)
+  migrated_manifest = migration_report.migrated
+  if migrated_manifest is None:
+    raise RuntimeError("migration did not produce a manifest")
+  manifest = migrated_manifest
   validate_manifest(manifest)
 
   # Ensure the bundle directory structure exists.
   (project_path / "cache").mkdir(parents=True, exist_ok=True)
   (project_path / "exports").mkdir(parents=True, exist_ok=True)
   (project_path / "gates").mkdir(parents=True, exist_ok=True)
+  if migration_report.was_migrated:
+    backup_path = (
+      project_path
+      / "backups"
+      / f"manifest.pre-migration-{migration_report.from_version}.json"
+    )
+    if not backup_path.exists():
+      atomic_write_json(backup_path, original_manifest)
   manifest["updated_at"] = now_iso()
   atomic_write_json(manifest_path, manifest)
 

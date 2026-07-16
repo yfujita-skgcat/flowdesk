@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,6 +20,7 @@ class MigrationReport:
   from_version: str
   to_version: str
   was_migrated: bool
+  migration_path: tuple[str, ...] = ()
   diagnostics: list[dict[str, Any]] = field(default_factory=list)
   migrated: dict[str, Any] | None = None
 
@@ -28,6 +30,7 @@ class MigrationReport:
       "from_version": self.from_version,
       "to_version": self.to_version,
       "was_migrated": self.was_migrated,
+      "migration_path": list(self.migration_path),
       "diagnostics": list(self.diagnostics),
     }
 LEGACY_PROJECT_VERSIONS = frozenset({
@@ -133,21 +136,27 @@ def migrate_manifest_with_report(data: dict[str, Any]) -> MigrationReport:
       "legacy migration_diagnostics must be an array",
     )
 
-  _migrate_samples(migrated, diagnostics)
-  _migrate_derived_parameters(migrated, diagnostics)
-  _migrate_transforms(migrated, diagnostics)
-  _migrate_gate_transforms(migrated, diagnostics)
-  _migrate_compensation_matrices(migrated, diagnostics)
-  _ensure_compensation_bindings(migrated, diagnostics)
+  migration_path = tuple(_get_migration_path(version))
+  previous_version = version
+  for next_version in migration_path:
+    migration = MIGRATION_REGISTRY.get((previous_version, next_version))
+    if migration is None:
+      raise ProjectMigrationError(
+        "missing_migration_step",
+        f"no migration step from {previous_version!r} to {next_version!r}",
+      )
+    migration(migrated, diagnostics)
+    migrated["project_version"] = next_version
+    previous_version = next_version
 
   if diagnostics:
     migrated["migration_diagnostics"] = diagnostics
 
-  migrated["project_version"] = CURRENT_PROJECT_VERSION
   return MigrationReport(
     from_version=version,
     to_version=CURRENT_PROJECT_VERSION,
     was_migrated=True,
+    migration_path=migration_path,
     diagnostics=list(diagnostics),
     migrated=migrated,
   )
@@ -434,3 +443,29 @@ def _ensure_compensation_bindings(
     }
     if diagnostic not in diagnostics:
       diagnostics.append(diagnostic)
+
+
+MigrationFunction = Callable[[dict[str, Any], list[dict[str, Any]]], None]
+
+
+def _normalize_historical_manifest(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Apply idempotent legacy normalizations for one historical transition."""
+  _migrate_samples(migrated, diagnostics)
+  _migrate_derived_parameters(migrated, diagnostics)
+  _migrate_transforms(migrated, diagnostics)
+  _migrate_gate_transforms(migrated, diagnostics)
+  _migrate_compensation_matrices(migrated, diagnostics)
+  _ensure_compensation_bindings(migrated, diagnostics)
+
+
+MIGRATION_REGISTRY: dict[tuple[str, str], MigrationFunction] = {
+  (from_version, to_version): _normalize_historical_manifest
+  for from_version, to_version in zip(
+    ALL_KNOWN_VERSIONS,
+    ALL_KNOWN_VERSIONS[1:],
+    strict=False,
+  )
+}
