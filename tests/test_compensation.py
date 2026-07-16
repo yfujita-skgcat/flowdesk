@@ -10,6 +10,7 @@ from flowdesk_core.compensation import (
   COMPENSATION_CONDITION_WARNING_THRESHOLD,
   CompensationError,
   apply_compensation,
+  calculate_spillover_matrix,
   inspect_compensation_matrix,
   resolve_compensation_binding,
   validate_compensation_matrix,
@@ -1141,3 +1142,248 @@ def test_calculate_spillover_matrix_low_events_is_rejected() -> None:
   with pytest.raises(CompensationError) as error:
     calculate_spillover_matrix(spec, events, channels, masks)
   assert error.value.code == "calculation_insufficient_positive_events"
+
+
+def test_independent_numeric_verification_3color_known_matrix() -> None:
+  """Verify calculation against a hand-computed 3-color spillover matrix.
+
+  Known spillover matrix S (rows=receiving, columns=source):
+    A   B   C
+  A 1.0 0.0 0.05
+  B 0.15 1.0 0.0
+  C 0.0  0.2 1.0
+
+  Create synthetic single-stain controls where each positive population
+  has exactly the signal predicted by the known matrix, and the negative
+  population has zero signal. The calculation should recover S exactly.
+  """
+  n = 10  # events per population
+  total = n * 4  # 3 positive + 1 negative
+
+  # Negative: all zero.
+  neg_a = np.zeros((n, 3))
+  neg_b = np.zeros((n, 3))
+  neg_c = np.zeros((n, 3))
+  neg = np.zeros((n, 3))
+
+  # Positive A: A=1000, B=0.15*1000=150, C=0.
+  pos_a = np.full((n, 3), [1000.0, 150.0, 0.0])
+
+  # Positive B: A=0, B=1000, C=0.2*1000=200.
+  pos_b = np.full((n, 3), [0.0, 1000.0, 200.0])
+
+  # Positive C: A=0.05*1000=50, B=0, C=1000.
+  pos_c = np.full((n, 3), [50.0, 0.0, 1000.0])
+
+  events = np.vstack([pos_a, pos_b, pos_c, neg])
+
+  masks = {
+    "pos_A": np.array(
+      [True]*n + [False]*(total - n), dtype=np.bool_
+    ),
+    "pos_B": np.array(
+      [False]*n + [True]*n + [False]*(total - 2*n), dtype=np.bool_
+    ),
+    "pos_C": np.array(
+      [False]*(2*n) + [True]*n + [False]*n, dtype=np.bool_
+    ),
+    "neg": np.array(
+      [False]*(3*n) + [True]*n, dtype=np.bool_
+    ),
+  }
+
+  controls = (
+    CompensationCalculationControlSpec("A", "pos_A", "neg"),
+    CompensationCalculationControlSpec("B", "pos_B", "neg"),
+    CompensationCalculationControlSpec("C", "pos_C", "neg"),
+  )
+  spec = CompensationCalculationSpec(
+    id="numeric_verify",
+    name="3-color numeric verification",
+    controls=controls,
+    outlier_policy="none",
+    minimum_positive_events=2,
+    minimum_negative_events=2,
+  )
+
+  result = calculate_spillover_matrix(spec, events, ("A", "B", "C"), masks)
+
+  expected = np.array([
+    [1.0, 0.0, 0.05],
+    [0.15, 1.0, 0.0],
+    [0.0, 0.2, 1.0],
+  ])
+  np.testing.assert_allclose(
+    result.matrix_spec.matrix, expected, atol=1e-10
+  )
+
+  # Verify that applying the calculated matrix correctly compensates.
+  raw = np.array([[1000.0, 150.0, 200.0]])  # Mixed signal
+  compensated = apply_compensation(result.matrix_spec, raw, ("A", "B", "C"))
+
+  # Independent calculation: inverse of S @ [1000, 150, 200]^T
+  inv_s = np.linalg.inv(expected)
+  expected_comp = (inv_s @ raw.T).T
+  np.testing.assert_allclose(compensated, expected_comp, atol=1e-10)
+
+
+def test_median_method_independent_verification() -> None:
+  """Verify the median regression method against hand-computed values.
+
+  With median method and no outliers:
+  spillover[i] = median(cleaned[:, i]) / median(cleaned[:, reference])
+  """
+  # Positive A: A=1000, B=300 (30% spill)
+  # Negative: A=0, B=0
+  n = 6
+  total = n * 3
+  events = np.zeros((total, 2))
+  events[:n, 0] = 1000.0
+  events[:n, 1] = 300.0
+  events[n:2*n, 0] = 0.0
+  events[n:2*n, 1] = 0.0
+  # Positive B: A=0, B=1000
+  events[2*n:, 1] = 1000.0
+
+  masks = {
+    "pos_A": np.array([True]*n + [False]*(total - n), dtype=np.bool_),
+    "pos_B": np.array([False]*(2*n) + [True]*n, dtype=np.bool_),
+    "neg": np.array([False]*(total), dtype=np.bool_),
+  }
+  # Use a subset of events as negative (first n of pos_A have zero in col 1).
+  # Actually, let's just use all-zero negative.
+  masks["neg"] = np.array(
+    [True]*n + [False]*(total - n), dtype=np.bool_
+  )
+  # Override: negative is the B-positive events which have A=0, B=1000
+  # This is wrong. Let's create proper negative.
+  # Redesign: events = [pos_A, neg, pos_B]
+  events = np.zeros((total, 2))
+  events[:n, 0] = 1000.0
+  events[:n, 1] = 300.0
+  # neg: all zero
+  events[n:2*n] = 0.0
+  # pos_B: B=1000, A=0
+  events[2*n:, 1] = 1000.0
+
+  masks["pos_A"] = np.array([True]*n + [False]*(total - n), dtype=np.bool_)
+  masks["neg"] = np.array(
+    [False]*n + [True]*n + [False]*n, dtype=np.bool_
+  )
+  masks["pos_B"] = np.array(
+    [False]*(2*n) + [True]*n, dtype=np.bool_
+  )
+
+  controls = (
+    CompensationCalculationControlSpec("A", "pos_A", "neg"),
+    CompensationCalculationControlSpec("B", "pos_B", "neg"),
+  )
+  spec = CompensationCalculationSpec(
+    id="median_verify",
+    name="Median method verification",
+    controls=controls,
+    regression_method="median",
+    outlier_policy="none",
+    minimum_positive_events=2,
+    minimum_negative_events=2,
+  )
+
+  result = calculate_spillover_matrix(spec, events, ("A", "B"), masks)
+
+  # median of pos_A after neg subtraction = [1000, 300]
+  # reference = median of col A = 1000
+  # coefficients for source A = [1000/1000, 300/1000] = [1.0, 0.3]
+  # median of pos_B after neg subtraction = [0, 1000]
+  # reference = median of col B = 1000
+  # coefficients for source B = [0/1000, 1000/1000] = [0.0, 1.0]
+  # Matrix convention: rows=receiving, columns=source.
+  # column 0 (source A): [1.0, 0.3], column 1 (source B): [0.0, 1.0]
+  expected = np.array([
+    [1.0, 0.0],
+    [0.3, 1.0],
+  ])
+  np.testing.assert_allclose(
+    result.matrix_spec.matrix, expected, atol=1e-10
+  )
+
+
+def test_calculation_provenance_records_controls_and_algorithm() -> None:
+  """Verify that calculation provenance captures all control references."""
+  events = np.array([
+    [1000.0, 200.0], [1000.0, 200.0],
+    [0.0, 0.0], [0.0, 0.0],
+  ])
+  masks = {
+    "pos": np.array([True, True, False, False]),
+    "neg": np.array([False, False, True, True]),
+  }
+  spec = CompensationCalculationSpec(
+    id="prov_test",
+    name="Provenance test",
+    controls=(
+      CompensationCalculationControlSpec(
+        "A", "pos", "neg", sample_id="ctrl-1",
+      ),
+    ),
+    regression_method="median",
+    outlier_policy="zscore",
+    minimum_positive_events=2,
+    minimum_negative_events=2,
+  )
+
+  result = calculate_spillover_matrix(
+    spec,
+    {"ctrl-1": events},
+    {"ctrl-1": ("A", "B")},
+    {"ctrl-1": masks},
+  )
+
+  prov = result.matrix_spec.provenance
+  assert "ctrl-1" in prov.control_sample_ids
+  assert "ctrl-1:pos" in prov.control_population_ids
+  assert "ctrl-1:neg" in prov.control_population_ids
+  assert prov.algorithm == "traditional_median_background_subtracted"
+  assert prov.algorithm_version is not None
+
+
+def test_calculated_matrix_is_immutable_and_edits_require_duplicate() -> None:
+  """A calculated matrix has source='calculated' and manual edits require
+  derived_from_matrix_id."""
+  events = np.array([
+    [1000.0, 200.0], [1000.0, 200.0],
+    [0.0, 0.0], [0.0, 0.0],
+  ])
+  masks = {
+    "pos": np.array([True, True, False, False]),
+    "neg": np.array([False, False, True, True]),
+  }
+  spec = CompensationCalculationSpec(
+    id="immut_test",
+    name="Immutability test",
+    controls=(
+      CompensationCalculationControlSpec("A", "pos", "neg"),
+    ),
+    minimum_positive_events=2,
+    minimum_negative_events=2,
+  )
+
+  result = calculate_spillover_matrix(spec, events, ("A", "B"), masks)
+  assert result.matrix_spec.source == "calculated"
+
+  # Attempting to create provenance with manual edits but no
+  # derived_from_matrix_id must fail.
+  edit = CompensationManualEditSpec(
+    row_channel_id="A",
+    column_channel_id="B",
+    old_value=0.2,
+    new_value=0.25,
+  )
+  with pytest.raises(ValueError, match="derived_from_matrix_id"):
+    CompensationProvenanceSpec(manual_edits=(edit,))
+
+  # Creating provenance with derived_from_matrix_id succeeds.
+  prov = CompensationProvenanceSpec(
+    derived_from_matrix_id=result.matrix_spec.id,
+    manual_edits=(edit,),
+  )
+  assert prov.derived_from_matrix_id == result.matrix_spec.id

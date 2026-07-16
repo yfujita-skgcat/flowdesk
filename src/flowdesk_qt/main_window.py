@@ -1279,16 +1279,39 @@ class MainWindow(QMainWindow):
 
         sample_ids = [s.id for s in self._sample_browser.samples()]
 
+        # Build sample_data for "Run Calculation": events + population masks.
+        sample_data: dict[str, dict[str, Any]] = {}
+        report = self._population_tree.last_report()
+        if report is not None and not self._results_stale:
+            for sample_id, sample in self._sample_data.items():
+                masks: dict[str, NDArray[np.bool_]] = {}
+                for membership in report.population_membership:
+                    if membership.sample_id == sample_id:
+                        masks[membership.population_id] = membership.mask
+                if masks:
+                    sample_data[sample_id] = {
+                        "events": sample.events,
+                        "masks": masks,
+                    }
+
         dialog = CompensationCalculationEditorDialog(
             self._compensation_calculations,
             tuple(channels_by_id.values()),
             population_ids,
             sample_ids,
+            sample_data=sample_data,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self._compensation_calculations = dialog.calculations()
+        # Save the calculated matrix as an immutable result.
+        calc_matrix = dialog.calculated_matrix()
+        if calc_matrix is not None:
+            self._compensation_matrices.append(calc_matrix)
+            self._update_status(
+                f"Calculated matrix saved: {calc_matrix['id']}"
+            )
         self._mark_results_stale("Compensation calculations changed")
 
     def _on_edit_statistics(self) -> None:

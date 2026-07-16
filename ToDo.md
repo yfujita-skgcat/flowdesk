@@ -218,10 +218,10 @@ Phase A4完了後に開始する。
 - [x] 済み: linear/median background-subtracted method、minimum events、outlier policyを明示する。
 - [x] 済み: asymmetric synthetic single-stain controlsからknown spill matrixを復元するcore algorithmを実装する。
 - [x] 済み: detector × control assignment tableをGUIへ追加する。
-- [ ] cleanup/positive/negative gateをGraph Windowで編集するとcalculationをstale化する。
-- [ ] residual、slope、event count、condition numberをdiagnostic panelへ表示する。
-- [ ] calculated matrixをimmutable resultとして保存し、編集はduplicateで行う。
-- [ ] known synthetic fixturesとindependent calculationで数値検証する。
+- [x] 済み: cleanup/positive/negative gateをGraph Windowで編集するとcalculationをstale化する。
+- [x] 済み: residual、slope、event count、condition numberをdiagnostic panelへ表示する。
+- [x] 済み: calculated matrixをimmutable resultとして保存し、編集はduplicateで行う。
+- [x] 済み: known synthetic fixturesとindependent calculationで数値検証する。
 
 AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混ぜない。
 

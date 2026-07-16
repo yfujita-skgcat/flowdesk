@@ -37,7 +37,9 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.compensation import (
+    CompensationCalculationResult,
     apply_compensation,
+    calculate_spillover_matrix,
     inspect_compensation_matrix,
 )
 from flowdesk_core.models import (
@@ -671,6 +673,9 @@ class CompensationMatrixEditorDialog(QDialog):
                 )
                 bg = _heatmap_color(clamped_val)
                 item.setBackground(bg)
+                # Calculated matrices are immutable; cells are read-only.
+                if matrix_mapping.get("source") == "calculated":
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._heat_map.setItem(row_idx, col_idx, item)
 
     # -- Matrix commit -------------------------------------------------------
@@ -927,6 +932,8 @@ class CompensationCalculationEditorDialog(QDialog):
         available_channels: Sequence[dict[str, Any]],
         population_ids: Sequence[str],
         sample_ids: Sequence[str],
+        *,
+        sample_data: dict[str, dict[str, Any]] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -938,8 +945,10 @@ class CompensationCalculationEditorDialog(QDialog):
         self._channels = tuple(available_channels)
         self._population_ids = tuple(population_ids)
         self._sample_ids = tuple(sample_ids)
+        self._sample_data = sample_data or {}
         self._loading = False
         self._current_calc_row = -1
+        self._calculation_result: CompensationCalculationResult | None = None
 
         self._channel_ids = [
             ch.get("id", ch.get("name", "")) if isinstance(ch, dict)
@@ -1049,6 +1058,45 @@ class CompensationCalculationEditorDialog(QDialog):
         ctrl_layout.addLayout(table_btns)
         right_layout.addWidget(ctrl_group)
 
+        # Calculation button
+        calc_btn_row = QHBoxLayout()
+        self._calc_run_btn = QPushButton("Run Calculation")
+        self._calc_run_btn.setObjectName("compensationCalcRunButton")
+        self._calc_save_btn = QPushButton("Save Matrix")
+        self._calc_save_btn.setObjectName("compensationCalcSaveButton")
+        calc_btn_row.addWidget(self._calc_run_btn)
+        calc_btn_row.addWidget(self._calc_save_btn)
+        calc_btn_row.addStretch(1)
+        right_layout.addLayout(calc_btn_row)
+
+        # Calculation diagnostics panel
+        diag_group = QGroupBox("Calculation Diagnostics")
+        diag_layout = QVBoxLayout(diag_group)
+
+        self._diag_table = QTableWidget()
+        self._diag_table.setObjectName("compensationCalcDiagnosticTable")
+        self._diag_table.setColumnCount(8)
+        self._diag_table.setHorizontalHeaderLabels([
+            "Detector",
+            "Pos Events",
+            "Neg Events",
+            "Median Pos",
+            "Median Neg",
+            "Slope (Self)",
+            "Residual RMS",
+            "Outliers",
+        ])
+        self._diag_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        diag_layout.addWidget(self._diag_table)
+
+        self._cond_label = QLabel("Condition number: —")
+        self._cond_label.setObjectName("compensationCalcConditionLabel")
+        diag_layout.addWidget(self._cond_label)
+
+        right_layout.addWidget(diag_group)
+
         # Validation label
         self._diag_label = QLabel("Not validated")
         self._diag_label.setObjectName("compensationCalcDiagnosticLabel")
@@ -1075,6 +1123,8 @@ class CompensationCalculationEditorDialog(QDialog):
         self._delete_calc_btn.clicked.connect(self._delete_calculation)
         self._add_ctrl_btn.clicked.connect(self._add_control)
         self._delete_ctrl_btn.clicked.connect(self._delete_control)
+        self._calc_run_btn.clicked.connect(self._on_run_calculation)
+        self._calc_save_btn.clicked.connect(self._on_save_matrix)
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
 
@@ -1274,3 +1324,205 @@ class CompensationCalculationEditorDialog(QDialog):
             if spec.id in ids:
                 raise ValueError(f"Duplicate calculation ID: {spec.id}")
             ids.add(spec.id)
+
+    # -- Public API for calculation results ----------------------------------
+
+    def calculation_result(
+        self,
+    ) -> CompensationCalculationResult | None:
+        """Return the most recent calculation result, or None."""
+        return self._calculation_result
+
+    def calculated_matrix(self) -> dict[str, Any] | None:
+        """Return the calculated matrix as a serializable mapping, or None."""
+        if self._calculation_result is None:
+            return None
+        spec = self._calculation_result.matrix_spec
+        return {
+            "id": spec.id,
+            "name": spec.name,
+            "source": spec.source,
+            "channels": list(spec.channels),
+            "matrix": [list(row) for row in spec.matrix],
+            "created_by": spec.created_by,
+            "created_at": spec.created_at,
+            "notes": spec.notes,
+            "provenance": {
+                "source_sample_id": spec.provenance.source_sample_id,
+                "source_metadata_key": spec.provenance.source_metadata_key,
+                "control_sample_ids": list(spec.provenance.control_sample_ids),
+                "control_population_ids": list(
+                    spec.provenance.control_population_ids,
+                ),
+                "algorithm": spec.provenance.algorithm,
+                "algorithm_version": spec.provenance.algorithm_version,
+                "software_version": spec.provenance.software_version,
+                "derived_from_matrix_id": spec.provenance.derived_from_matrix_id,
+                "manual_edits": [],
+            },
+        }
+
+    # -- Run calculation -----------------------------------------------------
+
+    def _on_run_calculation(self) -> None:
+        """Run the compensation calculation using core and display diagnostics.
+
+        This delegates all computation to ``calculate_spillover_matrix``.
+        The GUI only collects the inputs from the current calculation spec
+        and displays the structured diagnostics.
+        """
+        self._commit_current_calculation()
+        if self._current_calc_row < 0 or self._current_calc_row >= len(
+            self._calculations
+        ):
+            self._diag_label.setText("No calculation selected")
+            return
+
+        mapping = self._calculations[self._current_calc_row]
+        try:
+            spec = CompensationCalculationSpec(**mapping)
+        except ValueError as exc:
+            self._diag_label.setText(f"Invalid spec: {exc}")
+            return
+
+        detector_ids = tuple(
+            c.detector_channel_id for c in spec.controls
+        )
+        channel_ids = list(self._channel_ids)
+        if not set(detector_ids).issubset(set(channel_ids)):
+            missing = sorted(set(detector_ids) - set(channel_ids))
+            self._diag_label.setText(
+                f"Detector channels not in sample data: {', '.join(missing)}"
+            )
+            return
+
+        # Build events/masks keyed by sample ID.
+        events_by_sample: dict[str, Any] = {}
+        masks_by_sample: dict[str, dict[str, Any]] = {}
+        for ctrl in spec.controls:
+            sid = ctrl.sample_id
+            if sid not in events_by_sample and sid in self._sample_data:
+                sd = self._sample_data[sid]
+                events_by_sample[sid] = sd["events"]
+                masks_by_sample[sid] = sd.get("masks", {})
+
+        if not events_by_sample:
+            self._diag_label.setText(
+                "No sample data available for calculation. "
+                "Ensure sample_data is provided."
+            )
+            return
+
+        # Build population masks mapping: sample_id -> {pop_id: mask}
+        population_masks: dict[str, dict[str, Any]] = {}
+        for sid, ctrl_masks in masks_by_sample.items():
+            population_masks[sid] = dict(ctrl_masks)
+
+        # Verify all referenced populations exist.
+        for ctrl in spec.controls:
+            sid = ctrl.sample_id
+            ctrl_masks = population_masks.get(sid, {})
+            if ctrl.positive_population_id not in ctrl_masks:
+                self._diag_label.setText(
+                    f"Positive population {ctrl.positive_population_id!r} "
+                    f"not found in sample {sid!r}"
+                )
+                return
+            if ctrl.negative_population_id not in ctrl_masks:
+                self._diag_label.setText(
+                    f"Negative population {ctrl.negative_population_id!r} "
+                    f"not found in sample {sid!r}"
+                )
+                return
+
+        try:
+            result = calculate_spillover_matrix(
+                spec,
+                events_by_sample,
+                {sid: channel_ids for sid in events_by_sample},
+                population_masks,
+            )
+            self._calculation_result = result
+            self._update_diagnostic_panel(result)
+            self._diag_label.setText(
+                f"Calculation successful (condition={result.condition_number:.4g})"
+            )
+        except Exception as exc:
+            self._calculation_result = None
+            self._diag_label.setText(f"Calculation failed: {exc}")
+
+    def _on_save_matrix(self) -> None:
+        """Accept the dialog to save the calculated immutable matrix.
+
+        The calculated matrix is returned via ``calculated_matrix()`` and
+        must be saved by the caller.  Editing a calculated matrix directly
+        is not allowed; the caller should use ``Duplicate`` to create an
+        editable copy with ``derived_from_matrix_id`` provenance.
+        """
+        if self._calculation_result is None:
+            QMessageBox.warning(
+                self,
+                "No calculation result",
+                "Run the calculation first before saving the matrix.",
+            )
+            return
+        self.accept()
+
+    def _update_diagnostic_panel(
+        self, result: CompensationCalculationResult
+    ) -> None:
+        """Populate the diagnostic table from a calculation result."""
+        diags = result.channel_diagnostics
+        self._diag_table.setRowCount(len(diags))
+        for row_idx, diag in enumerate(diags):
+            self._diag_table.setItem(
+                row_idx, 0, QTableWidgetItem(diag.detector_channel_id)
+            )
+            self._diag_table.setItem(
+                row_idx, 1, QTableWidgetItem(
+                    f"{diag.positive_event_count}"
+                )
+            )
+            self._diag_table.setItem(
+                row_idx, 2, QTableWidgetItem(
+                    f"{diag.negative_event_count}"
+                )
+            )
+            self._diag_table.setItem(
+                row_idx, 3, QTableWidgetItem(
+                    f"{diag.median_positive:.4f}"
+                )
+            )
+            self._diag_table.setItem(
+                row_idx, 4, QTableWidgetItem(
+                    f"{diag.median_negative:.4f}"
+                )
+            )
+            # Slope (self) is the diagonal element (reference detector coefficient)
+            spillover = diag.spillover_row
+            self_slope = spillover[
+                list(d.detector_channel_id for d in diags
+                     ).index(diag.detector_channel_id)
+            ] if spillover else 0.0
+            self._diag_table.setItem(
+                row_idx, 5, QTableWidgetItem(
+                    f"{self_slope:.6f}"
+                )
+            )
+            residual_str = (
+                f"{diag.residual_rms:.6f}"
+                if diag.residual_rms is not None
+                else "—"
+            )
+            self._diag_table.setItem(
+                row_idx, 6, QTableWidgetItem(residual_str)
+            )
+            self._diag_table.setItem(
+                row_idx, 7, QTableWidgetItem(
+                    f"{diag.outlier_count}"
+                )
+            )
+
+        self._cond_label.setText(
+            f"Condition number: {result.condition_number:.4g}"
+        )
