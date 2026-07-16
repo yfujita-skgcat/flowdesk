@@ -267,17 +267,31 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 
 ## Release B: Experiment-scale gating and review
 
+多数 sample のゲート作成・確認・QC を、安全に拡張するRelease。内部では常に
+Sample Group、Gating Strategy、binding を使うが、通常 GUI は `All Samples` と
+`Default Strategy` の一組だけを表示し、従来どおり全 sample に共通 geometry を
+適用する。Group は treatment/control の生物学的比較群ではなく、同じ解析定義を
+適用できる panel、control、試料種別、取得形式、QC の単位として使う。比較対象の
+treatment/control は原則として同じ Group strategy を共有する。
+
+複数 Group/Strategy は明示的に有効化する高度機能とし、無効化しても保存済みの
+Group、binding、override を削除・自動統合しない。sample 固有 geometry override は
+さらに別の高度機能であり、既定では無効にする。Time、technical QC、scatter cleanup、
+singlet のような技術的 gate と、比較対象となる marker-positive gate を区別し、後者の
+override は強い warning と監査記録なしに比較結果へ使わない。
+
 ### Phase B1: Groupとannotation [S02]
 
 - [ ] `docs/implementation/groups-and-annotations.md`を全文読み、今回実装するrule grammarまたはUI範囲を追記する。
-- [ ] `SampleGroupSpec`、`AnnotationSpec`、safe membership ruleをmodel/schemaへ追加する。
-- [ ] All Samples、Compensation Controls、user groupを複数所属可能にする。
-- [ ] keyword条件でdynamic group membershipをheadlessに解決する。
-- [ ] WorkspaceへGroup pane、create/edit/delete、drag/drop membershipを追加する。
+- [ ] `SampleGroupSpec`、`AnnotationSpec`、safe membership rule、Group/Strategy bindingをmodel/schemaへ追加する。すべての新規projectには `all-samples` Group と `default-strategy` bindingを自動作成する。
+- [ ] All Samples、Compensation Controls、panel/取得形式/QC用 user groupを複数所属可能にする。treatment/control の比較群だけを理由に別 strategy を選ばないことをUI/helpへ明記する。
+- [ ] keyword条件でdynamic group membershipをheadlessに解決し、同一 sample に競合する strategy binding がある場合は stable structured diagnostic で拒否する。
+- [ ] 通常 GUI では Group pane を隠し、All Samples × Default Strategy のみを操作する。`複数の解析グループを使用する`を明示的に有効化した時だけ Group pane、create/edit/delete、drag/drop membershipを表示する。
+- [ ] 高度 Group 表示を無効にしても Group、binding、override を削除・暗黙統合しない。複数 binding のあるprojectでは簡易表示へ戻す意味を明示する。
 - [ ] keyword columns、edit、find/replace、fill series、CSV paste/importを追加する。
 - [ ] annotationはproject側へ保存し、raw FCS bytesを変更しない。
-- [ ] Group bindingしたstrategy/statisticsを新規memberへ自動適用する。
-- [ ] GUIとCLIで同じGroup member IDsを返すtestを追加する。
+- [ ] Group bindingしたstrategy/statisticsを新規memberへ自動適用する。CLI/headless は GUI mode に依存せず、保存済み binding を明示的に解決する。
+- [ ] GUI通常モード、GUI高度Groupモード、CLI/headless が同じ Group member IDs と resolved strategy IDs を返すtestを追加する。
 
 ### Phase B2: Gate engine v2 [S06]
 
@@ -306,15 +320,16 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 ### Phase B4: Group strategyとsample override review [S08]
 
-- [ ] `docs/implementation/group-gating-and-overrides.md`を全文読み、override resolutionとrebase policyを追記する。
-- [ ] Group共通gate definitionとsample-specific geometry overrideを別modelで表現する。
-- [ ] overrideにbase ID、delta/full geometry、author、time、reasonを保存する。
+- [ ] `docs/implementation/group-gating-and-overrides.md`を全文読み、通常は Group 共通 geometry を編集すること、override は明示作成のみであること、override resolution/rebase/comparison warning policyを追記する。
+- [ ] Group共通gate definitionとsample-specific geometry overrideを別modelで表現する。override は Group の複数化とは独立した高度機能とし、既定では無効にする。
+- [ ] overrideにbase ID/version hash、delta/full geometry、author、time、reason、gate purpose（technical cleanup / comparison-critical）を保存する。
 - [ ] sample navigation中に同じPopulation path、axes、scale、view rangeを維持する。
-- [ ] shared/override/stale/missingをtree badgeとplot bannerで表示する。
-- [ ] reset-to-group、promote-to-group、copy-to-selectedを別commandにする。
+- [ ] shared/override/stale/missingをtree badgeとplot bannerで表示する。`results stale`（再計算が必要）と `override stale`（base変更によりrebaseが必要）を別状態として表示する。
+- [ ] 通常のgate drag/editは Group 共通 geometry を変更する。sample override は `このsample用のgate調整を作成` の意図的なcommandでだけ作成し、理由入力と影響範囲の確認を要求する。
+- [ ] reset-to-group、promote-to-group、copy-to-selectedを別commandにする。comparison-critical gate のoverride/promoteは強いwarningと監査記録を必須にする。
 - [ ] Groupへsubtree適用前にchannel mappingを全sampleでvalidateする。
-- [ ] frequency outlier、gate boundary clipping、missing Population、override一覧をQC panelへ表示する。
-- [ ] GUI確認値とbatch headless resultsを一致させるE2E testを追加する。
+- [ ] frequency outlier、gate boundary clipping、missing Population、override一覧、comparison-critical override warningをQC panelへ表示する。`missing` は0 eventsやdisplay fallbackと区別する。
+- [ ] GUI確認値とbatch headless resultsを一致させるE2E testを追加する。Group共通geometry、technical override、comparison-critical override warning、stale base/rebase、missing channelをそれぞれ検証する。
 
 ### Phase B5: Auto、magnetic、tethered、clone gates [S06]
 
@@ -360,6 +375,11 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [ ] QThread実行中、save中、crash途中、disk fullをtestする。
 
 ## Release C: Reports, reuse, interoperability
+
+解析結果を表・図・レポートとして整理し、別実験へ再利用し、外部形式や共同研究者と
+安全に交換するRelease。Table、Layout、Template、archive、interoperability はすべて
+保存可能な definition と headless runner を先に作り、GUI preview と CLI batch output が
+同じ値・同じ provenance を使う。
 
 ### Phase C1: Table Editor [S12]
 
@@ -441,6 +461,12 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [ ] required FCS keywordを壊さないvalidationを追加する。
 
 ## Release D: Specialized platforms and ecosystem
+
+一般的な gating を超える専門解析（kinetics、proliferation、cell cycle、population
+comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を扱うRelease。
+各platformは独立した scientific contract、reference fixture、headless runner を先に
+定義し、近似結果を互換実装として誤表示しない。plugin は別process・明示permission・
+検証済みoutputを既定とする。
 
 各platformは独立Phaseとして実装し、core model、numeric reference tests、headless runner、GUI、Table/Layout integrationの順を守る。
 
