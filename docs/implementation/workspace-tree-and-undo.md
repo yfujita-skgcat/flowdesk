@@ -39,7 +39,9 @@ invalidation reason; the GUI may use that reason to mark cached results stale.
 
 1. Add immutable project-state mutation helpers and focused core tests.
 2. Add command objects and undo stack independent of Qt.
-3. Route existing gate mutations through commands without changing UI.
+3. Route existing gate mutations through commands without changing UI. GateEditor
+   now routes create/edit/rename/delete/reparent plus duplicate and subtree copy
+   through the core stack; loading a saved gate list resets the clean marker.
 4. Build a unified tree with stable IDs in `Qt.UserRole`.
 5. Add breadcrumb and parent/previous/next sample navigation.
 6. Add subtree copy and preflight conflict dialog.

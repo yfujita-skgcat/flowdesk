@@ -11,7 +11,7 @@ This widget contains NO scientific execution logic.  It produces
 from __future__ import annotations
 
 import uuid
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -39,6 +39,17 @@ from PySide6.QtWidgets import (
 
 from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
 from flowdesk_core.models import GateSpec, GatingStrategySpec
+from flowdesk_core.project_commands import (
+    CopySubtreeCommand,
+    CreateGateCommand,
+    DeleteGateCommand,
+    DuplicateGateCommand,
+    EditGateCommand,
+    ProjectCommandError,
+    RenameGateCommand,
+    ReparentGateCommand,
+    UndoStack,
+)
 from flowdesk_qt.diagnostics import invoke_callback
 
 # ---------------------------------------------------------------------------
@@ -324,6 +335,7 @@ class GateEditor(QWidget):
         self._child_gate_mode = False
         self._previous_parent_population_id = "all_events"
         self._build_ui()
+        self._reset_undo_stack()
 
     # -- public API ----------------------------------------------------------
 
@@ -393,6 +405,68 @@ class GateEditor(QWidget):
         """Return all defined gates."""
         return list(self._gates)
 
+    def can_undo(self) -> bool:
+        return self._undo_stack.can_undo
+
+    def can_redo(self) -> bool:
+        return self._undo_stack.can_redo
+
+    def undo(self) -> bool:
+        if not self._undo_stack.can_undo:
+            return False
+        self._apply_command_state(self._undo_stack.undo())
+        return True
+
+    def redo(self) -> bool:
+        if not self._undo_stack.can_redo:
+            return False
+        self._apply_command_state(self._undo_stack.redo())
+        return True
+
+    def duplicate_gate(
+        self,
+        gate_id: str,
+        new_gate_id: str,
+        *,
+        name: str | None = None,
+        parent_id: str | None = None,
+    ) -> None:
+        """Duplicate a gate through the definition command stack."""
+        try:
+            state = self._undo_stack.execute(
+                DuplicateGateCommand(
+                    "gui_strategy",
+                    gate_id,
+                    new_gate_id,
+                    name=name,
+                    parent_id=parent_id,
+                )
+            )
+            self._apply_command_state(state, select_gate_id=new_gate_id)
+        except ProjectCommandError as exc:
+            raise GatingStrategyError(str(exc)) from exc
+
+    def copy_subtree(
+        self,
+        gate_id: str,
+        id_map: dict[str, str],
+        *,
+        target_parent_id: str | None = None,
+    ) -> None:
+        """Copy a gate subtree through one atomic command."""
+        try:
+            state = self._undo_stack.execute(
+                CopySubtreeCommand(
+                    "gui_strategy",
+                    gate_id,
+                    id_map,
+                    target_parent_id=target_parent_id,
+                )
+            )
+            self._apply_command_state(state)
+        except ProjectCommandError as exc:
+            raise GatingStrategyError(str(exc)) from exc
+
     def selected_gate(self) -> GateSpec | None:
         """Return the selected hierarchy gate, identified by stable id."""
         item = self._tree_widget.currentItem()
@@ -439,18 +513,13 @@ class GateEditor(QWidget):
 
     def reparent_gate(self, gate_id: str, parent_id: str | None) -> None:
         """Atomically reparent a gate after validating the complete graph."""
-        index = next(
-            (i for i, gate in enumerate(self._gates) if gate.id == gate_id), -1
-        )
-        if index < 0:
-            raise GatingStrategyError(f"unknown gate: {gate_id!r}")
-        parent_id = parent_id or "all_events"
-        candidate = list(self._gates)
-        candidate[index] = replace(candidate[index], parent_population_id=parent_id)
-        self._validate_gates(candidate)
-        self._gates = candidate
-        self._refresh_all_views(select_gate_id=gate_id)
-        self._emit_gates_changed()
+        try:
+            state = self._undo_stack.execute(
+                ReparentGateCommand("gui_strategy", gate_id, parent_id or "all_events")
+            )
+            self._apply_command_state(state, select_gate_id=gate_id)
+        except ProjectCommandError as exc:
+            raise GatingStrategyError(str(exc)) from exc
 
     def update_boolean_gate(
         self,
@@ -477,42 +546,33 @@ class GateEditor(QWidget):
             parent_population_id=parent_id or self._gates[index].parent_population_id,
             thresholds={"operation": operation, "source_ids": list(source_ids)},
         )
-        candidate = list(self._gates)
-        candidate[index] = updated
-        self._validate_gates(candidate)
-        self._gates = candidate
-        self._refresh_all_views(select_gate_id=gate_id)
-        self._emit_gates_changed()
+        try:
+            state = self._undo_stack.execute(
+                EditGateCommand("gui_strategy", gate_id, updated)
+            )
+            self._apply_command_state(state, select_gate_id=gate_id)
+        except ProjectCommandError as exc:
+            raise GatingStrategyError(str(exc)) from exc
 
     def add_gate(self, gate: GateSpec) -> None:
         """Add a gate programmatically."""
-        candidate = [*self._gates, gate]
-        self._validate_gates(candidate)
-        self._gates = candidate
-        self._add_gate_list_item(gate)
-        self._refresh_all_views(select_gate_id=gate.id)
-        self._status_label.setText("Ready")
-        self._emit_gates_changed()
-        self._finish_child_gate_mode()
+        try:
+            state = self._undo_stack.execute(CreateGateCommand("gui_strategy", gate))
+            self._apply_command_state(state, select_gate_id=gate.id)
+            self._status_label.setText("Ready")
+            self._finish_child_gate_mode()
+        except ProjectCommandError as exc:
+            raise GatingStrategyError(str(exc)) from exc
 
     def update_gate(self, index: int, gate: GateSpec, notify: bool = True) -> None:
         """Replace an existing gate definition and refresh the list label."""
         if index < 0 or index >= len(self._gates):
             return
-        candidate = list(self._gates)
-        candidate[index] = gate
-        self._validate_gates(candidate)
-        self._gates = candidate
-        item = self._list_widget.item(index)
-        if item is not None:
-            self._updating_list_item = True
-            try:
-                item.setText(self._gate_label(gate))
-            finally:
-                self._updating_list_item = False
-        self._refresh_all_views(select_gate_id=gate.id)
-        if notify:
-            self._emit_gates_changed()
+        try:
+            state = self._undo_stack.execute(EditGateCommand("gui_strategy", gate.id, gate))
+            self._apply_command_state(state, select_gate_id=gate.id, notify=notify)
+        except ProjectCommandError as exc:
+            raise GatingStrategyError(str(exc)) from exc
 
     def clear_gates(self) -> None:
         """Remove all gates."""
@@ -525,6 +585,7 @@ class GateEditor(QWidget):
         """Replace all gates after validating their complete dependency graph."""
         self._validate_gates(gates)
         self._gates = list(gates)
+        self._reset_undo_stack()
         self._list_widget.clear()
         for gate in self._gates:
             self._add_gate_list_item(gate)
@@ -635,6 +696,49 @@ class GateEditor(QWidget):
         """Notify all gates-changed callbacks."""
         for cb in self._gates_changed_callbacks:
             invoke_callback(cb)
+
+    def _reset_undo_stack(self) -> None:
+        self._undo_stack = UndoStack(self._command_state())
+        self._undo_stack.mark_clean()
+
+    def _command_state(self) -> dict[str, Any]:
+        return {
+            "gating_strategies_data": {
+                "gui_strategy": {
+                    "id": "gui_strategy",
+                    "name": "GUI Strategy",
+                    "root_population_id": "all_events",
+                    "gates": [asdict(gate) for gate in self._gates],
+                }
+            }
+        }
+
+    def _apply_command_state(
+        self,
+        state: dict[str, Any],
+        *,
+        select_gate_id: str | None = None,
+        notify: bool = True,
+        rebuild_list: bool = True,
+    ) -> None:
+        gate_data = state["gating_strategies_data"]["gui_strategy"]["gates"]
+        self._gates = [GateSpec(**gate) for gate in gate_data]
+        if rebuild_list:
+            self._list_widget.clear()
+            for gate in self._gates:
+                self._add_gate_list_item(gate)
+        else:
+            self._updating_list_item = True
+            try:
+                for index, gate in enumerate(self._gates):
+                    item = self._list_widget.item(index)
+                    if item is not None:
+                        item.setText(self._gate_label(gate))
+            finally:
+                self._updating_list_item = False
+        self._refresh_all_views(select_gate_id=select_gate_id)
+        if notify:
+            self._emit_gates_changed()
 
     def _emit_interactive_gate_requested(self, gate_type: str) -> bool:
         accepted = False
@@ -811,11 +915,13 @@ class GateEditor(QWidget):
                 f"Cannot delete {gate_id!r}; referenced by: {', '.join(dependents)}",
             )
             return
-        self._gates.pop(idx)
-        item = self._list_widget.takeItem(idx)
-        del item  # free Qt object
-        self._refresh_all_views()
-        self._emit_gates_changed()
+        try:
+            state = self._undo_stack.execute(
+                DeleteGateCommand("gui_strategy", self._gates[idx].id)
+            )
+            self._apply_command_state(state)
+        except ProjectCommandError as exc:
+            QMessageBox.warning(self, "Invalid gate deletion", str(exc))
 
     def _on_list_selection_changed(self) -> None:
         idx = self._list_widget.currentRow()
@@ -839,15 +945,15 @@ class GateEditor(QWidget):
             return
         if new_name == gate.name:
             return
-        updated_gate = replace(gate, name=new_name)
-        self._gates[idx] = updated_gate
-        self._updating_list_item = True
         try:
-            item.setText(self._gate_label(updated_gate))
-        finally:
-            self._updating_list_item = False
-        self._refresh_all_views(select_gate_id=updated_gate.id)
-        self._emit_gates_changed()
+            state = self._undo_stack.execute(
+                RenameGateCommand("gui_strategy", gate.id, new_name)
+            )
+            self._apply_command_state(
+                state, select_gate_id=gate.id, rebuild_list=False
+            )
+        except ProjectCommandError as exc:
+            QMessageBox.warning(self, "Invalid gate rename", str(exc))
 
     def _refresh_all_views(self, select_gate_id: str | None = None) -> None:
         self._refresh_parent_population_combo()
@@ -977,14 +1083,15 @@ class GateEditor(QWidget):
         if not name:
             self._refresh_hierarchy_tree(gate_id)
             return
-        self._gates[index] = replace(self._gates[index], name=name)
-        legacy_item = self._list_widget.item(index)
-        if legacy_item is not None:
-            self._updating_list_item = True
-            legacy_item.setText(self._gate_label(self._gates[index]))
-            self._updating_list_item = False
-        self._refresh_parent_population_combo()
-        self._emit_gates_changed()
+        try:
+            state = self._undo_stack.execute(
+                RenameGateCommand("gui_strategy", gate_id, name)
+            )
+            self._apply_command_state(
+                state, select_gate_id=gate_id, rebuild_list=False
+            )
+        except ProjectCommandError as exc:
+            QMessageBox.warning(self, "Invalid gate rename", str(exc))
 
     def _on_create_child_clicked(self) -> None:
         item = self._tree_widget.currentItem()

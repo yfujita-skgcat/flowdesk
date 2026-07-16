@@ -125,6 +125,31 @@ def test_reparent_is_atomic_and_rejects_cycle(qapp) -> None:
         qapp.processEvents()
 
 
+def test_gate_mutations_route_through_undo_redo_commands(qapp) -> None:
+    editor = GateEditor()
+    try:
+        editor.set_gates(_three_level_gates()[:1], notify=False)
+        editor.duplicate_gate("cells", "cells-copy", name="Cells copy")
+        assert editor.select_gate("cells-copy")
+        assert editor.can_undo()
+        assert editor.undo()
+        assert not editor.select_gate("cells-copy")
+        assert editor.redo()
+        assert editor.select_gate("cells-copy")
+        editor.copy_subtree(
+            "cells",
+            {"cells": "cells-subtree"},
+            target_parent_id="all_events",
+        )
+        assert editor.select_gate("cells-subtree")
+        assert editor.undo()
+        assert not editor.select_gate("cells-subtree")
+    finally:
+        editor.close()
+        editor.deleteLater()
+        qapp.processEvents()
+
+
 def test_boolean_update_validates_arity_sources_and_cycles(qapp) -> None:
     editor = GateEditor()
     boolean = GateSpec(

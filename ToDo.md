@@ -313,7 +313,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 - [x] 済み: `docs/implementation/workspace-tree-and-undo.md`を全文読み、JSON互換project-state、定義のみのcommand payload、clean marker、依存invalid化のcommand contractを追記する。
 - [x] 済み: `flowdesk_core.project_commands`に定義のみを扱うproject mutation commandとGUI非依存Undo/Redo stackを実装する。invalid mutationはstate/historyを変更せず、clean markerとstale理由を保持する。
-- [ ] gate create/edit/rename/delete/reparent/duplicate/subtree copyをUndo/Redo可能にする。
+- [x] 済み: gate create/edit/rename/delete/reparent/duplicate/subtree copyをGUI非依存command経由でUndo/Redo可能にする。GateEditorの既存操作も同じ定義専用stackへ接続する。
 - [ ] sample、Population、statisticsを一つのhierarchy viewへ統合する。
 - [ ] breadcrumb、parent、previous/next sample navigationを追加する。
 - [ ] selectionとPlot/Hierarchyを双方向同期する。

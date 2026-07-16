@@ -8,8 +8,10 @@ import pytest
 
 from flowdesk_core.models import GateSpec
 from flowdesk_core.project_commands import (
+  CopySubtreeCommand,
   CreateGateCommand,
   DeleteGateCommand,
+  DuplicateGateCommand,
   ProjectCommandError,
   RenameGateCommand,
   ReparentGateCommand,
@@ -85,3 +87,39 @@ def test_commands_capture_definitions_not_runtime_arrays() -> None:
   command = stack._commands[0]
   assert not hasattr(command, "runtime_events")
   assert stack.state["runtime_events"] == [1, 2, 3]
+
+
+def test_duplicate_and_subtree_copy_remap_references_and_undo() -> None:
+  stack = UndoStack(_state())
+  stack.execute(CreateGateCommand("strategy", _gate("cells")))
+  stack.execute(CreateGateCommand("strategy", _gate("positive", "cells")))
+  stack.execute(
+    DuplicateGateCommand("strategy", "positive", "positive-copy", name="Positive copy")
+  )
+  copied = stack.state["gating_strategies_data"]["strategy"]["gates"][-1]
+  assert copied["id"] == "positive-copy"
+  assert copied["parent_population_id"] == "cells"
+  stack.undo()
+  assert all(
+    gate["id"] != "positive-copy"
+    for gate in stack.state["gating_strategies_data"]["strategy"]["gates"]
+  )
+
+  stack.execute(
+    CopySubtreeCommand(
+      "strategy",
+      "cells",
+      {"cells": "cells-copy", "positive": "positive-copy"},
+      target_parent_id="all_events",
+    )
+  )
+  gates = stack.state["gating_strategies_data"]["strategy"]["gates"]
+  copied_cells = next(gate for gate in gates if gate["id"] == "cells-copy")
+  copied_positive = next(gate for gate in gates if gate["id"] == "positive-copy")
+  assert copied_cells["parent_population_id"] == "all_events"
+  assert copied_positive["parent_population_id"] == "cells-copy"
+  stack.undo()
+  assert all(
+    gate["id"] not in {"cells-copy", "positive-copy"}
+    for gate in stack.state["gating_strategies_data"]["strategy"]["gates"]
+  )

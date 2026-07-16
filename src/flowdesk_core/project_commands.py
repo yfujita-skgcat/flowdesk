@@ -145,7 +145,8 @@ class EditGateCommand(_GateListCommand):
     index = next((i for i, gate in enumerate(gates) if gate.get("id") == self.gate_id), -1)
     if index < 0:
       raise ProjectCommandError(f"gate not found: {self.gate_id!r}")
-    self._before = deepcopy(gates[index])
+    if self._before is None:
+      self._before = deepcopy(gates[index])
     updated = deepcopy(gates[index])
     updated.update(deepcopy(self.gate))
     updated["id"] = self.gate_id
@@ -237,6 +238,142 @@ class ReparentGateCommand(EditGateCommand):
     updated["parent_population_id"] = self._parent_id
     self.gate = updated
     return super().apply(state)
+
+
+class DuplicateGateCommand(_GateListCommand):
+  """Duplicate one gate definition with an explicit stable new ID."""
+
+  type = "gate.duplicate"
+
+  def __init__(
+    self,
+    strategy_id: str,
+    source_gate_id: str,
+    new_gate_id: str,
+    *,
+    name: str | None = None,
+    parent_id: str | None = None,
+  ) -> None:
+    if not new_gate_id:
+      raise ProjectCommandError("duplicate gate id must not be empty")
+    self.strategy_id = strategy_id
+    self.source_gate_id = source_gate_id
+    self.new_gate_id = new_gate_id
+    self.name = name
+    self.parent_id = parent_id
+    self._inserted: dict[str, Any] | None = None
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    gates = _strategy_gates(state, self.strategy_id)
+    source = next((gate for gate in gates if gate.get("id") == self.source_gate_id), None)
+    if source is None:
+      raise ProjectCommandError(f"gate not found: {self.source_gate_id!r}")
+    if any(gate.get("id") == self.new_gate_id for gate in gates):
+      raise ProjectCommandError(f"duplicate gate id: {self.new_gate_id!r}")
+    duplicate = deepcopy(source)
+    duplicate["id"] = self.new_gate_id
+    if self.name is not None:
+      duplicate["name"] = self.name
+    if self.parent_id is not None:
+      duplicate["parent_population_id"] = self.parent_id
+    self._inserted = deepcopy(duplicate)
+    return self._updated(state, [*gates, duplicate])
+
+  def undo(self, state: ProjectState) -> ProjectState:
+    if self._inserted is None:
+      raise ProjectCommandError("cannot undo a command that was not applied")
+    gates = _strategy_gates(state, self.strategy_id)
+    remaining = [gate for gate in gates if gate.get("id") != self.new_gate_id]
+    if len(remaining) == len(gates):
+      raise ProjectCommandError(f"gate not found: {self.new_gate_id!r}")
+    return self._updated(state, remaining)
+
+
+class CopySubtreeCommand(_GateListCommand):
+  """Copy a gate and descendants, remapping all internal references."""
+
+  type = "gate.copy_subtree"
+
+  def __init__(
+    self,
+    strategy_id: str,
+    source_gate_id: str,
+    id_map: dict[str, str],
+    *,
+    target_parent_id: str | None = None,
+  ) -> None:
+    if not id_map or source_gate_id not in id_map:
+      raise ProjectCommandError("id_map must include the source gate")
+    if len(set(id_map.values())) != len(id_map):
+      raise ProjectCommandError("copied gate IDs must be unique")
+    self.strategy_id = strategy_id
+    self.source_gate_id = source_gate_id
+    self.id_map = dict(id_map)
+    self.target_parent_id = target_parent_id
+    self._inserted_ids: tuple[str, ...] | None = None
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    gates = _strategy_gates(state, self.strategy_id)
+    by_id = {gate.get("id"): gate for gate in gates}
+    if self.source_gate_id not in by_id:
+      raise ProjectCommandError(f"gate not found: {self.source_gate_id!r}")
+    descendants = {
+      gate_id
+      for gate_id in by_id
+      if self._is_descendant(gate_id, by_id)
+    }
+    subtree_ids = {self.source_gate_id, *descendants}
+    missing = subtree_ids - set(self.id_map)
+    if missing:
+      raise ProjectCommandError(f"id_map missing subtree gate(s): {sorted(missing)}")
+    if any(gate_id in by_id for gate_id in self.id_map.values()):
+      raise ProjectCommandError("copied gate ID already exists")
+    copied: list[dict[str, Any]] = []
+    for gate in gates:
+      old_id = gate.get("id")
+      if old_id not in subtree_ids:
+        continue
+      value = deepcopy(gate)
+      value["id"] = self.id_map[old_id]
+      parent_id = value.get("parent_population_id")
+      if old_id == self.source_gate_id and self.target_parent_id is not None:
+        value["parent_population_id"] = self.target_parent_id
+      elif parent_id in self.id_map:
+        value["parent_population_id"] = self.id_map[parent_id]
+      thresholds = value.get("thresholds", {})
+      source_ids = thresholds.get("source_ids")
+      if isinstance(source_ids, (list, tuple)):
+        thresholds["source_ids"] = [
+          self.id_map.get(source_id, source_id) for source_id in source_ids
+        ]
+      copied.append(value)
+    self._inserted_ids = tuple(value["id"] for value in copied)
+    return self._updated(state, [*gates, *copied])
+
+  def _is_descendant(self, gate_id: str, by_id: dict[str, dict[str, Any]]) -> bool:
+    current = by_id[gate_id].get("parent_population_id")
+    seen: set[str] = set()
+    while current and current != "all_events":
+      if current in seen:
+        raise ProjectCommandError("gate hierarchy cycle detected")
+      seen.add(current)
+      if current == self.source_gate_id:
+        return True
+      parent = by_id.get(current)
+      if parent is None:
+        return False
+      current = parent.get("parent_population_id")
+    return False
+
+  def undo(self, state: ProjectState) -> ProjectState:
+    if self._inserted_ids is None:
+      raise ProjectCommandError("cannot undo a command that was not applied")
+    copied = set(self._inserted_ids)
+    gates = _strategy_gates(state, self.strategy_id)
+    remaining = [gate for gate in gates if gate.get("id") not in copied]
+    if len(remaining) + len(copied) != len(gates):
+      raise ProjectCommandError("copied subtree definition is missing")
+    return self._updated(state, remaining)
 
 
 class UndoStack:
