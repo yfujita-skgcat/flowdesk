@@ -48,7 +48,10 @@ invalidation reason; the GUI may use that reason to mark cached results stale.
 5. Add breadcrumb and parent/previous/next sample navigation. MainWindow's
    navigation bar derives the breadcrumb from stable population parents and
    disables parent/next/previous actions at the corresponding boundaries.
-6. Add subtree copy and preflight conflict dialog.
+6. Add subtree copy and preflight conflict dialog. GateEditor exposes preflight
+   warnings for sibling-name conflicts and validates reparent cycles/missing
+   parents before the confirmation dialog; referenced deletes remain blocked
+   with dependent IDs shown.
 7. Add Undo/Redo actions, shortcuts, labels, dirty/stale updates.
 
 Selection synchronization is display-only: GateEditor selection updates plot

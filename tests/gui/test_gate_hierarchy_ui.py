@@ -152,6 +152,26 @@ def test_gate_mutations_route_through_undo_redo_commands(qapp) -> None:
         qapp.processEvents()
 
 
+def test_gate_preflight_reports_name_conflict_and_cycle_before_commit(qapp) -> None:
+    editor = GateEditor()
+    try:
+        editor.set_gates(_three_level_gates()[:2], notify=False)
+        assert editor.preflight_duplicate_gate("cells", name="Cells")
+        assert editor.preflight_subtree_copy(
+            "cells",
+            {"cells": "cells-copy", "singlets": "singlets-copy"},
+            target_parent_id="singlets",
+        ) == ()
+        before = editor.gates()
+        with pytest.raises(GatingStrategyError, match="cycle"):
+            editor.reparent_gate("cells", "singlets")
+        assert editor.gates() == before
+    finally:
+        editor.close()
+        editor.deleteLater()
+        qapp.processEvents()
+
+
 def test_workspace_tree_unifies_sample_population_and_statistics(qapp) -> None:
     tree = WorkspaceTree()
     selected = []

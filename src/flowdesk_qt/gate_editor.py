@@ -432,6 +432,19 @@ class GateEditor(QWidget):
         parent_id: str | None = None,
     ) -> None:
         """Duplicate a gate through the definition command stack."""
+        source = next((gate for gate in self._gates if gate.id == gate_id), None)
+        if source is None:
+            raise GatingStrategyError(f"unknown gate: {gate_id!r}")
+        sibling_parent = parent_id or source.parent_population_id
+        sibling_names = {
+            gate.name
+            for gate in self._gates
+            if gate.parent_population_id == sibling_parent
+        }
+        if name is not None and name in sibling_names:
+            raise GatingStrategyError(
+                f"duplicate sibling name {name!r} under {sibling_parent!r}"
+            )
         try:
             state = self._undo_stack.execute(
                 DuplicateGateCommand(
@@ -466,6 +479,53 @@ class GateEditor(QWidget):
             self._apply_command_state(state)
         except ProjectCommandError as exc:
             raise GatingStrategyError(str(exc)) from exc
+
+    def preflight_duplicate_gate(
+        self, gate_id: str, *, name: str | None = None, parent_id: str | None = None
+    ) -> tuple[str, ...]:
+        """Return warnings shown before a duplicate operation is confirmed."""
+        source = next((gate for gate in self._gates if gate.id == gate_id), None)
+        if source is None:
+            return (f"unknown gate: {gate_id!r}",)
+        parent = parent_id or source.parent_population_id
+        sibling_names = {
+            gate.name for gate in self._gates if gate.parent_population_id == parent
+        }
+        if name and name in sibling_names:
+            return (f"duplicate sibling name {name!r} under {parent!r}",)
+        return ()
+
+    def preflight_subtree_copy(
+        self,
+        gate_id: str,
+        id_map: dict[str, str],
+        *,
+        target_parent_id: str | None = None,
+    ) -> tuple[str, ...]:
+        """Validate subtree copy and report sibling-name conflicts before commit."""
+        try:
+            CopySubtreeCommand(
+                "gui_strategy",
+                gate_id,
+                id_map,
+                target_parent_id=target_parent_id,
+            ).apply(self._command_state())
+        except ProjectCommandError as exc:
+            return (str(exc),)
+        source = next(gate for gate in self._gates if gate.id == gate_id)
+        target_parent = target_parent_id or source.parent_population_id
+        source_ids = set(id_map)
+        names = [
+            gate.name for gate in self._gates if gate.parent_population_id == target_parent
+        ]
+        copied_names = [
+            gate.name for gate in self._gates if gate.id in source_ids
+        ]
+        return tuple(
+            f"duplicate sibling name {name!r} under {target_parent!r}"
+            for name in copied_names
+            if name in names
+        )
 
     def selected_gate(self) -> GateSpec | None:
         """Return the selected hierarchy gate, identified by stable id."""
@@ -1128,6 +1188,13 @@ class GateEditor(QWidget):
             or gate.id in value.thresholds.get("source_ids", [])
         ]
         detail = ", ".join(affected) if affected else "no direct dependents"
+        try:
+            ReparentGateCommand("gui_strategy", gate.id, parent_id).apply(
+                self._command_state()
+            )
+        except ProjectCommandError as exc:
+            QMessageBox.warning(self, "Invalid parent", str(exc))
+            return
         answer = QMessageBox.question(
             self,
             "Change gate parent?",

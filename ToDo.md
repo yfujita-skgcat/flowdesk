@@ -318,7 +318,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: Workspace navigation barにsample/population breadcrumb、parent移動、previous/next sample移動を追加する。表示状態のみを変更し、analysis definitionを変更しない。
 - [x] 済み: GateEditor、WorkspaceTree、PopulationTreeのselectionをstable population/sample IDで双方向同期し、Plot highlightとbreadcrumbを更新する。selectionのみではdefinitionを変更しない。
 - [ ] subtree Copy Analysisを別Population/sample/Groupへatomicに適用する。
-- [ ] duplicate sibling name、cycle、reference deleteを確定前に表示する。
+- [x] 済み: duplicate sibling name、cycle/missing parent、reference deleteを確定前preflightで表示し、失敗はUndo履歴へ追加しない。
 - [ ] Undo後もcache/reportが正しくstale化されるtestを追加する。
 
 ### Phase B4: Group strategyとsample override review [S08]
