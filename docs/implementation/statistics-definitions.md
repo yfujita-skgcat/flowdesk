@@ -52,6 +52,9 @@ pipeline stage. Display histogram bins are never the default statistic source.
 - Geometric mean excludes zero and negative finite values when positive values
   remain, otherwise it is `all_nonpositive_geometric_mean`; CV with a zero mean
   is `zero_mean_for_cv`.
+- Headless statistic results retain the persisted definition ID and display
+  name. Value metrics also retain the selected channel unit, and CSV/TSV export
+  writes those fields with value, status, and undefined reason.
 
 ## Increments
 

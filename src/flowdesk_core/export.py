@@ -238,7 +238,7 @@ def write_statistic_results(
   """Write ``StatisticResult`` objects to a delimited text file.
 
   Each statistic becomes one row with columns:
-  ``sample_id``, ``statistic_id``, ``population_id``, ``metric``,
+  ``sample_id``, ``statistic_id``, ``display_name``, ``population_id``, ``metric``,
   ``value``, ``unit``, ``status``, ``undefined_reason``.
 
   Args:
@@ -253,6 +253,7 @@ def write_statistic_results(
   header = [
     "sample_id",
     "statistic_id",
+    "display_name",
     "population_id",
     "metric",
     "value",
@@ -271,6 +272,7 @@ def write_statistic_results(
           [
             rec.sample_id,
             rec.statistic_id,
+            rec.statistic_name if rec.statistic_name is not None else "",
             rec.population_id,
             rec.metric,
             _format_value(rec.value, nan_policy),

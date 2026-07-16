@@ -308,6 +308,7 @@ def test_write_statistic_results_headers(tmp_path: Path) -> None:
       metric="count",
       value=100,
       status="ok",
+      statistic_name="All events count",
     ),
   ]
   out = tmp_path / "out.tsv"
@@ -320,6 +321,7 @@ def test_write_statistic_results_headers(tmp_path: Path) -> None:
   assert rows[0] == [
     "sample_id",
     "statistic_id",
+    "display_name",
     "population_id",
     "metric",
     "value",
@@ -329,13 +331,23 @@ def test_write_statistic_results_headers(tmp_path: Path) -> None:
   ]
   assert rows[1][0] == "s1"
   assert rows[1][1] == "stat1"
+  assert rows[1][2] == "All events count"
 
 
 def test_write_statistic_results_values(tmp_path: Path) -> None:
   results = [
-    StatisticResult("s1", "stat1", "live", "count", 100, None, "ok", None),
-    StatisticResult("s1", "stat2", "live", "mean", 3.14, "AU", "ok", None),
-    StatisticResult("s1", "stat3", "dead", "median", None, None, "empty", "empty_population"),
+    StatisticResult(
+      "s1", "stat1", "live", "count", 100, None, "ok", None,
+      "Count live",
+    ),
+    StatisticResult(
+      "s1", "stat2", "live", "mean", 3.14, "AU", "ok", None,
+      "Mean FL1",
+    ),
+    StatisticResult(
+      "s1", "stat3", "dead", "median", None, None, "empty",
+      "empty_population", "Median dead",
+    ),
   ]
   out = tmp_path / "out.tsv"
   write_statistic_results(results, out)
@@ -345,12 +357,14 @@ def test_write_statistic_results_values(tmp_path: Path) -> None:
     rows = list(reader)
 
   assert len(rows) == 4  # header + 3 data rows
-  assert rows[1][4] == "100"
-  assert rows[2][4] == "3.14"
-  assert rows[2][5] == "AU"
-  assert rows[3][4] == "NaN"
-  assert rows[3][6] == "empty"
-  assert rows[3][7] == "empty_population"
+  assert rows[1][2] == "Count live"
+  assert rows[2][2] == "Mean FL1"
+  assert rows[1][5] == "100"
+  assert rows[2][5] == "3.14"
+  assert rows[2][6] == "AU"
+  assert rows[3][5] == "NaN"
+  assert rows[3][7] == "empty"
+  assert rows[3][8] == "empty_population"
 
 
 def test_write_statistic_results_csv_delimiter(tmp_path: Path) -> None:
@@ -379,7 +393,7 @@ def test_write_statistic_results_nan_policy_empty(tmp_path: Path) -> None:
     reader = csv.reader(fh, delimiter="\t")
     rows = list(reader)
 
-  assert rows[1][4] == ""
+  assert rows[1][5] == ""
 
 
 def test_write_statistic_results_nan_policy_zero(tmp_path: Path) -> None:
@@ -393,7 +407,7 @@ def test_write_statistic_results_nan_policy_zero(tmp_path: Path) -> None:
     reader = csv.reader(fh, delimiter="\t")
     rows = list(reader)
 
-  assert rows[1][4] == "0"
+  assert rows[1][5] == "0"
 
 
 def test_write_statistic_results_empty_list(tmp_path: Path) -> None:

@@ -471,3 +471,4 @@ class StatisticResult:
   unit: str | None = None
   status: StatisticStatus = "ok"
   undefined_reason: StatisticUndefinedReason | None = None
+  statistic_name: str | None = None

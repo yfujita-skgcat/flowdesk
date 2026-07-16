@@ -2025,13 +2025,22 @@ def test_pipeline_statistics_respect_persisted_source_stage() -> None:
   sample = SampleData(
     sample_id="s1",
     events=np.array([[8.0], [12.0]], dtype=np.float64),
-    channels=(ChannelSpec(id="signal", name="signal"),),
+    channels=(ChannelSpec(id="signal", name="signal", unit="a.u."),),
   )
 
   report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
 
   values = {result.statistic_id: result.value for result in report.statistic_results}
   assert values == {"raw": 12.0, "compensated": 6.0, "transformed": 60.0}
+  metadata = {
+    result.statistic_id: (result.statistic_name, result.unit)
+    for result in report.statistic_results
+  }
+  assert metadata == {
+    "raw": ("Raw mean", "a.u."),
+    "compensated": ("Compensated mean", "a.u."),
+    "transformed": ("Transformed mean", "a.u."),
+  }
 
 
 def test_pipeline_statistics_invalid_spec_raises() -> None:

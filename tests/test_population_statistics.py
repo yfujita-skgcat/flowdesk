@@ -549,6 +549,96 @@ class TestStatisticResult:
 # compute_statistic dispatcher tests
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
+  ("metric", "settings", "values", "expected"),
+  (
+    ("mean", {}, (1.0, 2.0, 3.0), 2.0),
+    ("median", {}, (1.0, 2.0, 3.0), 2.0),
+    ("stddev", {}, (1.0, 2.0, 3.0), float(np.sqrt(2.0 / 3.0))),
+    ("mad", {}, (1.0, 2.0, 3.0), 1.0),
+    ("percentile", {"q": 50}, (1.0, 2.0, 3.0), 2.0),
+    ("geometric_mean", {}, (1.0, 4.0), 2.0),
+    ("cv", {}, (1.0, 2.0, 3.0), float(np.sqrt(2.0 / 3.0) / 2.0)),
+  ),
+)
+def test_value_statistics_known_values(
+  metric: str,
+  settings: dict[str, float],
+  values: tuple[float, ...],
+  expected: float,
+) -> None:
+  """Each persisted numeric metric has a hand-computed reference value."""
+  result = compute_statistic(
+    spec=StatisticSpec(
+      id=f"known-{metric}",
+      name=f"Known {metric}",
+      population_id="live",
+      parameter_id="FL1-A",
+      metric=metric,  # type: ignore[arg-type]
+      settings=settings,
+    ),
+    sample_id="s1",
+    event_count=len(values),
+    parent_count=len(values),
+    total_count=len(values),
+    values=np.array(values, dtype=np.float64),
+  )
+
+  assert result.status == "ok"
+  assert result.undefined_reason is None
+  assert result.value == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+  ("metric", "settings"),
+  (
+    ("mean", {}),
+    ("median", {}),
+    ("stddev", {}),
+    ("mad", {}),
+    ("percentile", {"q": 50}),
+    ("geometric_mean", {}),
+    ("cv", {}),
+  ),
+)
+def test_value_statistics_empty_and_all_nan(
+  metric: str,
+  settings: dict[str, float],
+) -> None:
+  """Empty populations and all-NaN values retain distinct statuses."""
+  spec = StatisticSpec(
+    id=f"edge-{metric}",
+    name=f"Edge {metric}",
+    population_id="live",
+    parameter_id="FL1-A",
+    metric=metric,  # type: ignore[arg-type]
+    settings=settings,
+  )
+  empty_result = compute_statistic(
+    spec=spec,
+    sample_id="s1",
+    event_count=0,
+    parent_count=0,
+    total_count=0,
+    values=np.array([], dtype=np.float64),
+  )
+  all_nan_result = compute_statistic(
+    spec=spec,
+    sample_id="s1",
+    event_count=2,
+    parent_count=2,
+    total_count=2,
+    values=np.array([np.nan, np.nan], dtype=np.float64),
+  )
+
+  assert empty_result.value is None
+  assert empty_result.status == "empty"
+  assert empty_result.undefined_reason == "empty_population"
+  assert all_nan_result.value is None
+  assert all_nan_result.status == "undefined"
+  assert all_nan_result.undefined_reason == "all_nan"
+
+
+@pytest.mark.parametrize(
   ("metric", "settings"),
   (
     ("mean", {}),

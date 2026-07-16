@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -1205,7 +1205,7 @@ class PipelineRunner:
           total_count=total_count,
           values=None,
         )
-        results.append(result)
+        results.append(replace(result, statistic_name=spec.name))
         continue
 
       # Value-based metrics need a parameter column.
@@ -1236,7 +1236,13 @@ class PipelineRunner:
         total_count=total_count,
         values=values,
       )
-      results.append(result)
+      results.append(
+        replace(
+          result,
+          statistic_name=spec.name,
+          unit=source_data.channels[col_idx].unit,
+        )
+      )
 
     return results
 

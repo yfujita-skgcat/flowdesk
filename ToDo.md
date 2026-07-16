@@ -235,7 +235,7 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 
 - [x] 済み: `StatisticSpec`を追加する。Population ID、parameter ID、metric、source stage、transform/binning policy、settings、formatを保持する。
 - [x] 済み: count、frequency parent/totalを、full membership maskに基づき実装する。
-- [ ] mean、median、geometric mean、SD、CV、MAD、percentileを実装する。
+- [x] 済み: mean、median、geometric mean、SD、CV、MAD、percentileを実装する。
 - [x] 済み: empty、zero denominator、negative valuesを含むgeometric mean、NaN/Infのpolicyをmetricごとに定義する。
 - [x] 済み: gate/matrix/transform変更時のdependency invalidationを実装する。
 - [x] 済み: ExecutionReportへtyped statistic resultsとundefined reasonを追加する。
@@ -244,11 +244,11 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 
 - [ ] Add Statistic dialogをPopulation TreeとGraphから開けるようにする。
 - [ ] statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
-- [ ] CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
+- [x] 済み: CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
 
 #### 必須test
 
-- [ ] 各metricのknown values、empty、NaN/Infをtestする。
+- [x] 済み: 各metricのknown values、empty、NaN/Infをtestする。
 - [x] 済み: statistics定義のsave/load round-tripをtestする。
 - [ ] gate編集後stale、pipeline後更新をtestする。
 - [ ] GUI値、CLI export、Python API値を一致させる。
