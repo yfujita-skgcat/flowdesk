@@ -117,6 +117,18 @@ class GroupPanel(QWidget):
     self.set_groups(self._groups)
 
   def _add_group(self) -> None:
+    roles = [
+      "user",
+      "compensation_controls",
+      "panel",
+      "acquisition",
+      "qc",
+    ]
+    role, role_accepted = QInputDialog.getItem(
+      self, "Add Group", "Group role:", roles, 0, False
+    )
+    if not role_accepted:
+      return
     name, accepted = QInputDialog.getText(self, "Add Group", "Group name:")
     name = name.strip()
     if not accepted or not name:
@@ -126,7 +138,7 @@ class GroupPanel(QWidget):
     self._groups.append({
       "id": group_id,
       "name": name,
-      "role": "user",
+      "role": role,
       "sample_ids": [],
       "membership_rule": None,
     })

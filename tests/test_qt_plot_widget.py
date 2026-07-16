@@ -82,6 +82,7 @@ def test_group_panel_renders_and_edits_persisted_groups() -> None:
   })
   panel._emit_groups()
   assert changed[-1][1]["id"] == "user-group"
+  assert panel._groups[1]["role"] == "user"
   panel.deleteLater()
 
 

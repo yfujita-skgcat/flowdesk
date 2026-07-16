@@ -52,6 +52,9 @@ Advanced mode now provides a sample-ID drag source and Group drop target. A
 drop adds the sample to the Group's explicit `sample_ids` (duplicates are
 ignored), emits a project-state change, and marks existing results stale.
 `all-samples` remains protected from deletion but accepts membership drops.
+New Groups can be assigned the roles `user`, `compensation_controls`, `panel`,
+`acquisition`, or `qc`; role selection is persisted as Group metadata and does
+not itself alter scientific calculations.
 
 Turning advanced mode off only changes visibility and persists the explicit
 `advanced_groups_enabled: false` setting. Existing Groups, bindings, and

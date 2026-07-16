@@ -285,7 +285,7 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 - [x] 済み: `docs/implementation/groups-and-annotations.md`を全文読み、今回実装するrule grammarと通常GUIの範囲を追記する。
 - [x] 済み: `SampleGroupSpec`、`AnnotationSpec`、safe membership rule、Group/Strategy bindingをmodel/schemaへ追加する。すべての新規projectには `all-samples` Group と `default-strategy` bindingを自動作成する。
 - [x] 済み (基盤): All Samples、Compensation Controls、panel/取得形式/QC用 user groupの複数所属をmodelで表現し、treatment/controlの比較群だけを理由に別strategyを選ばない旨をadvanced GroupのGUI/helpへ明記する。通常GUIはAll Samples × Default Strategyのまま、明示toggleで既存Groupをread-only表示する。
-- [ ] advanced Group modeでCompensation Controls、panel/取得形式/QC用user groupのcreate/edit/deleteとmembership編集を追加する。
+- [x] 済み: advanced Group modeで`user`、`compensation_controls`、`panel`、`acquisition`、`qc` roleを選んだGroupのcreate/rename/deleteとmembership編集（drag/drop）を追加する。roleはGroup metadataとして保存し、科学計算の意味を暗黙変更しない。
 - [x] 済み: keyword条件でdynamic group membershipをheadlessに解決し、同一sampleに競合するstrategy bindingがある場合は `conflicting_group_strategy_binding` と sample/group/strategy context を持つ `PipelineError` で、処理開始前に拒否する。
 - [x] 済み (create/edit/delete): 通常GUIではGroup paneを隠し、All Samples × Default Strategyのみを操作する。`Use Multiple Analysis Groups`を明示的に有効化した時だけGroup paneとcreate/rename/deleteを表示する。
 - [x] 済み: advanced Group modeでsample-ID一覧からGroup一覧へdrag/dropし、explicit `sample_ids`を更新する。重複dropは無視し、変更時はresultsをstale化する。
