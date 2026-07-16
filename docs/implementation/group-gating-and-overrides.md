@@ -72,6 +72,9 @@ explicit rebase and successful rerun. Missing-channel behavior remains covered
 by the GUI-independent atomic subtree preflight because this GUI has no subtree
 application control to exercise.
 
+This missing-channel GUI E2E is intentionally skipped as out of scope for the
+current UI surface; the core preflight remains the authoritative verification.
+
 ## Required tests
 
 - Two samples share a strategy but produce different intended override geometry.
