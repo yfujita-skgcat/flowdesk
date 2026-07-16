@@ -44,6 +44,7 @@ from flowdesk_core.transforms import (  # noqa: E402
 )
 from flowdesk_qt.annotation_editor import AnnotationEditorDialog  # noqa: E402
 from flowdesk_qt.gate_editor import GateEditor, _GateDialog  # noqa: E402
+from flowdesk_qt.gate_override_editor import GateOverrideDialog  # noqa: E402
 from flowdesk_qt.group_panel import GroupPanel  # noqa: E402
 from flowdesk_qt.main_window import MainWindow  # noqa: E402
 from flowdesk_qt.plot_widget import PlotWidget  # noqa: E402
@@ -1296,4 +1297,27 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     reloaded_window.close()
     window.deleteLater()
     reloaded_window.deleteLater()
+    app.processEvents()
+
+
+def test_gate_override_dialog_requires_reason_and_returns_auditable_geometry() -> None:
+  app = _app()
+  gate = GateSpec(
+    id="gate", name="Gate", gate_type="range", x_parameter="X",
+    thresholds={"min": 1.0, "max": 4.0},
+  )
+  dialog = GateOverrideDialog(gate, "s1", ("s1", "s2"))
+  try:
+    dialog._reason.setText("technical cleanup")
+    dialog._thresholds.setPlainText('{"min": 2.0, "max": 4.0}')
+    dialog._validate_and_accept()
+    assert dialog.result() == 1
+    spec = dialog.specification()
+    assert spec["sample_id"] == "s1"
+    assert spec["base_gate_id"] == "gate"
+    assert spec["reason"] == "technical cleanup"
+    assert spec["thresholds"] == {"min": 2.0, "max": 4.0}
+  finally:
+    dialog.close()
+    dialog.deleteLater()
     app.processEvents()

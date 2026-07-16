@@ -14,7 +14,7 @@ from dataclasses import asdict
 from typing import Any
 
 from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
-from flowdesk_core.models import GateSpec, GatingStrategySpec
+from flowdesk_core.models import GateOverrideSpec, GateSpec, GatingStrategySpec
 from flowdesk_core.overrides import (
   GateOverrideError,
   gate_version_hash,
@@ -525,6 +525,41 @@ class _OverrideCommand(ProjectCommand):
     return deepcopy(self._before)
 
 
+class CreateGateOverrideCommand(_OverrideCommand):
+  """Create one explicit sample-local override after typed validation."""
+
+  type = "gate_override.create"
+
+  def __init__(self, override: Mapping[str, Any] | GateOverrideSpec) -> None:
+    super().__init__()
+    self.override = (
+      asdict(override)
+      if isinstance(override, GateOverrideSpec)
+      else deepcopy(dict(override))
+    )
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    values = _override_data(state)
+    try:
+      override = override_spec_from_mapping(self.override)
+    except GateOverrideError as exc:
+      raise ProjectCommandError(str(exc)) from exc
+    if any(value.get("id") == override.id for value in values):
+      raise ProjectCommandError(f"override ID already exists: {override.id!r}")
+    if any(
+      value.get("sample_id") == override.sample_id
+      and value.get("base_gate_id") == override.base_gate_id
+      and value.get("enabled", True)
+      for value in values
+    ):
+      raise ProjectCommandError(
+        "override already exists for sample "
+        f"{override.sample_id!r} and gate {override.base_gate_id!r}"
+      )
+    self._before = deepcopy(state)
+    return _replace_overrides(state, [*values, deepcopy(self.override)])
+
+
 class ResetGateOverrideCommand(_OverrideCommand):
   """Remove one explicit override and resolve the sample back to group geometry."""
 
@@ -633,7 +668,9 @@ class PromoteGateOverrideCommand(_OverrideCommand):
     if override.gate_purpose == "comparison_critical" and (
       not self.confirm_comparison_critical or not self.audit_record.get("reason")
     ):
-      raise ProjectCommandError("comparison-critical promotion requires confirmation and audit reason")
+      raise ProjectCommandError(
+        "comparison-critical promotion requires confirmation and audit reason"
+      )
     strategy = PipelineRunnerStrategy.from_state(state, self.strategy_id)
     try:
       resolved = resolve_gate_overrides(strategy, override.sample_id, (override,))

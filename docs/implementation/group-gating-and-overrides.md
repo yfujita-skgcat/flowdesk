@@ -61,6 +61,11 @@ The explicit override creation dialog and GUI/headless override-geometry E2E
 agreement are intentionally not marked complete until the GUI can display the
 resolved geometry without turning ordinary drag/edit into an implicit override.
 
+The GUI creation path is now implemented: `GateOverrideDialog` requires author,
+reason, typed geometry JSON, purpose, and an explicit impact confirmation. It
+invokes `CreateGateOverrideCommand`; `GateEditor` continues to own shared gates,
+while `MainWindow` resolves override geometry only for plot overlays.
+
 ## Required tests
 
 - Two samples share a strategy but produce different intended override geometry.

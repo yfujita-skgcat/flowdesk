@@ -9,6 +9,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import GateSpec
+from flowdesk_core.overrides import gate_version_hash
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_qt.main_window import MainWindow
 
@@ -110,6 +111,7 @@ def test_sample_navigation_preserves_population_axes_scales_and_viewport(
     window._plot_widget.set_manual_view_range(*viewport)
     window._navigate_sample(1)
     qapp.processEvents()
+
 
     assert window._current_sample_id == samples[1].id
     assert window._selected_population_id == "population/path"
@@ -315,6 +317,79 @@ def test_switching_real_fcs_samples_updates_xy_ranges(
     qapp.processEvents()
     assert window._plot_widget.range_mode() == "manual"
     assert np.allclose(window._plot_widget.view_range(), manual)
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_technical_override_gui_report_matches_headless_report(
+  qapp,
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  fcs_path = tmp_path / "override.fcs"
+  write_fcs_file(
+    fcs_path,
+    np.array([[0.0, 0.0], [2.0, 1.0], [3.0, 2.0], [4.0, 3.0]], dtype=np.float64),
+    ["X", "Y"],
+  )
+  window = MainWindow()
+  try:
+    monkeypatch.setattr(
+      "flowdesk_qt.main_window.QMessageBox.critical",
+      lambda *_args: None,
+    )
+    window._sample_browser.add_samples_from_paths([str(fcs_path)])
+    sample = window._sample_browser.samples()[0]
+    window._sample_browser.select_sample(sample.id)
+    gate = GateSpec(
+      id="positive", name="Positive", gate_type="range",
+      parent_population_id="all_events", x_parameter=sample.info.channels[0].id,
+      thresholds={"min": 2.0, "max": 4.0},
+    )
+    window._gate_editor.set_gates([gate])
+    window._gate_overrides = [{
+      "id": "positive-sample-override", "sample_id": sample.id,
+      "base_gate_id": gate.id, "base_version_hash": gate_version_hash(gate),
+      "geometry_mode": "delta", "thresholds": {"min": 4.0},
+      "author": "analyst", "created_at": "2026-07-17T00:00:00+00:00",
+      "reason": "technical cleanup", "gate_purpose": "technical_cleanup",
+    }]
+    window._override_undo_stack = __import__(
+      "flowdesk_core.project_commands", fromlist=["UndoStack"]
+    ).UndoStack({"gate_overrides": window._gate_overrides})
+    preflight_manifest = window._build_project_manifest()
+    assert preflight_manifest["gate_overrides"][0]["base_version_hash"] == gate_version_hash(
+      preflight_manifest["gating_strategies_data"]["default_strategy"]["gates"][0]
+    )
+    preflight_report = PipelineRunner(preflight_manifest).run_samples(
+      ExecutionContext(), tuple(window._sample_data.values())
+    )
+    assert next(
+      result.event_count for result in preflight_report.population_results
+      if result.population_id == "positive"
+    ) == 1
+    window._on_run_pipeline()
+    _wait_for_worker(window)
+    qapp.processEvents()
+    gui_report = window._population_tree.last_report()
+    assert gui_report is not None
+    headless_report = PipelineRunner(window._build_project_manifest()).run_samples(
+      ExecutionContext(), tuple(window._sample_data.values())
+    )
+    gui_counts = {
+      result.population_id: result.event_count
+      for result in gui_report.population_results
+      if result.sample_id == sample.id
+    }
+    headless_counts = {
+      result.population_id: result.event_count
+      for result in headless_report.population_results
+      if result.sample_id == sample.id
+    }
+    assert gui_counts == headless_counts == {"all_events": 4, "positive": 1}
+    assert window._display_gates()[0].thresholds["min"] == 4.0
   finally:
     window.close()
     window.deleteLater()

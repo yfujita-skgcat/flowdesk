@@ -9,6 +9,7 @@ import pytest
 from flowdesk_core.models import GateSpec
 from flowdesk_core.project_commands import (
   CopyGateOverrideToSelectedCommand,
+  CreateGateOverrideCommand,
   CopySubtreeAnalysisCommand,
   CopySubtreeCommand,
   CreateGateCommand,
@@ -206,6 +207,12 @@ def _override_state() -> dict:
 
 def test_override_commands_are_separate_and_undoable() -> None:
   stack = UndoStack(_override_state())
+  created = dict(stack.state["gate_overrides"][0])
+  created["id"] = "created"
+  created["sample_id"] = "s3"
+  stack.execute(CreateGateOverrideCommand(created))
+  assert stack.state["gate_overrides"][-1]["id"] == "created"
+  stack.undo()
   stack.execute(CopyGateOverrideToSelectedCommand("cells-s1", ["s2"]))
   assert stack.state["gate_overrides"][-1]["sample_id"] == "s2"
   stack.undo()

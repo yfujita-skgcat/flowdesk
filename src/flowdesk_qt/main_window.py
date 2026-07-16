@@ -39,14 +39,19 @@ from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.models import CompensationMatrixSpec, TransformSpec
 from flowdesk_core.overrides import (
-    inspect_gate_override_statuses,
-    override_spec_from_mapping,
+  GateOverrideError,
+  gate_version_hash,
+  inspect_gate_override_statuses,
+  override_spec_from_mapping,
+  resolve_gate_overrides,
 )
 from flowdesk_core.pipeline_runner import PipelineRunner
+from flowdesk_core.project_commands import CreateGateOverrideCommand, UndoStack
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
 from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
+from flowdesk_qt.gate_override_editor import GateOverrideDialog
 from flowdesk_qt.group_panel import GroupPanel
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
@@ -55,6 +60,7 @@ from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
 from flowdesk_qt.workspace_tree import WorkspaceTree
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import load_project, resolve_sample_paths, save_project
+from flowdesk_storage.serialization import now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +220,7 @@ class MainWindow(QMainWindow):
         self._group_strategy_bindings: list[dict[str, Any]] = []
         self._annotations: list[dict[str, Any]] = []
         self._gate_overrides: list[dict[str, Any]] = []
+        self._override_undo_stack = UndoStack({"gate_overrides": []})
         # Display-only: selected population for plot filtering.
         self._selected_population_id: str = "all_events"
 
@@ -371,6 +378,14 @@ class MainWindow(QMainWindow):
         self.action_redo.setShortcut(QKeySequence("Ctrl+Shift+Z"))
         self.action_redo.triggered.connect(self._on_redo)
         edit_menu.addAction(self.action_redo)
+        self.action_create_gate_override = QAction(
+            "Create Sample Gate &Override...", self
+        )
+        self.action_create_gate_override.setObjectName("actionCreateGateOverride")
+        self.action_create_gate_override.triggered.connect(
+            self._on_create_gate_override
+        )
+        edit_menu.addAction(self.action_create_gate_override)
 
         # Analysis menu
         analysis_menu = menubar.addMenu("&Analysis")
@@ -627,6 +642,90 @@ class MainWindow(QMainWindow):
         if current.get("results_stale"):
             banner = f"{banner}; results stale" if banner else "results stale"
         self._plot_widget.set_status_banner(banner)
+
+    def _on_create_gate_override(self) -> None:
+        """Create an override only through an explicit audited user action."""
+        sample_id = self._current_sample_id
+        gate = self._gate_editor.selected_gate()
+        if not sample_id or gate is None:
+            QMessageBox.information(
+                self,
+                "Select Gate",
+                "Select a sample and gate before creating a sample override.",
+            )
+            return
+        sample_ids = [sample_id]
+        selected = self._sample_browser.selected_sample()
+        if selected is not None:
+            for group in self._sample_groups:
+                if selected.id in group.get("sample_ids", []):
+                    sample_ids = [str(value) for value in group.get("sample_ids", [])]
+                    break
+        dialog = GateOverrideDialog(
+            gate,
+            sample_id,
+            sample_ids,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        specification = dialog.specification()
+        purpose = specification["gate_purpose"]
+        warning = (
+            "This creates a comparison-critical sample override. It changes the "
+            "selected sample's geometry for comparison and will be recorded in QC."
+            if purpose == "comparison_critical"
+            else (
+                "This creates a sample-specific geometry override. Other samples "
+                "remain on group geometry."
+            )
+        )
+        answer = QMessageBox.question(
+            self,
+            "Confirm Sample Override",
+            warning + "\n\nAffected samples: " + ", ".join(sample_ids),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        override = {
+            "id": f"{sample_id}:{gate.id}:{uuid.uuid4().hex[:8]}",
+            "base_version_hash": gate_version_hash(gate),
+            "created_at": now_iso(),
+            **specification,
+          }
+        try:
+            state = self._override_undo_stack.execute(
+                CreateGateOverrideCommand(override)
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Override Not Created", str(exc))
+            return
+        self._gate_overrides = deepcopy(state["gate_overrides"])
+        self._project_dirty = True
+        self._mark_results_stale("Sample gate override created")
+        self._replot()
+
+    def _display_gates(self) -> list[Any]:
+        """Resolve only plot overlays; GateEditor continues editing shared gates."""
+        gates = list(self._gate_editor.gates())
+        if not self._current_sample_id or not self._gate_overrides:
+            return gates
+        strategy = PipelineRunner._strategy_from_mapping({
+            "id": "default_strategy",
+            "name": "Default Strategy",
+            "gates": [asdict(gate) for gate in gates],
+        })
+        try:
+            overrides = tuple(
+                override_spec_from_mapping(value)
+                for value in self._gate_overrides
+            )
+            return list(resolve_gate_overrides(strategy, self._current_sample_id, overrides).gates)
+        except (GateOverrideError, ValueError, TypeError) as exc:
+            logger.warning("Could not resolve gate overlay: %s", exc)
+            return gates
 
     # -- signal connections --------------------------------------------------
 
@@ -930,7 +1029,7 @@ class MainWindow(QMainWindow):
 
             # Refresh gate overlays
             self._plot_widget.clear_gates()
-            for idx, gate in enumerate(self._gate_editor.gates()):
+            for idx, gate in enumerate(self._display_gates()):
                 if gate.x_parameter == x_id and gate.y_parameter == y_id:
                     self._plot_widget.add_gate_overlay(gate, idx)
             self._gate_editor.set_overlay_status(
@@ -1365,6 +1464,7 @@ class MainWindow(QMainWindow):
         )
         self._annotations = deepcopy(manifest.get("annotations", []))
         self._gate_overrides = deepcopy(manifest.get("gate_overrides", []))
+        self._override_undo_stack = UndoStack({"gate_overrides": self._gate_overrides})
         self._group_panel.set_groups(self._sample_groups)
         self.action_advanced_groups.setChecked(
             bool(manifest.get("advanced_groups_enabled", False))
