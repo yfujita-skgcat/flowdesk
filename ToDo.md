@@ -329,7 +329,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] headless `PipelineRunner`でGroup共通strategyへselected sampleの明示overrideだけをdeterministically解決し、stale baseは再計算前に拒否する。
 - [x] sample navigation中に同じPopulation path、axes、scale、view rangeを維持する。
 - [x] shared/override/stale/missingをtree badgeとplot bannerで表示する。`results stale`（再計算が必要）と `override stale`（base変更によりrebaseが必要）を別状態として表示する。
-- [x] 通常のgate drag/editは Group 共通 geometry を変更する。sample override は `このsample用のgate調整を作成` の意図的なcommandでだけ作成し、理由入力と影響範囲の確認を要求する。
+- [ ] 通常のgate drag/editは Group 共通 geometry を変更する。sample override は `このsample用のgate調整を作成` の意図的なcommandでだけ作成し、理由入力と影響範囲の確認を要求する。Core commandは実装済みだが、GUIの意図確認導線は未実装。
 - [x] reset-to-group、promote-to-group、copy-to-selectedを別commandにする。comparison-critical gate のoverride/promoteは強いwarningと監査記録を必須にする。
 - [x] Groupへsubtree適用前にchannel mappingを全sampleでvalidateする。
 - [x] frequency outlier、gate boundary clipping、missing Population、override一覧、comparison-critical override warningをQC panelへ表示する。`missing` は0 eventsやdisplay fallbackと区別する。

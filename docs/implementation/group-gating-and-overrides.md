@@ -49,11 +49,17 @@ execution. A stale base hash makes the override invalid until explicitly rebased
    **Implemented:** these are independent definition-only undo commands. Promotion
    resolves the explicit geometry into the shared strategy; comparison-critical
    promotion requires confirmation plus an audit reason.
+   The GUI creation dialog and confirmation/impact preview remain pending; core
+   commands are available without making GUI callbacks perform scientific work.
 7. Add QC checks for clipped gates, missing populations, and frequency outliers.
    **Implemented:** group/override executions add structured QC diagnostics for
    boundary clipping, missing populations, frequency outliers, applied override
    inventory, and comparison-critical warnings; the existing DiagnosticsPanel
    renders them and keeps missing distinct from zero-event populations.
+
+The explicit override creation dialog and GUI/headless override-geometry E2E
+agreement are intentionally not marked complete until the GUI can display the
+resolved geometry without turning ordinary drag/edit into an implicit override.
 
 ## Required tests
 
