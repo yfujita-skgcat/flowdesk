@@ -103,6 +103,12 @@ class TestValidateManifest:
     validate_manifest(data)
     assert data["custom_field"] == "kept"
 
+  def test_current_group_binding_references_are_validated(self) -> None:
+    data = migrate_manifest(MINIMAL_MANIFEST)
+    data["group_strategy_bindings"][0]["gating_strategy_id"] = "missing"
+    with pytest.raises(ManifestValidationError, match="unknown strategy"):
+      validate_manifest(data)
+
 
 # -- Load manifest --
 
@@ -1539,7 +1545,7 @@ class TestCompensationCalculationValidation:
 
   _minimal_manifest: dict[str, Any] = {
     "project_id": "test",
-    "project_version": "1.5.0",
+    "project_version": CURRENT_PROJECT_VERSION,
     "pipeline_version": "1.0",
     "samples": [
       {
@@ -2020,11 +2026,14 @@ class TestMigrationRegistry:
 
   def test_v0_1_migration_path(self) -> None:
     path = _get_migration_path("0.1")
-    assert path == ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", CURRENT_PROJECT_VERSION]
+    assert path == [
+      "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0",
+      CURRENT_PROJECT_VERSION,
+    ]
 
   def test_v1_4_migration_path(self) -> None:
     path = _get_migration_path("1.4.0")
-    assert path == [CURRENT_PROJECT_VERSION]
+    assert path == ["1.5.0", CURRENT_PROJECT_VERSION]
 
   def test_every_adjacent_transition_has_a_registered_migration(self) -> None:
     for from_version, to_version in zip(
@@ -2118,6 +2127,24 @@ class TestAtomicWrite:
     # No leftover temp files.
     tmp_files = list(subdir.glob("*.tmp"))
     assert tmp_files == []
+
+  def test_replace_failure_preserves_original_and_cleans_temp(
+    self,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+  ) -> None:
+    target = tmp_path / "data.json"
+    atomic_write_json(target, {"v": 1})
+
+    def fail_replace(*args, **kwargs) -> None:
+      raise OSError("simulated replace failure")
+
+    monkeypatch.setattr("flowdesk_storage.serialization.os.replace", fail_replace)
+    with pytest.raises(OSError, match="simulated replace failure"):
+      atomic_write_json(target, {"v": 2})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"v": 1}
+    assert list(tmp_path.glob("*.tmp")) == []
 
 
 # -- Newer schema rejection --

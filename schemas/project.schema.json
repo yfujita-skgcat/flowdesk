@@ -6,13 +6,25 @@
   "required": ["project_id", "project_version", "pipeline_version", "samples"],
   "properties": {
     "project_id": { "type": "string" },
-    "project_version": { "const": "1.5.0" },
+    "project_version": { "const": "1.6.0" },
     "pipeline_version": { "type": "string" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" },
     "samples": {
       "type": "array",
       "items": { "$ref": "#/$defs/sample" }
+    },
+    "sample_groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sampleGroup" }
+    },
+    "annotations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/annotation" }
+    },
+    "group_strategy_bindings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/groupStrategyBinding" }
     },
     "compensation_matrices": {
       "type": "array",
@@ -70,6 +82,43 @@
     }
   },
   "$defs": {
+    "sampleGroup": {
+      "type": "object",
+      "required": ["id", "name", "role", "sample_ids"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "role": {
+          "enum": ["all_samples", "compensation_controls", "panel", "acquisition", "qc", "user"]
+        },
+        "color": { "type": ["string", "null"] },
+        "sample_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "membership_rule": { "type": ["object", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "annotation": {
+      "type": "object",
+      "required": ["sample_id", "keyword", "value", "source"],
+      "properties": {
+        "sample_id": { "type": "string", "minLength": 1 },
+        "keyword": { "type": "string", "minLength": 1 },
+        "value": { "type": ["string", "number", "integer", "boolean", "null"] },
+        "source": { "enum": ["fcs", "workspace", "imported"] }
+      },
+      "additionalProperties": true
+    },
+    "groupStrategyBinding": {
+      "type": "object",
+      "required": ["id", "group_id", "gating_strategy_id", "statistic_ids"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "group_id": { "type": "string", "minLength": 1 },
+        "gating_strategy_id": { "type": "string", "minLength": 1 },
+        "statistic_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      },
+      "additionalProperties": true
+    },
     "transform": {
       "type": "object",
       "required": ["id", "transform_type", "parameter", "role"],

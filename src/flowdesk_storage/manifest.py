@@ -77,6 +77,107 @@ def validate_manifest(data: dict[str, Any]) -> None:
       data.get("gating_strategies_data", {}),
       gate_ids,
     )
+    _validate_current_groups_and_annotations(data, gate_ids)
+
+
+def _validate_current_groups_and_annotations(
+  data: Mapping[str, Any],
+  gate_ids: set[str],
+) -> None:
+  """Validate persisted group/annotation identities without altering metadata."""
+  groups = data.get("sample_groups", [])
+  annotations = data.get("annotations", [])
+  bindings = data.get("group_strategy_bindings", [])
+  if not isinstance(groups, list):
+    raise ManifestValidationError("sample_groups must be an array")
+  if not isinstance(annotations, list):
+    raise ManifestValidationError("annotations must be an array")
+  if not isinstance(bindings, list):
+    raise ManifestValidationError("group_strategy_bindings must be an array")
+
+  sample_ids = {
+    sample["id"] for sample in data["samples"] if isinstance(sample, dict)
+  }
+  group_ids: set[str] = set()
+  valid_roles = {
+    "all_samples", "compensation_controls", "panel", "acquisition", "qc", "user"
+  }
+  for index, group in enumerate(groups):
+    if not isinstance(group, dict):
+      raise ManifestValidationError(f"sample_groups[{index}] must be an object")
+    group_id = group.get("id")
+    if not isinstance(group_id, str) or not group_id:
+      raise ManifestValidationError(f"sample_groups[{index}].id must be non-empty")
+    if group_id in group_ids:
+      raise ManifestValidationError(f"duplicate sample group ID {group_id!r}")
+    group_ids.add(group_id)
+    if group.get("role") not in valid_roles:
+      raise ManifestValidationError(f"sample group {group_id!r} has invalid role")
+    members = group.get("sample_ids")
+    if not isinstance(members, list) or not all(
+      isinstance(sample_id, str) and sample_id for sample_id in members
+    ):
+      raise ManifestValidationError(f"sample group {group_id!r} sample_ids must be strings")
+    if len(set(members)) != len(members):
+      raise ManifestValidationError(f"sample group {group_id!r} has duplicate sample IDs")
+    unknown_members = set(members) - sample_ids
+    if unknown_members:
+      raise ManifestValidationError(
+        f"sample group {group_id!r} references unknown samples {sorted(unknown_members)!r}"
+      )
+    rule = group.get("membership_rule")
+    if rule is not None and not isinstance(rule, dict):
+      raise ManifestValidationError(
+        f"sample group {group_id!r} membership_rule must be an object or null"
+      )
+
+  valid_sources = {"fcs", "workspace", "imported"}
+  for index, annotation in enumerate(annotations):
+    if not isinstance(annotation, dict):
+      raise ManifestValidationError(f"annotations[{index}] must be an object")
+    sample_id = annotation.get("sample_id")
+    keyword = annotation.get("keyword")
+    if not isinstance(sample_id, str) or sample_id not in sample_ids:
+      raise ManifestValidationError(f"annotations[{index}] references an unknown sample")
+    if not isinstance(keyword, str) or not keyword:
+      raise ManifestValidationError(f"annotations[{index}].keyword must be non-empty")
+    if annotation.get("source") not in valid_sources:
+      raise ManifestValidationError(f"annotations[{index}] has invalid source")
+    if isinstance(annotation.get("value"), (list, dict)):
+      raise ManifestValidationError(f"annotations[{index}].value must be scalar or null")
+
+  strategy_ids = set(data.get("gating_strategies_data", {}))
+  statistic_ids = {
+    statistic.get("id") for statistic in data.get("statistics", [])
+    if isinstance(statistic, dict) and isinstance(statistic.get("id"), str)
+  }
+  binding_ids: set[str] = set()
+  for index, binding in enumerate(bindings):
+    if not isinstance(binding, dict):
+      raise ManifestValidationError(f"group_strategy_bindings[{index}] must be an object")
+    binding_id = binding.get("id")
+    if not isinstance(binding_id, str) or not binding_id:
+      raise ManifestValidationError(f"group_strategy_bindings[{index}].id must be non-empty")
+    if binding_id in binding_ids:
+      raise ManifestValidationError(f"duplicate group strategy binding ID {binding_id!r}")
+    binding_ids.add(binding_id)
+    if binding.get("group_id") not in group_ids:
+      raise ManifestValidationError(f"binding {binding_id!r} references an unknown group")
+    strategy_id = binding.get("gating_strategy_id")
+    if strategy_id not in strategy_ids:
+      raise ManifestValidationError(f"binding {binding_id!r} references an unknown strategy")
+    statistic_ids_for_binding = binding.get("statistic_ids")
+    if not isinstance(statistic_ids_for_binding, list) or not all(
+      isinstance(statistic_id, str) and statistic_id for statistic_id in statistic_ids_for_binding
+    ):
+      raise ManifestValidationError(f"binding {binding_id!r} statistic_ids must be strings")
+    if len(set(statistic_ids_for_binding)) != len(statistic_ids_for_binding):
+      raise ManifestValidationError(f"binding {binding_id!r} has duplicate statistic IDs")
+    unknown_statistics = set(statistic_ids_for_binding) - statistic_ids
+    if unknown_statistics:
+      raise ManifestValidationError(
+        f"binding {binding_id!r} references unknown statistics {sorted(unknown_statistics)!r}"
+      )
 
 
 def _validate_current_transforms(transforms: Any) -> dict[str, tuple[str, str]]:

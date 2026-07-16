@@ -41,11 +41,11 @@ Read `project-storage.md`, `pipeline-runner.md`, and `qt-gui-debugging.md`.
 
 ## Supported migration path
 
-The current project schema is `1.5.0`. Historical manifests migrate through
+The current project schema is `1.6.0`. Historical manifests migrate through
 the registered adjacent-version path:
 
 ```text
-0.1 -> 1.0.0 -> 1.1.0 -> 1.2.0 -> 1.3.0 -> 1.4.0 -> 1.5.0
+0.1 -> 1.0.0 -> 1.1.0 -> 1.2.0 -> 1.3.0 -> 1.4.0 -> 1.5.0 -> 1.6.0
 ```
 
 Every registered transition is pure and idempotent. The `MigrationReport`

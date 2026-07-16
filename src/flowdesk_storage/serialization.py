@@ -45,17 +45,27 @@ def atomic_write_json(
     dir=str(path_obj.parent),
   )
   try:
-    os.write(fd, content_bytes)
-    os.fsync(fd)
-    os.close(fd)
+    with os.fdopen(fd, "wb") as handle:
+      handle.write(content_bytes)
+      handle.flush()
+      os.fsync(handle.fileno())
     os.replace(tmp_path, str(path_obj))
+    _fsync_directory(path_obj.parent)
   except BaseException:
-    os.close(fd)
     try:
       os.unlink(tmp_path)
     except OSError:
       pass
     raise
+
+
+def _fsync_directory(directory: Path) -> None:
+  """Persist a completed atomic rename where the filesystem supports it."""
+  directory_fd = os.open(directory, os.O_RDONLY)
+  try:
+    os.fsync(directory_fd)
+  finally:
+    os.close(directory_fd)
 
 
 def read_json(path: str | Path) -> dict[str, Any]:

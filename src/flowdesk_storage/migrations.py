@@ -10,7 +10,7 @@ from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
 
-CURRENT_PROJECT_VERSION = "1.5.0"
+CURRENT_PROJECT_VERSION = "1.6.0"
 
 
 @dataclass
@@ -40,6 +40,7 @@ LEGACY_PROJECT_VERSIONS = frozenset({
   "1.2.0",
   "1.3.0",
   "1.4.0",
+  "1.5.0",
 })
 
 # Ordered list of all known versions from oldest to newest.
@@ -50,6 +51,7 @@ ALL_KNOWN_VERSIONS = [
   "1.2.0",
   "1.3.0",
   "1.4.0",
+  "1.5.0",
   CURRENT_PROJECT_VERSION,
 ]
 
@@ -461,6 +463,59 @@ def _normalize_historical_manifest(
   _ensure_compensation_bindings(migrated, diagnostics)
 
 
+def _add_default_sample_group(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Add the always-present default Group/Strategy model introduced in 1.6."""
+  groups = migrated.get("sample_groups")
+  if groups is None:
+    migrated["sample_groups"] = [{
+      "id": "all-samples",
+      "name": "All Samples",
+      "role": "all_samples",
+      "sample_ids": [],
+      "membership_rule": {"all": []},
+    }]
+  elif not isinstance(groups, list):
+    raise ProjectMigrationError(
+      "invalid_legacy_sample_groups", "sample_groups must be an array"
+    )
+
+  strategies = migrated.setdefault("gating_strategies_data", {})
+  if not isinstance(strategies, dict):
+    raise ProjectMigrationError(
+      "invalid_legacy_gating_strategies",
+      "gating_strategies_data must be an object",
+    )
+  strategy_id = migrated.get("default_gating_strategy_id")
+  if not isinstance(strategy_id, str) or not strategy_id:
+    strategy_id = "default_strategy"
+  if strategy_id not in strategies:
+    strategies[strategy_id] = {
+      "id": strategy_id,
+      "name": "Default Strategy",
+      "gates": [],
+      "root_population_id": "all_events",
+    }
+  migrated.setdefault("default_gating_strategy_id", strategy_id)
+
+  bindings = migrated.get("group_strategy_bindings")
+  if bindings is None:
+    migrated["group_strategy_bindings"] = [{
+      "id": "all-samples-default-strategy",
+      "group_id": "all-samples",
+      "gating_strategy_id": strategy_id,
+      "statistic_ids": [],
+    }]
+  elif not isinstance(bindings, list):
+    raise ProjectMigrationError(
+      "invalid_legacy_group_strategy_bindings",
+      "group_strategy_bindings must be an array",
+    )
+
+
+
 MIGRATION_REGISTRY: dict[tuple[str, str], MigrationFunction] = {
   (from_version, to_version): _normalize_historical_manifest
   for from_version, to_version in zip(
@@ -469,3 +524,4 @@ MIGRATION_REGISTRY: dict[tuple[str, str], MigrationFunction] = {
     strict=False,
   )
 }
+MIGRATION_REGISTRY[("1.5.0", "1.6.0")] = _add_default_sample_group

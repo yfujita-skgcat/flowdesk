@@ -34,6 +34,25 @@ membership rule, and analysis bindings. A sample may belong to multiple groups.
 5. Add annotation columns, edit, find/replace, fill series, and CSV import preview.
 6. Bind strategies/statistics to groups and validate new members before application.
 
+## Current implementation scope
+
+The first increment persists `SampleGroupSpec`, `AnnotationSpec`, and a
+`GroupStrategyBindingSpec`. Every newly created manifest contains the internal
+`all-samples` Group, whose `{ "all": [] }` rule deterministically selects every
+sample, and binds it to `default-strategy`. Normal GUI operation continues to
+edit that one strategy; no Group pane is exposed yet.
+
+Membership rules are JSON ASTs, never Python expressions:
+
+- `{ "all": [rule, ...] }`, `{ "any": [rule, ...] }`, and `{ "not": rule }`
+- `{ "keyword": "Panel", "comparison": "equals", "value": "A" }`
+- `comparison` may be `equals`, `in`, `gt`, `gte`, `lt`, or `lte`.
+
+Rule evaluation is headless and metadata-only. Missing keywords and nonnumeric
+values for numeric comparisons do not match. Workspace/imported annotations
+shadow FCS annotations and sample metadata for display and membership; raw FCS
+bytes are never changed.
+
 ## Required tests
 
 - Multiple group membership and deterministic rule resolution.
@@ -54,4 +73,3 @@ membership rule, and analysis bindings. A sample may belong to multiple groups.
 pytest -q tests/test_models.py tests/test_pipeline_runner.py tests/test_project_storage.py
 ./tools/run-gui-tests.sh -q
 ```
-

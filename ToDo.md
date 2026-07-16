@@ -258,7 +258,7 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 - [x] 済み: `docs/implementation/project-migration-and-recovery.md`を全文読み、対象versionとmigration経路を追記する。
 - [x] 済み: project schemaを厳密化し、ID reference integrityをvalidatorで検証する。(gate parent_population_id, statistics population_id, compensation bindings/calculations)
 - [x] 済み: versionごとのmigration registryを作り、migration reportとbackupを生成する。(MigrationReport, _get_migration_path, ALL_KNOWN_VERSIONS)
-- [ ] temp pathへwrite、fsync、atomic replaceするsave手順を実装する。(atomic_write_json)
+- [x] 済み: temp pathへwrite、file/directory fsync、atomic replaceするsave手順を実装する。(atomic_write_json)
 - [x] 済み: newer unsupported schemaをread-only以外で開かない。(migration前にreject、save前にvalidate)
 - [x] 済み: ExecutionDiagnostic modelを追加し、severity、code、sample、population、stage、message、detailsを保持する。(既存: execution_report.py)
 - [x] 済み: GUI diagnostics panelを追加する。
@@ -282,8 +282,8 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 
 ### Phase B1: Groupとannotation [S02]
 
-- [ ] `docs/implementation/groups-and-annotations.md`を全文読み、今回実装するrule grammarまたはUI範囲を追記する。
-- [ ] `SampleGroupSpec`、`AnnotationSpec`、safe membership rule、Group/Strategy bindingをmodel/schemaへ追加する。すべての新規projectには `all-samples` Group と `default-strategy` bindingを自動作成する。
+- [x] 済み: `docs/implementation/groups-and-annotations.md`を全文読み、今回実装するrule grammarと通常GUIの範囲を追記する。
+- [x] 済み: `SampleGroupSpec`、`AnnotationSpec`、safe membership rule、Group/Strategy bindingをmodel/schemaへ追加する。すべての新規projectには `all-samples` Group と `default-strategy` bindingを自動作成する。
 - [ ] All Samples、Compensation Controls、panel/取得形式/QC用 user groupを複数所属可能にする。treatment/control の比較群だけを理由に別 strategy を選ばないことをUI/helpへ明記する。
 - [ ] keyword条件でdynamic group membershipをheadlessに解決し、同一 sample に競合する strategy binding がある場合は stable structured diagnostic で拒否する。
 - [ ] 通常 GUI では Group pane を隠し、All Samples × Default Strategy のみを操作する。`複数の解析グループを使用する`を明示的に有効化した時だけ Group pane、create/edit/delete、drag/drop membershipを表示する。

@@ -76,6 +76,84 @@ class SampleSpec:
   metadata: dict[str, Any] = field(default_factory=dict)
 
 
+AnnotationValue = str | int | float | bool | None
+AnnotationSource = Literal["fcs", "workspace", "imported"]
+SampleGroupRole = Literal[
+  "all_samples",
+  "compensation_controls",
+  "panel",
+  "acquisition",
+  "qc",
+  "user",
+]
+
+
+@dataclass(frozen=True)
+class AnnotationSpec:
+  """A typed, non-destructive value associated with one sample keyword."""
+
+  sample_id: str
+  keyword: str
+  value: AnnotationValue
+  source: AnnotationSource
+
+  def __post_init__(self) -> None:
+    if not self.sample_id or not self.keyword:
+      raise ValueError("annotation sample_id and keyword must be non-empty")
+    if self.source not in {"fcs", "workspace", "imported"}:
+      raise ValueError(f"invalid annotation source: {self.source!r}")
+    if isinstance(self.value, (list, dict)):
+      raise ValueError("annotation value must be a scalar or null")
+
+
+@dataclass(frozen=True)
+class SampleGroupSpec:
+  """Explicit and rule-based collection of samples for analysis assignment.
+
+  ``membership_rule`` is a JSON-serializable restricted rule AST evaluated by
+  :mod:`flowdesk_core.groups`; it is never interpreted as Python code.
+  """
+
+  id: str
+  name: str
+  role: SampleGroupRole = "user"
+  color: str | None = None
+  sample_ids: tuple[str, ...] = field(default_factory=tuple)
+  membership_rule: dict[str, Any] | None = None
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.name:
+      raise ValueError("sample group ID and name must be non-empty")
+    if self.role not in {
+      "all_samples", "compensation_controls", "panel", "acquisition", "qc", "user"
+    }:
+      raise ValueError(f"invalid sample group role: {self.role!r}")
+    if any(not sample_id for sample_id in self.sample_ids):
+      raise ValueError("sample group IDs must be non-empty")
+    if len(set(self.sample_ids)) != len(self.sample_ids):
+      raise ValueError("sample group sample IDs must be unique")
+    if self.membership_rule is not None and not isinstance(self.membership_rule, dict):
+      raise ValueError("sample group membership_rule must be an object or null")
+
+
+@dataclass(frozen=True)
+class GroupStrategyBindingSpec:
+  """Bind one gating strategy and optional statistics to one sample group."""
+
+  id: str
+  group_id: str
+  gating_strategy_id: str
+  statistic_ids: tuple[str, ...] = field(default_factory=tuple)
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.group_id or not self.gating_strategy_id:
+      raise ValueError("binding ID, group ID, and gating strategy ID must be non-empty")
+    if any(not statistic_id for statistic_id in self.statistic_ids):
+      raise ValueError("binding statistic IDs must be non-empty")
+    if len(set(self.statistic_ids)) != len(self.statistic_ids):
+      raise ValueError("binding statistic IDs must be unique")
+
+
 @dataclass(frozen=True)
 class CompensationManualEditSpec:
   """One auditable cell change made only on a duplicated matrix."""

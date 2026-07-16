@@ -943,6 +943,24 @@ class MainWindow(QMainWindow):
             "gating_strategies_data": {
                 "default_strategy": strategy,
             },
+            "sample_groups": [
+                {
+                    "id": "all-samples",
+                    "name": "All Samples",
+                    "role": "all_samples",
+                    "sample_ids": [],
+                    "membership_rule": {"all": []},
+                }
+            ],
+            "group_strategy_bindings": [
+                {
+                    "id": "all-samples-default-strategy",
+                    "group_id": "all-samples",
+                    "gating_strategy_id": "default_strategy",
+                    "statistic_ids": [],
+                }
+            ],
+            "annotations": [],
             "derived_parameters": deepcopy(self._derived_parameters),
             "transforms": deepcopy(self._transforms),
             "compensation_matrices": deepcopy(self._compensation_matrices),
