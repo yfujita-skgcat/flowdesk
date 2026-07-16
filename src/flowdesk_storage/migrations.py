@@ -499,6 +499,7 @@ def _add_default_sample_group(
   diagnostics: list[dict[str, Any]],
 ) -> None:
   """Add the always-present default Group/Strategy model introduced in 1.6."""
+  _migrate_boolean_expressions(migrated, diagnostics)
   groups = migrated.get("sample_groups")
   if groups is None:
     migrated["sample_groups"] = [{

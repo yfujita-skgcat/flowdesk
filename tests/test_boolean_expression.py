@@ -13,6 +13,7 @@ from flowdesk_core.boolean_expression import (
 )
 from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
 from flowdesk_core.models import GateSpec, GatingStrategySpec
+from flowdesk_storage.migrations import migrate_manifest
 
 
 def test_nested_boolean_precedence_and_not_use_full_masks() -> None:
@@ -62,3 +63,27 @@ def test_legacy_boolean_thresholds_migrate_to_expression_tree() -> None:
     "op": "and",
     "children": [{"op": "ref", "id": "a"}, {"op": "ref", "id": "b"}],
   }
+
+
+def test_legacy_manifest_migration_persists_nested_boolean_expression() -> None:
+  manifest = {
+    "project_id": "legacy",
+    "project_version": "1.5.0",
+    "pipeline_version": "test",
+    "samples": [],
+    "gating_strategies_data": {
+      "strategy": {
+        "id": "strategy",
+        "name": "Strategy",
+        "gates": [{
+          "id": "combined",
+          "name": "Combined",
+          "gate_type": "boolean",
+          "thresholds": {"operation": "and", "source_ids": ["a", "b"]},
+        }],
+      }
+    },
+  }
+  migrated = migrate_manifest(manifest)
+  thresholds = migrated["gating_strategies_data"]["strategy"]["gates"][0]["thresholds"]
+  assert thresholds["expression"]["op"] == "and"
