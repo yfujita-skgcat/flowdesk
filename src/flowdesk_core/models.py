@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
@@ -13,6 +14,8 @@ from numpy.typing import NDArray
 SourceStage = Literal["raw", "compensated", "transformed"]
 GateType = Literal["rectangle", "polygon", "range", "ellipse", "boolean"]
 GateAxisScale = Literal["linear", "log10", "asinh"]
+GateOverrideGeometryMode = Literal["delta", "full"]
+GatePurpose = Literal["technical_cleanup", "comparison_critical"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
 CompensationBindingScope = Literal["sample", "group", "execution_profile"]
 CompensationRegressionMethod = Literal["linear", "median"]
@@ -413,6 +416,46 @@ class GatingStrategySpec:
   gates: tuple[GateSpec, ...] = field(default_factory=tuple)
   root_population_id: str = "all_events"
   notes: str = ""
+
+
+@dataclass(frozen=True)
+class GateOverrideSpec:
+  """An explicit, sample-local geometry edit layered on a group strategy.
+
+  The override deliberately contains no gate hierarchy or gate-type fields.
+  Those are strategy edits and must remain shared across the group.
+  """
+
+  id: str
+  sample_id: str
+  base_gate_id: str
+  base_version_hash: str
+  geometry_mode: GateOverrideGeometryMode
+  coordinates: tuple[tuple[float, float], ...] = field(default_factory=tuple)
+  thresholds: dict[str, Any] = field(default_factory=dict)
+  author: str = ""
+  created_at: str = ""
+  reason: str = ""
+  gate_purpose: GatePurpose = "technical_cleanup"
+  enabled: bool = True
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.sample_id or not self.base_gate_id:
+      raise ValueError("override IDs must be non-empty")
+    if not self.base_version_hash:
+      raise ValueError("override base_version_hash must be non-empty")
+    if self.geometry_mode not in {"delta", "full"}:
+      raise ValueError(f"invalid override geometry mode: {self.geometry_mode!r}")
+    if self.gate_purpose not in {"technical_cleanup", "comparison_critical"}:
+      raise ValueError(f"invalid gate purpose: {self.gate_purpose!r}")
+    if not self.author or not self.created_at or not self.reason:
+      raise ValueError("override author, created_at, and reason are required")
+    try:
+      datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+      raise ValueError("override created_at must be an ISO-8601 timestamp") from exc
+    if self.geometry_mode == "delta" and not self.coordinates and not self.thresholds:
+      raise ValueError("delta override must contain geometry changes")
 
 
 @dataclass(frozen=True)

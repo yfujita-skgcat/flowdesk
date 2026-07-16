@@ -19,6 +19,13 @@ workspace tree, gate editor, and all hierarchy tests before editing.
 minimal typed delta, author/time/reason, and transform IDs. It cannot change gate type,
 parameters, parent, or Boolean sources; those require a strategy edit.
 
+The current core representation stores the override separately from `GateSpec` and
+`GatingStrategySpec`. `geometry_mode` is either `full` or `delta`; a delta replaces
+coordinates when supplied and merges threshold keys onto the shared thresholds. An
+override is enabled only when it is explicitly present and enabled for the selected
+sample. `gate_purpose` is `technical_cleanup` or `comparison_critical` and is retained
+for the later warning/audit commands.
+
 Resolution is deterministic: group strategy → selected sample override → validation →
 execution. A stale base hash makes the override invalid until explicitly rebased.
 
@@ -52,4 +59,3 @@ execution. A stale base hash makes the override invalid until explicitly rebased
 pytest -q tests/test_gates.py tests/test_pipeline_runner.py tests/gui/test_gate_hierarchy_ui.py
 ./tools/run-gui-tests.sh -q
 ```
-

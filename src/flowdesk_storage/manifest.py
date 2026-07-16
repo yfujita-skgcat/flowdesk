@@ -83,6 +83,7 @@ def validate_manifest(data: dict[str, Any]) -> None:
       gate_ids,
     )
     _validate_current_groups_and_annotations(data, gate_ids)
+    _validate_current_gate_overrides(data, gate_ids)
 
 
 def _validate_current_groups_and_annotations(
@@ -183,6 +184,48 @@ def _validate_current_groups_and_annotations(
       raise ManifestValidationError(
         f"binding {binding_id!r} references unknown statistics {sorted(unknown_statistics)!r}"
       )
+
+
+def _validate_current_gate_overrides(
+  data: Mapping[str, Any], gate_ids: set[str]
+) -> None:
+  """Validate explicit sample geometry overrides without resolving them."""
+  overrides = data.get("gate_overrides", [])
+  if not isinstance(overrides, list):
+    raise ManifestValidationError("gate_overrides must be an array")
+  sample_ids = {
+    sample["id"] for sample in data["samples"]
+    if isinstance(sample, dict) and isinstance(sample.get("id"), str)
+  }
+  override_ids: set[str] = set()
+  targets: set[tuple[str, str]] = set()
+  for index, override in enumerate(overrides):
+    if not isinstance(override, dict):
+      raise ManifestValidationError(f"gate_overrides[{index}] must be an object")
+    required = ("id", "sample_id", "base_gate_id", "base_version_hash", "geometry_mode", "author", "created_at", "reason")
+    if any(not isinstance(override.get(key), str) or not override[key] for key in required):
+      raise ManifestValidationError(f"gate_overrides[{index}] has missing required fields")
+    override_id = override["id"]
+    if override_id in override_ids:
+      raise ManifestValidationError(f"duplicate gate override ID {override_id!r}")
+    override_ids.add(override_id)
+    sample_id = override["sample_id"]
+    gate_id = override["base_gate_id"]
+    if sample_id not in sample_ids:
+      raise ManifestValidationError(f"override {override_id!r} references an unknown sample")
+    if gate_id not in gate_ids:
+      raise ManifestValidationError(f"override {override_id!r} references an unknown gate")
+    if (sample_id, gate_id) in targets:
+      raise ManifestValidationError(f"duplicate override for sample {sample_id!r} and gate {gate_id!r}")
+    targets.add((sample_id, gate_id))
+    if override["geometry_mode"] not in {"delta", "full"}:
+      raise ManifestValidationError(f"override {override_id!r} has invalid geometry_mode")
+    if override.get("gate_purpose", "technical_cleanup") not in {"technical_cleanup", "comparison_critical"}:
+      raise ManifestValidationError(f"override {override_id!r} has invalid gate_purpose")
+    if not isinstance(override.get("coordinates", []), list):
+      raise ManifestValidationError(f"override {override_id!r} coordinates must be an array")
+    if not isinstance(override.get("thresholds", {}), dict):
+      raise ManifestValidationError(f"override {override_id!r} thresholds must be an object")
 
 
 def _validate_current_transforms(transforms: Any) -> dict[str, tuple[str, str]]:

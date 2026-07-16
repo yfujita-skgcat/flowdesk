@@ -22,6 +22,12 @@ from flowdesk_core.gating_strategy import (
   evaluate_gating_strategy_with_membership,
   ordered_gates,
 )
+from flowdesk_core.models import GateOverrideSpec
+from flowdesk_core.overrides import (
+  GateOverrideError,
+  gate_version_hash,
+  resolve_gate_overrides,
+)
 from flowdesk_core.models import (
   GateSpec,
   GatingStrategySpec,
@@ -1158,3 +1164,49 @@ def test_legacy_approximation_gate_cannot_claim_formal_inverse_migration() -> No
     )
 
   assert error.value.code == "source_transform_inverse_unavailable"
+
+
+def test_sample_gate_override_applies_geometry_without_cloning_gate_definition() -> None:
+  gate = GateSpec(
+    id="gate",
+    name="Gate",
+    gate_type="rectangle",
+    x_parameter="x",
+    y_parameter="y",
+    coordinates=((0.0, 0.0), (1.0, 1.0)),
+  )
+  strategy = GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,))
+  override = GateOverrideSpec(
+    id="override",
+    sample_id="sample-2",
+    base_gate_id=gate.id,
+    base_version_hash=gate_version_hash(gate),
+    geometry_mode="delta",
+    coordinates=((0.2, 0.2), (0.8, 0.8)),
+    author="analyst",
+    created_at="2026-07-16T00:00:00+00:00",
+    reason="technical cleanup",
+  )
+
+  resolved = resolve_gate_overrides(strategy, "sample-2", (override,))
+  assert resolved.gates[0].coordinates == ((0.2, 0.2), (0.8, 0.8))
+  assert strategy.gates[0].coordinates == ((0.0, 0.0), (1.0, 1.0))
+
+
+def test_sample_gate_override_rejects_stale_base_hash() -> None:
+  gate = GateSpec(
+    id="gate", name="Gate", gate_type="range", x_parameter="x",
+    thresholds={"min": 0.0, "max": 1.0},
+  )
+  override = GateOverrideSpec(
+    id="override", sample_id="sample-1", base_gate_id="gate",
+    base_version_hash="old-hash", geometry_mode="full",
+    thresholds={"min": 0.2, "max": 0.8}, author="analyst",
+    created_at="2026-07-16T00:00:00+00:00", reason="comparison review",
+  )
+  with pytest.raises(GateOverrideError, match="stale") as error:
+    resolve_gate_overrides(
+      GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,)),
+      "sample-1", (override,),
+    )
+  assert error.value.code == "stale_override"
