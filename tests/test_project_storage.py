@@ -1914,7 +1914,10 @@ class TestReferenceIntegrity:
         },
       },
     )
-    with pytest.raises(ManifestValidationError, match="parent_population_id must be a non-empty string"):
+    with pytest.raises(
+      ManifestValidationError,
+      match="parent_population_id must be a non-empty string",
+    ):
       validate_manifest(manifest)
 
   def test_dangling_transform_reference_raises(self) -> None:

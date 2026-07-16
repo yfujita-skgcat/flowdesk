@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from flowdesk_core.errors import FlowdeskError
+from flowdesk_core.models import StatisticResult, StatisticSpec
 from flowdesk_core.populations import (
   build_population_tree,
   compute_total_events,
@@ -13,17 +14,20 @@ from flowdesk_core.populations import (
 )
 from flowdesk_core.statistics import (
   PopulationStatsError,
+  compute_cv,
+  compute_geometric_mean,
   compute_histogram,
   compute_mad,
   compute_mean,
   compute_median,
   compute_percentile,
+  compute_statistic,
   compute_stddev,
   make_population_result,
   population_result_to_export_records,
   population_results_to_export_records,
 )
-from flowdesk_storage.manifest import ManifestValidationError
+from flowdesk_storage.manifest import ManifestValidationError, validate_manifest
 
 # ---------------------------------------------------------------------------
 # make_population_result
@@ -369,11 +373,6 @@ def test_compute_total_events_empty() -> None:
 # ---------------------------------------------------------------------------
 # StatisticSpec and StatisticResult model tests
 # ---------------------------------------------------------------------------
-
-from flowdesk_core.models import StatisticResult, StatisticSpec
-
-
-
 class TestStatisticSpec:
   def test_construct_valid_count(self) -> None:
     spec = StatisticSpec(
@@ -533,12 +532,41 @@ class TestStatisticResult:
 # ---------------------------------------------------------------------------
 # compute_statistic dispatcher tests
 # ---------------------------------------------------------------------------
-
-from flowdesk_core.statistics import (
-  compute_geometric_mean,
-  compute_cv,
-  compute_statistic,
+@pytest.mark.parametrize(
+  ("metric", "settings"),
+  (
+    ("mean", {}),
+    ("median", {}),
+    ("stddev", {}),
+    ("mad", {}),
+    ("percentile", {"q": 50}),
+    ("geometric_mean", {}),
+    ("cv", {}),
+  ),
 )
+def test_value_statistics_reject_nonfinite_input(
+  metric: str,
+  settings: dict[str, float],
+) -> None:
+  """Inf must never become an apparently valid statistic result."""
+  result = compute_statistic(
+    spec=StatisticSpec(
+      id=f"nonfinite-{metric}",
+      name=f"Nonfinite {metric}",
+      population_id="live",
+      metric=metric,  # type: ignore[arg-type]
+      settings=settings,
+    ),
+    sample_id="s1",
+    event_count=3,
+    parent_count=3,
+    total_count=3,
+    values=np.array([1.0, np.nan, np.inf], dtype=np.float64),
+  )
+
+  assert result.value is None
+  assert result.status == "undefined"
+  assert result.undefined_reason == "nonfinite_values"
 
 
 
@@ -990,7 +1018,9 @@ class TestComputeGeometricMean:
   def test_inf_handling(self) -> None:
     vals = np.array([1.0, 2.0, np.inf, 8.0], dtype=np.float64)
     val, status, reason = compute_geometric_mean(vals)
-    assert status == "ok"
+    assert np.isnan(val)
+    assert status == "undefined"
+    assert reason == "nonfinite_values"
 
 
 # ---------------------------------------------------------------------------
@@ -1028,7 +1058,9 @@ class TestComputeCV:
   def test_with_inf(self) -> None:
     vals = np.array([1.0, 2.0, np.inf, 4.0], dtype=np.float64)
     val, status, reason = compute_cv(vals)
-    assert status == "ok"
+    assert np.isnan(val)
+    assert status == "undefined"
+    assert reason == "nonfinite_values"
 
 
 # ---------------------------------------------------------------------------
@@ -1158,11 +1190,6 @@ class TestComputeStatisticCV:
 # ---------------------------------------------------------------------------
 # Manifest validation for statistics
 # ---------------------------------------------------------------------------
-
-from flowdesk_storage.manifest import validate_manifest
-
-
-
 class TestManifestStatisticsValidation:
   def _minimal_manifest(self, statistics=None):
     return {
@@ -1208,7 +1235,7 @@ class TestManifestStatisticsValidation:
       "mean", "median", "geometric_mean", "stddev", "cv", "mad",
     ]
     stats = []
-    for i, m in enumerate(metrics):
+    for m in metrics:
       stat = {
         "id": f"stat_{m}",
         "name": f"Stat {m}",
@@ -1230,57 +1257,87 @@ class TestManifestStatisticsValidation:
 
   def test_duplicate_statistic_id_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
-      {"id": "stat1", "name": "A", "population_id": "live", "metric": "count", "source_stage": "compensated"},
-      {"id": "stat1", "name": "B", "population_id": "live", "metric": "mean", "source_stage": "compensated"},
+      {
+        "id": "stat1", "name": "A", "population_id": "live",
+        "metric": "count", "source_stage": "compensated",
+      },
+      {
+        "id": "stat1", "name": "B", "population_id": "live",
+        "metric": "mean", "source_stage": "compensated",
+      },
     ])
     with pytest.raises(ManifestValidationError, match="duplicate statistic ID"):
       validate_manifest(manifest)
 
   def test_invalid_metric_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
-      {"id": "stat1", "name": "A", "population_id": "live", "metric": "invalid_metric", "source_stage": "compensated"},
+      {
+        "id": "stat1", "name": "A", "population_id": "live",
+        "metric": "invalid_metric", "source_stage": "compensated",
+      },
     ])
     with pytest.raises(ManifestValidationError, match="invalid metric"):
       validate_manifest(manifest)
 
   def test_invalid_source_stage_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
-      {"id": "stat1", "name": "A", "population_id": "live", "metric": "count", "source_stage": "invalid"},
+      {
+        "id": "stat1", "name": "A", "population_id": "live",
+        "metric": "count", "source_stage": "invalid",
+      },
     ])
     with pytest.raises(ManifestValidationError, match="invalid source_stage"):
       validate_manifest(manifest)
 
   def test_empty_population_id_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
-      {"id": "stat1", "name": "A", "population_id": "", "metric": "count", "source_stage": "compensated"},
+      {
+        "id": "stat1", "name": "A", "population_id": "",
+        "metric": "count", "source_stage": "compensated",
+      },
     ])
     with pytest.raises(ManifestValidationError, match="population_id must be a non-empty string"):
       validate_manifest(manifest)
 
   def test_percentile_missing_q_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
-      {"id": "stat1", "name": "A", "population_id": "live", "metric": "percentile", "source_stage": "compensated"},
+      {
+        "id": "stat1", "name": "A", "population_id": "live",
+        "metric": "percentile", "source_stage": "compensated",
+      },
     ])
     with pytest.raises(ManifestValidationError, match="percentile metric requires"):
       validate_manifest(manifest)
 
   def test_percentile_q_out_of_range_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
-      {"id": "stat1", "name": "A", "population_id": "live", "metric": "percentile", "source_stage": "compensated", "settings": {"q": 101}},
+      {
+        "id": "stat1", "name": "A", "population_id": "live",
+        "metric": "percentile", "source_stage": "compensated",
+        "settings": {"q": 101},
+      },
     ])
     with pytest.raises(ManifestValidationError, match="percentile 'q' must be in"):
       validate_manifest(manifest)
 
   def test_percentile_q_negative_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
-      {"id": "stat1", "name": "A", "population_id": "live", "metric": "percentile", "source_stage": "compensated", "settings": {"q": -5}},
+      {
+        "id": "stat1", "name": "A", "population_id": "live",
+        "metric": "percentile", "source_stage": "compensated",
+        "settings": {"q": -5},
+      },
     ])
     with pytest.raises(ManifestValidationError, match="percentile 'q' must be in"):
       validate_manifest(manifest)
 
   def test_percentile_q_infinite_fails(self) -> None:
     manifest = self._minimal_manifest(statistics=[
-      {"id": "stat1", "name": "A", "population_id": "live", "metric": "percentile", "source_stage": "compensated", "settings": {"q": float("inf")}},
+      {
+        "id": "stat1", "name": "A", "population_id": "live",
+        "metric": "percentile", "source_stage": "compensated",
+        "settings": {"q": float("inf")},
+      },
     ])
     with pytest.raises(ManifestValidationError, match="percentile 'q' must be finite"):
       validate_manifest(manifest)

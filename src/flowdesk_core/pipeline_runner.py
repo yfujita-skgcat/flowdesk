@@ -62,7 +62,7 @@ from flowdesk_core.models import (
 )
 from flowdesk_core.sample import SampleData
 from flowdesk_core.statistics import compute_statistic
-from flowdesk_core.transforms import TransformError, validate_transform
+from flowdesk_core.transforms import TransformError, apply_transform, validate_transform
 
 
 class PipelineError(FlowdeskError):
@@ -441,7 +441,7 @@ class PipelineRunner:
       # --- Step 4: Gating ---
       if gating_strategy_id is not None:
         try:
-          pop_results, pop_membership = self._step_gating(
+          pop_results, pop_membership, population_parent_ids = self._step_gating(
             gating_strategy_id, transformed, sid
           )
         except GatingStrategyError as exc:
@@ -455,17 +455,23 @@ class PipelineRunner:
         pop_membership = self._fallback_root_membership(
           sid, int(transformed.events.shape[0])
         )
+        population_parent_ids = {"all_events": None}
 
       all_population_results.extend(pop_results)
       all_population_membership.extend(pop_membership)
 
       # --- Step 5: Statistics ---
+      statistic_data_by_stage = {
+        "raw": analysis_data,
+        "compensated": _AnalysisData(enriched.events, enriched.channels),
+        "transformed": self._materialize_transformed_statistics_data(transformed),
+      }
       stat_results = self._step_statistics(
         sample_id=sid,
-        events=transformed.events,
-        channel_ids=transformed.channel_ids,
+        data_by_stage=statistic_data_by_stage,
         population_results=pop_results,
         membership=pop_membership,
+        population_parent_ids=population_parent_ids,
       )
       all_statistic_results.extend(stat_results)
       messages.append(
@@ -811,7 +817,9 @@ class PipelineRunner:
         continue
       try:
         transformed = self._step_transforms(_AnalysisData(sample.events, sample.channels))
-        _, membership = self._step_gating(gating_strategy_id, transformed, sample_id)
+        _, membership, _ = self._step_gating(
+          gating_strategy_id, transformed, sample_id
+        )
       except GatingStrategyError as exc:
         raise PipelineError(
           f"gating strategy {gating_strategy_id!r} failed on control "
@@ -1069,7 +1077,11 @@ class PipelineRunner:
     strategy_id: str,
     data: _AnalysisData,
     sample_id: str,
-  ) -> tuple[list[PopulationResult], list[PopulationMembership]]:
+  ) -> tuple[
+    list[PopulationResult],
+    list[PopulationMembership],
+    dict[str, str | None],
+  ]:
     """Evaluate the gating strategy on transformed data.
 
     Returns:
@@ -1085,6 +1097,7 @@ class PipelineRunner:
         return (
           self._fallback_root_population(sample_id, int(data.events.shape[0])),
           self._fallback_root_membership(sample_id, int(data.events.shape[0])),
+          {"all_events": None},
         )
 
     if isinstance(strat, Mapping):
@@ -1122,22 +1135,27 @@ class PipelineRunner:
         )
       )
 
-    return tagged_results, tagged_membership
+    population_parent_ids = {strat.root_population_id: None}
+    population_parent_ids.update({
+      gate.id: gate.parent_population_id or strat.root_population_id
+      for gate in strat.gates
+    })
+    return tagged_results, tagged_membership, population_parent_ids
 
   def _step_statistics(
     self,
     *,
     sample_id: str,
-    events: NDArray[np.float64],
-    channel_ids: list[str],
+    data_by_stage: Mapping[str, _AnalysisData],
     population_results: list[PopulationResult],
     membership: list[PopulationMembership],
+    population_parent_ids: Mapping[str, str | None],
   ) -> list[StatisticResult]:
     """Evaluate statistic definitions for a single sample.
 
-    For each StatisticSpec, look up the source events (either compensated or
-    transformed depending on source_stage) and the population mask, then call
-    ``compute_statistic`` to produce a StatisticResult.
+    Each definition chooses raw, compensated, or materialized transformed
+    values.  Gate membership always remains the full-event mask produced by
+    the canonical transformed gating stage.
     """
     specs = self._statistic_specs()
     if not specs:
@@ -1152,14 +1170,10 @@ class PipelineRunner:
       if r.frequency_of_parent is None and r.event_count > total_count:
         total_count = r.event_count
     if total_count == 0:
-      total_count = int(events.shape[0])
+      total_count = int(data_by_stage["transformed"].events.shape[0])
 
     membership_by_population: dict[str, NDArray[np.bool_]] = {
       m.population_id: m.mask for m in membership
-    }
-
-    column_index: dict[str, int] = {
-      cid: idx for idx, cid in enumerate(channel_ids)
     }
 
     results: list[StatisticResult] = []
@@ -1170,15 +1184,14 @@ class PipelineRunner:
         continue
 
       event_count = pop_result.event_count
-      parent_result = None
-      if pop_result.frequency_of_parent is None:
-        parent_count = None
-      else:
-        parent_pop_id = self._get_parent_population_id(
-          spec.population_id, population_results
-        )
-        parent_result = parent_by_population.get(parent_pop_id)
-        parent_count = parent_result.event_count if parent_result else None
+      parent_population_id = population_parent_ids.get(spec.population_id)
+      parent_mask = (
+        None if parent_population_id is None
+        else membership_by_population.get(parent_population_id)
+      )
+      parent_count = (
+        None if parent_mask is None else int(parent_mask.sum())
+      )
 
       mask = membership_by_population.get(spec.population_id)
 
@@ -1198,15 +1211,20 @@ class PipelineRunner:
       # Value-based metrics need a parameter column.
       if spec.parameter_id is None:
         continue
+      source_data = data_by_stage[spec.source_stage]
+      column_index = {
+        channel_id: index
+        for index, channel_id in enumerate(source_data.channel_ids)
+      }
       col_idx = column_index.get(spec.parameter_id)
       if col_idx is None:
         continue
 
       values: NDArray[np.float64] | None = None
       if mask is not None:
-        values = events[mask, col_idx].copy()
+        values = source_data.events[mask, col_idx].copy()
       elif event_count > 0:
-        values = events[:, col_idx].copy()
+        values = source_data.events[:, col_idx].copy()
       else:
         values = None
 
@@ -1221,6 +1239,29 @@ class PipelineRunner:
       results.append(result)
 
     return results
+
+  @staticmethod
+  def _materialize_transformed_statistics_data(
+    data: _AnalysisData,
+  ) -> _AnalysisData:
+    """Return the configured analysis-transform value space for statistics.
+
+    Gating applies transforms lazily to preserve gate-coordinate semantics;
+    numeric transformed statistics instead require a concrete full-event
+    array.  This creates that derived view without mutating prior stages.
+    """
+    events = np.array(data.events, dtype=np.float64, copy=True)
+    for transform in data.transforms:
+      column_index = data.channel_ids.index(transform.parameter)
+      try:
+        events[:, column_index] = apply_transform(
+          transform, events[:, column_index]
+        )
+      except TransformError as exc:
+        raise PipelineError(
+          f"statistics_transform_failed: {transform.id!r}: {exc}"
+        ) from exc
+    return _AnalysisData(events, data.channels)
 
   def _statistic_specs(self) -> tuple[StatisticSpec, ...]:
     """Parse statistic definitions from the project manifest."""
@@ -1252,25 +1293,6 @@ class PipelineRunner:
           f"invalid_statistic_definition: {stat_id!r}: {exc}"
         ) from exc
     return tuple(parsed)
-
-  @staticmethod
-  def _get_parent_population_id(
-    population_id: str,
-    population_results: list[PopulationResult],
-  ) -> str | None:
-    """Find the parent population ID by finding the population whose frequency
-    is of the given population."""
-    for r in population_results:
-      if r.population_id == population_id and r.frequency_of_parent is None:
-        return None
-    # Heuristic: find a population whose frequency_of_parent denominator
-    # corresponds to this population.
-    for r in population_results:
-      if r.population_id != population_id and r.frequency_of_parent is not None:
-        # Check if this population is the parent by finding a child that
-        # references it. This is a simplified heuristic.
-        pass
-    return None
 
   # ------------------------------------------------------------------
   # Placeholder mode (backward compatibility)

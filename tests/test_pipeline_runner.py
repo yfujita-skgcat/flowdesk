@@ -1856,6 +1856,14 @@ def test_pipeline_statistics_with_gating_strategy() -> None:
         x_parameter="FSC-H",
         thresholds={"min": 2.0, "max": 100.0},
       ),
+      GateSpec(
+        id="g2",
+        name="High live",
+        gate_type="range",
+        parent_population_id="g1",
+        x_parameter="FSC-H",
+        thresholds={"min": 4.0, "max": 100.0},
+      ),
     ),
     root_population_id="all_events",
   )
@@ -1881,6 +1889,20 @@ def test_pipeline_statistics_with_gating_strategy() -> None:
       "population_id": "g1",
       "parameter_id": "FSC-H",
       "metric": "mean",
+      "source_stage": "compensated",
+    },
+    {
+      "id": "stat_frequency_high_live_parent",
+      "name": "High live frequency of parent",
+      "population_id": "g2",
+      "metric": "frequency_of_parent",
+      "source_stage": "compensated",
+    },
+    {
+      "id": "stat_frequency_high_live_total",
+      "name": "High live frequency of total",
+      "population_id": "g2",
+      "metric": "frequency_of_total",
       "source_stage": "compensated",
     },
   ]
@@ -1926,6 +1948,90 @@ def test_pipeline_statistics_with_gating_strategy() -> None:
   mean_live = by_id["stat_mean_live"]
   assert mean_live.value == pytest.approx(4.0)  # mean of [3.0, 5.0]
   assert mean_live.status == "ok"
+
+  assert by_id["stat_frequency_high_live_parent"].value == pytest.approx(0.5)
+  assert by_id["stat_frequency_high_live_total"].value == pytest.approx(1 / 3)
+
+
+def test_pipeline_statistics_respect_persisted_source_stage() -> None:
+  """A full-event gate mask is applied to each requested value space."""
+  strategy = GatingStrategySpec(
+    id="source-stage-strategy",
+    name="Source stage strategy",
+    gates=(
+      GateSpec(
+        id="high",
+        name="High transformed signal",
+        gate_type="range",
+        parent_population_id="all_events",
+        x_parameter="signal",
+        thresholds={"min": 50.0, "max": 100.0},
+      ),
+    ),
+    root_population_id="all_events",
+  )
+  project = _make_project(
+    project_id="statistics-source-stage",
+    execution_profiles=[{
+      "id": "default",
+      "name": "Default",
+      "gating_strategy_id": strategy.id,
+    }],
+    samples=[{"id": "s1", "channels": [{"id": "signal", "name": "signal"}]}],
+    compensation_matrices=[{
+      "id": "divide-by-two",
+      "name": "Divide by two",
+      "source": "user_defined",
+      "channels": ("signal",),
+      "matrix": ((2.0,),),
+    }],
+    default_compensation_matrix_id="divide-by-two",
+    transforms=[{
+      "id": "scale-ten",
+      "name": "Scale ten",
+      "transform_type": "linear",
+      "parameter": "signal",
+      "role": "analysis",
+      "settings": {"scale": 10.0, "offset": 0.0},
+    }],
+    gating_strategies_data={strategy.id: strategy},
+    statistics=[
+      {
+        "id": "raw",
+        "name": "Raw mean",
+        "population_id": "high",
+        "parameter_id": "signal",
+        "metric": "mean",
+        "source_stage": "raw",
+      },
+      {
+        "id": "compensated",
+        "name": "Compensated mean",
+        "population_id": "high",
+        "parameter_id": "signal",
+        "metric": "mean",
+        "source_stage": "compensated",
+      },
+      {
+        "id": "transformed",
+        "name": "Transformed mean",
+        "population_id": "high",
+        "parameter_id": "signal",
+        "metric": "mean",
+        "source_stage": "transformed",
+      },
+    ],
+  )
+  sample = SampleData(
+    sample_id="s1",
+    events=np.array([[8.0], [12.0]], dtype=np.float64),
+    channels=(ChannelSpec(id="signal", name="signal"),),
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+
+  values = {result.statistic_id: result.value for result in report.statistic_results}
+  assert values == {"raw": 12.0, "compensated": 6.0, "transformed": 60.0}
 
 
 def test_pipeline_statistics_invalid_spec_raises() -> None:

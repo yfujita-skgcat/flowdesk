@@ -276,6 +276,9 @@ def compute_geometric_mean(
   if valid.size == 0:
     return float("nan"), "undefined", "all_nan"
 
+  if np.any(np.isinf(values)):
+    return float("nan"), "undefined", "nonfinite_values"
+
   positive = valid[valid > 0]
 
   if positive.size == 0:
@@ -303,6 +306,9 @@ def compute_cv(
 
   if valid.size == 0:
     return float("nan"), "undefined", "all_nan"
+
+  if np.any(np.isinf(values)):
+    return float("nan"), "undefined", "nonfinite_values"
 
   mean = float(np.nanmean(values))
   if mean == 0.0:
@@ -435,6 +441,17 @@ def compute_statistic(
       value=None,
       status="undefined",
       undefined_reason="all_nan",
+    )
+
+  if np.any(np.isinf(values)):
+    return StatisticResult(
+      sample_id=sample_id,
+      statistic_id=statistic_id,
+      population_id=population_id,
+      metric=metric,
+      value=None,
+      status="undefined",
+      undefined_reason="nonfinite_values",
     )
 
   if metric == "mean":

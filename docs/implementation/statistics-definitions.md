@@ -31,6 +31,26 @@ contains sample/spec IDs, value, unit, status, and optional undefined reason.
 Default numeric statistics operate on full event values after the configured
 pipeline stage. Display histogram bins are never the default statistic source.
 
+## Confirmed contract after source-stage implementation
+
+- `raw` reads the immutable FCS input view; `compensated` reads the view after
+  compensation and derived-parameter evaluation; and `transformed` materializes
+  the configured analysis transforms into a separate derived view.
+- Gate membership is always evaluated once against full event data and the same
+  full-length mask is applied to the selected statistic value space. Statistics
+  never use GUI-downsampled events or histogram bins.
+- Transform materialization for statistics does not alter the gate evaluator's
+  lazy transform handling, so a gate is never transformed twice.
+- `frequency_of_parent` resolves the persisted gate parent ID and counts that
+  parent's full membership mask; `frequency_of_total` uses the full sample
+  event count. Neither frequency is inferred from display rows or ordering.
+- Value metrics ignore `NaN` only when at least one finite value remains. An
+  empty population is `empty_population`, all-`NaN` input is `all_nan`, and
+  any `+Inf` or `-Inf` yields no value with `nonfinite_values`.
+- Geometric mean excludes zero and negative finite values when positive values
+  remain, otherwise it is `all_nonpositive_geometric_mean`; CV with a zero mean
+  is `zero_mean_for_cv`.
+
 ## Increments
 
 1. Add types/schema for definitions, results, statuses, and undefined reasons.
@@ -64,4 +84,3 @@ pytest -q tests/test_population_statistics.py tests/test_pipeline_runner.py test
 ./tools/run-gui-tests.sh -q
 ruff check src tests
 ```
-

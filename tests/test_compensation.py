@@ -1014,6 +1014,53 @@ def test_calculate_spillover_matrix_uses_each_control_sample_and_channel_ids() -
   )
 
 
+def test_linear_spillover_matches_independent_hand_calculation() -> None:
+  """Verify the documented through-origin slope without reusing core helpers.
+
+  Background medians are (100, 50).  After subtraction, the A control has
+  vectors A=(10, 20, 30), B=(2, 4, 6), while the B control has
+  A=(1, 3, 5), B=(10, 20, 30).  Therefore the independently calculated
+  slopes are B/A=0.2 and A/B=220/1400=11/70.
+  """
+  control_a = np.array([
+    [110.0, 52.0], [120.0, 54.0], [130.0, 56.0],
+    [100.0, 50.0], [100.0, 50.0], [100.0, 50.0],
+  ])
+  control_b = np.array([
+    [101.0, 60.0], [103.0, 70.0], [105.0, 80.0],
+    [100.0, 50.0], [100.0, 50.0], [100.0, 50.0],
+  ])
+  masks = {
+    sample_id: {
+      "positive": np.array([True, True, True, False, False, False]),
+      "negative": np.array([False, False, False, True, True, True]),
+    }
+    for sample_id in ("control-a", "control-b")
+  }
+  spec = CompensationCalculationSpec(
+    id="hand-calculation",
+    name="Independent linear slope check",
+    controls=(
+      CompensationCalculationControlSpec("A", "positive", "negative", "control-a"),
+      CompensationCalculationControlSpec("B", "positive", "negative", "control-b"),
+    ),
+    regression_method="linear",
+    outlier_policy="none",
+    minimum_positive_events=3,
+    minimum_negative_events=3,
+  )
+
+  result = calculate_spillover_matrix(
+    spec,
+    {"control-a": control_a, "control-b": control_b},
+    {"control-a": ("A", "B"), "control-b": ("A", "B")},
+    masks,
+  )
+
+  expected = np.array(((1.0, 11.0 / 70.0), (0.2, 1.0)))
+  np.testing.assert_allclose(result.matrix_spec.matrix, expected, atol=1e-12)
+
+
 def test_calculate_spillover_matrix_missing_population_raises() -> None:
   rng = np.random.default_rng(789)
   events, masks = _make_synthetic_single_stain_events(rng)
@@ -1161,9 +1208,6 @@ def test_independent_numeric_verification_3color_known_matrix() -> None:
   total = n * 4  # 3 positive + 1 negative
 
   # Negative: all zero.
-  neg_a = np.zeros((n, 3))
-  neg_b = np.zeros((n, 3))
-  neg_c = np.zeros((n, 3))
   neg = np.zeros((n, 3))
 
   # Positive A: A=1000, B=0.15*1000=150, C=0.

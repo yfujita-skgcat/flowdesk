@@ -33,6 +33,7 @@ StatisticStatus = Literal["ok", "empty", "undefined", "error"]
 StatisticUndefinedReason = Literal[
     "empty_population",
     "all_nan",
+    "nonfinite_values",
     "all_nonpositive_geometric_mean",
     "zero_mean_for_cv",
     "invalid_percentile",
