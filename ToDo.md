@@ -288,7 +288,7 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 - [ ] advanced Group modeでCompensation Controls、panel/取得形式/QC用user groupのcreate/edit/deleteとmembership編集を追加する。
 - [x] 済み: keyword条件でdynamic group membershipをheadlessに解決し、同一sampleに競合するstrategy bindingがある場合は `conflicting_group_strategy_binding` と sample/group/strategy context を持つ `PipelineError` で、処理開始前に拒否する。
 - [x] 済み (create/edit/delete): 通常GUIではGroup paneを隠し、All Samples × Default Strategyのみを操作する。`Use Multiple Analysis Groups`を明示的に有効化した時だけGroup paneとcreate/rename/deleteを表示する。
-- [ ] advanced Group modeでdrag/drop membership編集を追加する。
+- [x] 済み: advanced Group modeでsample-ID一覧からGroup一覧へdrag/dropし、explicit `sample_ids`を更新する。重複dropは無視し、変更時はresultsをstale化する。
 - [ ] 高度 Group 表示を無効にしても Group、binding、override を削除・暗黙統合しない。複数 binding のあるprojectでは簡易表示へ戻す意味を明示する。
 - [ ] keyword columns、edit、find/replace、fill series、CSV paste/importを追加する。
 - [ ] annotationはproject側へ保存し、raw FCS bytesを変更しない。

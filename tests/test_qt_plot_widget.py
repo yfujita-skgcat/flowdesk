@@ -69,6 +69,10 @@ def test_group_panel_renders_and_edits_persisted_groups() -> None:
   }])
   assert panel._list.count() == 1
   assert panel._list.item(0).data(0x0100) == "all-samples"
+  panel.set_sample_ids(["s1"])
+  assert panel._sample_list.item(0).text() == "s1"
+  assert panel.add_sample_to_group("all-samples", "s1")
+  assert changed[-1][0]["sample_ids"] == ["s1"]
   panel._groups.append({
     "id": "user-group",
     "name": "User Group",

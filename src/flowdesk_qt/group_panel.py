@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QMimeData, Signal
 from PySide6.QtWidgets import (
   QHBoxLayout,
   QInputDialog,
@@ -17,20 +17,43 @@ from PySide6.QtWidgets import (
 )
 
 
-class GroupPanel(QWidget):
-  """Read-only group overview shown only in advanced Group mode.
+class _SampleListWidget(QListWidget):
+  def __init__(self) -> None:
+    super().__init__()
+    self.setObjectName("groupSampleList")
+    self.setDragEnabled(True)
+    self.setDragDropMode(QListWidget.DragOnly)
 
-  Editing membership is deliberately deferred to the Group editor increment;
-  this panel makes existing memberships visible without changing analysis.
-  """
+
+class _GroupListWidget(QListWidget):
+  sample_dropped = Signal(str, str)
+
+  def __init__(self) -> None:
+    super().__init__()
+    self.setObjectName("groupList")
+    self.setAcceptDrops(True)
+    self.setDropIndicatorShown(True)
+
+  def dropMimeData(self, index: int, data: QMimeData, action) -> bool:
+    item = self.item(index) or self.currentItem()
+    sample_id = data.text().strip()
+    group_id = "" if item is None else str(item.data(0x0100))
+    if not sample_id or not group_id:
+      return False
+    self.sample_dropped.emit(group_id, sample_id)
+    return True
+
+
+class GroupPanel(QWidget):
+  """Group overview and explicit membership drag/drop editor."""
 
   groups_changed = Signal(list)
 
   def __init__(self, parent: QWidget | None = None) -> None:
     super().__init__(parent)
     self.setObjectName("groupPanel")
-    self._list = QListWidget()
-    self._list.setObjectName("groupList")
+    self._list = _GroupListWidget()
+    self._sample_list = _SampleListWidget()
     self._groups: list[dict[str, Any]] = []
     self._add_button = QPushButton("Add")
     self._add_button.setObjectName("addGroupButton")
@@ -45,11 +68,34 @@ class GroupPanel(QWidget):
     self._add_button.clicked.connect(self._add_group)
     self._rename_button.clicked.connect(self._rename_group)
     self._delete_button.clicked.connect(self._delete_group)
+    self._list.sample_dropped.connect(self.add_sample_to_group)
     layout = QVBoxLayout(self)
     layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(self._sample_list)
     layout.addWidget(self._list)
     layout.addLayout(buttons)
     self.set_groups(())
+
+  def set_sample_ids(self, sample_ids: Sequence[str]) -> None:
+    """Set sample IDs available as drag sources."""
+    self._sample_list.clear()
+    for sample_id in sample_ids:
+      self._sample_list.addItem(QListWidgetItem(str(sample_id)))
+
+  def add_sample_to_group(self, group_id: str, sample_id: str) -> bool:
+    """Add one explicit membership and emit the project mutation."""
+    for group in self._groups:
+      if group.get("id") != group_id:
+        continue
+      members = group.setdefault("sample_ids", [])
+      if not isinstance(members, list):
+        members = []
+        group["sample_ids"] = members
+      if sample_id not in members:
+        members.append(sample_id)
+        self._emit_groups()
+      return True
+    return False
 
   def set_groups(self, groups: Sequence[Mapping[str, Any]]) -> None:
     """Render persisted groups and their explicit/rule membership summary."""

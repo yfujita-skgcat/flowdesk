@@ -48,6 +48,11 @@ Group overview with explicit create/rename/delete controls. Disabling it hides
 the view without deleting, merging, or changing any persisted Group, binding,
 or annotation. Drag/drop membership editing remains a later increment.
 
+Advanced mode now provides a sample-ID drag source and Group drop target. A
+drop adds the sample to the Group's explicit `sample_ids` (duplicates are
+ignored), emits a project-state change, and marks existing results stale.
+`all-samples` remains protected from deletion but accepts membership drops.
+
 Membership rules are JSON ASTs, never Python expressions:
 
 - `{ "all": [rule, ...] }`, `{ "any": [rule, ...] }`, and `{ "not": rule }`

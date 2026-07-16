@@ -587,6 +587,9 @@ class MainWindow(QMainWindow):
         previous_y = self._channel_selector.y_channel()
         self._current_sample_id = sample.id
         self._gate_editor.set_current_sample_id(sample.id)
+        self._group_panel.set_sample_ids(
+            [item.id for item in self._sample_browser.samples()]
+        )
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
             self._validate_population_selection(report)
@@ -1188,6 +1191,9 @@ class MainWindow(QMainWindow):
 
         resolved_samples = resolve_sample_paths(manifest, project_path)
         self._sample_browser.add_project_samples(resolved_samples)
+        self._group_panel.set_sample_ids(
+            [item.id for item in self._sample_browser.samples()]
+        )
         display = manifest.get("plot_display_settings", {})
         self._channel_selector.set_x_transform(display.get("x_scale", "linear"))
         self._channel_selector.set_y_transform(display.get("y_scale", "linear"))
