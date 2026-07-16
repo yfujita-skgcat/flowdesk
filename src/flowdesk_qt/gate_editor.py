@@ -411,6 +411,9 @@ class GateEditor(QWidget):
     def can_redo(self) -> bool:
         return self._undo_stack.can_redo
 
+    def mark_undo_clean(self) -> None:
+        self._undo_stack.mark_clean()
+
     def undo(self) -> bool:
         if not self._undo_stack.can_undo:
             return False

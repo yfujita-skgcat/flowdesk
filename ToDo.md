@@ -319,7 +319,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: GateEditor、WorkspaceTree、PopulationTreeのselectionをstable population/sample IDで双方向同期し、Plot highlightとbreadcrumbを更新する。selectionのみではdefinitionを変更しない。
 - [ ] subtree Copy Analysisを別Population/sample/Groupへatomicに適用する。
 - [x] 済み: duplicate sibling name、cycle/missing parent、reference deleteを確定前preflightで表示し、失敗はUndo履歴へ追加しない。
-- [ ] Undo後もcache/reportが正しくstale化されるtestを追加する。
+- [x] 済み: MainWindowのUndo/Redo action・Ctrl+Z/Ctrl+Shift+Z・enabled labelを追加し、保存時clean markerを更新する。Undo後のgate変更は既存stale経路へ入り、cache/reportを破棄するGUI回帰testを追加する。
 
 ### Phase B4: Group strategyとsample override review [S08]
 

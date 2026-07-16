@@ -34,7 +34,10 @@ class WorkspaceTree(QWidget):
     self._callbacks.append(callback)
 
   def set_samples(self, samples: Sequence[tuple[str, str]]) -> None:
-    self._samples = list(samples)
+    values = list(samples)
+    if values == self._samples:
+      return
+    self._samples = values
     self._rebuild()
 
   def set_population_hierarchy(

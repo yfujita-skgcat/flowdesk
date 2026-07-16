@@ -211,6 +211,23 @@ def test_workspace_tree_unifies_sample_population_and_statistics(qapp) -> None:
         qapp.processEvents()
 
 
+def test_main_window_undo_action_marks_results_stale(qapp) -> None:
+    window = MainWindow()
+    gate = _three_level_gates()[0]
+    try:
+        window._results_stale = False
+        window._gate_editor.add_gate(gate)
+        assert window._results_stale
+        window._results_stale = False
+        assert window._gate_editor.undo()
+        assert window._results_stale
+        assert window.action_redo.isEnabled()
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
 def test_boolean_update_validates_arity_sources_and_cycles(qapp) -> None:
     editor = GateEditor()
     boolean = GateSpec(

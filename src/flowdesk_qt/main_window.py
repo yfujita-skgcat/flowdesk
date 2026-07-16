@@ -194,6 +194,7 @@ class MainWindow(QMainWindow):
         self._current_sample_id: str | None = None
         self._worker: _PipelineWorker | None = None
         self._results_stale = False
+        self._project_dirty = False
         self._project_id = "flowdesk_session"
         self._project_path: Path | None = None
         self._derived_parameters: list[dict[str, Any]] = []
@@ -218,6 +219,7 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._update_status("Ready")
         self._update_compensation_status()
+        self._update_undo_actions()
 
     # -- public API ----------------------------------------------------------
 
@@ -352,6 +354,18 @@ class MainWindow(QMainWindow):
         self.action_quit.setShortcut(QKeySequence.Quit)
         self.action_quit.triggered.connect(self.close)
         file_menu.addAction(self.action_quit)
+
+        edit_menu = menubar.addMenu("&Edit")
+        self.action_undo = QAction("&Undo Gate Change", self)
+        self.action_undo.setObjectName("actionUndoGateChange")
+        self.action_undo.setShortcut(QKeySequence.Undo)
+        self.action_undo.triggered.connect(self._on_undo)
+        edit_menu.addAction(self.action_undo)
+        self.action_redo = QAction("&Redo Gate Change", self)
+        self.action_redo.setObjectName("actionRedoGateChange")
+        self.action_redo.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+        self.action_redo.triggered.connect(self._on_redo)
+        edit_menu.addAction(self.action_redo)
 
         # Analysis menu
         analysis_menu = menubar.addMenu("&Analysis")
@@ -705,7 +719,21 @@ class MainWindow(QMainWindow):
             self._population_parent_map(), self._population_name_map()
         )
         self._mark_results_stale("Gates changed")
+        self._project_dirty = True
+        self._update_undo_actions()
         self._replot()
+
+    def _on_undo(self) -> None:
+        if self._gate_editor.undo():
+            self._update_undo_actions()
+
+    def _on_redo(self) -> None:
+        if self._gate_editor.redo():
+            self._update_undo_actions()
+
+    def _update_undo_actions(self) -> None:
+        self.action_undo.setEnabled(self._gate_editor.can_undo())
+        self.action_redo.setEnabled(self._gate_editor.can_redo())
 
     # -- channel selection ---------------------------------------------------
 
@@ -1233,6 +1261,9 @@ class MainWindow(QMainWindow):
         project_path = Path(path)
         save_project(project_path, self._build_project_manifest())
         self._project_path = project_path
+        self._project_dirty = False
+        self._gate_editor.mark_undo_clean()
+        self._update_undo_actions()
 
     def _on_open_project(self) -> None:
         path_str = QFileDialog.getExistingDirectory(
@@ -1265,6 +1296,9 @@ class MainWindow(QMainWindow):
         self._current_sample_id = None
         self._channel_names = []
         self._gate_editor.set_gates(list(strategy.gates), notify=False)
+        self._gate_editor.mark_undo_clean()
+        self._project_dirty = False
+        self._update_undo_actions()
         self._population_tree.set_population_parents(self._population_parent_map())
         self._workspace_tree.set_population_hierarchy(
             self._population_parent_map(), self._population_name_map()
