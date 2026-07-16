@@ -45,6 +45,13 @@ Use an expression tree with leaf population references and `and`, `or`, `not` no
 Validate arity, references, scope, and cycles before evaluation. Persist tree order for
 readability, but evaluation must not depend on GUI list order.
 
+The persisted tree uses `{ "op": "ref", "id": "population-id" }` leaves,
+`{ "op": "not", "child": node }`, and `{ "op": "and"|"or",
+"children": [node, ...] }` branches. Legacy `operation`/`source_ids` thresholds
+are accepted by the evaluator and migrated to `thresholds.expression` when a
+legacy project is loaded. References are restricted to the same strategy (or
+its root population); nested cycles and missing references fail before a run.
+
 ## Increments B2
 
 1. Add schema/model variants and validation only.

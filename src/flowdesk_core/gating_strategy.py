@@ -11,6 +11,11 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 from numpy.typing import NDArray
 
+from flowdesk_core.boolean_expression import (
+  BooleanExpressionError,
+  expression_for_gate,
+  validate_expression,
+)
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.gates import apply_parent_mask, evaluate_gate
 from flowdesk_core.models import (
@@ -64,33 +69,23 @@ def ordered_gates(strategy: GatingStrategySpec) -> tuple[GateSpec, ...]:
       gate_dependencies.add(parent_id)
 
     if gate.gate_type == "boolean":
-      operation = gate.thresholds.get("operation")
-      if operation not in {"and", "or", "not"}:
-        raise GatingStrategyError(
-          f"boolean gate {gate.id!r} has invalid operation: {operation!r}"
+      try:
+        expression = expression_for_gate(gate.thresholds)
+        references = validate_expression(
+          expression,
+          set(gate_by_id),
+          root_id=strategy.root_population_id,
+          owner_id=gate.id,
         )
-      source_ids = gate.thresholds.get("source_ids")
-      if not isinstance(source_ids, (list, tuple)):
+      except BooleanExpressionError as exc:
+        message = str(exc).replace("unknown id", "unknown source")
         raise GatingStrategyError(
-          f"boolean gate {gate.id!r} source_ids must be an array"
-        )
-      required_count = 1 if operation == "not" else 2
-      if len(source_ids) < required_count:
-        raise GatingStrategyError(
-          f"boolean gate {gate.id!r} requires at least {required_count} source id(s)"
-        )
-      if operation == "not" and len(source_ids) != 1:
-        raise GatingStrategyError(
-          f"boolean NOT gate {gate.id!r} requires exactly one source id"
-        )
-      for source_id in source_ids:
-        if source_id == strategy.root_population_id:
-          continue
-        if source_id not in gate_by_id:
-          raise GatingStrategyError(
-            f"boolean gate {gate.id!r} references unknown source: {source_id!r}"
-          )
-        gate_dependencies.add(source_id)
+          f"boolean gate {gate.id!r} expression invalid: {message}"
+        ) from exc
+      gate_dependencies.update(
+        reference for reference in references
+        if reference != strategy.root_population_id
+      )
     dependencies[gate.id] = gate_dependencies
 
   remaining = {gate_id: set(deps) for gate_id, deps in dependencies.items()}

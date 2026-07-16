@@ -17,6 +17,11 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from flowdesk_core.boolean_expression import (
+  BooleanExpressionError,
+  evaluate_expression,
+  expression_for_gate,
+)
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.models import GateSpec
 
@@ -351,38 +356,11 @@ def _eval_boolean(
   if boolean_masks is None:
     raise GateError("boolean gate requires boolean_masks")
 
-  op = gate.thresholds.get("operation")
-  if op not in ("and", "or", "not"):
-    raise GateError(
-      f"boolean gate operation must be 'and', 'or', or 'not', got {op!r}"
-    )
-
-  source_ids = gate.thresholds.get("source_ids", [])
-  if not source_ids:
-    raise GateError("boolean gate requires at least one source_id")
-
-  masks = []
-  for sid in source_ids:
-    if sid not in boolean_masks:
-      raise GateError(
-        f"boolean gate references unknown id: {sid!r}"
-      )
-    masks.append(boolean_masks[sid])
-
-  if op == "and":
-    result = masks[0]
-    for m in masks[1:]:
-      result = result & m
-    return result
-
-  if op == "or":
-    result = masks[0]
-    for m in masks[1:]:
-      result = result | m
-    return result
-
-  # op == "not" -- negate the first (and only) mask.
-  return ~masks[0]
+  try:
+    expression = expression_for_gate(gate.thresholds)
+    return evaluate_expression(expression, boolean_masks)
+  except BooleanExpressionError as exc:
+    raise GateError(f"boolean expression evaluation failed: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------

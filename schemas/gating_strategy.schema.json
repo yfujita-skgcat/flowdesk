@@ -15,7 +15,7 @@
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
-          "gate_type": { "type": "string", "enum": ["rectangle", "polygon", "range", "boolean"] },
+          "gate_type": { "type": "string", "enum": ["rectangle", "polygon", "range", "ellipse", "boolean"] },
           "parent_population_id": { "type": ["string", "null"] },
           "x_parameter": { "type": ["string", "null"] },
           "y_parameter": { "type": ["string", "null"] },

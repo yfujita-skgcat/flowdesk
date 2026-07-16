@@ -302,8 +302,8 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 - [x] 済み (ellipse): ellipseをcore model/evaluator/schemaへ追加する。center/radius/rotationをdata coordinatesで保存し、GUI近似polygonを解析に使わない。
 - [x] 済み: rectangle/range/polygon/ellipseのinclusive boundary、有限値、NaN/Inf除外、ordered/non-degenerate geometryを定義しtestする。重複geometryの共有領域は意図的に両populationへ入り得ること、quadrantのexact shared threshold ownershipはquadrant実装で定義することを文書化する。
 - [x] 済み: 全geometric gate（rectangle/range/polygon/ellipse）のnumeric editorを追加する。作成・編集値はdata coordinatesで保存し、coreのgeometry validationを再利用する。
-- [ ] Boolean gateをnested expression treeへmigrationし、AND/OR/NOTを任意に組み合わせる。
-- [ ] expression treeのcycle、missing reference、scope violationをrun前に拒否する。
+- [x] 済み: Boolean gateをnested expression treeへmigrationし、AND/OR/NOTを任意に組み合わせる。legacy `operation/source_ids`はload時に`thresholds.expression`へ移行し、flat evaluatorとの後方互換を保つ。
+- [x] 済み: expression treeのcycle、missing reference、scope violation、arityをrun前に拒否する。full-length maskでprecedenceとNOTを評価する。
 - [ ] GUI toolbarへ新gate typeとBoolean expression tree editorを追加する。
 - [ ] project round-tripとGUI/headless membership一致testを追加する。
 

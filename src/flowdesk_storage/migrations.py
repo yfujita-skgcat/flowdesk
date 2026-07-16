@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
+from flowdesk_core.boolean_expression import migrate_boolean_thresholds
 from flowdesk_core.errors import FlowdeskError
 
 CURRENT_PROJECT_VERSION = "1.6.0"
@@ -384,6 +385,35 @@ def _migrate_gate_transforms(
           diagnostics.append(diagnostic)
 
 
+def _migrate_boolean_expressions(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Persist nested Boolean trees for legacy flat source lists."""
+  strategies = migrated.get("gating_strategies_data", {})
+  if not isinstance(strategies, dict):
+    return
+  for strategy in strategies.values():
+    if not isinstance(strategy, dict) or not isinstance(strategy.get("gates"), list):
+      continue
+    for gate in strategy["gates"]:
+      if not isinstance(gate, dict) or gate.get("gate_type") != "boolean":
+        continue
+      thresholds = gate.get("thresholds", {})
+      if not isinstance(thresholds, dict) or "expression" in thresholds:
+        continue
+      gate["thresholds"] = migrate_boolean_thresholds(thresholds)
+      diagnostics.append({
+        "code": "legacy_boolean_expression_migrated",
+        "severity": "info",
+        "stage": "migration",
+        "message": (
+          f"Migrated Boolean gate {gate.get('id', '<unknown>')!r} "
+          "to nested expression"
+        ),
+      })
+
+
 def _migrate_compensation_matrices(
   migrated: dict[str, Any],
   diagnostics: list[dict[str, Any]],
@@ -459,6 +489,7 @@ def _normalize_historical_manifest(
   _migrate_derived_parameters(migrated, diagnostics)
   _migrate_transforms(migrated, diagnostics)
   _migrate_gate_transforms(migrated, diagnostics)
+  _migrate_boolean_expressions(migrated, diagnostics)
   _migrate_compensation_matrices(migrated, diagnostics)
   _ensure_compensation_bindings(migrated, diagnostics)
 
