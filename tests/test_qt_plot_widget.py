@@ -1177,6 +1177,11 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     window.action_advanced_groups.setChecked(True)
     assert not window._group_panel.isHidden()
     gui_manifest = window._build_project_manifest()
+    simple_assignments = PipelineRunner(gui_manifest).resolve_group_assignments()
+    window.action_advanced_groups.setChecked(True)
+    advanced_manifest = window._build_project_manifest()
+    advanced_assignments = PipelineRunner(advanced_manifest).resolve_group_assignments()
+    assert advanced_assignments == simple_assignments
     gui_report = PipelineRunner(gui_manifest).run_samples(
       ExecutionContext(),
       tuple(window._sample_data.values()),

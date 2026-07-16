@@ -48,6 +48,7 @@ from flowdesk_core.groups import (
   GroupResolutionError,
   annotation_specs_from_mapping,
   group_strategy_binding_specs_from_mapping,
+  resolve_group_assignments_from_mappings,
   resolve_group_strategy_bindings,
   sample_group_specs_from_mapping,
 )
@@ -173,6 +174,45 @@ class PipelineRunner:
   # ------------------------------------------------------------------
   # Public API
   # ------------------------------------------------------------------
+
+  def resolve_group_assignments(
+    self,
+    execution_profile_id: str = "default",
+  ) -> dict[str, dict[str, Any]]:
+    """Return persisted Group IDs and strategy IDs for GUI/CLI inspection."""
+    profile = self._resolve_execution_profile(execution_profile_id)
+    selected = self._resolve_samples(
+      self._project.get("samples", []), profile.get("sample_selector", "all")
+    )
+    groups = self._project.get("sample_groups", [])
+    bindings = self._project.get("group_strategy_bindings", [])
+    if not groups and not bindings:
+      return {
+        str(sample.get("id", "")): {
+          "group_ids": [],
+          "strategy_id": profile.get("gating_strategy_id"),
+        }
+        for sample in selected
+      }
+    try:
+      resolved = resolve_group_assignments_from_mappings(
+        groups,
+        bindings,
+        selected,
+        self._project.get("annotations", []),
+      )
+    except GroupResolutionError as exc:
+      raise PipelineError(
+        f"{exc.code}: {exc}", code=exc.code, details=exc.details
+      ) from exc
+    fallback = profile.get("gating_strategy_id")
+    return {
+      str(sample.get("id", "")): resolved.get(
+        str(sample.get("id", "")),
+        {"group_ids": [], "strategy_id": fallback},
+      )
+      for sample in selected
+    }
 
   def run(
     self,

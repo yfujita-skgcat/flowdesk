@@ -104,6 +104,37 @@ def group_strategy_binding_specs_from_mapping(
     raise GroupResolutionError("invalid_group_strategy_binding", str(exc)) from exc
 
 
+def resolve_group_assignments_from_mappings(
+  groups: Sequence[Mapping[str, Any]],
+  bindings: Sequence[Mapping[str, Any]],
+  samples: Sequence[Mapping[str, Any]],
+  annotations: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, dict[str, Any]]:
+  """Resolve persisted mappings to a stable API result for GUI and CLI."""
+  typed_samples = tuple(
+    SampleSpec(
+      id=str(sample.get("id", "")),
+      name=str(sample.get("name", sample.get("id", ""))),
+      path=str(sample.get("path", "")),
+      metadata=dict(sample.get("metadata", {})),
+    )
+    for sample in samples
+  )
+  resolved = resolve_group_strategy_bindings(
+    sample_group_specs_from_mapping(groups),
+    group_strategy_binding_specs_from_mapping(bindings),
+    typed_samples,
+    annotation_specs_from_mapping(annotations),
+  )
+  return {
+    sample_id: {
+      "group_ids": list(group_ids),
+      "strategy_id": strategy_id,
+    }
+    for sample_id, (strategy_id, group_ids) in resolved.items()
+  }
+
+
 def annotation_specs_from_mapping(
   values: Sequence[Mapping[str, Any]],
 ) -> tuple[AnnotationSpec, ...]:

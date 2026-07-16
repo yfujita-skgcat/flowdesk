@@ -71,6 +71,11 @@ Group bindings are also resolved in the headless runner. A non-empty
 list preserves the project-wide statistics set. Strategy and statistics are
 resolved before sample execution, so GUI and CLI cannot diverge.
 
+`PipelineRunner.resolve_group_assignments()` is the shared inspection API for
+GUI, CLI, and Python callers. It returns stable `group_ids` and `strategy_id`
+values for every selected sample; toggling advanced GUI visibility does not
+alter these results.
+
 Membership rules are JSON ASTs, never Python expressions:
 
 - `{ "all": [rule, ...] }`, `{ "any": [rule, ...] }`, and `{ "not": rule }`

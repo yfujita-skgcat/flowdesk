@@ -234,6 +234,28 @@ def test_group_binding_applies_selected_statistics_per_sample() -> None:
   assert [result.statistic_id for result in report.statistic_results] == ["count-a"]
 
 
+def test_public_group_assignments_are_stable_for_gui_and_cli() -> None:
+  project = _make_project(
+    samples=[{"id": "s1", "name": "one"}],
+  )
+  project["sample_groups"] = [{
+    "id": "all-samples",
+    "name": "All Samples",
+    "role": "all_samples",
+    "sample_ids": ["s1"],
+  }]
+  project["group_strategy_bindings"] = [{
+    "id": "binding",
+    "group_id": "all-samples",
+    "gating_strategy_id": "default_strategy",
+    "statistic_ids": [],
+  }]
+  assignments = PipelineRunner(project).resolve_group_assignments()
+  assert assignments == {
+    "s1": {"group_ids": ["all-samples"], "strategy_id": "default_strategy"}
+  }
+
+
 # ---------------------------------------------------------------------------
 # Full pipeline with synthetic events
 # ---------------------------------------------------------------------------
