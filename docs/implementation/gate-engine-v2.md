@@ -33,6 +33,12 @@ Centers, radii, and rotation must be finite, and both radii must be strictly
 positive. A zero or negative radius is a degenerate-geometry error rather than
 an empty gate.
 
+Rectangle, range, polygon, and ellipse thresholds/coordinates must be finite;
+event NaN/Inf values are excluded. Rectangle/range bounds are inclusive and
+must be ordered. Polygon area must be non-zero. Overlapping geometric gates
+may intentionally count an event in both populations; quadrant gates will
+define deterministic ownership of exact shared thresholds when implemented.
+
 ## Boolean contract
 
 Use an expression tree with leaf population references and `and`, `or`, `not` nodes.

@@ -86,6 +86,20 @@ def test_rectangle_boundary_inclusive() -> None:
   assert mask.all()
 
 
+def test_rectangle_rejects_nonfinite_and_reversed_bounds() -> None:
+  gate = GateSpec(
+    id="bad_rectangle",
+    name="bad rectangle",
+    gate_type="rectangle",
+    thresholds={"x_min": 3.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0},
+  )
+  with pytest.raises(GateError, match="non-degenerate"):
+    evaluate_gate(gate, np.array([1.0]), np.array([1.0]))
+  gate.thresholds["x_min"] = np.inf
+  with pytest.raises(GateError, match="finite"):
+    evaluate_gate(gate, np.array([1.0]), np.array([1.0]))
+
+
 def test_rectangle_missing_y_raises() -> None:
   gate = GateSpec(
     id="g_noy",
@@ -142,6 +156,20 @@ def test_range_open_high() -> None:
   mask = evaluate_gate(gate, x)
   expected = np.array([False, True, True])
   np.testing.assert_array_equal(mask, expected)
+
+
+def test_range_rejects_nonfinite_and_reversed_bounds() -> None:
+  gate = GateSpec(
+    id="bad_range",
+    name="bad range",
+    gate_type="range",
+    thresholds={"min": 3.0, "max": 1.0},
+  )
+  with pytest.raises(GateError, match="non-degenerate"):
+    evaluate_gate(gate, np.array([1.0]))
+  gate.thresholds["min"] = np.nan
+  with pytest.raises(GateError, match="finite"):
+    evaluate_gate(gate, np.array([1.0]))
 
 
 def test_range_unbounded() -> None:
@@ -291,6 +319,25 @@ def test_polygon_too_few_vertices_raises() -> None:
   y = np.array([0.5], dtype=np.float64)
   with pytest.raises(GateError, match="at least 3"):
     evaluate_gate(gate, x, y)
+
+
+def test_polygon_rejects_nonfinite_or_zero_area_geometry() -> None:
+  gate = GateSpec(
+    id="g_degenerate",
+    name="degenerate",
+    gate_type="polygon",
+    coordinates=[(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)],
+  )
+  with pytest.raises(GateError, match="non-zero area"):
+    evaluate_gate(gate, np.array([0.5]), np.array([0.5]))
+  gate = GateSpec(
+    id="g_nonfinite",
+    name="nonfinite",
+    gate_type="polygon",
+    coordinates=[(0.0, 0.0), (1.0, np.inf), (2.0, 2.0)],
+  )
+  with pytest.raises(GateError, match="finite"):
+    evaluate_gate(gate, np.array([0.5]), np.array([0.5]))
 
 
 # ---------------------------------------------------------------------------

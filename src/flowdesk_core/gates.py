@@ -117,10 +117,17 @@ def _eval_rectangle(
       "rectangle gate requires x_min, x_max, y_min, and y_max in thresholds"
     )
 
-  x_min = float(gate.thresholds["x_min"])
-  x_max = float(gate.thresholds["x_max"])
-  y_min = float(gate.thresholds["y_min"])
-  y_max = float(gate.thresholds["y_max"])
+  try:
+    x_min = float(gate.thresholds["x_min"])
+    x_max = float(gate.thresholds["x_max"])
+    y_min = float(gate.thresholds["y_min"])
+    y_max = float(gate.thresholds["y_max"])
+  except (TypeError, ValueError) as exc:
+    raise GateError("rectangle thresholds must be finite numbers") from exc
+  if not all(np.isfinite(value) for value in (x_min, x_max, y_min, y_max)):
+    raise GateError("rectangle thresholds must be finite numbers")
+  if x_min > x_max or y_min > y_max:
+    raise GateError("rectangle bounds must be ordered and non-degenerate")
 
   return (x >= x_min) & (x <= x_max) & (y >= y_min) & (y <= y_max)
 
@@ -142,12 +149,25 @@ def _eval_range(
   result = np.ones(len(x), dtype=np.bool_)
 
   if "min" in gate.thresholds:
-    vmin = float(gate.thresholds["min"])
+    try:
+      vmin = float(gate.thresholds["min"])
+    except (TypeError, ValueError) as exc:
+      raise GateError("range thresholds must be finite numbers") from exc
+    if not np.isfinite(vmin):
+      raise GateError("range thresholds must be finite numbers")
     result = result & (x >= vmin)
 
   if "max" in gate.thresholds:
-    vmax = float(gate.thresholds["max"])
+    try:
+      vmax = float(gate.thresholds["max"])
+    except (TypeError, ValueError) as exc:
+      raise GateError("range thresholds must be finite numbers") from exc
+    if not np.isfinite(vmax):
+      raise GateError("range thresholds must be finite numbers")
     result = result & (x <= vmax)
+
+  if "min" in gate.thresholds and "max" in gate.thresholds and vmin > vmax:
+    raise GateError("range bounds must be ordered and non-degenerate")
 
   return result
 
@@ -216,6 +236,14 @@ def _eval_polygon(
     raise GateError("polygon gate requires at least 3 vertices")
 
   vertices = np.array(gate.coordinates, dtype=np.float64)
+  if not np.isfinite(vertices).all():
+    raise GateError("polygon coordinates must be finite numbers")
+  area = 0.5 * abs(float(np.sum(
+    vertices[:, 0] * np.roll(vertices[:, 1], -1)
+    - vertices[:, 1] * np.roll(vertices[:, 0], -1)
+  )))
+  if area <= 1e-12:
+    raise GateError("polygon geometry must have non-zero area")
 
   # Vectorized ray-casting: cast ray to +infinity in x direction.
   result = _point_in_polygon_vectorized(x, y, vertices)
