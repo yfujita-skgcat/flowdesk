@@ -42,7 +42,9 @@ invalidation reason; the GUI may use that reason to mark cached results stale.
 3. Route existing gate mutations through commands without changing UI. GateEditor
    now routes create/edit/rename/delete/reparent plus duplicate and subtree copy
    through the core stack; loading a saved gate list resets the clean marker.
-4. Build a unified tree with stable IDs in `Qt.UserRole`.
+4. Build a unified tree with stable IDs in `Qt.UserRole`. `WorkspaceTree` displays
+   sample roots, report populations, and statistic children, and bridges only
+   display selection back to the existing sample/population navigation callbacks.
 5. Add breadcrumb and parent/previous/next sample navigation.
 6. Add subtree copy and preflight conflict dialog.
 7. Add Undo/Redo actions, shortcuts, labels, dirty/stale updates.

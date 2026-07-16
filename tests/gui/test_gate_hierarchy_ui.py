@@ -10,12 +10,14 @@ from PySide6.QtCore import Qt
 
 from flowdesk_cli.main import run_project_command
 from flowdesk_core.execution_context import ExecutionContext
+from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.gating_strategy import GatingStrategyError
-from flowdesk_core.models import GateSpec
+from flowdesk_core.models import GateSpec, PopulationResult, StatisticResult
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_qt.gate_editor import GateEditor
 from flowdesk_qt.main_window import MainWindow
+from flowdesk_qt.workspace_tree import WorkspaceTree
 from flowdesk_storage.project import load_project
 
 pytestmark = pytest.mark.gui
@@ -147,6 +149,45 @@ def test_gate_mutations_route_through_undo_redo_commands(qapp) -> None:
     finally:
         editor.close()
         editor.deleteLater()
+        qapp.processEvents()
+
+
+def test_workspace_tree_unifies_sample_population_and_statistics(qapp) -> None:
+    tree = WorkspaceTree()
+    selected = []
+    tree.on_selection_changed(
+        lambda kind, stable_id, sample_id: selected.append(
+            (kind, stable_id, sample_id)
+        )
+    )
+    report = ExecutionReport(
+        project_id="p",
+        execution_profile_id="profile",
+        pipeline_version="test",
+        status="success",
+        population_results=(
+            PopulationResult("s1", "all_events", 10, None, 1.0),
+            PopulationResult("s1", "positive", 4, 0.4, 0.4),
+        ),
+        statistic_results=(
+            StatisticResult("s1", "stat-1", "positive", "count", 4, statistic_name="Count"),
+        ),
+    )
+    try:
+        tree.set_samples([("s1", "Sample 1")])
+        tree.set_population_hierarchy(
+            {"positive": "all_events"}, {"positive": "Positive"}
+        )
+        tree.set_report(report)
+        assert tree.select("population", "positive")
+        assert selected[-1] == ("population", "positive", "s1")
+        item = tree._tree.topLevelItem(0)
+        assert item.data(0, Qt.UserRole) == "s1"
+        assert item.child(0).data(0, Qt.UserRole) == "positive"
+        assert item.child(0).child(0).data(0, Qt.UserRole) == "stat-1"
+    finally:
+        tree.close()
+        tree.deleteLater()
         qapp.processEvents()
 
 

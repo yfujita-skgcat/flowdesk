@@ -47,6 +47,7 @@ from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
+from flowdesk_qt.workspace_tree import WorkspaceTree
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import load_project, resolve_sample_paths, save_project
 
@@ -472,6 +473,7 @@ class MainWindow(QMainWindow):
         self._group_panel = GroupPanel()
         self._group_panel.setVisible(False)
         self._population_tree = PopulationTree()
+        self._workspace_tree = WorkspaceTree()
         self._diagnostics_panel = DiagnosticsPanel()
 
         right_widget = self._create_right_pane()
@@ -519,6 +521,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._gate_editor)
         layout.addWidget(self._group_panel)
+        layout.addWidget(self._workspace_tree)
         layout.addWidget(self._population_tree)
         layout.addWidget(self._diagnostics_panel)
         layout.setStretch(0, 1)
@@ -580,6 +583,7 @@ class MainWindow(QMainWindow):
         self._population_tree.on_add_statistic_requested(
             self._on_add_statistic_from_population_tree
         )
+        self._workspace_tree.on_selection_changed(self._on_workspace_tree_selected)
 
         # Connect plot mouse events to gate creation
         self._plot_widget.on_mouse_clicked(self._on_plot_mouse_clicked)
@@ -595,6 +599,9 @@ class MainWindow(QMainWindow):
         self._gate_editor.set_current_sample_id(sample.id)
         self._group_panel.set_sample_ids(
             [item.id for item in self._sample_browser.samples()]
+        )
+        self._workspace_tree.set_samples(
+            [(item.id, item.name) for item in self._sample_browser.samples()]
         )
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
@@ -664,6 +671,9 @@ class MainWindow(QMainWindow):
         Refresh overlays and invalidate cached population results.
         """
         self._population_tree.set_population_parents(self._population_parent_map())
+        self._workspace_tree.set_population_hierarchy(
+            self._population_parent_map(), self._population_name_map()
+        )
         self._mark_results_stale("Gates changed")
         self._replot()
 
@@ -684,6 +694,15 @@ class MainWindow(QMainWindow):
         if population_id != "all_events":
             self._gate_editor.select_gate(population_id)
         self._replot()
+
+    def _on_workspace_tree_selected(
+        self, kind: str, stable_id: str, sample_id: str
+    ) -> None:
+        """Bridge unified workspace selection to existing display navigation."""
+        if kind == "sample":
+            self._sample_browser.select_sample(stable_id)
+        elif kind == "population":
+            self._on_population_selected(stable_id, sample_id)
 
     def _replot(self) -> None:
         """Replot the current sample with current channel selection and axis transforms.
@@ -1053,6 +1072,7 @@ class MainWindow(QMainWindow):
         if report is not None:
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
+            self._workspace_tree.set_report(report)
             self._diagnostics_panel.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
@@ -1173,6 +1193,9 @@ class MainWindow(QMainWindow):
         self._channel_names = []
         self._gate_editor.set_gates(list(strategy.gates), notify=False)
         self._population_tree.set_population_parents(self._population_parent_map())
+        self._workspace_tree.set_population_hierarchy(
+            self._population_parent_map(), self._population_name_map()
+        )
 
         self._derived_parameters = deepcopy(manifest.get("derived_parameters", []))
         self._transforms = deepcopy(manifest.get("transforms", []))
