@@ -8,6 +8,7 @@ import pytest
 
 from flowdesk_core.models import GateSpec
 from flowdesk_core.project_commands import (
+  CopySubtreeAnalysisCommand,
   CopySubtreeCommand,
   CreateGateCommand,
   DeleteGateCommand,
@@ -104,7 +105,6 @@ def test_duplicate_and_subtree_copy_remap_references_and_undo() -> None:
     gate["id"] != "positive-copy"
     for gate in stack.state["gating_strategies_data"]["strategy"]["gates"]
   )
-
   stack.execute(
     CopySubtreeCommand(
       "strategy",
@@ -123,3 +123,40 @@ def test_duplicate_and_subtree_copy_remap_references_and_undo() -> None:
     gate["id"] not in {"cells-copy", "positive-copy"}
     for gate in stack.state["gating_strategies_data"]["strategy"]["gates"]
   )
+
+
+def test_cross_strategy_subtree_copy_is_atomic() -> None:
+  state = _state()
+  state["gating_strategies_data"]["target-a"] = {
+    "id": "target-a", "name": "Target A", "gates": []
+  }
+  state["gating_strategies_data"]["target-b"] = {
+    "id": "target-b", "name": "Target B", "gates": []
+  }
+  stack = UndoStack(state)
+  stack.execute(CreateGateCommand("strategy", _gate("cells")))
+  command = CopySubtreeAnalysisCommand(
+    "strategy",
+    "cells",
+    ("target-a", "target-b"),
+    {
+      "target-a": {"cells": "cells-a"},
+      "target-b": {"cells": "cells-b"},
+    },
+    scope="sample",
+  )
+  stack.execute(command)
+  assert stack.state["gating_strategies_data"]["target-a"]["gates"][0]["id"] == "cells-a"
+  assert stack.state["gating_strategies_data"]["target-b"]["gates"][0]["id"] == "cells-b"
+  stack.undo()
+  assert stack.state["gating_strategies_data"]["target-a"]["gates"] == []
+  bad = CopySubtreeAnalysisCommand(
+    "strategy",
+    "cells",
+    ("target-a", "target-b"),
+    {"target-a": {"cells": "cells-a"}, "target-b": {}},
+  )
+  before = stack.state
+  with pytest.raises(ProjectCommandError, match="id_map"):
+    stack.execute(bad)
+  assert stack.state == before

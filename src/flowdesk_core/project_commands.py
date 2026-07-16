@@ -376,6 +376,107 @@ class CopySubtreeCommand(_GateListCommand):
     return self._updated(state, remaining)
 
 
+class CopySubtreeAnalysisCommand(ProjectCommand):
+  """Atomically copy one subtree into multiple resolved target strategies."""
+
+  type = "gate.copy_subtree_analysis"
+
+  def __init__(
+    self,
+    source_strategy_id: str,
+    source_gate_id: str,
+    target_strategy_ids: list[str] | tuple[str, ...],
+    id_maps: dict[str, dict[str, str]],
+    *,
+    target_parent_ids: dict[str, str] | None = None,
+    scope: str = "group",
+  ) -> None:
+    if scope not in {"population", "sample", "group"}:
+      raise ProjectCommandError(f"invalid copy scope: {scope!r}")
+    if not target_strategy_ids:
+      raise ProjectCommandError("at least one target strategy is required")
+    self.source_strategy_id = source_strategy_id
+    self.source_gate_id = source_gate_id
+    self.target_strategy_ids = tuple(target_strategy_ids)
+    self.id_maps = deepcopy(id_maps)
+    self.target_parent_ids = dict(target_parent_ids or {})
+    self.scope = scope
+    self._before: dict[str, list[dict[str, Any]]] | None = None
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    source_gates = _strategy_gates(state, self.source_strategy_id)
+    source_by_id = {gate.get("id"): gate for gate in source_gates}
+    if self.source_gate_id not in source_by_id:
+      raise ProjectCommandError(f"gate not found: {self.source_gate_id!r}")
+    subtree = self._subtree(source_gates)
+    candidates: dict[str, list[dict[str, Any]]] = {}
+    before: dict[str, list[dict[str, Any]]] = {}
+    for target_id in self.target_strategy_ids:
+      target_gates = _strategy_gates(state, target_id)
+      mapping = self.id_maps.get(target_id, {})
+      required = {gate.get("id") for gate in subtree}
+      if required - set(mapping):
+        raise ProjectCommandError(
+          f"id_map for {target_id!r} misses: {sorted(required - set(mapping))}"
+        )
+      new_ids = [mapping[gate.get("id")] for gate in subtree]
+      if len(set(new_ids)) != len(new_ids):
+        raise ProjectCommandError(f"copied gate IDs for {target_id!r} are not unique")
+      if any(gate.get("id") in new_ids for gate in target_gates):
+        raise ProjectCommandError(f"copied gate ID already exists in {target_id!r}")
+      copied = self._remap_subtree(subtree, mapping)
+      if target_id in self.target_parent_ids:
+        copied[0]["parent_population_id"] = self.target_parent_ids[target_id]
+      before[target_id] = target_gates
+      candidates[target_id] = [*target_gates, *copied]
+    candidate_state = deepcopy(state)
+    for target_id, gates in candidates.items():
+      candidate_state = _replace_strategy_gates(candidate_state, target_id, gates)
+    self._before = before
+    return candidate_state
+
+  def undo(self, state: ProjectState) -> ProjectState:
+    if self._before is None:
+      raise ProjectCommandError("cannot undo a command that was not applied")
+    candidate = deepcopy(state)
+    for target_id, gates in self._before.items():
+      candidate = _replace_strategy_gates(candidate, target_id, gates)
+    return candidate
+
+  def _subtree(self, gates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    selected = {self.source_gate_id}
+    changed = True
+    while changed:
+      changed = False
+      for gate in gates:
+        if gate.get("parent_population_id") in selected and gate.get("id") not in selected:
+          selected.add(gate.get("id"))
+          changed = True
+    return [gate for gate in gates if gate.get("id") in selected]
+
+  def _remap_subtree(
+    self,
+    subtree: list[dict[str, Any]],
+    mapping: dict[str, str],
+  ) -> list[dict[str, Any]]:
+    copied = []
+    for gate in subtree:
+      value = deepcopy(gate)
+      old_id = value["id"]
+      value["id"] = mapping[old_id]
+      parent_id = value.get("parent_population_id")
+      if parent_id in mapping:
+        value["parent_population_id"] = mapping[parent_id]
+      thresholds = value.get("thresholds", {})
+      source_ids = thresholds.get("source_ids")
+      if isinstance(source_ids, (list, tuple)):
+        thresholds["source_ids"] = [
+          mapping.get(source_id, source_id) for source_id in source_ids
+        ]
+      copied.append(value)
+    return copied
+
+
 class UndoStack:
   """Qt-independent undo/redo stack for project definition commands."""
 

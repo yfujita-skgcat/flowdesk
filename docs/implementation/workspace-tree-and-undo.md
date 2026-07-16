@@ -52,6 +52,8 @@ invalidation reason; the GUI may use that reason to mark cached results stale.
    warnings for sibling-name conflicts and validates reparent cycles/missing
    parents before the confirmation dialog; referenced deletes remain blocked
    with dependent IDs shown.
+   `CopySubtreeAnalysisCommand` applies one source subtree to multiple resolved
+   target strategies for population/sample/group scopes atomically.
 7. Add Undo/Redo actions, shortcuts, labels, dirty/stale updates. MainWindow
    exposes Undo/Redo actions with standard shortcuts, updates enabled state from
    GateEditor, marks the project clean after save/load, and routes undo mutations
