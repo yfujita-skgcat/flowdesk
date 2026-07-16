@@ -326,6 +326,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] `docs/implementation/group-gating-and-overrides.md`を全文読み、通常は Group 共通 geometry を編集すること、override は明示作成のみであること、override resolution/rebase/comparison warning policyを追記する。
 - [x] Group共通gate definitionとsample-specific geometry overrideを別modelで表現する。override は Group の複数化とは独立した高度機能とし、既定では無効にする。
 - [x] overrideにbase ID/version hash、delta/full geometry、author、time、reason、gate purpose（technical cleanup / comparison-critical）を保存する。
+- [x] headless `PipelineRunner`でGroup共通strategyへselected sampleの明示overrideだけをdeterministically解決し、stale baseは再計算前に拒否する。
 - [ ] sample navigation中に同じPopulation path、axes、scale、view rangeを維持する。
 - [ ] shared/override/stale/missingをtree badgeとplot bannerで表示する。`results stale`（再計算が必要）と `override stale`（base変更によりrebaseが必要）を別状態として表示する。
 - [ ] 通常のgate drag/editは Group 共通 geometry を変更する。sample override は `このsample用のgate調整を作成` の意図的なcommandでだけ作成し、理由入力と影響範囲の確認を要求する。

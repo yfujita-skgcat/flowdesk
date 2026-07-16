@@ -8,6 +8,7 @@ import pytest
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.models import ChannelSpec, GateSpec, GatingStrategySpec
+from flowdesk_core.overrides import gate_version_hash
 from flowdesk_core.pipeline_runner import (
   PipelineError,
   PipelineRunner,
@@ -35,6 +36,7 @@ def _make_project(
   population_results: list[dict] | None = None,
   default_compensation_matrix_id: str | None = None,
   statistics: list[dict] | None = None,
+  gate_overrides: list[dict] | None = None,
 ) -> dict:
   return {
     "project_id": project_id,
@@ -52,6 +54,7 @@ def _make_project(
     "statistics": statistics or [],
     "population_results": population_results or [],
     "default_compensation_matrix_id": default_compensation_matrix_id,
+    "gate_overrides": gate_overrides or [],
   }
 
 
@@ -898,6 +901,59 @@ def test_pipeline_with_gating_strategy() -> None:
 
   assert report.status == "success"
   assert len(report.population_results) >= 2  # root + live_gate
+
+
+def test_pipeline_resolves_explicit_sample_override_per_sample() -> None:
+  strategy = GatingStrategySpec(
+    id="strategy", name="Strategy", gates=(GateSpec(
+      id="gate", name="Gate", gate_type="range", x_parameter="A",
+      thresholds={"min": 0.0, "max": 10.0},
+    ),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}, {"id": "s2"}],
+    execution_profiles=[{"id": "default", "name": "Default", "gating_strategy_id": "strategy"}],
+    gating_strategies_data={"strategy": strategy},
+    gate_overrides=[{
+      "id": "s2-gate-override", "sample_id": "s2", "base_gate_id": "gate",
+      "base_version_hash": gate_version_hash(strategy.gates[0]),
+      "geometry_mode": "delta", "thresholds": {"min": 5.0},
+      "author": "analyst", "created_at": "2026-07-16T00:00:00+00:00",
+      "reason": "technical cleanup",
+    }],
+  )
+  report = run_project_pipeline(
+    project,
+    event_data={"s1": np.array([[1.0], [8.0]]), "s2": np.array([[1.0], [8.0]])},
+    channel_names=["A"],
+  )
+  counts = {
+    result.sample_id: result.event_count
+    for result in report.population_results
+    if result.population_id == "gate"
+  }
+  assert counts == {"s1": 2, "s2": 1}
+
+
+def test_pipeline_reports_stale_sample_override() -> None:
+  gate = GateSpec(
+    id="gate", name="Gate", gate_type="range", x_parameter="A",
+    thresholds={"min": 0.0, "max": 10.0},
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    execution_profiles=[{"id": "default", "name": "Default", "gating_strategy_id": "strategy"}],
+    gating_strategies_data={"strategy": GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,))},
+    gate_overrides=[{
+      "id": "stale", "sample_id": "s1", "base_gate_id": "gate",
+      "base_version_hash": "not-current", "geometry_mode": "full",
+      "thresholds": {"min": 5.0, "max": 10.0}, "author": "analyst",
+      "created_at": "2026-07-16T00:00:00+00:00", "reason": "review",
+    }],
+  )
+  with pytest.raises(PipelineError) as error:
+    run_project_pipeline(project, event_data={"s1": np.array([[1.0]])}, channel_names=["A"])
+  assert error.value.code == "stale_override"
 
 
 # ---------------------------------------------------------------------------

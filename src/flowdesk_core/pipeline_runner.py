@@ -52,6 +52,11 @@ from flowdesk_core.groups import (
   resolve_group_strategy_bindings,
   sample_group_specs_from_mapping,
 )
+from flowdesk_core.overrides import (
+  GateOverrideError,
+  override_spec_from_mapping,
+  resolve_gate_overrides,
+)
 from flowdesk_core.models import (
   ChannelSpec,
   CompensationBindingSpec,
@@ -1173,6 +1178,18 @@ class PipelineRunner:
 
     if isinstance(strat, Mapping):
       strat = self._strategy_from_mapping(strat)
+
+    try:
+      overrides = tuple(
+        override_spec_from_mapping(value)
+        for value in self._project.get("gate_overrides", [])
+        if isinstance(value, Mapping)
+      )
+      strat = resolve_gate_overrides(strat, sample_id, overrides)
+    except GateOverrideError as exc:
+      raise PipelineError(
+        f"{exc.code}: {exc}", code=exc.code, details=exc.details
+      ) from exc
 
     results, masks = evaluate_gating_strategy_with_membership(
       strat,
