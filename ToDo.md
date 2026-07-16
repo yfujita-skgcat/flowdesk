@@ -293,7 +293,7 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 - [x] 済み (core): keyword columns、find/replace、fill series、typed CSV importをGUI非依存coreへ追加し、annotation source precedenceと非破壊性を検証する。
 - [x] 済み: annotation editor GUIでkeyword columns、cell edit、find/replace、fill series、CSV paste/importを提供し、core操作と同じtyped contractを使う。
 - [x] 済み: annotationはproject manifestへ保存・復元し、GUI編集とCSV importはproject側のtyped valuesだけを変更する。raw FCS bytesを変更しないことをround-trip testで確認する。
-- [ ] Group bindingしたstrategy/statisticsを新規memberへ自動適用する。CLI/headless は GUI mode に依存せず、保存済み binding を明示的に解決する。
+- [x] 済み: Group bindingしたstrategy/statisticsを新規memberへheadless runnerで自動適用する。non-empty `statistic_ids`はsample単位で選択し、空配列はproject全体定義を維持する。
 - [ ] GUI通常モード、GUI高度Groupモード、CLI/headless が同じ Group member IDs と resolved strategy IDs を返すtestを追加する。
 
 ### Phase B2: Gate engine v2 [S06]

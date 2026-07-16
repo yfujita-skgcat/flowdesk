@@ -194,6 +194,46 @@ def test_conflicting_group_bindings_are_rejected_stably() -> None:
   assert exc_info.value.details["sample_id"] == "s1"
 
 
+def test_group_binding_applies_selected_statistics_per_sample() -> None:
+  project = _make_project(
+    samples=[{"id": "s1", "name": "Panel A", "metadata": {"Panel": "A"}}],
+    statistics=[
+      {
+        "id": "count-a",
+        "name": "A count",
+        "population_id": "all_events",
+        "metric": "count",
+      },
+      {
+        "id": "count-b",
+        "name": "B count",
+        "population_id": "all_events",
+        "metric": "count",
+      },
+    ],
+  )
+  project["sample_groups"] = [{
+    "id": "panel-a",
+    "name": "Panel A",
+    "role": "panel",
+    "sample_ids": [],
+    "membership_rule": {
+      "keyword": "Panel", "comparison": "equals", "value": "A"
+    },
+  }]
+  project["group_strategy_bindings"] = [{
+    "id": "panel-a-binding",
+    "group_id": "panel-a",
+    "gating_strategy_id": "default_strategy",
+    "statistic_ids": ["count-a"],
+  }]
+  events = np.ones((4, 1), dtype=np.float64)
+  report = PipelineRunner(project).run(
+    ExecutionContext(), {"s1": events}, ["X"]
+  )
+  assert [result.statistic_id for result in report.statistic_results] == ["count-a"]
+
+
 # ---------------------------------------------------------------------------
 # Full pipeline with synthetic events
 # ---------------------------------------------------------------------------

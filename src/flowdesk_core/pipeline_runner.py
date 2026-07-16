@@ -351,9 +351,13 @@ class PipelineRunner:
     # Resolve which samples to process.
     sample_selector = profile.get("sample_selector", "all")
     selected_samples = self._resolve_samples(samples, sample_selector)
-    sample_strategy_ids = self._resolve_group_strategy_ids(
+    sample_assignments = self._resolve_group_assignments(
       selected_samples, gating_strategy_id
     )
+    sample_strategy_ids = {
+      sample_id: assignment[0]
+      for sample_id, assignment in sample_assignments.items()
+    }
     available_input_ids: set[str] = set()
     for sample_meta in selected_samples:
       sample_id = str(sample_meta.get("id", "unknown"))
@@ -495,6 +499,10 @@ class PipelineRunner:
         population_results=pop_results,
         membership=pop_membership,
         population_parent_ids=population_parent_ids,
+        statistic_ids=(
+          sample_assignments.get(sid, (None, ()))
+          [1]
+        ),
       )
       all_statistic_results.extend(stat_results)
       messages.append(
@@ -1173,6 +1181,7 @@ class PipelineRunner:
     population_results: list[PopulationResult],
     membership: list[PopulationMembership],
     population_parent_ids: Mapping[str, str | None],
+    statistic_ids: tuple[str, ...] = (),
   ) -> list[StatisticResult]:
     """Evaluate statistic definitions for a single sample.
 
@@ -1181,6 +1190,9 @@ class PipelineRunner:
     the canonical transformed gating stage.
     """
     specs = self._statistic_specs()
+    if statistic_ids:
+      allowed = set(statistic_ids)
+      specs = tuple(spec for spec in specs if spec.id in allowed)
     if not specs:
       return []
 
@@ -1365,10 +1377,27 @@ class PipelineRunner:
     strategy behavior. Group binding errors are raised before any sample is
     processed, so a partial run cannot silently mix strategies.
     """
+    return {
+      sample_id: strategy_id
+      for sample_id, (strategy_id, _statistic_ids) in self._resolve_group_assignments(
+        selected_samples, fallback_strategy_id
+      ).items()
+      if strategy_id is not None
+    }
+
+  def _resolve_group_assignments(
+    self,
+    selected_samples: Sequence[Mapping[str, Any]],
+    fallback_strategy_id: str | None,
+  ) -> dict[str, tuple[str | None, tuple[str, ...]]]:
+    """Resolve strategy and optional statistics binding per selected sample."""
     groups_data = self._project.get("sample_groups", [])
     bindings_data = self._project.get("group_strategy_bindings", [])
     if not groups_data and not bindings_data:
-      return {}
+      return {
+        str(sample.get("id", "")): (fallback_strategy_id, ())
+        for sample in selected_samples
+      }
     if not isinstance(groups_data, list) or not isinstance(bindings_data, list):
       raise PipelineError(
         "sample Groups and strategy bindings must be arrays",
@@ -1396,10 +1425,33 @@ class PipelineRunner:
       raise PipelineError(
         f"{exc.code}: {exc}", code=exc.code, details=exc.details
       ) from exc
-    return {
-      sample_id: strategy_id
-      for sample_id, (strategy_id, _group_ids) in resolved.items()
+    resolved_group_ids = {
+      group_id
+      for _sample_id, (_strategy, group_ids) in resolved.items()
+      for group_id in group_ids
     }
+    bindings_by_group = {
+      group_id: [
+        binding for binding in bindings if binding.group_id == group_id
+      ]
+      for group_id in resolved_group_ids
+    }
+    assignments: dict[str, tuple[str | None, tuple[str, ...]]] = {}
+    for sample in selected_samples:
+      sample_id = str(sample.get("id", ""))
+      resolved_strategy = resolved.get(sample_id)
+      if resolved_strategy is None:
+        assignments[sample_id] = (fallback_strategy_id, ())
+        continue
+      strategy_id, group_ids = resolved_strategy
+      statistic_ids = tuple(sorted({
+        statistic_id
+        for group_id in group_ids
+        for binding in bindings_by_group.get(group_id, [])
+        for statistic_id in binding.statistic_ids
+      }))
+      assignments[sample_id] = (strategy_id, statistic_ids)
+    return assignments
 
   @staticmethod
   def _find_by_id(

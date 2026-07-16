@@ -66,6 +66,11 @@ The Qt annotation editor uses those same operations for table editing, CSV
 import, replacement, and fill-series actions. Accepted edits are stored in the
 project manifest; cancel leaves the project state unchanged.
 
+Group bindings are also resolved in the headless runner. A non-empty
+`statistic_ids` binding selects statistics for each matching sample; an empty
+list preserves the project-wide statistics set. Strategy and statistics are
+resolved before sample execution, so GUI and CLI cannot diverge.
+
 Membership rules are JSON ASTs, never Python expressions:
 
 - `{ "all": [rule, ...] }`, `{ "any": [rule, ...] }`, and `{ "not": rule }`
