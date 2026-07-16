@@ -88,6 +88,42 @@ def test_load_gate_run_and_match_headless(
     qapp.processEvents()
 
 
+def test_sample_navigation_preserves_population_axes_scales_and_viewport(
+  qapp,
+  tmp_path: Path,
+) -> None:
+  first = tmp_path / "first.fcs"
+  second = tmp_path / "second.fcs"
+  events = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+  write_fcs_file(first, events, ["X", "Y"])
+  write_fcs_file(second, events * 2.0, ["X", "Y"])
+  window = MainWindow()
+  try:
+    window._sample_browser.add_samples_from_paths([str(first), str(second)])
+    samples = window._sample_browser.samples()
+    window._sample_browser.select_sample(samples[0].id)
+    window._selected_population_id = "population/path"
+    window._channel_selector.set_selected_channels("X", "Y")
+    window._channel_selector.set_x_transform("log10")
+    window._channel_selector.set_y_transform("asinh")
+    viewport = ((10.0, 20.0), (30.0, 40.0))
+    window._plot_widget.set_manual_view_range(*viewport)
+    window._navigate_sample(1)
+    qapp.processEvents()
+
+    assert window._current_sample_id == samples[1].id
+    assert window._selected_population_id == "population/path"
+    assert window._channel_selector.x_channel() == "X"
+    assert window._channel_selector.y_channel() == "Y"
+    assert window._channel_selector.x_transform() == "log10"
+    assert window._channel_selector.y_transform() == "asinh"
+    assert window._plot_widget.view_range() == viewport
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 def test_run_without_samples_reports_error(
   qapp,
   monkeypatch: pytest.MonkeyPatch,
@@ -232,6 +268,7 @@ def test_switching_real_fcs_samples_updates_xy_ranges(
       assert window._sample_browser.select_sample(sample.id)
       window._channel_selector.set_selected_channels("FSC-A", "SSC-A")
       qapp.processEvents()
+
 
       assert window._current_sample_id == sample.id
       assert window._channel_selector.x_channel() == "FSC-A"

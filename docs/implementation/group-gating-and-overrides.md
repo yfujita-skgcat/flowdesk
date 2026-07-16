@@ -39,6 +39,8 @@ execution. A stale base hash makes the override invalid until explicitly rebased
    `CopySubtreeAnalysisCommand` validates every copied gate's x/y parameter against
    the supplied channel IDs for every target before mutating any target strategy.
 4. Add sample navigator preserving population path, axes, scales, and viewport.
+   **Implemented:** sample navigation retains the selected population path, channel
+   axes, display scales, and manual plot viewport while switching stable sample IDs.
 5. Add shared/override/stale badges and an override audit table.
 6. Add separate commands: reset to group, promote to group, copy to selected, rebase.
 7. Add QC checks for clipped gates, missing populations, and frequency outliers.
