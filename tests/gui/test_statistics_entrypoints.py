@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QToolButton
 
 from flowdesk_core.execution_report import ExecutionReport
-from flowdesk_core.models import ChannelSpec, PopulationResult
+from flowdesk_core.models import ChannelSpec, PopulationResult, StatisticResult
 from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.population_tree import PopulationTree
@@ -66,6 +67,45 @@ def test_dialog_new_statistic_defaults_are_persisted_state(qapp) -> None:
   assert definition["parameter_id"] == "FL1-A"
   assert definition["metric"] == "mean"
   assert definition["value_policy"] == "full_events"
+
+
+def test_statistics_are_population_child_nodes_and_clear_when_stale(qapp) -> None:
+  tree = PopulationTree()
+  tree.set_population_names({"live": "Live cells"})
+  tree.set_report(
+    ExecutionReport(
+      project_id="project",
+      execution_profile_id="default",
+      pipeline_version="0.1",
+      status="success",
+      population_results=(PopulationResult("s1", "live", 5, 10, 0.5),),
+      statistic_results=(
+        StatisticResult(
+          sample_id="s1",
+          statistic_id="live_mean",
+          statistic_name="Live mean FL1",
+          population_id="live",
+          metric="mean",
+          value=12.5,
+          status="ok",
+        ),
+      ),
+    )
+  )
+
+  population_node = tree._statistics_tree.topLevelItem(0)
+  assert population_node.text(0) == "Live cells"
+  assert population_node.data(0, Qt.UserRole) == "live"
+  statistic_node = population_node.child(0)
+  assert statistic_node.text(0) == "Live mean FL1"
+  assert statistic_node.text(1) == "mean"
+  assert statistic_node.text(2) == "12.5"
+  assert statistic_node.text(3) == "ok"
+
+  tree.clear()
+  tree.mark_results_stale()
+  assert tree._statistics_tree.topLevelItemCount() == 0
+  assert tree._status_label.text() == "Results stale; rerun pipeline"
 
 
 def test_graph_entry_opens_dialog_with_graph_context(qapp, monkeypatch) -> None:

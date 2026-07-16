@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -129,8 +131,12 @@ class PopulationTree(QWidget):
         self._last_report = None
         self._population_names.clear()
         self._table.setRowCount(0)
-        self._statistics_table.setRowCount(0)
+        self._statistics_tree.clear()
         self._status_label.setText("No execution results")
+
+    def mark_results_stale(self) -> None:
+        """Display that results were discarded and require a pipeline rerun."""
+        self._status_label.setText("Results stale; rerun pipeline")
 
     # -- private ------------------------------------------------------------
 
@@ -166,37 +172,46 @@ class PopulationTree(QWidget):
     def _populate_statistics(
         self, results: tuple[StatisticResult, ...]
     ) -> None:
-        self._statistics_table.setRowCount(len(results))
-        for row, r in enumerate(results):
+        self._statistics_tree.clear()
+        population_nodes: dict[tuple[str, str], QTreeWidgetItem] = {}
+        for r in results:
+            key = (r.sample_id, r.population_id)
+            population_node = population_nodes.get(key)
             pop_display = self._population_names.get(
                 r.population_id, r.population_id
             )
-            self._statistics_table.setItem(
-                row, 0, QTableWidgetItem(r.statistic_id)
-            )
-            self._statistics_table.setItem(
-                row, 1, QTableWidgetItem(pop_display)
-            )
-            self._statistics_table.setItem(
-                row, 2, QTableWidgetItem(r.metric)
-            )
+            if population_node is None:
+                population_node = QTreeWidgetItem([pop_display, "", "", ""])
+                population_node.setData(0, Qt.UserRole, r.population_id)
+                population_node.setData(0, Qt.UserRole + 1, r.sample_id)
+                population_nodes[key] = population_node
+                self._statistics_tree.addTopLevelItem(population_node)
+
             value_str = "-"
             if r.value is not None:
                 if isinstance(r.value, float):
                     value_str = f"{r.value:.6g}"
                 else:
                     value_str = str(r.value)
-            self._statistics_table.setItem(row, 3, QTableWidgetItem(value_str))
 
             status_text = r.status
             if r.status == "undefined" and r.undefined_reason is not None:
                 status_text = f"undefined ({r.undefined_reason})"
-            status_item = QTableWidgetItem(status_text)
+            statistic_item = QTreeWidgetItem(
+                [
+                    r.statistic_name or r.statistic_id,
+                    r.metric,
+                    value_str,
+                    status_text,
+                ]
+            )
+            statistic_item.setData(0, Qt.UserRole, r.statistic_id)
             if r.status == "ok":
-                status_item.setForeground(Qt.GlobalColor.darkGreen)
+                statistic_item.setForeground(3, Qt.GlobalColor.darkGreen)
             elif r.status in ("error", "undefined"):
-                status_item.setForeground(Qt.GlobalColor.red)
-            self._statistics_table.setItem(row, 4, status_item)
+                statistic_item.setForeground(3, Qt.GlobalColor.red)
+            population_node.addChild(statistic_item)
+        self._statistics_tree.expandAll()
 
     def _on_selection_changed(self) -> None:
         population_id = self.get_selected_population_id()
@@ -252,27 +267,26 @@ class PopulationTree(QWidget):
         box_layout.addWidget(self._table)
         box_layout.addWidget(self._status_label)
 
-        # --- Custom statistics table ---
-        self._statistics_table = QTableWidget()
-        self._statistics_table.setObjectName("populationStatisticsTable")
-        self._statistics_table.setColumnCount(5)
-        self._statistics_table.setHorizontalHeaderLabels(
+        # --- Custom statistics grouped under their populations ---
+        self._statistics_tree = QTreeWidget()
+        self._statistics_tree.setObjectName("populationStatisticsTree")
+        self._statistics_tree.setColumnCount(4)
+        self._statistics_tree.setHeaderLabels(
             [
-                "Statistic",
-                "Population",
+                "Population / Statistic",
                 "Metric",
                 "Value",
                 "Status",
             ]
         )
-        self._statistics_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._statistics_table.horizontalHeader().setSectionResizeMode(
+        self._statistics_tree.setEditTriggers(QTreeWidget.NoEditTriggers)
+        self._statistics_tree.header().setSectionResizeMode(
             QHeaderView.Stretch
         )
 
         stat_box = QGroupBox("Custom Statistics")
         stat_box_layout = QVBoxLayout(stat_box)
-        stat_box_layout.addWidget(self._statistics_table)
+        stat_box_layout.addWidget(self._statistics_tree)
         self._add_statistic_button = QPushButton("Add Statistic")
         self._add_statistic_button.setObjectName(
             "addStatisticFromPopulationTreeButton"

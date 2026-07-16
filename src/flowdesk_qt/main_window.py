@@ -40,6 +40,7 @@ from flowdesk_core.models import CompensationMatrixSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
+from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
@@ -443,6 +444,7 @@ class MainWindow(QMainWindow):
         # --- Right pane: gate editor + population tree ---
         self._gate_editor = GateEditor()
         self._population_tree = PopulationTree()
+        self._diagnostics_panel = DiagnosticsPanel()
 
         right_widget = self._create_right_pane()
 
@@ -489,8 +491,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._gate_editor)
         layout.addWidget(self._population_tree)
+        layout.addWidget(self._diagnostics_panel)
         layout.setStretch(0, 1)
         layout.setStretch(1, 1)
+        layout.setStretch(2, 1)
         return widget
 
     # -- signal connections --------------------------------------------------
@@ -980,6 +984,7 @@ class MainWindow(QMainWindow):
         if report is not None:
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
+            self._diagnostics_panel.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
             self._compensation_status_indicator.clear_stale()
@@ -1764,6 +1769,8 @@ class MainWindow(QMainWindow):
     def _mark_results_stale(self, reason: str) -> None:
         self._results_stale = True
         self._population_tree.clear()
+        self._population_tree.mark_results_stale()
+        self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
         self._selected_population_id = "all_events"
         self._compensation_status_indicator.mark_stale()

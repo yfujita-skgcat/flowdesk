@@ -425,13 +425,18 @@ def test_gui_statistics_match_headless_api_and_cli_export(
             "positive_mean_y": pytest.approx(30.0),
         }
 
-        table = window._population_tree._statistics_table
+        statistics_tree = window._population_tree._statistics_tree
         gui_table = {
-            table.item(row, 0).text(): (
-                table.item(row, 3).text(),
-                table.item(row, 4).text(),
+            statistics_tree.topLevelItem(population_row).child(statistic_row).data(
+                0, 0x0100
+            ): (
+                statistics_tree.topLevelItem(population_row).child(statistic_row).text(2),
+                statistics_tree.topLevelItem(population_row).child(statistic_row).text(3),
             )
-            for row in range(table.rowCount())
+            for population_row in range(statistics_tree.topLevelItemCount())
+            for statistic_row in range(
+                statistics_tree.topLevelItem(population_row).childCount()
+            )
         }
         assert gui_table == {
             "positive_count": ("3", "ok"),

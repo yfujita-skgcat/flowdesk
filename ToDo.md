@@ -243,7 +243,7 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 #### GUI/export
 
 - [x] 済み: Add Statistic dialogをPopulation TreeとGraphから開けるようにする。
-- [ ] statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
+- [x] 済み: statisticsをPopulation配下のnodeとして表示し、stale/result statusを示す。
 - [x] 済み: CSV/TSV exportでdefinition ID、display name、value、unit、statusを出力できるようにする。
 
 #### 必須test
@@ -261,7 +261,7 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 - [ ] temp pathへwrite、fsync、atomic replaceするsave手順を実装する。(atomic_write_json)
 - [x] 済み: newer unsupported schemaをread-only以外で開かない。(migration前にreject、save前にvalidate)
 - [x] 済み: ExecutionDiagnostic modelを追加し、severity、code、sample、population、stage、message、detailsを保持する。(既存: execution_report.py)
-- [ ] GUI diagnostics panelを追加する。
+- [x] 済み: GUI diagnostics panelを追加する。
 - [x] 済み: CLI machine-readable JSON outputを追加する。(既存: run_project.py でstderrへJSON出力)
 - [x] 済み: interrupted save、invalid reference、old schema、newer schemaをtestする。
 
