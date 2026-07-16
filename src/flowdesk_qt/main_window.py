@@ -532,6 +532,11 @@ class MainWindow(QMainWindow):
         else:
             self._update_status("Simple mode: All Samples × Default Strategy")
 
+    def _on_groups_changed(self, groups: list[dict[str, Any]]) -> None:
+        """Persist Group edits in project state and invalidate analysis."""
+        self._sample_groups = deepcopy(groups)
+        self._mark_results_stale("Sample Groups changed")
+
     # -- signal connections --------------------------------------------------
 
     def _connect_signals(self) -> None:
@@ -562,6 +567,7 @@ class MainWindow(QMainWindow):
         self._plot_toolbar.on_export_png(self._on_export_png)
         self._plot_toolbar.on_add_statistic(self._on_add_statistic_from_graph)
         self._plot_toolbar.on_marginal_toggled(self._on_marginal_toggled)
+        self._group_panel.groups_changed.connect(self._on_groups_changed)
 
         # Population selection (display-only filter)
         self._population_tree.on_population_selected(self._on_population_selected)

@@ -42,6 +42,7 @@ from flowdesk_core.transforms import (  # noqa: E402
   apply_transform,
 )
 from flowdesk_qt.gate_editor import GateEditor  # noqa: E402
+from flowdesk_qt.group_panel import GroupPanel  # noqa: E402
 from flowdesk_qt.main_window import MainWindow  # noqa: E402
 from flowdesk_qt.plot_widget import PlotWidget  # noqa: E402
 from flowdesk_qt.sample_browser import SampleBrowser  # noqa: E402
@@ -53,6 +54,30 @@ def _app() -> QApplication:
   if app is None:
     app = QApplication([])
   return app
+
+
+def test_group_panel_renders_and_edits_persisted_groups() -> None:
+  _app()
+  panel = GroupPanel()
+  changed: list[list[dict[str, object]]] = []
+  panel.groups_changed.connect(changed.append)
+  panel.set_groups([{
+    "id": "all-samples",
+    "name": "All Samples",
+    "role": "all_samples",
+    "sample_ids": [],
+  }])
+  assert panel._list.count() == 1
+  assert panel._list.item(0).data(0x0100) == "all-samples"
+  panel._groups.append({
+    "id": "user-group",
+    "name": "User Group",
+    "role": "user",
+    "sample_ids": ["s1"],
+  })
+  panel._emit_groups()
+  assert changed[-1][1]["id"] == "user-group"
+  panel.deleteLater()
 
 
 def _fcs_info(channels: tuple[str, ...] = ("FSC-A", "SSC-A")) -> FcsFileInfo:

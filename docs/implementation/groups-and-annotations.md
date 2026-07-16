@@ -43,9 +43,10 @@ sample, and binds it to `default-strategy`. Normal GUI operation continues to
 edit that one strategy; no Group pane is exposed yet.
 
 The current GUI exposes an explicit `Use Multiple Analysis Groups` toggle. It
-is unchecked by default, persists as `advanced_groups_enabled`, and only reveals
-the read-only Group overview; disabling it hides the view without deleting,
-merging, or changing any persisted Group, binding, or annotation.
+is unchecked by default, persists as `advanced_groups_enabled`, and reveals the
+Group overview with explicit create/rename/delete controls. Disabling it hides
+the view without deleting, merging, or changing any persisted Group, binding,
+or annotation. Drag/drop membership editing remains a later increment.
 
 Membership rules are JSON ASTs, never Python expressions:
 
