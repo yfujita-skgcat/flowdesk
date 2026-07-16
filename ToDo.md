@@ -284,7 +284,8 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 
 - [x] 済み: `docs/implementation/groups-and-annotations.md`を全文読み、今回実装するrule grammarと通常GUIの範囲を追記する。
 - [x] 済み: `SampleGroupSpec`、`AnnotationSpec`、safe membership rule、Group/Strategy bindingをmodel/schemaへ追加する。すべての新規projectには `all-samples` Group と `default-strategy` bindingを自動作成する。
-- [ ] All Samples、Compensation Controls、panel/取得形式/QC用 user groupを複数所属可能にする。treatment/control の比較群だけを理由に別 strategy を選ばないことをUI/helpへ明記する。
+- [x] 済み (基盤): All Samples、Compensation Controls、panel/取得形式/QC用 user groupの複数所属をmodelで表現し、treatment/controlの比較群だけを理由に別strategyを選ばない旨をadvanced GroupのGUI/helpへ明記する。通常GUIはAll Samples × Default Strategyのまま、明示toggleで既存Groupをread-only表示する。
+- [ ] advanced Group modeでCompensation Controls、panel/取得形式/QC用user groupのcreate/edit/deleteとmembership編集を追加する。
 - [ ] keyword条件でdynamic group membershipをheadlessに解決し、同一 sample に競合する strategy binding がある場合は stable structured diagnostic で拒否する。
 - [ ] 通常 GUI では Group pane を隠し、All Samples × Default Strategy のみを操作する。`複数の解析グループを使用する`を明示的に有効化した時だけ Group pane、create/edit/delete、drag/drop membershipを表示する。
 - [ ] 高度 Group 表示を無効にしても Group、binding、override を削除・暗黙統合しない。複数 binding のあるprojectでは簡易表示へ戻す意味を明示する。

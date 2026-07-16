@@ -42,6 +42,11 @@ The first increment persists `SampleGroupSpec`, `AnnotationSpec`, and a
 sample, and binds it to `default-strategy`. Normal GUI operation continues to
 edit that one strategy; no Group pane is exposed yet.
 
+The current GUI exposes an explicit `Use Multiple Analysis Groups` toggle. It
+is unchecked by default, persists as `advanced_groups_enabled`, and only reveals
+the read-only Group overview; disabling it hides the view without deleting,
+merging, or changing any persisted Group, binding, or annotation.
+
 Membership rules are JSON ASTs, never Python expressions:
 
 - `{ "all": [rule, ...] }`, `{ "any": [rule, ...] }`, and `{ "not": rule }`

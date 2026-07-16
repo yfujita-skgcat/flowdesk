@@ -14,6 +14,7 @@
       "type": "array",
       "items": { "$ref": "#/$defs/sample" }
     },
+    "advanced_groups_enabled": { "type": "boolean" },
     "sample_groups": {
       "type": "array",
       "items": { "$ref": "#/$defs/sampleGroup" }

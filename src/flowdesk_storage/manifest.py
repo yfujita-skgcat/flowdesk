@@ -46,6 +46,11 @@ def validate_manifest(data: dict[str, Any]) -> None:
   if not isinstance(data["samples"], list):
     raise ManifestValidationError("samples must be an array")
 
+  if "advanced_groups_enabled" in data and not isinstance(
+    data["advanced_groups_enabled"], bool
+  ):
+    raise ManifestValidationError("advanced_groups_enabled must be a boolean")
+
   if data["project_version"] == CURRENT_PROJECT_VERSION:
     _validate_current_samples(data["samples"])
     _validate_current_derived_parameters(data.get("derived_parameters", []))

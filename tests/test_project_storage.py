@@ -103,6 +103,13 @@ class TestValidateManifest:
     validate_manifest(data)
     assert data["custom_field"] == "kept"
 
+  def test_advanced_group_display_setting_must_be_boolean(self) -> None:
+    data = dict(MINIMAL_MANIFEST)
+    data["project_version"] = CURRENT_PROJECT_VERSION
+    data["advanced_groups_enabled"] = "yes"
+    with pytest.raises(ManifestValidationError, match="advanced_groups_enabled"):
+      validate_manifest(data)
+
   def test_current_group_binding_references_are_validated(self) -> None:
     data = migrate_manifest(MINIMAL_MANIFEST)
     data["group_strategy_bindings"][0]["gating_strategy_id"] = "missing"

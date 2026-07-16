@@ -1115,6 +1115,10 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
       thresholds={"min": 1.0},
     )
     window._gate_editor.set_gates([gate])
+    assert not window.action_advanced_groups.isChecked()
+    assert window._group_panel.isHidden()
+    window.action_advanced_groups.setChecked(True)
+    assert not window._group_panel.isHidden()
     gui_manifest = window._build_project_manifest()
     gui_report = PipelineRunner(gui_manifest).run_samples(
       ExecutionContext(),
@@ -1124,12 +1128,16 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     window._save_project_to_path(project_path)
     saved = load_project(project_path)
     assert saved["transforms"] == []
+    assert saved["advanced_groups_enabled"] is True
+    assert saved["sample_groups"][0]["id"] == "all-samples"
     assert saved["plot_display_settings"]["x_scale"] == "asinh"
     assert isinstance(
       saved["gating_strategies_data"]["default_strategy"]["gates"][0], dict
     )
 
     reloaded_window._load_project_from_path(project_path)
+    assert reloaded_window.action_advanced_groups.isChecked()
+    assert not reloaded_window._group_panel.isHidden()
     assert [gate.id for gate in reloaded_window._gate_editor.gates()] == ["positive"]
 
     headless_report = PipelineRunner(saved).run_samples(

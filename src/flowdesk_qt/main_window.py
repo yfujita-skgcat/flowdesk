@@ -42,6 +42,7 @@ from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
 from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
+from flowdesk_qt.group_panel import GroupPanel
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
@@ -201,6 +202,9 @@ class MainWindow(QMainWindow):
         self._statistics: list[dict[str, Any]] = []
         self._default_compensation_matrix_id: str | None = None
         self._migration_diagnostics: list[dict[str, Any]] = []
+        self._advanced_groups_enabled = False
+        self._sample_groups: list[dict[str, Any]] = []
+        self._group_strategy_bindings: list[dict[str, Any]] = []
         # Display-only: selected population for plot filtering.
         self._selected_population_id: str = "all_events"
 
@@ -391,6 +395,22 @@ class MainWindow(QMainWindow):
         analysis_menu.addAction(self.action_statistics)
 
         analysis_menu.addSeparator()
+        self.action_advanced_groups = QAction(
+            "Use Multiple Analysis Groups", self
+        )
+        self.action_advanced_groups.setObjectName("actionAdvancedGroups")
+        self.action_advanced_groups.setCheckable(True)
+        self.action_advanced_groups.setChecked(False)
+        self.action_advanced_groups.setToolTip(
+            "Show Group assignments for different panels, controls, or QC samples. "
+            "Treatment/control comparison samples normally stay in one Group."
+        )
+        self.action_advanced_groups.toggled.connect(
+            self._set_advanced_groups_enabled
+        )
+        analysis_menu.addAction(self.action_advanced_groups)
+
+        analysis_menu.addSeparator()
 
         self.action_clear_gates = QAction("Clear &Gates", self)
         self.action_clear_gates.setObjectName("actionClearGates")
@@ -443,6 +463,8 @@ class MainWindow(QMainWindow):
 
         # --- Right pane: gate editor + population tree ---
         self._gate_editor = GateEditor()
+        self._group_panel = GroupPanel()
+        self._group_panel.setVisible(False)
         self._population_tree = PopulationTree()
         self._diagnostics_panel = DiagnosticsPanel()
 
@@ -490,12 +512,25 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._gate_editor)
+        layout.addWidget(self._group_panel)
         layout.addWidget(self._population_tree)
         layout.addWidget(self._diagnostics_panel)
         layout.setStretch(0, 1)
-        layout.setStretch(1, 1)
+        layout.setStretch(1, 0)
         layout.setStretch(2, 1)
+        layout.setStretch(3, 1)
         return widget
+
+    def _set_advanced_groups_enabled(self, enabled: bool) -> None:
+        """Toggle only Group visibility; never delete or merge project state."""
+        self._advanced_groups_enabled = bool(enabled)
+        self._group_panel.setVisible(self._advanced_groups_enabled)
+        if enabled:
+            self._update_status(
+                "Advanced Group mode: comparison samples should normally share one strategy"
+            )
+        else:
+            self._update_status("Simple mode: All Samples × Default Strategy")
 
     # -- signal connections --------------------------------------------------
 
@@ -943,7 +978,8 @@ class MainWindow(QMainWindow):
             "gating_strategies_data": {
                 "default_strategy": strategy,
             },
-            "sample_groups": [
+            "advanced_groups_enabled": self._advanced_groups_enabled,
+            "sample_groups": deepcopy(self._sample_groups) or [
                 {
                     "id": "all-samples",
                     "name": "All Samples",
@@ -952,7 +988,7 @@ class MainWindow(QMainWindow):
                     "membership_rule": {"all": []},
                 }
             ],
-            "group_strategy_bindings": [
+            "group_strategy_bindings": deepcopy(self._group_strategy_bindings) or [
                 {
                     "id": "all-samples-default-strategy",
                     "group_id": "all-samples",
@@ -1135,6 +1171,14 @@ class MainWindow(QMainWindow):
             manifest.get("compensation_calculations", [])
         )
         self._statistics = deepcopy(manifest.get("statistics", []))
+        self._sample_groups = deepcopy(manifest.get("sample_groups", []))
+        self._group_strategy_bindings = deepcopy(
+            manifest.get("group_strategy_bindings", [])
+        )
+        self._group_panel.set_groups(self._sample_groups)
+        self.action_advanced_groups.setChecked(
+            bool(manifest.get("advanced_groups_enabled", False))
+        )
 
         resolved_samples = resolve_sample_paths(manifest, project_path)
         self._sample_browser.add_project_samples(resolved_samples)
