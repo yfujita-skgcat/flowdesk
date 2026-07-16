@@ -521,10 +521,14 @@ class MainWindow(QMainWindow):
         self._plot_toolbar.on_reset_robust(self._on_reset_robust)
         self._plot_toolbar.on_reset_full(self._on_reset_full)
         self._plot_toolbar.on_export_png(self._on_export_png)
+        self._plot_toolbar.on_add_statistic(self._on_add_statistic_from_graph)
         self._plot_toolbar.on_marginal_toggled(self._on_marginal_toggled)
 
         # Population selection (display-only filter)
         self._population_tree.on_population_selected(self._on_population_selected)
+        self._population_tree.on_add_statistic_requested(
+            self._on_add_statistic_from_population_tree
+        )
 
         # Connect plot mouse events to gate creation
         self._plot_widget.on_mouse_clicked(self._on_plot_mouse_clicked)
@@ -1316,6 +1320,26 @@ class MainWindow(QMainWindow):
 
     def _on_edit_statistics(self) -> None:
         """Edit population statistic definitions."""
+        self._open_statistics_editor()
+
+    def _on_add_statistic_from_population_tree(self, population_id: str) -> None:
+        """Open a new statistic definition scoped to a tree population."""
+        self._open_statistics_editor(population_id=population_id)
+
+    def _on_add_statistic_from_graph(self) -> None:
+        """Open a new statistic definition using the graph X parameter."""
+        self._open_statistics_editor(
+            population_id=self._selected_population_id,
+            parameter_id=self._channel_selector.x_channel_id() or None,
+        )
+
+    def _open_statistics_editor(
+        self,
+        *,
+        population_id: str | None = None,
+        parameter_id: str | None = None,
+    ) -> None:
+        """Edit persisted definitions without running scientific analysis in Qt."""
         from flowdesk_qt.statistics_editor import StatisticsEditorDialog
 
         channels_by_id = {}
@@ -1337,6 +1361,15 @@ class MainWindow(QMainWindow):
             self._statistics,
             tuple(channels_by_id.values()),
             population_ids,
+            new_statistic_defaults=(
+                {
+                    "population_id": population_id or "all_events",
+                    "parameter_id": parameter_id,
+                    "metric": "mean" if parameter_id else "count",
+                }
+                if population_id is not None or parameter_id is not None
+                else None
+            ),
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:

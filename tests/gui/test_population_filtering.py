@@ -6,6 +6,7 @@ the scatter plot to only display events belonging to that population.
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -13,10 +14,14 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QEventLoop, QTimer
 
+from flowdesk_cli.run_project import run_project_command
+from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import GateSpec
+from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_qt.channel_selector import COUNT_CHANNEL
 from flowdesk_qt.main_window import MainWindow
+from flowdesk_storage.project import save_project
 
 pytestmark = [pytest.mark.gui, pytest.mark.gui_e2e]
 
@@ -235,6 +240,238 @@ def test_gate_edit_invalidates_population_filter(
         assert window._selected_population_id == "all_events"
         # All 4 points visible (stale flag prevents old membership from being used)
         assert len(window._plot_widget._scatter.xData) == 4
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+# ---------------------------------------------------------------------------
+# 3-3e: Gate edits invalidate and refresh persisted statistics
+# ---------------------------------------------------------------------------
+
+
+def test_gate_edit_stales_then_refreshes_statistics(
+    qapp,
+    tmp_path: Path,
+    gui_artifact_widgets: list[object],
+) -> None:
+    """A rerun replaces stale statistic results with PipelineRunner results."""
+    fcs_path = tmp_path / "statistics-invalidation.fcs"
+    events = np.array(
+        [[0.0, 0.0], [2.0, 1.0], [3.0, 2.0], [4.0, 3.0]],
+        dtype=np.float64,
+    )
+    write_fcs_file(fcs_path, events, ["X", "Y"])
+
+    window = MainWindow()
+    gui_artifact_widgets.append(window)
+    try:
+        window.show()
+        assert window._sample_browser.add_samples_from_paths([str(fcs_path)]) == 1
+        sample = window._sample_browser.samples()[0]
+        assert window._sample_browser.select_sample(sample.id)
+        x_channel_id = sample.info.channels[0].id
+        window._statistics = [
+            {
+                "id": "positive_count",
+                "name": "Positive count",
+                "population_id": "positive",
+                "metric": "count",
+                "source_stage": "compensated",
+                "value_policy": "full_events",
+            },
+            {
+                "id": "positive_mean_x",
+                "name": "Positive mean X",
+                "population_id": "positive",
+                "parameter_id": x_channel_id,
+                "metric": "mean",
+                "source_stage": "compensated",
+                "value_policy": "full_events",
+            },
+        ]
+        window._gate_editor.set_gates([
+            GateSpec(
+                id="positive",
+                name="positive",
+                gate_type="range",
+                parent_population_id="all_events",
+                x_parameter=x_channel_id,
+                thresholds={"min": 2.0},
+            ),
+        ])
+        window._on_run_pipeline()
+        _wait_for_worker(window)
+        qapp.processEvents()
+
+        first_report = window._population_tree.last_report()
+        assert first_report is not None
+        first_values = {
+            result.statistic_id: result.value
+            for result in first_report.statistic_results
+        }
+        assert first_values == {
+            "positive_count": 3,
+            "positive_mean_x": pytest.approx(3.0),
+        }
+
+        window._gate_editor.set_gates([
+            GateSpec(
+                id="positive",
+                name="positive",
+                gate_type="range",
+                parent_population_id="all_events",
+                x_parameter=x_channel_id,
+                thresholds={"min": 3.0},
+            ),
+        ])
+        qapp.processEvents()
+        assert window._results_stale is True
+        assert window._population_tree.last_report() is None
+
+        window._on_run_pipeline()
+        _wait_for_worker(window)
+        qapp.processEvents()
+
+        refreshed_report = window._population_tree.last_report()
+        assert refreshed_report is not None
+        refreshed_values = {
+            result.statistic_id: result.value
+            for result in refreshed_report.statistic_results
+        }
+        assert refreshed_values == {
+            "positive_count": 2,
+            "positive_mean_x": pytest.approx(3.5),
+        }
+        assert window._results_stale is False
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
+# ---------------------------------------------------------------------------
+# 3-3f: GUI, headless API, and CLI statistic values agree
+# ---------------------------------------------------------------------------
+
+
+def test_gui_statistics_match_headless_api_and_cli_export(
+    qapp,
+    tmp_path: Path,
+    gui_artifact_widgets: list[object],
+) -> None:
+    """All frontends consume the same persisted statistic definitions."""
+    fcs_path = tmp_path / "statistics-consistency.fcs"
+    events = np.array(
+        [[0.0, 10.0], [2.0, 20.0], [3.0, 30.0], [4.0, 40.0]],
+        dtype=np.float64,
+    )
+    write_fcs_file(fcs_path, events, ["X", "Y"])
+
+    window = MainWindow()
+    gui_artifact_widgets.append(window)
+    try:
+        window.show()
+        assert window._sample_browser.add_samples_from_paths([str(fcs_path)]) == 1
+        sample_info = window._sample_browser.samples()[0]
+        assert window._sample_browser.select_sample(sample_info.id)
+        x_channel_id = sample_info.info.channels[0].id
+        y_channel_id = sample_info.info.channels[1].id
+        window._gate_editor.set_gates([
+            GateSpec(
+                id="positive",
+                name="positive",
+                gate_type="range",
+                parent_population_id="all_events",
+                x_parameter=x_channel_id,
+                thresholds={"min": 2.0},
+            ),
+        ])
+        window._statistics = [
+            {
+                "id": "positive_count",
+                "name": "Positive count",
+                "population_id": "positive",
+                "metric": "count",
+                "source_stage": "compensated",
+                "value_policy": "full_events",
+            },
+            {
+                "id": "positive_mean_y",
+                "name": "Positive mean Y",
+                "population_id": "positive",
+                "parameter_id": y_channel_id,
+                "metric": "mean",
+                "source_stage": "compensated",
+                "value_policy": "full_events",
+            },
+        ]
+        window._on_run_pipeline()
+        _wait_for_worker(window)
+        qapp.processEvents()
+
+        gui_report = window._population_tree.last_report()
+        assert gui_report is not None
+        gui_results = {
+            result.statistic_id: result
+            for result in gui_report.statistic_results
+        }
+        assert {
+            statistic_id: result.value
+            for statistic_id, result in gui_results.items()
+        } == {
+            "positive_count": 3,
+            "positive_mean_y": pytest.approx(30.0),
+        }
+
+        table = window._population_tree._statistics_table
+        gui_table = {
+            table.item(row, 0).text(): (
+                table.item(row, 3).text(),
+                table.item(row, 4).text(),
+            )
+            for row in range(table.rowCount())
+        }
+        assert gui_table == {
+            "positive_count": ("3", "ok"),
+            "positive_mean_y": ("30", "ok"),
+        }
+
+        project = window._build_project_manifest()
+        api_report = PipelineRunner(project).run_samples(
+            ExecutionContext(), tuple(window._sample_data.values())
+        )
+        api_results = {
+            result.statistic_id: result
+            for result in api_report.statistic_results
+        }
+        assert {
+            statistic_id: (result.value, result.status)
+            for statistic_id, result in api_results.items()
+        } == {
+            statistic_id: (result.value, result.status)
+            for statistic_id, result in gui_results.items()
+        }
+
+        project_path = tmp_path / "statistics-consistency.flowdesk"
+        save_project(project_path, project)
+        cli_path = tmp_path / "statistics.tsv"
+        assert run_project_command(
+            str(project_path), statistics_output=str(cli_path)
+        ) == 0
+        with cli_path.open(encoding="utf-8") as fh:
+            cli_rows = {
+                row["statistic_id"]: row
+                for row in csv.DictReader(fh, delimiter="\t")
+            }
+
+        assert set(cli_rows) == set(gui_results)
+        for statistic_id, result in gui_results.items():
+            assert float(cli_rows[statistic_id]["value"]) == pytest.approx(
+                result.value
+            )
+            assert cli_rows[statistic_id]["status"] == result.status
     finally:
         window.close()
         window.deleteLater()

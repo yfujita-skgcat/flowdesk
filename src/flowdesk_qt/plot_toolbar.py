@@ -24,6 +24,7 @@ class PlotToolbar(QToolBar):
       on_reset_full()
       on_export_png()
       on_marginal_toggled(enabled: bool)
+      on_add_statistic()
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -35,6 +36,7 @@ class PlotToolbar(QToolBar):
             "reset_full": [],
             "export_png": [],
             "marginal_toggled": [],
+            "add_statistic": [],
         }
         self._marginal_enabled: bool = False
         self._build_toolbar()
@@ -69,6 +71,10 @@ class PlotToolbar(QToolBar):
         """Register callback for marginal histogram toggle."""
         self._callbacks["marginal_toggled"].append(callback)
 
+    def on_add_statistic(self, callback: Callable[[], None]) -> None:
+        """Register a callback to create a statistic from the graph context."""
+        self._callbacks["add_statistic"].append(callback)
+
     def _emit(self, key: str, *args: Any) -> None:
         for cb in self._callbacks.get(key, []):
             invoke_callback(cb, *args)
@@ -81,6 +87,9 @@ class PlotToolbar(QToolBar):
 
     def _on_export_clicked(self) -> None:
         self._emit("export_png")
+
+    def _on_add_statistic_clicked(self) -> None:
+        self._emit("add_statistic")
 
     def _on_marginal_toggled(self, checked: bool) -> None:
         self._marginal_enabled = checked
@@ -109,6 +118,15 @@ class PlotToolbar(QToolBar):
         btn_export.setToolTip("Export current plot view to PNG")
         btn_export.clicked.connect(self._on_export_clicked)
         self.addWidget(btn_export)
+
+        btn_statistic = QToolButton()
+        btn_statistic.setObjectName("addStatisticFromGraphButton")
+        btn_statistic.setText("Add Statistic")
+        btn_statistic.setToolTip(
+            "Create a statistic definition using the graph X parameter"
+        )
+        btn_statistic.clicked.connect(self._on_add_statistic_clicked)
+        self.addWidget(btn_statistic)
 
         self.addSeparator()
 

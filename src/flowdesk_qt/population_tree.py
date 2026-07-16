@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHeaderView,
     QLabel,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -107,6 +108,13 @@ class PopulationTree(QWidget):
         """
         self._selection_callbacks.append(callback)
 
+    def on_add_statistic_requested(
+        self,
+        callback: Callable[[str], None],
+    ) -> None:
+        """Register a callback to create a statistic for the selected population."""
+        self._add_statistic_callbacks.append(callback)
+
     def get_current_sample_id(self) -> str | None:
         """Return the sample_id associated with the current report data."""
         if self._last_report is None:
@@ -198,6 +206,11 @@ class PopulationTree(QWidget):
         for cb in self._selection_callbacks:
             invoke_callback(cb, population_id, sample_id)
 
+    def _on_add_statistic_clicked(self) -> None:
+        population_id = self.get_selected_population_id() or "all_events"
+        for cb in self._add_statistic_callbacks:
+            invoke_callback(cb, population_id)
+
     def _population_depth(self, population_id: str) -> int:
         depth = 0
         seen = {population_id}
@@ -212,6 +225,7 @@ class PopulationTree(QWidget):
 
     def _build_ui(self) -> None:
         self._selection_callbacks: list[Callable[[str, str], None]] = []
+        self._add_statistic_callbacks: list[Callable[[str], None]] = []
 
         self._table = QTableWidget()
         self._table.setObjectName("populationResultsTable")
@@ -259,6 +273,15 @@ class PopulationTree(QWidget):
         stat_box = QGroupBox("Custom Statistics")
         stat_box_layout = QVBoxLayout(stat_box)
         stat_box_layout.addWidget(self._statistics_table)
+        self._add_statistic_button = QPushButton("Add Statistic")
+        self._add_statistic_button.setObjectName(
+            "addStatisticFromPopulationTreeButton"
+        )
+        self._add_statistic_button.setToolTip(
+            "Create a statistic definition for the selected population"
+        )
+        self._add_statistic_button.clicked.connect(self._on_add_statistic_clicked)
+        stat_box_layout.addWidget(self._add_statistic_button)
 
         layout = QVBoxLayout(self)
         layout.addWidget(box)

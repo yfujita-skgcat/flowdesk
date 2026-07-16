@@ -8,7 +8,7 @@ This widget contains NO scientific execution logic.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
@@ -65,19 +65,25 @@ _VALUE_METRICS = frozenset([
 _SOURCE_STAGES = ["raw", "compensated", "transformed"]
 
 
-def _empty_statistic() -> dict[str, Any]:
+def _empty_statistic(
+    defaults: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return a minimal statistic mapping ready for user editing."""
-    return {
+    statistic = {
         "id": "",
         "name": "",
         "population_id": "",
         "parameter_id": None,
         "metric": "count",
         "source_stage": "compensated",
+        "value_policy": "full_events",
         "settings": {},
         "format": None,
         "notes": "",
     }
+    if defaults:
+        statistic.update(defaults)
+    return statistic
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +103,7 @@ class StatisticsEditorDialog(QDialog):
         available_channels: Sequence[ChannelSpec],
         population_ids: Sequence[str],
         *,
+        new_statistic_defaults: Mapping[str, Any] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -112,9 +119,11 @@ class StatisticsEditorDialog(QDialog):
 
         self._build_ui()
 
-        if not self._statistics:
+        if new_statistic_defaults is not None:
+            self._statistics.append(_empty_statistic(new_statistic_defaults))
+        elif not self._statistics:
             self._statistics.append(_empty_statistic())
-        self._refresh_list(0)
+        self._refresh_list(len(self._statistics) - 1)
 
     # -- Public API ----------------------------------------------------------
 
@@ -326,6 +335,7 @@ class StatisticsEditorDialog(QDialog):
             "parameter_id": param_id,
             "metric": metric,
             "source_stage": self._source_combo.currentText(),
+            "value_policy": "full_events",
             "settings": settings,
             "format": fmt_text,
             "notes": self._notes_edit.text().strip(),
