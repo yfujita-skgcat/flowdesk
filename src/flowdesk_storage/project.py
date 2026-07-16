@@ -11,7 +11,7 @@ from flowdesk_storage.manifest import (
   validate_manifest,
 )
 from flowdesk_storage.migrations import migrate_manifest
-from flowdesk_storage.serialization import now_iso, write_json
+from flowdesk_storage.serialization import atomic_write_json, now_iso
 
 ProjectManifest: TypeAlias = dict[str, Any]
 
@@ -39,20 +39,21 @@ def save_project(
   project_path = Path(path)
   manifest_path = project_path / "manifest.json"
 
+  # Migrate and validate BEFORE creating any files.
+  manifest = migrate_manifest(manifest)
+  validate_manifest(manifest)
+
   # Ensure the bundle directory structure exists.
   (project_path / "cache").mkdir(parents=True, exist_ok=True)
   (project_path / "exports").mkdir(parents=True, exist_ok=True)
   (project_path / "gates").mkdir(parents=True, exist_ok=True)
-
-  manifest = migrate_manifest(manifest)
-  validate_manifest(manifest)
   manifest["updated_at"] = now_iso()
-  write_json(manifest_path, manifest)
+  atomic_write_json(manifest_path, manifest)
 
   strategies = manifest.get("gating_strategies_data", {})
   if len(strategies) == 1:
     strategy = next(iter(strategies.values()))
-    write_json(project_path / "gates" / "gating_strategy.json", strategy)
+    atomic_write_json(project_path / "gates" / "gating_strategy.json", strategy)
 
 
 def load_gating_strategy(

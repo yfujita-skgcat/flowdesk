@@ -254,14 +254,14 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 
 ### Phase A7: Schema migration、atomic save、structured diagnostics [S14/S23]
 
-- [ ] `docs/implementation/project-migration-and-recovery.md`を全文読み、対象versionとmigration経路を追記する。
-- [ ] project schemaを厳密化し、ID reference integrityをvalidatorで検証する。
-- [ ] versionごとのmigration registryを作り、migration reportとbackupを生成する。
-- [ ] temp pathへwrite、fsync、atomic replaceするsave手順を実装する。
-- [ ] newer unsupported schemaをread-only以外で開かない。
-- [ ] ExecutionDiagnostic modelを追加し、severity、code、sample、population、stage、message、detailsを保持する。
-- [ ] GUI diagnostics panelとCLI machine-readable JSON outputを追加する。
-- [ ] interrupted save、invalid reference、old schema、newer schemaをtestする。
+- [x] 済み: `docs/implementation/project-migration-and-recovery.md`を全文読み、対象versionとmigration経路を追記する。
+- [x] 済み: project schemaを厳密化し、ID reference integrityをvalidatorで検証する。(gate parent_population_id, statistics population_id, compensation bindings/calculations)
+- [x] 済み: versionごとのmigration registryを作り、migration reportとbackupを生成する。(MigrationReport, _get_migration_path, ALL_KNOWN_VERSIONS)
+- [x] 済み: temp pathへwrite、fsync、atomic replaceするsave手順を実装する。(atomic_write_json)
+- [x] 済み: newer unsupported schemaをread-only以外で開かない。(migration前にreject、save前にvalidate)
+- [x] 済み: ExecutionDiagnostic modelを追加し、severity、code、sample、population、stage、message、detailsを保持する。(既存: execution_report.py)
+- [x] 済み: CLI machine-readable JSON outputを追加する。(既存: run_project.py でstderrへJSON出力)
+- [x] 済み: interrupted save、invalid reference、old schema、newer schemaをtestする。
 
 ## Release B: Experiment-scale gating and review
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,44 @@ def write_json(path: str | Path, data: dict[str, Any], indent: int = 2) -> None:
   with path_obj.open("w", encoding="utf-8") as handle:
     json.dump(data, handle, indent=indent, ensure_ascii=False)
     handle.write("\n")
+
+
+def atomic_write_json(
+  path: str | Path,
+  data: dict[str, Any],
+  indent: int = 2,
+) -> None:
+  """Write a JSON file atomically using temp file + fsync + rename.
+
+  Writes to a sibling temporary file, flushes required data, then
+  atomically replaces the target. If the write fails, the previous
+  file is left intact.
+  """
+
+  path_obj = Path(path)
+  path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+  content = json.dumps(data, indent=indent, ensure_ascii=False) + "\n"
+  content_bytes = content.encode("utf-8")
+
+  # Write to a temporary file in the same directory to ensure same filesystem.
+  fd, tmp_path = tempfile.mkstemp(
+    suffix=".tmp",
+    prefix=".atomic_",
+    dir=str(path_obj.parent),
+  )
+  try:
+    os.write(fd, content_bytes)
+    os.fsync(fd)
+    os.close(fd)
+    os.replace(tmp_path, str(path_obj))
+  except BaseException:
+    os.close(fd)
+    try:
+      os.unlink(tmp_path)
+    except OSError:
+      pass
+    raise
 
 
 def read_json(path: str | Path) -> dict[str, Any]:

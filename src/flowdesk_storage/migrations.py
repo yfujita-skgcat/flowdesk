@@ -4,11 +4,32 @@ from __future__ import annotations
 
 from collections import Counter
 from copy import deepcopy
+from dataclasses import dataclass, field
 from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
 
 CURRENT_PROJECT_VERSION = "1.5.0"
+
+
+@dataclass
+class MigrationReport:
+  """Typed result from a project manifest migration."""
+
+  from_version: str
+  to_version: str
+  was_migrated: bool
+  diagnostics: list[dict[str, Any]] = field(default_factory=list)
+  migrated: dict[str, Any] | None = None
+
+  def to_mapping(self) -> dict[str, Any]:
+    """Return the stable diagnostic representation for adapters."""
+    return {
+      "from_version": self.from_version,
+      "to_version": self.to_version,
+      "was_migrated": self.was_migrated,
+      "diagnostics": list(self.diagnostics),
+    }
 LEGACY_PROJECT_VERSIONS = frozenset({
   "0.1",
   "1.0.0",
@@ -17,6 +38,31 @@ LEGACY_PROJECT_VERSIONS = frozenset({
   "1.3.0",
   "1.4.0",
 })
+
+# Ordered list of all known versions from oldest to newest.
+ALL_KNOWN_VERSIONS = [
+  "0.1",
+  "1.0.0",
+  "1.1.0",
+  "1.2.0",
+  "1.3.0",
+  "1.4.0",
+  CURRENT_PROJECT_VERSION,
+]
+
+
+def _get_migration_path(from_version: str) -> list[str]:
+  """Return the ordered list of versions to migrate through.
+
+  Returns an empty list if ``from_version`` is already current.
+  """
+
+  if from_version == CURRENT_PROJECT_VERSION:
+    return []
+  if from_version not in ALL_KNOWN_VERSIONS:
+    return []
+  start_idx = ALL_KNOWN_VERSIONS.index(from_version)
+  return ALL_KNOWN_VERSIONS[start_idx + 1:]
 
 
 class ProjectMigrationError(FlowdeskError):
@@ -37,7 +83,23 @@ class ProjectMigrationError(FlowdeskError):
 
 
 def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
-  """Return a migrated deep copy while preserving all unknown fields."""
+  """Return a migrated deep copy while preserving all unknown fields.
+
+  DEPRECATED: Use ``migrate_manifest_with_report()`` for typed diagnostics.
+  This wrapper remains for backward compatibility.
+  """
+
+  result = migrate_manifest_with_report(data)
+  return result.migrated
+
+
+def migrate_manifest_with_report(data: dict[str, Any]) -> MigrationReport:
+  """Migrate a manifest and return a typed ``MigrationReport``.
+
+  Returns a report with ``from_version``, ``to_version``, ``was_migrated``,
+  and any diagnostics emitted during migration.
+  """
+
   if not isinstance(data, dict):
     raise ProjectMigrationError(
       "invalid_manifest_type",
@@ -50,7 +112,13 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
       "project manifest has no string project_version",
     )
   if version == CURRENT_PROJECT_VERSION:
-    return deepcopy(data)
+    copied = deepcopy(data)
+    return MigrationReport(
+      from_version=version,
+      to_version=version,
+      was_migrated=False,
+      migrated=copied,
+    )
   if version not in LEGACY_PROJECT_VERSIONS:
     raise ProjectMigrationError(
       "unsupported_project_version",
@@ -58,6 +126,39 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
     )
 
   migrated = deepcopy(data)
+  diagnostics: list[dict[str, Any]] = migrated.get("migration_diagnostics", [])
+  if not isinstance(diagnostics, list):
+    raise ProjectMigrationError(
+      "invalid_legacy_migration_diagnostics",
+      "legacy migration_diagnostics must be an array",
+    )
+
+  _migrate_samples(migrated, diagnostics)
+  _migrate_derived_parameters(migrated, diagnostics)
+  _migrate_transforms(migrated, diagnostics)
+  _migrate_gate_transforms(migrated, diagnostics)
+  _migrate_compensation_matrices(migrated, diagnostics)
+  _ensure_compensation_bindings(migrated, diagnostics)
+
+  if diagnostics:
+    migrated["migration_diagnostics"] = diagnostics
+
+  migrated["project_version"] = CURRENT_PROJECT_VERSION
+  return MigrationReport(
+    from_version=version,
+    to_version=CURRENT_PROJECT_VERSION,
+    was_migrated=True,
+    diagnostics=list(diagnostics),
+    migrated=migrated,
+  )
+
+
+def _migrate_samples(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Migrate legacy channel_names to structured channel objects."""
+
   samples = migrated.get("samples", [])
   if not isinstance(samples, list):
     raise ProjectMigrationError(
@@ -104,17 +205,18 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
       for name in legacy_names
     ]
 
+
+def _migrate_derived_parameters(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Migrate legacy derived parameter fields to current schema."""
+
   definitions = migrated.get("derived_parameters", [])
   if not isinstance(definitions, list):
     raise ProjectMigrationError(
       "invalid_legacy_derived_parameters",
       "legacy derived_parameters must be an array",
-    )
-  diagnostics = migrated.get("migration_diagnostics", [])
-  if not isinstance(diagnostics, list):
-    raise ProjectMigrationError(
-      "invalid_legacy_migration_diagnostics",
-      "legacy migration_diagnostics must be an array",
     )
   for definition in definitions:
     if not isinstance(definition, dict):
@@ -152,6 +254,13 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
       }
       if diagnostic not in diagnostics:
         diagnostics.append(diagnostic)
+
+
+def _migrate_transforms(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Migrate legacy transform types and add role field."""
 
   transforms = migrated.get("transforms", [])
   if not isinstance(transforms, list):
@@ -193,6 +302,17 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
     if diagnostic not in diagnostics:
       diagnostics.append(diagnostic)
 
+
+def _migrate_gate_transforms(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Bind legacy gate axes to project transforms."""
+
+  transforms = migrated.get("transforms", [])
+  if not isinstance(transforms, list):
+    return
+
   transform_ids_by_parameter: dict[str, str] = {}
   duplicate_transform_parameters: set[str] = set()
   for transform in transforms:
@@ -208,59 +328,49 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
     transform_ids_by_parameter.pop(parameter, None)
 
   strategy_data = migrated.get("gating_strategies_data", {})
-  if isinstance(strategy_data, dict):
-    for strategy in strategy_data.values():
-      if not isinstance(strategy, dict):
+  if not isinstance(strategy_data, dict):
+    return
+  for strategy in strategy_data.values():
+    if not isinstance(strategy, dict):
+      continue
+    gates = strategy.get("gates", [])
+    if not isinstance(gates, list):
+      continue
+    for gate in gates:
+      if not isinstance(gate, dict):
         continue
-      gates = strategy.get("gates", [])
-      if not isinstance(gates, list):
-        continue
-      for gate in gates:
-        if not isinstance(gate, dict):
+      legacy_transform_id = gate.get("transform_id")
+      if legacy_transform_id is not None:
+        gate.setdefault("x_transform_id", legacy_transform_id)
+      for axis in ("x", "y"):
+        parameter = gate.get(f"{axis}_parameter")
+        if not isinstance(parameter, str) or not parameter:
           continue
-        legacy_transform_id = gate.get("transform_id")
-        if legacy_transform_id is not None:
-          gate.setdefault("x_transform_id", legacy_transform_id)
-        for axis in ("x", "y"):
-          parameter = gate.get(f"{axis}_parameter")
-          if not isinstance(parameter, str) or not parameter:
-            continue
-          transform_id = transform_ids_by_parameter.get(parameter)
-          if transform_id is None or gate.get(f"{axis}_transform_id") is not None:
-            continue
-          scale = gate.get(f"{axis}_scale", "linear")
-          if scale == "linear":
-            gate[f"{axis}_transform_id"] = transform_id
-            continue
-          diagnostic = {
-            "code": "legacy_double_transform",
-            "severity": "error",
-            "stage": "migration",
-            "message": (
-              f"Gate {gate.get('id', 'unknown')!r} {axis}-axis combines "
-              f"project transform {transform_id!r} with legacy scale {scale!r}"
-            ),
-            "transform_id": transform_id,
-            "details": {
-              "gate_id": gate.get("id"),
-              "axis": axis,
-              "legacy_scale": scale,
-              "compatibility_policy": "reject_double_application",
-            },
-          }
-          if diagnostic not in diagnostics:
-            diagnostics.append(diagnostic)
-  # Migrate legacy compensation matrices to include provenance.
-  _migrate_compensation_matrices(migrated, diagnostics)
-
-  # Ensure compensation_bindings array exists for new projects.
-  _ensure_compensation_bindings(migrated, diagnostics)
-
-  if diagnostics:
-    migrated["migration_diagnostics"] = diagnostics
-
-  migrated["project_version"] = CURRENT_PROJECT_VERSION
-  return migrated
+        transform_id = transform_ids_by_parameter.get(parameter)
+        if transform_id is None or gate.get(f"{axis}_transform_id") is not None:
+          continue
+        scale = gate.get(f"{axis}_scale", "linear")
+        if scale == "linear":
+          gate[f"{axis}_transform_id"] = transform_id
+          continue
+        diagnostic = {
+          "code": "legacy_double_transform",
+          "severity": "error",
+          "stage": "migration",
+          "message": (
+            f"Gate {gate.get('id', 'unknown')!r} {axis}-axis combines "
+            f"project transform {transform_id!r} with legacy scale {scale!r}"
+          ),
+          "transform_id": transform_id,
+          "details": {
+            "gate_id": gate.get("id"),
+            "axis": axis,
+            "legacy_scale": scale,
+            "compatibility_policy": "reject_double_application",
+          },
+        }
+        if diagnostic not in diagnostics:
+          diagnostics.append(diagnostic)
 
 
 def _migrate_compensation_matrices(

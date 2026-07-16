@@ -16,8 +16,12 @@ from flowdesk_storage.manifest import (
 )
 from flowdesk_storage.migrations import (
   CURRENT_PROJECT_VERSION,
+  LEGACY_PROJECT_VERSIONS,
+  MigrationReport,
   ProjectMigrationError,
+  _get_migration_path,
   migrate_manifest,
+  migrate_manifest_with_report,
 )
 from flowdesk_storage.project import (
   load_gating_strategy,
@@ -25,6 +29,7 @@ from flowdesk_storage.project import (
   resolve_sample_paths,
   save_project,
 )
+from flowdesk_storage.serialization import atomic_write_json
 
 EXAMPLE_PROJECT = Path(__file__).parent.parent / "examples" / "example_project.flowdesk"
 LEGACY_CHANNEL_PROJECT = (
@@ -1659,3 +1664,450 @@ class TestCompensationCalculationValidation:
       }
     ]
     assert validate_manifest(manifest) is None
+
+
+# -- MigrationReport --
+
+
+class TestMigrationReport:
+  """Test the typed MigrationReport from migrate_manifest_with_report."""
+
+  def test_current_version_no_migration(self) -> None:
+    current = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+    }
+    report = migrate_manifest_with_report(current)
+
+    assert report.from_version == CURRENT_PROJECT_VERSION
+    assert report.to_version == CURRENT_PROJECT_VERSION
+    assert report.was_migrated is False
+    assert report.diagnostics == []
+    assert report.migrated is not None
+    assert report.migrated == current
+
+  def test_legacy_version_migrates(self) -> None:
+    legacy = {
+      **MINIMAL_MANIFEST,
+      "project_version": "1.0.0",
+      "samples": [{"id": "s1", "channels": []}],
+    }
+    report = migrate_manifest_with_report(legacy)
+
+    assert report.from_version == "1.0.0"
+    assert report.to_version == CURRENT_PROJECT_VERSION
+    assert report.was_migrated is True
+    assert report.migrated is not None
+    assert report.migrated["project_version"] == CURRENT_PROJECT_VERSION
+
+  def test_to_mapping(self) -> None:
+    report = MigrationReport(
+      from_version="0.1",
+      to_version=CURRENT_PROJECT_VERSION,
+      was_migrated=True,
+      diagnostics=[{"code": "test", "severity": "info", "stage": "migration", "message": "test"}],
+    )
+
+    mapping = report.to_mapping()
+    assert mapping["from_version"] == "0.1"
+    assert mapping["to_version"] == CURRENT_PROJECT_VERSION
+    assert mapping["was_migrated"] is True
+    assert len(mapping["diagnostics"]) == 1
+    assert mapping["diagnostics"][0]["code"] == "test"
+
+  def test_diagnostics_preserved_from_legacy(self) -> None:
+    legacy = {
+      **MINIMAL_MANIFEST,
+      "project_version": "1.2.0",
+      "samples": [{"id": "s1", "channels": []}],
+      "transforms": [{
+        "id": "legacy_scale",
+        "name": "Legacy scale",
+        "transform_type": "logicle_like",
+        "parameter": "signal",
+        "settings": {"w": 0.3, "td": 500000.0, "tn": 5000.0},
+      }],
+    }
+    report = migrate_manifest_with_report(legacy)
+
+    assert report.was_migrated is True
+    diag_codes = [d["code"] for d in report.diagnostics]
+    assert "legacy_logicle_approximation" in diag_codes
+
+  def test_unsupported_version_still_raises(self) -> None:
+    future = {
+      **MINIMAL_MANIFEST,
+      "project_version": "99.0.0",
+    }
+    with pytest.raises(ProjectMigrationError) as error:
+      migrate_manifest_with_report(future)
+    assert error.value.code == "unsupported_project_version"
+
+  def test_backward_compat_wrapper_returns_dict(self) -> None:
+    """The deprecated migrate_manifest() still returns a dict."""
+    current = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+    }
+    result = migrate_manifest(current)
+    assert isinstance(result, dict)
+    assert result["project_version"] == CURRENT_PROJECT_VERSION
+
+  def test_legacy_compat_wrapper_returns_migrated_dict(self) -> None:
+    """The deprecated migrate_manifest() still returns migrated dict."""
+    legacy = {
+      **MINIMAL_MANIFEST,
+      "project_version": "1.0.0",
+      "samples": [{"id": "s1", "channels": []}],
+    }
+    result = migrate_manifest(legacy)
+    assert isinstance(result, dict)
+    assert result["project_version"] == CURRENT_PROJECT_VERSION
+
+
+# -- Reference integrity validation --
+
+
+class TestReferenceIntegrity:
+  """Test that dangling gate and statistic references are rejected."""
+
+  def _make_manifest(self, **kwargs) -> dict[str, Any]:
+    manifest: dict[str, Any] = {
+      "project_id": "test_proj",
+      "project_version": CURRENT_PROJECT_VERSION,
+      "pipeline_version": "1.0",
+      "samples": [
+        {
+          "id": "s1",
+          "channels": [
+            {"id": "FL1-A", "name": "FL1-A"},
+            {"id": "FL2-A", "name": "FL2-A"},
+          ],
+        }
+      ],
+      **kwargs,
+    }
+    return manifest
+
+  def test_gate_parent_all_events_is_allowed(self) -> None:
+    manifest = self._make_manifest(
+      gating_strategies_data={
+        "default": {
+          "id": "default",
+          "gates": [{
+            "id": "g1",
+            "gate_type": "rectangle",
+            "parent_population_id": "all_events",
+            "x_parameter": "FL1-A",
+            "y_parameter": "FL2-A",
+          }],
+        },
+      },
+    )
+    validate_manifest(manifest)
+
+  def test_gate_parent_null_is_allowed(self) -> None:
+    manifest = self._make_manifest(
+      gating_strategies_data={
+        "default": {
+          "id": "default",
+          "gates": [{
+            "id": "g1",
+            "gate_type": "rectangle",
+            "parent_population_id": None,
+            "x_parameter": "FL1-A",
+            "y_parameter": "FL2-A",
+          }],
+        },
+      },
+    )
+    validate_manifest(manifest)
+
+  def test_gate_parent_another_gate_is_allowed(self) -> None:
+    manifest = self._make_manifest(
+      gating_strategies_data={
+        "default": {
+          "id": "default",
+          "gates": [
+            {
+              "id": "g1",
+              "gate_type": "rectangle",
+              "parent_population_id": "all_events",
+              "x_parameter": "FL1-A",
+              "y_parameter": "FL2-A",
+            },
+            {
+              "id": "g2",
+              "gate_type": "rectangle",
+              "parent_population_id": "g1",
+              "x_parameter": "FL1-A",
+              "y_parameter": "FL2-A",
+            },
+          ],
+        },
+      },
+    )
+    validate_manifest(manifest)
+
+  def test_gate_parent_unknown_gate_raises(self) -> None:
+    manifest = self._make_manifest(
+      gating_strategies_data={
+        "default": {
+          "id": "default",
+          "gates": [{
+            "id": "g1",
+            "gate_type": "rectangle",
+            "parent_population_id": "nonexistent",
+            "x_parameter": "FL1-A",
+            "y_parameter": "FL2-A",
+          }],
+        },
+      },
+    )
+    with pytest.raises(ManifestValidationError, match="unknown parent_population_id"):
+      validate_manifest(manifest)
+
+  def test_gate_parent_empty_string_raises(self) -> None:
+    manifest = self._make_manifest(
+      gating_strategies_data={
+        "default": {
+          "id": "default",
+          "gates": [{
+            "id": "g1",
+            "gate_type": "rectangle",
+            "parent_population_id": "",
+            "x_parameter": "FL1-A",
+            "y_parameter": "FL2-A",
+          }],
+        },
+      },
+    )
+    with pytest.raises(ManifestValidationError, match="parent_population_id must be a non-empty string"):
+      validate_manifest(manifest)
+
+  def test_dangling_transform_reference_raises(self) -> None:
+    manifest = self._make_manifest(
+      transforms=[{
+        "id": "t1",
+        "name": "T1",
+        "transform_type": "linear",
+        "parameter": "FL1-A",
+        "role": "analysis",
+        "settings": {"scale": 1.0, "offset": 0.0},
+      }],
+      gating_strategies_data={
+        "default": {
+          "id": "default",
+          "gates": [{
+            "id": "g1",
+            "gate_type": "rectangle",
+            "parent_population_id": None,
+            "x_parameter": "FL1-A",
+            "x_transform_id": "unknown_transform",
+          }],
+        },
+      },
+    )
+    with pytest.raises(ManifestValidationError, match="unknown transform"):
+      validate_manifest(manifest)
+
+  def test_dangling_matrix_binding_reference_raises(self) -> None:
+    manifest = self._make_manifest(
+      compensation_bindings=[{
+        "id": "bind_1",
+        "matrix_id": "nonexistent_matrix",
+        "scope": "sample",
+        "target_id": "s1",
+      }],
+    )
+    with pytest.raises(ManifestValidationError, match="unknown.*matrix"):
+      validate_manifest(manifest)
+
+  def test_dangling_sample_in_calculation_raises(self) -> None:
+    manifest = self._make_manifest(
+      compensation_calculations=[{
+        "id": "calc1",
+        "name": "Calc",
+        "controls": [{
+          "sample_id": "nonexistent_sample",
+          "detector_channel_id": "FL1-A",
+          "positive_population_id": "pos",
+          "negative_population_id": "neg",
+        }],
+      }],
+    )
+    with pytest.raises(ManifestValidationError, match="unknown sample"):
+      validate_manifest(manifest)
+
+
+# -- Migration registry --
+
+
+class TestMigrationRegistry:
+  """Test version path computation and per-version migration fixtures."""
+
+  def test_current_version_has_empty_path(self) -> None:
+    assert _get_migration_path(CURRENT_PROJECT_VERSION) == []
+
+  def test_legacy_versions_have_non_empty_path(self) -> None:
+    for version in LEGACY_PROJECT_VERSIONS:
+      path = _get_migration_path(version)
+      assert len(path) > 0, f"{version} should have a migration path"
+      assert path[-1] == CURRENT_PROJECT_VERSION
+
+  def test_unknown_version_has_empty_path(self) -> None:
+    assert _get_migration_path("99.0.0") == []
+
+  def test_v0_1_migration_path(self) -> None:
+    path = _get_migration_path("0.1")
+    assert path == ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", CURRENT_PROJECT_VERSION]
+
+  def test_v1_4_migration_path(self) -> None:
+    path = _get_migration_path("1.4.0")
+    assert path == [CURRENT_PROJECT_VERSION]
+
+  def test_all_legacy_versions_migrate_to_current(self, tmp_path: Path) -> None:
+    """Every legacy version migrates and validates at the current version."""
+    for version in LEGACY_PROJECT_VERSIONS:
+      legacy = {
+        "project_id": f"test-{version}",
+        "project_version": version,
+        "pipeline_version": "0.1",
+        "samples": [{"id": "s1", "channels": []}],
+      }
+      report = migrate_manifest_with_report(legacy)
+      assert report.from_version == version
+      assert report.to_version == CURRENT_PROJECT_VERSION
+      assert report.was_migrated is True
+      assert report.migrated["project_version"] == CURRENT_PROJECT_VERSION
+      # The migrated manifest should validate.
+      validate_manifest(report.migrated)
+
+  def test_migration_idempotent_at_current(self) -> None:
+    """Migrating an already-current manifest is idempotent."""
+    current = {
+      **MINIMAL_MANIFEST,
+      "project_version": CURRENT_PROJECT_VERSION,
+      "samples": [{"id": "s1", "channels": []}],
+    }
+    r1 = migrate_manifest_with_report(current)
+    r2 = migrate_manifest_with_report(r1.migrated)
+    assert r1.was_migrated is False
+    assert r2.was_migrated is False
+    assert r1.migrated == r2.migrated
+
+  def test_unsupported_version_rejected_without_mutation(self) -> None:
+    future = {
+      **MINIMAL_MANIFEST,
+      "project_version": "99.0.0",
+      "future_extension": {"keep": True},
+    }
+    original = json.loads(json.dumps(future))
+    with pytest.raises(ProjectMigrationError) as error:
+      migrate_manifest_with_report(future)
+    assert error.value.code == "unsupported_project_version"
+    assert future == original
+
+
+# -- Atomic write --
+
+
+class TestAtomicWrite:
+  """Test atomic_write_json and save_project atomic behavior."""
+
+  def test_atomic_write_creates_file(self, tmp_path: Path) -> None:
+    target = tmp_path / "data.json"
+    atomic_write_json(target, {"key": "value"})
+    assert target.exists()
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data == {"key": "value"}
+
+  def test_atomic_write_replaces_existing(self, tmp_path: Path) -> None:
+    target = tmp_path / "data.json"
+    atomic_write_json(target, {"v": 1})
+    atomic_write_json(target, {"v": 2})
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data["v"] == 2
+
+  def test_atomic_write_on_failure_preserves_original(self, tmp_path: Path) -> None:
+    """Simulate write failure by making the directory read-only."""
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    target = subdir / "data.json"
+    atomic_write_json(target, {"v": 1})
+
+    # Make the subdirectory read-only to trigger an atomic write failure.
+    subdir.chmod(0o444)
+    try:
+      with pytest.raises(PermissionError):
+        atomic_write_json(target, {"v": 2})
+    finally:
+      subdir.chmod(0o755)
+    # After restoring permissions, original file should still be intact.
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data["v"] == 1
+    # No leftover temp files.
+    tmp_files = list(subdir.glob("*.tmp"))
+    assert tmp_files == []
+
+
+# -- Newer schema rejection --
+
+
+class TestNewerSchemaRejection:
+  """Newer unsupported schema must not be modified on load or save."""
+
+  def test_load_rejects_newer_version(self, tmp_path: Path) -> None:
+    bundle = tmp_path / "newer.flowdesk"
+    bundle.mkdir()
+    future = {
+      "project_id": "future_proj",
+      "project_version": "99.0.0",
+      "pipeline_version": "1.0",
+      "samples": [],
+    }
+    (bundle / "manifest.json").write_text(
+      json.dumps(future),
+      encoding="utf-8",
+    )
+    with pytest.raises(ProjectMigrationError, match="unsupported project version"):
+      load_project(bundle)
+    # Original file must be unchanged.
+    remaining = json.loads(
+      (bundle / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert remaining["project_version"] == "99.0.0"
+
+  def test_save_rejects_newer_version(self, tmp_path: Path) -> None:
+    bundle = tmp_path / "newer.flowdesk"
+    future = {
+      "project_id": "future_proj",
+      "project_version": "99.0.0",
+      "pipeline_version": "1.0",
+      "samples": [],
+    }
+    with pytest.raises(ProjectMigrationError, match="unsupported project version"):
+      save_project(bundle, future)
+    # No partial write.
+    assert not bundle.exists()
+
+  def test_save_project_is_atomic(self, tmp_path: Path) -> None:
+    """save_project uses atomic writes; failure should not corrupt."""
+    bundle = tmp_path / "test.flowdesk"
+    save_project(bundle, MINIMAL_MANIFEST)
+
+    manifest_path = bundle / "manifest.json"
+    assert manifest_path.exists()
+
+    # Re-save should succeed atomically.
+    save_project(bundle, MINIMAL_MANIFEST)
+    reloaded = load_project(bundle)
+    assert reloaded["project_id"] == "test_proj"
+
+  def test_no_temp_files_left_after_save(self, tmp_path: Path) -> None:
+    """After a successful save, no .tmp files remain."""
+    bundle = tmp_path / "test.flowdesk"
+    save_project(bundle, MINIMAL_MANIFEST)
+
+    tmp_files = list(bundle.rglob("*.tmp"))
+    assert tmp_files == []

@@ -68,7 +68,15 @@ def validate_manifest(data: dict[str, Any]) -> None:
         if isinstance(m, dict) and isinstance(m.get("id"), str)
       } | calculated_matrix_ids,
     )
-    _validate_current_statistics(data.get("statistics", []))
+    gate_ids = _collect_gate_ids(data.get("gating_strategies_data", {}))
+    _validate_current_statistics(
+      data.get("statistics", []),
+      gate_ids,
+    )
+    _validate_current_gate_parent_references(
+      data.get("gating_strategies_data", {}),
+      gate_ids,
+    )
 
 
 def _validate_current_transforms(transforms: Any) -> dict[str, tuple[str, str]]:
@@ -582,7 +590,31 @@ def _validate_current_compensation_calculations(
   return {f"calculated-{calc_id}" for calc_id in calc_ids}
 
 
-def _validate_current_statistics(statistics: Any) -> None:
+def _collect_gate_ids(strategy_data: Any) -> set[str]:
+  """Collect all gate IDs from all gating strategies."""
+
+  gate_ids: set[str] = set()
+  if not isinstance(strategy_data, dict):
+    return gate_ids
+  for strategy in strategy_data.values():
+    if not isinstance(strategy, dict):
+      continue
+    gates = strategy.get("gates", [])
+    if not isinstance(gates, list):
+      continue
+    for gate in gates:
+      if not isinstance(gate, dict):
+        continue
+      gate_id = gate.get("id")
+      if isinstance(gate_id, str) and gate_id:
+        gate_ids.add(gate_id)
+  return gate_ids
+
+
+def _validate_current_statistics(
+  statistics: Any,
+  gate_ids: set[str] | None = None,
+) -> None:
   """Validate persisted statistic definitions in the current project format."""
 
   if not isinstance(statistics, list):
@@ -658,6 +690,54 @@ def _validate_current_statistics(statistics: Any) -> None:
       if q < 0 or q > 100:
         raise ManifestValidationError(
           f"statistic {stat_id!r} percentile 'q' must be in [0, 100]"
+        )
+
+
+def _validate_current_gate_parent_references(
+  strategy_data: Any,
+  gate_ids: set[str],
+) -> None:
+  """Validate that gate parent_population_id references are resolvable.
+
+  A gate's parent_population_id is either:
+    - null (root gate, parent is All Events)
+    - "all_events" (built-in root population)
+    - Another gate ID within the same strategy
+  """
+
+  # Built-in population IDs that don't need to be defined as gates.
+  BUILTIN_POPULATIONS = frozenset({"all_events", "allEvents"})
+
+  if not isinstance(strategy_data, dict):
+    return
+  for strategy_id, strategy in strategy_data.items():
+    if not isinstance(strategy, dict):
+      continue
+    gates = strategy.get("gates", [])
+    if not isinstance(gates, list):
+      continue
+    # Collect gate IDs within this specific strategy.
+    local_gate_ids = {
+      g.get("id") for g in gates
+      if isinstance(g, dict) and isinstance(g.get("id"), str) and g.get("id")
+    }
+    for gate in gates:
+      if not isinstance(gate, dict):
+        continue
+      gate_id = gate.get("id", "unknown")
+      parent = gate.get("parent_population_id")
+      if parent is None:
+        continue  # Root gate.
+      if not isinstance(parent, str) or not parent:
+        raise ManifestValidationError(
+          f"gate {gate_id!r} parent_population_id must be a non-empty string or null"
+        )
+      if parent in BUILTIN_POPULATIONS:
+        continue  # Built-in root population.
+      if parent not in local_gate_ids:
+        raise ManifestValidationError(
+          f"gate {gate_id!r} references unknown parent_population_id "
+          f"{parent!r} in strategy {strategy_id!r}"
         )
 
 
