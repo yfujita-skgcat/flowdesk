@@ -53,6 +53,19 @@ drop adds the sample to the Group's explicit `sample_ids` (duplicates are
 ignored), emits a project-state change, and marks existing results stale.
 `all-samples` remains protected from deletion but accepts membership drops.
 
+Turning advanced mode off only changes visibility and persists the explicit
+`advanced_groups_enabled: false` setting. Existing Groups, bindings, and
+annotations remain in the manifest and are not merged into the default Group.
+
+Core annotation operations are available without Qt: stable keyword-column
+generation, source precedence (`workspace` > `imported` > `fcs`), non-destructive
+find/replace, deterministic numeric fill series, and typed CSV import. These
+operations return new `AnnotationSpec` values and never modify raw FCS data.
+
+The Qt annotation editor uses those same operations for table editing, CSV
+import, replacement, and fill-series actions. Accepted edits are stored in the
+project manifest; cancel leaves the project state unchanged.
+
 Membership rules are JSON ASTs, never Python expressions:
 
 - `{ "all": [rule, ...] }`, `{ "any": [rule, ...] }`, and `{ "not": rule }`

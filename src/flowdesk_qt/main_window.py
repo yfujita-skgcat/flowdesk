@@ -205,6 +205,7 @@ class MainWindow(QMainWindow):
         self._advanced_groups_enabled = False
         self._sample_groups: list[dict[str, Any]] = []
         self._group_strategy_bindings: list[dict[str, Any]] = []
+        self._annotations: list[dict[str, Any]] = []
         # Display-only: selected population for plot filtering.
         self._selected_population_id: str = "all_events"
 
@@ -393,6 +394,11 @@ class MainWindow(QMainWindow):
         self.action_statistics.setObjectName("actionStatistics")
         self.action_statistics.triggered.connect(self._on_edit_statistics)
         analysis_menu.addAction(self.action_statistics)
+
+        self.action_annotations = QAction("Sample &Annotations...", self)
+        self.action_annotations.setObjectName("actionAnnotations")
+        self.action_annotations.triggered.connect(self._on_edit_annotations)
+        analysis_menu.addAction(self.action_annotations)
 
         analysis_menu.addSeparator()
         self.action_advanced_groups = QAction(
@@ -1005,7 +1011,7 @@ class MainWindow(QMainWindow):
                     "statistic_ids": [],
                 }
             ],
-            "annotations": [],
+            "annotations": deepcopy(self._annotations),
             "derived_parameters": deepcopy(self._derived_parameters),
             "transforms": deepcopy(self._transforms),
             "compensation_matrices": deepcopy(self._compensation_matrices),
@@ -1184,6 +1190,7 @@ class MainWindow(QMainWindow):
         self._group_strategy_bindings = deepcopy(
             manifest.get("group_strategy_bindings", [])
         )
+        self._annotations = deepcopy(manifest.get("annotations", []))
         self._group_panel.set_groups(self._sample_groups)
         self.action_advanced_groups.setChecked(
             bool(manifest.get("advanced_groups_enabled", False))
@@ -1255,6 +1262,20 @@ class MainWindow(QMainWindow):
             return
         self._derived_parameters = dialog.definitions()
         self._mark_results_stale("Derived parameters changed")
+
+    def _on_edit_annotations(self) -> None:
+        """Edit project annotations through a GUI-independent data contract."""
+        from flowdesk_qt.annotation_editor import AnnotationEditorDialog
+
+        dialog = AnnotationEditorDialog(
+            [sample.id for sample in self._sample_browser.samples()],
+            self._annotations,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._annotations = dialog.annotations()
+        self._mark_results_stale("Annotations changed")
 
     def _on_edit_transforms(self) -> None:
         """Edit versioned transform definitions without changing used IDs in place."""

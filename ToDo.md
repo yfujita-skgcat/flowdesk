@@ -289,9 +289,10 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 - [x] 済み: keyword条件でdynamic group membershipをheadlessに解決し、同一sampleに競合するstrategy bindingがある場合は `conflicting_group_strategy_binding` と sample/group/strategy context を持つ `PipelineError` で、処理開始前に拒否する。
 - [x] 済み (create/edit/delete): 通常GUIではGroup paneを隠し、All Samples × Default Strategyのみを操作する。`Use Multiple Analysis Groups`を明示的に有効化した時だけGroup paneとcreate/rename/deleteを表示する。
 - [x] 済み: advanced Group modeでsample-ID一覧からGroup一覧へdrag/dropし、explicit `sample_ids`を更新する。重複dropは無視し、変更時はresultsをstale化する。
-- [ ] 高度 Group 表示を無効にしても Group、binding、override を削除・暗黙統合しない。複数 binding のあるprojectでは簡易表示へ戻す意味を明示する。
-- [ ] keyword columns、edit、find/replace、fill series、CSV paste/importを追加する。
-- [ ] annotationはproject側へ保存し、raw FCS bytesを変更しない。
+- [x] 済み: 高度Group表示を無効にしてもGroup、binding、overrideを削除・暗黙統合せず、`advanced_groups_enabled: false`として表示だけを簡易化する。複数bindingを保持する回帰testとstatus説明を追加する。
+- [x] 済み (core): keyword columns、find/replace、fill series、typed CSV importをGUI非依存coreへ追加し、annotation source precedenceと非破壊性を検証する。
+- [x] 済み: annotation editor GUIでkeyword columns、cell edit、find/replace、fill series、CSV paste/importを提供し、core操作と同じtyped contractを使う。
+- [x] 済み: annotationはproject manifestへ保存・復元し、GUI編集とCSV importはproject側のtyped valuesだけを変更する。raw FCS bytesを変更しないことをround-trip testで確認する。
 - [ ] Group bindingしたstrategy/statisticsを新規memberへ自動適用する。CLI/headless は GUI mode に依存せず、保存済み binding を明示的に解決する。
 - [ ] GUI通常モード、GUI高度Groupモード、CLI/headless が同じ Group member IDs と resolved strategy IDs を返すtestを追加する。
 

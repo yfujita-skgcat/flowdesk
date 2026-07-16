@@ -41,6 +41,7 @@ from flowdesk_core.transforms import (  # noqa: E402
   LOGICLE_IMPLEMENTATION_VERSION,
   apply_transform,
 )
+from flowdesk_qt.annotation_editor import AnnotationEditorDialog  # noqa: E402
 from flowdesk_qt.gate_editor import GateEditor  # noqa: E402
 from flowdesk_qt.group_panel import GroupPanel  # noqa: E402
 from flowdesk_qt.main_window import MainWindow  # noqa: E402
@@ -82,6 +83,27 @@ def test_group_panel_renders_and_edits_persisted_groups() -> None:
   panel._emit_groups()
   assert changed[-1][1]["id"] == "user-group"
   panel.deleteLater()
+
+
+def test_annotation_editor_uses_typed_core_operations() -> None:
+  _app()
+  dialog = AnnotationEditorDialog(
+    ("s1", "s2"),
+    [{
+      "sample_id": "s1",
+      "keyword": "Condition",
+      "value": "old",
+      "source": "fcs",
+    }],
+  )
+  dialog.import_csv_text("sample_id,Dose\ns1,2\ns2,3\n")
+  dialog.replace_value("Condition", "old", "new")
+  dialog.fill_series("Replicate", 1, 1)
+  values = dialog.annotations()
+  assert any(item["value"] == "new" for item in values)
+  assert any(item["keyword"] == "Dose" and item["value"] == 3 for item in values)
+  assert sum(item["keyword"] == "Replicate" for item in values) == 2
+  dialog.deleteLater()
 
 
 def _fcs_info(channels: tuple[str, ...] = ("FSC-A", "SSC-A")) -> FcsFileInfo:
@@ -1144,6 +1166,12 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
       thresholds={"min": 1.0},
     )
     window._gate_editor.set_gates([gate])
+    window._annotations = [{
+      "sample_id": sample.id,
+      "keyword": "Condition",
+      "value": "treated",
+      "source": "workspace",
+    }]
     assert not window.action_advanced_groups.isChecked()
     assert window._group_panel.isHidden()
     window.action_advanced_groups.setChecked(True)
@@ -1159,6 +1187,7 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     assert saved["transforms"] == []
     assert saved["advanced_groups_enabled"] is True
     assert saved["sample_groups"][0]["id"] == "all-samples"
+    assert saved["annotations"][0]["value"] == "treated"
     assert saved["plot_display_settings"]["x_scale"] == "asinh"
     assert isinstance(
       saved["gating_strategies_data"]["default_strategy"]["gates"][0], dict
@@ -1167,6 +1196,13 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     reloaded_window._load_project_from_path(project_path)
     assert reloaded_window.action_advanced_groups.isChecked()
     assert not reloaded_window._group_panel.isHidden()
+    reloaded_window.action_advanced_groups.setChecked(False)
+    hidden_manifest = reloaded_window._build_project_manifest()
+    assert hidden_manifest["advanced_groups_enabled"] is False
+    assert hidden_manifest["sample_groups"] == saved["sample_groups"]
+    assert hidden_manifest["group_strategy_bindings"] == saved[
+      "group_strategy_bindings"
+    ]
     assert [gate.id for gate in reloaded_window._gate_editor.gates()] == ["positive"]
 
     headless_report = PipelineRunner(saved).run_samples(
