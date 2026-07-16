@@ -8,12 +8,16 @@ import pytest
 
 from flowdesk_core.models import GateSpec
 from flowdesk_core.project_commands import (
+  CopyGateOverrideToSelectedCommand,
   CopySubtreeAnalysisCommand,
   CopySubtreeCommand,
   CreateGateCommand,
   DeleteGateCommand,
   DuplicateGateCommand,
   ProjectCommandError,
+  PromoteGateOverrideCommand,
+  RebaseGateOverrideCommand,
+  ResetGateOverrideCommand,
   RenameGateCommand,
   ReparentGateCommand,
   UndoStack,
@@ -180,3 +184,48 @@ def test_group_subtree_copy_preflights_channel_mapping_atomically() -> None:
   with pytest.raises(ProjectCommandError, match="channel mapping"):
     stack.execute(command)
   assert stack.state == before
+
+
+def _override_state() -> dict:
+  state = _state()
+  state["gating_strategies_data"]["strategy"]["gates"] = [{
+    "id": "cells", "name": "Cells", "gate_type": "range",
+    "parent_population_id": "all_events", "x_parameter": "X",
+    "thresholds": {"min": 0.0, "max": 10.0},
+  }]
+  from flowdesk_core.overrides import gate_version_hash
+  state["gate_overrides"] = [{
+    "id": "cells-s1", "sample_id": "s1", "base_gate_id": "cells",
+    "base_version_hash": gate_version_hash(state["gating_strategies_data"]["strategy"]["gates"][0]),
+    "geometry_mode": "delta", "thresholds": {"min": 2.0},
+    "author": "analyst", "created_at": "2026-07-16T00:00:00+00:00",
+    "reason": "cleanup", "gate_purpose": "technical_cleanup",
+  }]
+  return state
+
+
+def test_override_commands_are_separate_and_undoable() -> None:
+  stack = UndoStack(_override_state())
+  stack.execute(CopyGateOverrideToSelectedCommand("cells-s1", ["s2"]))
+  assert stack.state["gate_overrides"][-1]["sample_id"] == "s2"
+  stack.undo()
+  stack.execute(RebaseGateOverrideCommand("strategy", "cells-s1"))
+  stack.execute(ResetGateOverrideCommand("cells-s1"))
+  assert stack.state["gate_overrides"] == []
+  stack.undo()
+  assert stack.state["gate_overrides"][0]["id"] == "cells-s1"
+
+
+def test_comparison_critical_promotion_requires_warning_and_audit() -> None:
+  state = _override_state()
+  state["gate_overrides"][0]["gate_purpose"] = "comparison_critical"
+  stack = UndoStack(state)
+  with pytest.raises(ProjectCommandError, match="comparison-critical"):
+    stack.execute(PromoteGateOverrideCommand("strategy", "cells-s1"))
+  stack.execute(PromoteGateOverrideCommand(
+    "strategy", "cells-s1", confirm_comparison_critical=True,
+    audit_record={"reason": "reviewed by analyst"},
+  ))
+  assert stack.state["gate_overrides"] == []
+  assert stack.state["gate_override_audit"][0]["reason"] == "reviewed by analyst"
+  assert stack.state["gating_strategies_data"]["strategy"]["gates"][0]["thresholds"]["min"] == 2.0

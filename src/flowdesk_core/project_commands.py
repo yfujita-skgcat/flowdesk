@@ -8,13 +8,19 @@ affected gate definitions are retained for undo/redo.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import asdict
 from typing import Any
 
 from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
 from flowdesk_core.models import GateSpec, GatingStrategySpec
+from flowdesk_core.overrides import (
+  GateOverrideError,
+  gate_version_hash,
+  override_spec_from_mapping,
+  resolve_gate_overrides,
+)
 
 ProjectState = dict[str, Any]
 
@@ -492,6 +498,171 @@ class CopySubtreeAnalysisCommand(ProjectCommand):
         ]
       copied.append(value)
     return copied
+
+
+def _override_data(state: ProjectState) -> list[dict[str, Any]]:
+  values = state.get("gate_overrides", [])
+  if not isinstance(values, list):
+    raise ProjectCommandError("gate_overrides must be an array")
+  return deepcopy(values)
+
+
+def _replace_overrides(state: ProjectState, values: list[dict[str, Any]]) -> ProjectState:
+  candidate = deepcopy(state)
+  candidate["gate_overrides"] = deepcopy(values)
+  return candidate
+
+
+class _OverrideCommand(ProjectCommand):
+  """Base class for explicit, definition-only sample override commands."""
+
+  def __init__(self) -> None:
+    self._before: ProjectState | None = None
+
+  def undo(self, state: ProjectState) -> ProjectState:
+    if self._before is None:
+      raise ProjectCommandError("cannot undo a command that was not applied")
+    return deepcopy(self._before)
+
+
+class ResetGateOverrideCommand(_OverrideCommand):
+  """Remove one explicit override and resolve the sample back to group geometry."""
+
+  type = "gate_override.reset_to_group"
+
+  def __init__(self, override_id: str) -> None:
+    super().__init__()
+    self.override_id = override_id
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    values = _override_data(state)
+    if not any(value.get("id") == self.override_id for value in values):
+      raise ProjectCommandError(f"override not found: {self.override_id!r}")
+    self._before = deepcopy(state)
+    return _replace_overrides(
+      state, [value for value in values if value.get("id") != self.override_id]
+    )
+
+
+class RebaseGateOverrideCommand(_OverrideCommand):
+  """Explicitly point an override at the current shared gate version."""
+
+  type = "gate_override.rebase"
+
+  def __init__(self, strategy_id: str, override_id: str) -> None:
+    super().__init__()
+    self.strategy_id = strategy_id
+    self.override_id = override_id
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    values = _override_data(state)
+    target = next((value for value in values if value.get("id") == self.override_id), None)
+    if target is None:
+      raise ProjectCommandError(f"override not found: {self.override_id!r}")
+    gates = _strategy_gates(state, self.strategy_id)
+    gate = next((value for value in gates if value.get("id") == target.get("base_gate_id")), None)
+    if gate is None:
+      raise ProjectCommandError(f"base gate not found: {target.get('base_gate_id')!r}")
+    candidate = deepcopy(target)
+    candidate["base_version_hash"] = gate_version_hash(gate)
+    self._before = deepcopy(state)
+    return _replace_overrides(
+      state, [candidate if value.get("id") == self.override_id else value for value in values]
+    )
+
+
+class CopyGateOverrideToSelectedCommand(_OverrideCommand):
+  """Copy one explicit override to selected samples with new stable IDs."""
+
+  type = "gate_override.copy_to_selected"
+
+  def __init__(self, override_id: str, target_sample_ids: list[str] | tuple[str, ...]) -> None:
+    super().__init__()
+    if not target_sample_ids:
+      raise ProjectCommandError("at least one target sample is required")
+    self.override_id = override_id
+    self.target_sample_ids = tuple(target_sample_ids)
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    values = _override_data(state)
+    source = next((value for value in values if value.get("id") == self.override_id), None)
+    if source is None:
+      raise ProjectCommandError(f"override not found: {self.override_id!r}")
+    existing = {value.get("id") for value in values}
+    targets = {(value.get("sample_id"), value.get("base_gate_id")) for value in values}
+    copied: list[dict[str, Any]] = []
+    for sample_id in self.target_sample_ids:
+      new_id = f"{self.override_id}:{sample_id}"
+      if new_id in existing or (sample_id, source.get("base_gate_id")) in targets:
+        raise ProjectCommandError(f"override already exists for sample {sample_id!r}")
+      value = deepcopy(source)
+      value["id"] = new_id
+      value["sample_id"] = sample_id
+      copied.append(value)
+      existing.add(new_id)
+      targets.add((sample_id, source.get("base_gate_id")))
+    self._before = deepcopy(state)
+    return _replace_overrides(state, [*values, *copied])
+
+
+class PromoteGateOverrideCommand(_OverrideCommand):
+  """Promote one sample geometry to shared strategy geometry with audit evidence."""
+
+  type = "gate_override.promote_to_group"
+
+  def __init__(
+    self,
+    strategy_id: str,
+    override_id: str,
+    *,
+    confirm_comparison_critical: bool = False,
+    audit_record: Mapping[str, Any] | None = None,
+  ) -> None:
+    super().__init__()
+    self.strategy_id = strategy_id
+    self.override_id = override_id
+    self.confirm_comparison_critical = confirm_comparison_critical
+    self.audit_record = dict(audit_record or {})
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    values = _override_data(state)
+    target = next((value for value in values if value.get("id") == self.override_id), None)
+    if target is None:
+      raise ProjectCommandError(f"override not found: {self.override_id!r}")
+    override = override_spec_from_mapping(target)
+    if override.gate_purpose == "comparison_critical" and (
+      not self.confirm_comparison_critical or not self.audit_record.get("reason")
+    ):
+      raise ProjectCommandError("comparison-critical promotion requires confirmation and audit reason")
+    strategy = PipelineRunnerStrategy.from_state(state, self.strategy_id)
+    try:
+      resolved = resolve_gate_overrides(strategy, override.sample_id, (override,))
+    except GateOverrideError as exc:
+      raise ProjectCommandError(str(exc)) from exc
+    gates = [asdict(gate) for gate in resolved.gates]
+    candidate = deepcopy(state)
+    candidate["gating_strategies_data"][self.strategy_id]["gates"] = gates
+    candidate["gate_overrides"] = [value for value in values if value.get("id") != self.override_id]
+    audit = list(candidate.get("gate_override_audit", []))
+    audit.append({"action": self.type, "override_id": self.override_id, **self.audit_record})
+    candidate["gate_override_audit"] = audit
+    self._before = deepcopy(state)
+    return candidate
+
+
+class PipelineRunnerStrategy:
+  """Small local strategy loader to keep override commands GUI-independent."""
+
+  @staticmethod
+  def from_state(state: ProjectState, strategy_id: str) -> GatingStrategySpec:
+    strategy = state.get("gating_strategies_data", {}).get(strategy_id)
+    if not isinstance(strategy, dict):
+      raise ProjectCommandError(f"unknown gating strategy: {strategy_id!r}")
+    gates = tuple(_gate_from_data(value) for value in strategy.get("gates", []))
+    return GatingStrategySpec(
+      id=strategy_id, name=str(strategy.get("name", strategy_id)), gates=gates,
+      root_population_id=str(strategy.get("root_population_id", "all_events")),
+    )
 
 
 class UndoStack:

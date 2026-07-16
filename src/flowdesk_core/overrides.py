@@ -57,7 +57,20 @@ def inspect_gate_override_statuses(
 
 def gate_version_hash(gate: GateSpec | Mapping[str, Any]) -> str:
   """Hash all shared gate definition fields in a stable JSON representation."""
-  value = asdict(gate) if isinstance(gate, GateSpec) else dict(gate)
+  if isinstance(gate, GateSpec):
+    value = asdict(gate)
+  else:
+    raw = dict(gate)
+    value = asdict(GateSpec(
+      id=str(raw["id"]), name=str(raw.get("name", raw["id"])),
+      gate_type=raw["gate_type"], parent_population_id=raw.get("parent_population_id"),
+      x_parameter=raw.get("x_parameter"), y_parameter=raw.get("y_parameter"),
+      x_scale=raw.get("x_scale", "linear"), y_scale=raw.get("y_scale", "linear"),
+      x_transform_id=raw.get("x_transform_id"), y_transform_id=raw.get("y_transform_id"),
+      transform_id=raw.get("transform_id"), compensation_id=raw.get("compensation_id"),
+      coordinates=tuple(tuple(point) for point in raw.get("coordinates", ())),
+      thresholds=dict(raw.get("thresholds", {})), notes=str(raw.get("notes", "")),
+    ))
   encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=list)
   return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 

@@ -46,6 +46,9 @@ execution. A stale base hash makes the override invalid until explicitly rebased
    definitions from the separate `results stale` state. The core status inspection is
    deterministic and does not execute the pipeline.
 6. Add separate commands: reset to group, promote to group, copy to selected, rebase.
+   **Implemented:** these are independent definition-only undo commands. Promotion
+   resolves the explicit geometry into the shared strategy; comparison-critical
+   promotion requires confirmation plus an audit reason.
 7. Add QC checks for clipped gates, missing populations, and frequency outliers.
 
 ## Required tests
