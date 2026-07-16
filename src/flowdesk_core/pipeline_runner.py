@@ -44,6 +44,13 @@ from flowdesk_core.gating_strategy import (
   GatingStrategyError,
   evaluate_gating_strategy_with_membership,
 )
+from flowdesk_core.groups import (
+  GroupResolutionError,
+  annotation_specs_from_mapping,
+  group_strategy_binding_specs_from_mapping,
+  resolve_group_strategy_bindings,
+  sample_group_specs_from_mapping,
+)
 from flowdesk_core.models import (
   ChannelSpec,
   CompensationBindingSpec,
@@ -56,6 +63,7 @@ from flowdesk_core.models import (
   GatingStrategySpec,
   PopulationMembership,
   PopulationResult,
+  SampleSpec,
   StatisticResult,
   StatisticSpec,
   TransformSpec,
@@ -67,6 +75,17 @@ from flowdesk_core.transforms import TransformError, apply_transform, validate_t
 
 class PipelineError(FlowdeskError):
   """Raised when the pipeline cannot execute."""
+
+  def __init__(
+    self,
+    message: str,
+    *,
+    code: str = "pipeline_error",
+    details: Mapping[str, Any] | None = None,
+  ) -> None:
+    self.code = code
+    self.details = dict(details or {})
+    super().__init__(message)
 
 
 class _DerivedParameterStepError(PipelineError):
@@ -332,6 +351,9 @@ class PipelineRunner:
     # Resolve which samples to process.
     sample_selector = profile.get("sample_selector", "all")
     selected_samples = self._resolve_samples(samples, sample_selector)
+    sample_strategy_ids = self._resolve_group_strategy_ids(
+      selected_samples, gating_strategy_id
+    )
     available_input_ids: set[str] = set()
     for sample_meta in selected_samples:
       sample_id = str(sample_meta.get("id", "unknown"))
@@ -439,14 +461,15 @@ class PipelineRunner:
       messages.append(f"sample={sid} transforms=done")
 
       # --- Step 4: Gating ---
-      if gating_strategy_id is not None:
+      sample_gating_strategy_id = sample_strategy_ids.get(sid, gating_strategy_id)
+      if sample_gating_strategy_id is not None:
         try:
           pop_results, pop_membership, population_parent_ids = self._step_gating(
-            gating_strategy_id, transformed, sid
+            sample_gating_strategy_id, transformed, sid
           )
         except GatingStrategyError as exc:
           raise PipelineError(
-            f"invalid gating strategy {gating_strategy_id!r}: {exc}"
+            f"invalid gating strategy {sample_gating_strategy_id!r}: {exc}"
           ) from exc
       else:
         pop_results = self._fallback_root_population(
@@ -1330,6 +1353,53 @@ class PipelineRunner:
   # ------------------------------------------------------------------
   # Helpers
   # ------------------------------------------------------------------
+
+  def _resolve_group_strategy_ids(
+    self,
+    selected_samples: Sequence[Mapping[str, Any]],
+    fallback_strategy_id: str | None,
+  ) -> dict[str, str]:
+    """Resolve persisted Group bindings for selected samples.
+
+    Projects without Group fields retain the execution profile's historical
+    strategy behavior. Group binding errors are raised before any sample is
+    processed, so a partial run cannot silently mix strategies.
+    """
+    groups_data = self._project.get("sample_groups", [])
+    bindings_data = self._project.get("group_strategy_bindings", [])
+    if not groups_data and not bindings_data:
+      return {}
+    if not isinstance(groups_data, list) or not isinstance(bindings_data, list):
+      raise PipelineError(
+        "sample Groups and strategy bindings must be arrays",
+        code="invalid_group_configuration",
+      )
+    try:
+      groups = sample_group_specs_from_mapping(groups_data)
+      bindings = group_strategy_binding_specs_from_mapping(bindings_data)
+      annotations = annotation_specs_from_mapping(
+        self._project.get("annotations", [])
+      )
+      typed_samples = tuple(
+        SampleSpec(
+          id=str(sample.get("id", "")),
+          name=str(sample.get("name", sample.get("id", ""))),
+          path=str(sample.get("path", "")),
+          metadata=dict(sample.get("metadata", {})),
+        )
+        for sample in selected_samples
+      )
+      resolved = resolve_group_strategy_bindings(
+        groups, bindings, typed_samples, annotations
+      )
+    except GroupResolutionError as exc:
+      raise PipelineError(
+        f"{exc.code}: {exc}", code=exc.code, details=exc.details
+      ) from exc
+    return {
+      sample_id: strategy_id
+      for sample_id, (strategy_id, _group_ids) in resolved.items()
+    }
 
   @staticmethod
   def _find_by_id(

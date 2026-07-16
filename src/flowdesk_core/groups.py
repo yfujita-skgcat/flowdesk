@@ -7,7 +7,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import AnnotationSpec, SampleGroupSpec, SampleSpec
+from flowdesk_core.models import (
+  AnnotationSpec,
+  GroupStrategyBindingSpec,
+  SampleGroupSpec,
+  SampleSpec,
+)
 
 
 class GroupResolutionError(FlowdeskError):
@@ -17,6 +22,104 @@ class GroupResolutionError(FlowdeskError):
     self.code = code
     self.details = details
     super().__init__(message)
+
+
+def resolve_group_strategy_bindings(
+  groups: Sequence[SampleGroupSpec],
+  bindings: Sequence[GroupStrategyBindingSpec],
+  samples: Sequence[SampleSpec],
+  annotations: Sequence[AnnotationSpec] = (),
+) -> dict[str, tuple[str, tuple[str, ...]]]:
+  """Resolve each sample to one unambiguous strategy and matching Groups.
+
+  A sample may match multiple Groups when all matching bindings select the same
+  strategy. Different strategies are rejected instead of being resolved by
+  list order, preserving reproducibility.
+  """
+  group_members = resolve_group_member_ids(groups, samples, annotations)
+  groups_by_sample: dict[str, list[str]] = {sample.id: [] for sample in samples}
+  bindings_by_group: dict[str, list[GroupStrategyBindingSpec]] = {}
+  for binding in bindings:
+    bindings_by_group.setdefault(binding.group_id, []).append(binding)
+  for group_id, member_ids in group_members.items():
+    for sample_id in member_ids:
+      groups_by_sample[sample_id].append(group_id)
+
+  resolved: dict[str, tuple[str, tuple[str, ...]]] = {}
+  for sample_id, group_ids in groups_by_sample.items():
+    matched = [
+      binding
+      for group_id in group_ids
+      for binding in bindings_by_group.get(group_id, [])
+    ]
+    strategy_ids = sorted({binding.gating_strategy_id for binding in matched})
+    if len(strategy_ids) > 1:
+      raise GroupResolutionError(
+        "conflicting_group_strategy_binding",
+        f"sample {sample_id!r} matches conflicting gating strategies",
+        sample_id=sample_id,
+        group_ids=tuple(sorted(group_ids)),
+        strategy_ids=tuple(strategy_ids),
+      )
+    if strategy_ids:
+      resolved[sample_id] = (strategy_ids[0], tuple(sorted(group_ids)))
+  return resolved
+
+
+def sample_group_specs_from_mapping(
+  values: Sequence[Mapping[str, Any]],
+) -> tuple[SampleGroupSpec, ...]:
+  """Parse persisted Group mappings through the typed model contract."""
+  try:
+    return tuple(
+      SampleGroupSpec(
+        id=str(value["id"]),
+        name=str(value.get("name", value["id"])),
+        role=value.get("role", "user"),
+        color=value.get("color"),
+        sample_ids=tuple(value.get("sample_ids", ())),
+        membership_rule=value.get("membership_rule"),
+      )
+      for value in values
+    )
+  except (KeyError, TypeError, ValueError) as exc:
+    raise GroupResolutionError("invalid_sample_group", str(exc)) from exc
+
+
+def group_strategy_binding_specs_from_mapping(
+  values: Sequence[Mapping[str, Any]],
+) -> tuple[GroupStrategyBindingSpec, ...]:
+  """Parse persisted Group/Strategy binding mappings."""
+  try:
+    return tuple(
+      GroupStrategyBindingSpec(
+        id=str(value["id"]),
+        group_id=str(value["group_id"]),
+        gating_strategy_id=str(value["gating_strategy_id"]),
+        statistic_ids=tuple(value.get("statistic_ids", ())),
+      )
+      for value in values
+    )
+  except (KeyError, TypeError, ValueError) as exc:
+    raise GroupResolutionError("invalid_group_strategy_binding", str(exc)) from exc
+
+
+def annotation_specs_from_mapping(
+  values: Sequence[Mapping[str, Any]],
+) -> tuple[AnnotationSpec, ...]:
+  """Parse persisted typed annotations."""
+  try:
+    return tuple(
+      AnnotationSpec(
+        sample_id=str(value["sample_id"]),
+        keyword=str(value["keyword"]),
+        value=value.get("value"),
+        source=value["source"],
+      )
+      for value in values
+    )
+  except (KeyError, TypeError, ValueError) as exc:
+    raise GroupResolutionError("invalid_annotation", str(exc)) from exc
 
 
 def resolve_group_member_ids(

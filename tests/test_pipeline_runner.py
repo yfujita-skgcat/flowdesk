@@ -122,6 +122,78 @@ def test_pipeline_error_is_flowdesk_error() -> None:
   assert issubclass(PipelineError, FlowdeskError)
 
 
+def test_dynamic_group_binding_resolves_sample_strategy() -> None:
+  project = _make_project(
+    execution_profiles=[
+      {"id": "default", "name": "Default", "gating_strategy_id": None}
+    ],
+    samples=[
+      {"id": "s1", "name": "Panel A", "metadata": {"Panel": "A"}},
+      {"id": "s2", "name": "Panel B", "metadata": {"Panel": "B"}},
+    ],
+  )
+  project["sample_groups"] = [{
+    "id": "panel-a",
+    "name": "Panel A",
+    "role": "panel",
+    "sample_ids": [],
+    "membership_rule": {
+      "keyword": "Panel", "comparison": "equals", "value": "A"
+    },
+  }]
+  project["group_strategy_bindings"] = [{
+    "id": "panel-a-binding",
+    "group_id": "panel-a",
+    "gating_strategy_id": "panel-a-strategy",
+    "statistic_ids": [],
+  }]
+  runner = PipelineRunner(project)
+
+  resolved = runner._resolve_group_strategy_ids(
+    project["samples"], None
+  )
+
+  assert resolved == {"s1": "panel-a-strategy"}
+
+
+def test_conflicting_group_bindings_are_rejected_stably() -> None:
+  project = _make_project(
+    samples=[{"id": "s1", "name": "Sample", "metadata": {"Panel": "A"}}]
+  )
+  project["sample_groups"] = [
+    {
+      "id": "panel-a",
+      "name": "Panel A",
+      "role": "panel",
+      "sample_ids": ["s1"],
+    },
+    {
+      "id": "all-samples",
+      "name": "All Samples",
+      "role": "all_samples",
+      "sample_ids": ["s1"],
+    },
+  ]
+  project["group_strategy_bindings"] = [
+    {
+      "id": "panel-a-binding",
+      "group_id": "panel-a",
+      "gating_strategy_id": "strategy-a",
+      "statistic_ids": [],
+    },
+    {
+      "id": "all-binding",
+      "group_id": "all-samples",
+      "gating_strategy_id": "strategy-default",
+      "statistic_ids": [],
+    },
+  ]
+  with pytest.raises(PipelineError, match="conflicting_group_strategy_binding") as exc_info:
+    PipelineRunner(project)._resolve_group_strategy_ids(project["samples"], None)
+  assert exc_info.value.code == "conflicting_group_strategy_binding"
+  assert exc_info.value.details["sample_id"] == "s1"
+
+
 # ---------------------------------------------------------------------------
 # Full pipeline with synthetic events
 # ---------------------------------------------------------------------------

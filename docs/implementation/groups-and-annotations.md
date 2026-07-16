@@ -58,6 +58,13 @@ values for numeric comparisons do not match. Workspace/imported annotations
 shadow FCS annotations and sample metadata for display and membership; raw FCS
 bytes are never changed.
 
+Headless execution resolves these persisted Groups before processing any
+sample. A sample matching multiple Groups is accepted when all bindings select
+the same strategy. If bindings select different strategies, the runner raises
+`PipelineError` with code `conflicting_group_strategy_binding`, including the
+sample, matching Group IDs, and candidate strategy IDs; no partial analysis is
+started.
+
 ## Required tests
 
 - Multiple group membership and deterministic rule resolution.
