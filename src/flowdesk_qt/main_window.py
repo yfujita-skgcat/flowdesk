@@ -631,6 +631,7 @@ class MainWindow(QMainWindow):
         self._workspace_tree.set_samples(
             [(item.id, item.name) for item in self._sample_browser.samples()]
         )
+        self._workspace_tree.select("sample", sample.id)
         self._update_workspace_navigation()
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
@@ -723,6 +724,7 @@ class MainWindow(QMainWindow):
         self._update_workspace_navigation()
         if population_id != "all_events":
             self._gate_editor.select_gate(population_id)
+            self._workspace_tree.select("population", population_id)
         self._replot()
 
     def _update_workspace_navigation(self) -> None:
@@ -935,6 +937,11 @@ class MainWindow(QMainWindow):
         """Called when a gate is selected in the gate editor."""
         # Highlight the selected gate overlay with a solid pen
         self._plot_widget.highlight_gate_index(gate_index)
+        gates = self._gate_editor.gates()
+        if 0 <= gate_index < len(gates):
+            self._selected_population_id = gates[gate_index].id
+            self._workspace_tree.select("population", gates[gate_index].id)
+            self._update_workspace_navigation()
 
     def _on_show_gate(self, gate) -> None:
         """Navigate display controls to a gate without changing analysis state."""

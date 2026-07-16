@@ -51,6 +51,11 @@ invalidation reason; the GUI may use that reason to mark cached results stale.
 6. Add subtree copy and preflight conflict dialog.
 7. Add Undo/Redo actions, shortcuts, labels, dirty/stale updates.
 
+Selection synchronization is display-only: GateEditor selection updates plot
+highlight and WorkspaceTree selection, while WorkspaceTree/PopulationTree
+selection routes back to the same sample and population IDs. No selection
+callback creates a project command.
+
 ## Required tests
 
 - Apply/undo/redo restores exact serialized definitions and stable IDs.
