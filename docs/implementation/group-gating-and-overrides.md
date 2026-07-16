@@ -50,6 +50,10 @@ execution. A stale base hash makes the override invalid until explicitly rebased
    resolves the explicit geometry into the shared strategy; comparison-critical
    promotion requires confirmation plus an audit reason.
 7. Add QC checks for clipped gates, missing populations, and frequency outliers.
+   **Implemented:** group/override executions add structured QC diagnostics for
+   boundary clipping, missing populations, frequency outliers, applied override
+   inventory, and comparison-critical warnings; the existing DiagnosticsPanel
+   renders them and keeps missing distinct from zero-event populations.
 
 ## Required tests
 

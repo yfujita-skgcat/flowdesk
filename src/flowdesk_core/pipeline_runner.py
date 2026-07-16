@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -564,6 +564,12 @@ class PipelineRunner:
     else:
       status = "success" if population_tuple else "no_data_processed"
 
+    diagnostics.extend(self._group_override_qc_diagnostics(
+      selected_samples=selected_samples,
+      sample_data=sample_data,
+      population_results=population_tuple,
+    ))
+
     return ExecutionReport(
       project_id=str(self._project.get("project_id", "unknown")),
       execution_profile_id=context.execution_profile_id,
@@ -576,6 +582,100 @@ class PipelineRunner:
       messages=tuple(messages),
       diagnostics=tuple(diagnostics),
     )
+
+  def _group_override_qc_diagnostics(
+    self,
+    *,
+    selected_samples: Sequence[Mapping[str, Any]],
+    sample_data: Mapping[str, SampleData],
+    population_results: Sequence[PopulationResult],
+  ) -> list[ExecutionDiagnostic]:
+    """Emit reproducible QC diagnostics for group overrides after execution."""
+    diagnostics: list[ExecutionDiagnostic] = []
+    if not self._project.get("gate_overrides") and not self._project.get("sample_groups"):
+      return diagnostics
+    strategy_data = self._project.get("gating_strategies_data", {})
+    profiles = self._project.get("execution_profiles", [])
+    profile = next(
+      (value for value in profiles if isinstance(value, Mapping) and value.get("id") == "default"),
+      {},
+    )
+    assignments = self._resolve_group_assignments(
+      selected_samples, profile.get("gating_strategy_id")
+    )
+    overrides = tuple(
+      override_spec_from_mapping(value)
+      for value in self._project.get("gate_overrides", [])
+      if isinstance(value, Mapping)
+    )
+    by_sample: dict[str, set[str]] = {}
+    for result in population_results:
+      by_sample.setdefault(result.sample_id, set()).add(result.population_id)
+      if result.population_id != "all_events" and result.frequency_of_total is not None and (
+        result.frequency_of_total < 0.01 or result.frequency_of_total > 0.99
+      ):
+        diagnostics.append(ExecutionDiagnostic(
+          code="frequency_outlier", severity="warning", stage="qc",
+          sample_id=result.sample_id,
+          message=f"Population {result.population_id!r} has an outlier total frequency",
+          details={"frequency_of_total": result.frequency_of_total},
+        ))
+
+    for sample_meta in selected_samples:
+      sample_id = str(sample_meta.get("id", ""))
+      strategy_id = assignments.get(sample_id, (None, ()))[0]
+      strategy = strategy_data.get(strategy_id) if strategy_id else None
+      if isinstance(strategy, GatingStrategySpec):
+        strategy = asdict(strategy)
+      if not isinstance(strategy, Mapping):
+        continue
+      expected = {str(gate.get("id")) for gate in strategy.get("gates", []) if isinstance(gate, Mapping)}
+      missing = sorted(expected - by_sample.get(sample_id, set()))
+      for population_id in missing:
+        diagnostics.append(ExecutionDiagnostic(
+          code="missing_population", severity="warning", stage="qc",
+          sample_id=sample_id, parameter_id=population_id,
+          message=f"Population {population_id!r} is missing from the execution result",
+        ))
+      for override in overrides:
+        if override.sample_id != sample_id or not override.enabled:
+          continue
+        diagnostics.append(ExecutionDiagnostic(
+          code="override_applied", severity="info", stage="qc", sample_id=sample_id,
+          parameter_id=override.base_gate_id,
+          message=f"Override {override.id!r} applied ({override.gate_purpose})",
+        ))
+        if override.gate_purpose == "comparison_critical":
+          diagnostics.append(ExecutionDiagnostic(
+            code="comparison_critical_override", severity="warning", stage="qc",
+            sample_id=sample_id, parameter_id=override.base_gate_id,
+            message="Comparison-critical override requires review before comparison",
+          ))
+      sample = sample_data.get(sample_id)
+      if sample is None:
+        continue
+      values = {channel.id: sample.events[:, index] for index, channel in enumerate(sample.channels)}
+      for gate in strategy.get("gates", []):
+        if not isinstance(gate, Mapping):
+          continue
+        thresholds = gate.get("thresholds", {})
+        axis_thresholds = ((gate.get("x_parameter"), "min", "max"),) if gate.get("gate_type") == "range" else (
+          (gate.get("x_parameter"), "x_min", "x_max"),
+          (gate.get("y_parameter"), "y_min", "y_max"),
+        )
+        for parameter, low_key, high_key in axis_thresholds:
+          if parameter not in values or not isinstance(thresholds, Mapping):
+            continue
+          finite = values[parameter][np.isfinite(values[parameter])]
+          if finite.size == 0:
+            continue
+          if thresholds.get(low_key) == float(np.min(finite)) or thresholds.get(high_key) == float(np.max(finite)):
+            diagnostics.append(ExecutionDiagnostic(
+              code="gate_boundary_clipping", severity="warning", stage="qc",
+              sample_id=sample_id, parameter_id=str(gate.get("id")),
+              message=f"Gate boundary for {parameter!r} touches the sample data boundary",
+            ))
+    return diagnostics
 
   # ------------------------------------------------------------------
   # Pipeline steps

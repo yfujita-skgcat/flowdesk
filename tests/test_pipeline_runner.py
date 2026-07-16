@@ -37,6 +37,7 @@ def _make_project(
   default_compensation_matrix_id: str | None = None,
   statistics: list[dict] | None = None,
   gate_overrides: list[dict] | None = None,
+  sample_groups: list[dict] | None = None,
 ) -> dict:
   return {
     "project_id": project_id,
@@ -55,6 +56,7 @@ def _make_project(
     "population_results": population_results or [],
     "default_compensation_matrix_id": default_compensation_matrix_id,
     "gate_overrides": gate_overrides or [],
+    "sample_groups": sample_groups or [],
   }
 
 
@@ -954,6 +956,32 @@ def test_pipeline_reports_stale_sample_override() -> None:
   with pytest.raises(PipelineError) as error:
     run_project_pipeline(project, event_data={"s1": np.array([[1.0]])}, channel_names=["A"])
   assert error.value.code == "stale_override"
+
+
+def test_group_override_qc_diagnostics_are_reported_separately() -> None:
+  gate = GateSpec(
+    id="gate", name="Gate", gate_type="range", x_parameter="A",
+    thresholds={"min": 0.0, "max": 1.0},
+  )
+  from flowdesk_core.overrides import gate_version_hash
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    sample_groups=[{"id": "g", "name": "G", "sample_ids": ["s1"], "role": "user"}],
+    execution_profiles=[{"id": "default", "name": "Default", "gating_strategy_id": "strategy"}],
+    gating_strategies_data={"strategy": GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,))},
+    gate_overrides=[{
+      "id": "critical", "sample_id": "s1", "base_gate_id": "gate",
+      "base_version_hash": gate_version_hash(gate), "geometry_mode": "full",
+      "thresholds": {"min": 0.0, "max": 1.0}, "author": "analyst",
+      "created_at": "2026-07-16T00:00:00+00:00", "reason": "comparison",
+      "gate_purpose": "comparison_critical",
+    }],
+  )
+  report = run_project_pipeline(
+    project, event_data={"s1": np.array([[0.0], [1.0]])}, channel_names=["A"]
+  )
+  codes = {diagnostic.code for diagnostic in report.diagnostics}
+  assert {"override_applied", "comparison_critical_override", "gate_boundary_clipping"} <= codes
 
 
 # ---------------------------------------------------------------------------
