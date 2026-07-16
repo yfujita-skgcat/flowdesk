@@ -35,7 +35,9 @@ execution. A stale base hash makes the override invalid until explicitly rebased
 2. Apply resolved gates per sample in the headless runner. **Implemented:** the runner
    resolves only enabled overrides for the current sample before the shared evaluator;
    stale bases fail with a stable `stale_override` diagnostic.
-3. Add channel-mapping preflight for group subtree application.
+3. Add channel-mapping preflight for group subtree application. **Implemented:**
+   `CopySubtreeAnalysisCommand` validates every copied gate's x/y parameter against
+   the supplied channel IDs for every target before mutating any target strategy.
 4. Add sample navigator preserving population path, axes, scales, and viewport.
 5. Add shared/override/stale badges and an override audit table.
 6. Add separate commands: reset to group, promote to group, copy to selected, rebase.

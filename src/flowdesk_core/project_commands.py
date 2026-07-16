@@ -389,6 +389,7 @@ class CopySubtreeAnalysisCommand(ProjectCommand):
     id_maps: dict[str, dict[str, str]],
     *,
     target_parent_ids: dict[str, str] | None = None,
+    target_channel_ids: dict[str, tuple[str, ...] | list[str]] | None = None,
     scope: str = "group",
   ) -> None:
     if scope not in {"population", "sample", "group"}:
@@ -400,6 +401,10 @@ class CopySubtreeAnalysisCommand(ProjectCommand):
     self.target_strategy_ids = tuple(target_strategy_ids)
     self.id_maps = deepcopy(id_maps)
     self.target_parent_ids = dict(target_parent_ids or {})
+    self.target_channel_ids = {
+      target_id: frozenset(channel_ids)
+      for target_id, channel_ids in (target_channel_ids or {}).items()
+    }
     self.scope = scope
     self._before: dict[str, list[dict[str, Any]]] | None = None
 
@@ -425,6 +430,18 @@ class CopySubtreeAnalysisCommand(ProjectCommand):
       if any(gate.get("id") in new_ids for gate in target_gates):
         raise ProjectCommandError(f"copied gate ID already exists in {target_id!r}")
       copied = self._remap_subtree(subtree, mapping)
+      available_channels = self.target_channel_ids.get(target_id)
+      if available_channels is not None:
+        missing_channels = sorted({
+          parameter
+          for gate in copied
+          for parameter in (gate.get("x_parameter"), gate.get("y_parameter"))
+          if parameter and parameter not in available_channels
+        })
+        if missing_channels:
+          raise ProjectCommandError(
+            f"channel mapping for {target_id!r} misses: {missing_channels}"
+          )
       if target_id in self.target_parent_ids:
         copied[0]["parent_population_id"] = self.target_parent_ids[target_id]
       before[target_id] = target_gates

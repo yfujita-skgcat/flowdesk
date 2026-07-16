@@ -160,3 +160,23 @@ def test_cross_strategy_subtree_copy_is_atomic() -> None:
   with pytest.raises(ProjectCommandError, match="id_map"):
     stack.execute(bad)
   assert stack.state == before
+
+
+def test_group_subtree_copy_preflights_channel_mapping_atomically() -> None:
+  state = _state()
+  state["gating_strategies_data"]["target-a"] = {
+    "id": "target-a", "name": "Target A", "gates": []
+  }
+  stack = UndoStack(state)
+  source = _gate("cells")
+  source = GateSpec(**{**source.__dict__, "x_parameter": "CD3", "y_parameter": "CD19"})
+  stack.execute(CreateGateCommand("strategy", source))
+  before = stack.state
+  command = CopySubtreeAnalysisCommand(
+    "strategy", "cells", ("target-a",), {"target-a": {"cells": "cells-a"}},
+    target_channel_ids={"target-a": ["CD3"]},
+    scope="group",
+  )
+  with pytest.raises(ProjectCommandError, match="channel mapping"):
+    stack.execute(command)
+  assert stack.state == before

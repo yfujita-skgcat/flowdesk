@@ -331,7 +331,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [ ] shared/override/stale/missingをtree badgeとplot bannerで表示する。`results stale`（再計算が必要）と `override stale`（base変更によりrebaseが必要）を別状態として表示する。
 - [ ] 通常のgate drag/editは Group 共通 geometry を変更する。sample override は `このsample用のgate調整を作成` の意図的なcommandでだけ作成し、理由入力と影響範囲の確認を要求する。
 - [ ] reset-to-group、promote-to-group、copy-to-selectedを別commandにする。comparison-critical gate のoverride/promoteは強いwarningと監査記録を必須にする。
-- [ ] Groupへsubtree適用前にchannel mappingを全sampleでvalidateする。
+- [x] Groupへsubtree適用前にchannel mappingを全sampleでvalidateする。
 - [ ] frequency outlier、gate boundary clipping、missing Population、override一覧、comparison-critical override warningをQC panelへ表示する。`missing` は0 eventsやdisplay fallbackと区別する。
 - [ ] GUI確認値とbatch headless resultsを一致させるE2E testを追加する。Group共通geometry、technical override、comparison-critical override warning、stale base/rebase、missing channelをそれぞれ検証する。
 
