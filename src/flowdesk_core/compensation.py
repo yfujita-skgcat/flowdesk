@@ -7,7 +7,7 @@ spillover matrix. Raw events are never mutated; a new array is always returned.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
@@ -85,6 +85,41 @@ class CompensationBindingResolution:
 
 COMPENSATION_CONDITION_WARNING_THRESHOLD = 1e8
 COMPENSATION_NUMERICAL_SINGULARITY_THRESHOLD = 1.0 / np.finfo(np.float64).eps
+
+
+def duplicate_compensation_matrix(
+  original: CompensationMatrixSpec,
+  *,
+  matrix_id: str,
+  name: str,
+) -> CompensationMatrixSpec:
+  """Create the only editable derivative of a calculated matrix.
+
+  A calculated matrix is a persisted scientific result and must not be
+  modified in place.  Its duplicate is deliberately ``user_defined`` while
+  retaining source-control provenance and recording immutable lineage.
+  """
+  if original.source != "calculated":
+    raise CompensationError(
+      "only calculated compensation matrices require this duplicate workflow",
+      code="invalid_calculated_matrix_duplicate",
+    )
+  if not matrix_id or not name:
+    raise CompensationError(
+      "duplicate compensation matrix ID and name must be non-empty",
+      code="invalid_calculated_matrix_duplicate",
+    )
+  return replace(
+    original,
+    id=matrix_id,
+    name=name,
+    source="user_defined",
+    provenance=replace(
+      original.provenance,
+      derived_from_matrix_id=original.id,
+      manual_edits=(),
+    ),
+  )
 
 
 # ---------------------------------------------------------------------------

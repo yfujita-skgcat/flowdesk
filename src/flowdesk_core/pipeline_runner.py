@@ -360,11 +360,27 @@ class PipelineRunner:
     # spec. They are gated from raw events before a calculated matrix is applied.
     extra_matrices: dict[str, Mapping[str, Any]] = {}
     calc_spec_list = self._compensation_calculation_specs()
-    if calc_spec_list:
+    saved_calculation_matrix_ids = {
+      matrix.get("id")
+      for matrix in self._project.get("compensation_matrices", [])
+      if isinstance(matrix, Mapping)
+      and matrix.get("source") == "calculated"
+      and isinstance(matrix.get("id"), str)
+    }
+    calculations_to_execute = tuple(
+      spec for spec in calc_spec_list
+      if f"calculated-{spec.id}" not in saved_calculation_matrix_ids
+    )
+    saved_count = len(calc_spec_list) - len(calculations_to_execute)
+    if saved_count:
+      messages.append(
+        f"compensation_calculation=using_saved_result n_matrices={saved_count}"
+      )
+    if calculations_to_execute:
       try:
         extra_matrices, calc_diagnostics = (
           self._execute_compensation_calculations_with_gating(
-            calc_spec_list, sample_data, gating_strategy_id,
+            calculations_to_execute, sample_data, gating_strategy_id,
           )
         )
         diagnostics.extend(calc_diagnostics)

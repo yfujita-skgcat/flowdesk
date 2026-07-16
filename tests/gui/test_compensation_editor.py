@@ -184,6 +184,39 @@ def test_add_matrix_increases_count() -> None:
         app.processEvents()
 
 
+def test_calculated_matrix_is_read_only_and_duplicate_is_editable() -> None:
+    """Calculated results are immutable; only their derivative is editable."""
+    app = _app()
+    matrix = _valid_2x2_matrix()
+    matrix["id"] = "calculated-comp_2x2"
+    matrix["source"] = "calculated"
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[matrix],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=[],
+    )
+    try:
+        assert not dialog._id_edit.isEnabled()
+        assert not dialog._name_edit.isEnabled()
+        assert not dialog._heat_map.isEnabled()
+
+        dialog._duplicate_matrix()
+
+        duplicate = dialog.matrices()[-1]
+        assert duplicate["source"] == "user_defined"
+        assert duplicate["provenance"]["derived_from_matrix_id"] == (
+            "calculated-comp_2x2"
+        )
+        assert dialog._id_edit.isEnabled()
+        assert dialog._heat_map.isEnabled()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 def test_duplicate_matrix_sets_provenance() -> None:
     app = _app()
     dialog = CompensationMatrixEditorDialog(

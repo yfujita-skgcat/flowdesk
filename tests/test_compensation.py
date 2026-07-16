@@ -1387,3 +1387,26 @@ def test_calculated_matrix_is_immutable_and_edits_require_duplicate() -> None:
     manual_edits=(edit,),
   )
   assert prov.derived_from_matrix_id == result.matrix_spec.id
+
+
+def test_duplicate_of_calculated_matrix_becomes_editable_user_defined_copy() -> None:
+  """A derivative of a calculated result must not retain calculated source."""
+  original = CompensationMatrixSpec(
+    id="calculated-original",
+    name="Calculated original",
+    source="calculated",
+    channels=("A",),
+    matrix=((1.0,),),
+  )
+
+  from flowdesk_core.compensation import duplicate_compensation_matrix
+
+  duplicate = duplicate_compensation_matrix(
+    original,
+    matrix_id="calculated-original-edit",
+    name="Calculated original (edit copy)",
+  )
+
+  assert duplicate.source == "user_defined"
+  assert duplicate.provenance.derived_from_matrix_id == original.id
+  assert duplicate.provenance.manual_edits == ()

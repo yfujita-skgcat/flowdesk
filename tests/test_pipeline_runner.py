@@ -1567,6 +1567,57 @@ def test_compensation_calculation_control_sample_missing_stops_pipeline() -> Non
     )
 
 
+def test_persisted_calculated_matrix_is_used_without_recalculating_controls() -> None:
+  """A saved calculated result remains reproducible when controls are absent."""
+  project = _make_project(
+    samples=[{"id": "main"}],
+    execution_profiles=[{
+      "id": "default",
+      "name": "Default",
+      "gating_strategy_id": None,
+    }],
+    compensation_matrices=[{
+      "id": "calculated-calc1",
+      "name": "Saved calculated matrix",
+      "source": "calculated",
+      "channels": ("FL1-A", "FL2-A"),
+      "matrix": ((1.0, 0.0), (0.0, 1.0)),
+      "provenance": {
+        "control_sample_ids": ["control"],
+        "control_population_ids": ["control:positive", "control:negative"],
+        "algorithm": "traditional_linear_background_subtracted",
+        "algorithm_version": "1.0.0",
+        "software_version": "1.5.0",
+        "manual_edits": [],
+      },
+    }],
+    default_compensation_matrix_id="calculated-calc1",
+    compensation_calculations=[{
+      "id": "calc1",
+      "name": "Unavailable controls must not trigger recalculation",
+      "controls": [{
+        "sample_id": "control",
+        "detector_channel_id": "FL1-A",
+        "positive_population_id": "positive",
+        "negative_population_id": "negative",
+      }],
+    }],
+  )
+
+  report = run_project_pipeline(
+    project,
+    execution_profile_id="default",
+    event_data={"main": np.array([[100.0, 50.0]], dtype=np.float64)},
+    channel_names=["FL1-A", "FL2-A"],
+  )
+
+  assert report.status == "success"
+  assert not any(
+    diagnostic.code == "compensation_calculated"
+    for diagnostic in report.diagnostics
+  )
+
+
 def test_compensation_calculation_identical_positive_negative_is_rejected() -> None:
   """An all-events positive/negative pair is not a valid control."""
   rng = np.random.default_rng(42)

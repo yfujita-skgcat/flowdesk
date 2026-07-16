@@ -1666,6 +1666,38 @@ class TestCompensationCalculationValidation:
     assert validate_manifest(manifest) is None
 
 
+def test_saved_calculated_matrix_round_trips_with_provenance(tmp_path: Path) -> None:
+  """A saved calculation result remains a reusable immutable project record."""
+  bundle = tmp_path / "calculated.flowdesk"
+  manifest = {
+    "project_id": "calculated-project",
+    "project_version": CURRENT_PROJECT_VERSION,
+    "pipeline_version": "1.0",
+    "samples": [],
+    "compensation_matrices": [{
+      "id": "calculated-calc1",
+      "name": "Calculated: controls",
+      "source": "calculated",
+      "channels": ["FL1-A"],
+      "matrix": [[1.0]],
+      "created_at": "2026-07-16T00:00:00+00:00",
+      "provenance": {
+        "control_sample_ids": ["control-1"],
+        "control_population_ids": ["control-1:positive", "control-1:negative"],
+        "algorithm": "traditional_linear_background_subtracted",
+        "algorithm_version": "1.0.0",
+        "software_version": "1.5.0",
+        "manual_edits": [],
+      },
+    }],
+  }
+
+  save_project(bundle, manifest)
+  reloaded = load_project(bundle)
+
+  assert reloaded["compensation_matrices"] == manifest["compensation_matrices"]
+
+
 # -- MigrationReport --
 
 

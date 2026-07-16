@@ -246,6 +246,7 @@ class CompensationMatrixEditorDialog(QDialog):
             "user_defined",
             "fcs_metadata_spillover",
             "imported",
+            "calculated",
         ])
         self._notes_edit = QLineEdit()
         self._notes_edit.setObjectName("compensationNotesEdit")
@@ -524,6 +525,9 @@ class CompensationMatrixEditorDialog(QDialog):
             self._notes_edit.setText(str(value.get("notes", "")))
             self._refresh_channels_list(value.get("channels", []))
             self._update_heat_map(value)
+            self._set_calculated_matrix_editability(
+                value.get("source") == "calculated"
+            )
             self._diag_label.setText("Not validated")
         finally:
             self._loading = False
@@ -539,6 +543,7 @@ class CompensationMatrixEditorDialog(QDialog):
             self._channels_list.clear()
             self._heat_map.setRowCount(0)
             self._heat_map.setColumnCount(0)
+            self._set_calculated_matrix_editability(False)
             self._diag_label.setText("No matrix selected")
         finally:
             self._loading = False
@@ -575,6 +580,8 @@ class CompensationMatrixEditorDialog(QDialog):
         new_matrix = deepcopy(original)
         new_matrix["id"] = f"{original_id}_edit_{uuid.uuid4().hex[:8]}"
         new_matrix["name"] = f"{original.get('name', '')} (edit copy)"
+        if original.get("source") == "calculated":
+            new_matrix["source"] = "user_defined"
         provenance = dict(new_matrix.get("provenance", {}))
         provenance["derived_from_matrix_id"] = original_id
         provenance["software_version"] = "flowdesk-gui"
@@ -582,6 +589,20 @@ class CompensationMatrixEditorDialog(QDialog):
         new_matrix["provenance"] = provenance
         self._matrices.append(new_matrix)
         self._refresh_matrix_list(len(self._matrices) - 1)
+
+    def _set_calculated_matrix_editability(self, is_calculated: bool) -> None:
+        """Keep a persisted calculation result immutable in the editor."""
+        for widget in (
+            self._id_edit,
+            self._name_edit,
+            self._source_combo,
+            self._notes_edit,
+            self._channels_list,
+            self._add_channel_btn,
+            self._remove_channel_btn,
+            self._heat_map,
+        ):
+            widget.setEnabled(not is_calculated)
 
     def _delete_matrix(self) -> None:
         row = self._current_matrix_row
@@ -684,6 +705,8 @@ class CompensationMatrixEditorDialog(QDialog):
         if not (0 <= self._current_matrix_row < len(self._matrices)):
             return
         original = self._matrices[self._current_matrix_row]
+        if original.get("source") == "calculated":
+            return
         selected_channels = [
             str(self._channels_list.item(i).data(Qt.ItemDataRole.UserRole))
             for i in range(self._channels_list.count())
