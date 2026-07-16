@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QSplitter,
     QToolBar,
     QWidget,
@@ -475,6 +476,7 @@ class MainWindow(QMainWindow):
         self._population_tree = PopulationTree()
         self._workspace_tree = WorkspaceTree()
         self._diagnostics_panel = DiagnosticsPanel()
+        self._workspace_navigation = self._create_workspace_navigation()
 
         right_widget = self._create_right_pane()
 
@@ -519,6 +521,7 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._workspace_navigation)
         layout.addWidget(self._gate_editor)
         layout.addWidget(self._group_panel)
         layout.addWidget(self._workspace_tree)
@@ -528,6 +531,31 @@ class MainWindow(QMainWindow):
         layout.setStretch(1, 0)
         layout.setStretch(2, 1)
         layout.setStretch(3, 1)
+        return widget
+
+    def _create_workspace_navigation(self) -> QWidget:
+        widget = QWidget()
+        widget.setObjectName("workspaceNavigationBar")
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._breadcrumb_label = QLabel("All Events")
+        self._breadcrumb_label.setObjectName("workspaceBreadcrumbLabel")
+        self._breadcrumb_label.setWordWrap(True)
+        self._parent_navigation_button = QPushButton("Parent")
+        self._parent_navigation_button.setObjectName("workspaceParentButton")
+        self._parent_navigation_button.clicked.connect(self._navigate_to_parent)
+        self._previous_sample_button = QPushButton("Previous Sample")
+        self._previous_sample_button.setObjectName("previousSampleButton")
+        self._previous_sample_button.clicked.connect(
+            lambda: self._navigate_sample(-1)
+        )
+        self._next_sample_button = QPushButton("Next Sample")
+        self._next_sample_button.setObjectName("nextSampleButton")
+        self._next_sample_button.clicked.connect(lambda: self._navigate_sample(1))
+        layout.addWidget(self._breadcrumb_label, 1)
+        layout.addWidget(self._parent_navigation_button)
+        layout.addWidget(self._previous_sample_button)
+        layout.addWidget(self._next_sample_button)
         return widget
 
     def _set_advanced_groups_enabled(self, enabled: bool) -> None:
@@ -603,6 +631,7 @@ class MainWindow(QMainWindow):
         self._workspace_tree.set_samples(
             [(item.id, item.name) for item in self._sample_browser.samples()]
         )
+        self._update_workspace_navigation()
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
             self._validate_population_selection(report)
@@ -691,9 +720,46 @@ class MainWindow(QMainWindow):
         if sample_id and sample_id != self._current_sample_id:
             self._sample_browser.select_sample(sample_id)
         self._selected_population_id = population_id
+        self._update_workspace_navigation()
         if population_id != "all_events":
             self._gate_editor.select_gate(population_id)
         self._replot()
+
+    def _update_workspace_navigation(self) -> None:
+        sample = self._sample_browser.selected_sample()
+        sample_name = sample.name if sample is not None else "-"
+        population_id = self._selected_population_id or "all_events"
+        names = self._population_name_map()
+        chain: list[str] = []
+        current = population_id
+        parents = self._population_parent_map()
+        seen: set[str] = set()
+        while current and current not in seen:
+            seen.add(current)
+            chain.append(names.get(current, current))
+            current = parents.get(current) or ""
+        self._breadcrumb_label.setText(
+            f"{sample_name} / " + " / ".join(reversed(chain or ["All Events"]))
+        )
+        self._parent_navigation_button.setEnabled(population_id != "all_events")
+        index = -1 if sample is None else self._sample_browser.samples().index(sample)
+        samples = self._sample_browser.samples()
+        self._previous_sample_button.setEnabled(index > 0)
+        self._next_sample_button.setEnabled(0 <= index < len(samples) - 1)
+
+    def _navigate_to_parent(self) -> None:
+        population_id = self._selected_population_id or "all_events"
+        parent_id = self._population_parent_map().get(population_id) or "all_events"
+        self._on_population_selected(parent_id, self._current_sample_id or "")
+
+    def _navigate_sample(self, offset: int) -> None:
+        samples = self._sample_browser.samples()
+        current = self._sample_browser.selected_sample()
+        if current is None:
+            return
+        index = samples.index(current) + offset
+        if 0 <= index < len(samples):
+            self._sample_browser.select_sample(samples[index].id)
 
     def _on_workspace_tree_selected(
         self, kind: str, stable_id: str, sample_id: str

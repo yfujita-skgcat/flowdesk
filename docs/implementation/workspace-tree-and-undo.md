@@ -45,7 +45,9 @@ invalidation reason; the GUI may use that reason to mark cached results stale.
 4. Build a unified tree with stable IDs in `Qt.UserRole`. `WorkspaceTree` displays
    sample roots, report populations, and statistic children, and bridges only
    display selection back to the existing sample/population navigation callbacks.
-5. Add breadcrumb and parent/previous/next sample navigation.
+5. Add breadcrumb and parent/previous/next sample navigation. MainWindow's
+   navigation bar derives the breadcrumb from stable population parents and
+   disables parent/next/previous actions at the corresponding boundaries.
 6. Add subtree copy and preflight conflict dialog.
 7. Add Undo/Redo actions, shortcuts, labels, dirty/stale updates.
 

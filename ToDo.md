@@ -315,7 +315,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: `flowdesk_core.project_commands`に定義のみを扱うproject mutation commandとGUI非依存Undo/Redo stackを実装する。invalid mutationはstate/historyを変更せず、clean markerとstale理由を保持する。
 - [x] 済み: gate create/edit/rename/delete/reparent/duplicate/subtree copyをGUI非依存command経由でUndo/Redo可能にする。GateEditorの既存操作も同じ定義専用stackへ接続する。
 - [x] 済み: `WorkspaceTree`へsample、Population、statisticsをstable ID付きで統合し、MainWindowのsample/population navigationへ接続する。計算はExecutionReportと既存core結果を表示するだけにする。
-- [ ] breadcrumb、parent、previous/next sample navigationを追加する。
+- [x] 済み: Workspace navigation barにsample/population breadcrumb、parent移動、previous/next sample移動を追加する。表示状態のみを変更し、analysis definitionを変更しない。
 - [ ] selectionとPlot/Hierarchyを双方向同期する。
 - [ ] subtree Copy Analysisを別Population/sample/Groupへatomicに適用する。
 - [ ] duplicate sibling name、cycle、reference deleteを確定前に表示する。
