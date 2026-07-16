@@ -21,6 +21,7 @@ class WorkspaceTree(QWidget):
     self._population_names: dict[str, str] = {}
     self._samples: list[tuple[str, str]] = []
     self._report: ExecutionReport | None = None
+    self._override_statuses: dict[str, dict[str, str | bool]] = {}
     self._callbacks: list[Callable[[str, str, str], None]] = []
     self._tree = QTreeWidget()
     self._tree.setObjectName("workspaceHierarchyTree")
@@ -53,6 +54,16 @@ class WorkspaceTree(QWidget):
     self._report = report
     self._rebuild()
 
+  def set_override_statuses(
+    self, statuses: Mapping[str, Mapping[str, str | bool]]
+  ) -> None:
+    """Display definition and result status badges on sample tree rows."""
+    updated = {sample_id: dict(value) for sample_id, value in statuses.items()}
+    if updated == self._override_statuses:
+      return
+    self._override_statuses = updated
+    self._rebuild()
+
   def select(self, kind: str, stable_id: str) -> bool:
     iterator = self._tree.findItems(
       "", Qt.MatchContains | Qt.MatchRecursive, 0
@@ -64,20 +75,28 @@ class WorkspaceTree(QWidget):
     return False
 
   def _rebuild(self) -> None:
-    self._tree.clear()
-    results = self._results_by_sample()
-    stats = self._statistics_by_sample_population()
-    for sample_id, sample_name in self._samples:
-      sample_item = QTreeWidgetItem([sample_name, "sample", sample_id, ""])
-      sample_item.setData(0, Qt.UserRole, sample_id)
-      sample_item.setData(0, Qt.UserRole + 1, "sample")
-      self._tree.addTopLevelItem(sample_item)
-      sample_results = results.get(sample_id, ())
-      by_parent: dict[str | None, list[PopulationResult]] = {}
-      for result in sample_results:
-        by_parent.setdefault(self._population_parents.get(result.population_id), []).append(result)
-      self._add_populations(sample_item, by_parent, "all_events", stats, sample_id)
-      sample_item.setExpanded(True)
+    blocked = self._tree.blockSignals(True)
+    try:
+      self._tree.clear()
+      results = self._results_by_sample()
+      stats = self._statistics_by_sample_population()
+      for sample_id, sample_name in self._samples:
+        status = self._override_statuses.get(sample_id, {})
+        badges = [str(status.get("override_status", "shared"))]
+        if status.get("results_stale"):
+          badges.append("results stale")
+        sample_item = QTreeWidgetItem([sample_name, "sample", sample_id, " / ".join(badges)])
+        sample_item.setData(0, Qt.UserRole, sample_id)
+        sample_item.setData(0, Qt.UserRole + 1, "sample")
+        self._tree.addTopLevelItem(sample_item)
+        sample_results = results.get(sample_id, ())
+        by_parent: dict[str | None, list[PopulationResult]] = {}
+        for result in sample_results:
+          by_parent.setdefault(self._population_parents.get(result.population_id), []).append(result)
+        self._add_populations(sample_item, by_parent, "all_events", stats, sample_id)
+        sample_item.setExpanded(True)
+    finally:
+      self._tree.blockSignals(blocked)
 
   def _add_populations(
     self,

@@ -22,6 +22,39 @@ class GateOverrideError(FlowdeskError):
     super().__init__(message)
 
 
+def inspect_gate_override_statuses(
+  strategy: GatingStrategySpec,
+  sample_ids: Sequence[str],
+  overrides: Sequence[GateOverrideSpec],
+  *,
+  results_stale: bool = False,
+) -> dict[str, dict[str, str | bool]]:
+  """Return display/audit status without silently resolving stale overrides."""
+  gates = {gate.id: gate for gate in strategy.gates}
+  result: dict[str, dict[str, str | bool]] = {}
+  for sample_id in sample_ids:
+    selected = [
+      override for override in overrides
+      if override.enabled and override.sample_id == sample_id
+    ]
+    status = "shared"
+    if selected:
+      status = "override"
+      for override in selected:
+        gate = gates.get(override.base_gate_id)
+        if gate is None:
+          status = "missing"
+          break
+        if gate_version_hash(gate) != override.base_version_hash:
+          status = "stale"
+          break
+    result[sample_id] = {
+      "override_status": status,
+      "results_stale": results_stale,
+    }
+  return result
+
+
 def gate_version_hash(gate: GateSpec | Mapping[str, Any]) -> str:
   """Hash all shared gate definition fields in a stable JSON representation."""
   value = asdict(gate) if isinstance(gate, GateSpec) else dict(gate)

@@ -28,7 +28,7 @@ from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QImage
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from flowdesk_core.models import GateSpec, TransformSpec
 from flowdesk_core.transforms import (
@@ -96,6 +96,7 @@ class PlotWidget(QWidget):
         self._marginal_y_item: Any | None = None
         self._marginal_x_plot: Any | None = None
         self._marginal_y_plot: Any | None = None
+        self._status_banner: QLabel | None = None
         self._cached_marginal_x: NDArray[np.float64] | None = None
         self._cached_marginal_y: NDArray[np.float64] | None = None
         self._build_ui()
@@ -169,6 +170,13 @@ class PlotWidget(QWidget):
     def range_mode(self) -> RangeMode:
         """Return the current viewport range mode."""
         return self._range_mode
+
+    def set_status_banner(self, text: str = "") -> None:
+        """Show definition status separately from the results-stale state."""
+        if self._status_banner is None:
+            return
+        self._status_banner.setText(text)
+        self._status_banner.setVisible(bool(text))
 
     def set_axis_transforms(
         self,
@@ -1396,6 +1404,11 @@ class PlotWidget(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        self._status_banner = QLabel()
+        self._status_banner.setObjectName("plotStatusBanner")
+        self._status_banner.setStyleSheet("QLabel { padding: 3px; color: #7a3e00; background: #fff0d0; }")
+        self._status_banner.setVisible(False)
+        layout.addWidget(self._status_banner)
 
         # Create the pyqtgraph layout widget.
         self._glw = GraphicsLayoutWidget()

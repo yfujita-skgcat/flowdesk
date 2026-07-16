@@ -38,6 +38,10 @@ from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.models import CompensationMatrixSpec, TransformSpec
+from flowdesk_core.overrides import (
+    inspect_gate_override_statuses,
+    override_spec_from_mapping,
+)
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
@@ -209,6 +213,7 @@ class MainWindow(QMainWindow):
         self._sample_groups: list[dict[str, Any]] = []
         self._group_strategy_bindings: list[dict[str, Any]] = []
         self._annotations: list[dict[str, Any]] = []
+        self._gate_overrides: list[dict[str, Any]] = []
         # Display-only: selected population for plot filtering.
         self._selected_population_id: str = "all_events"
 
@@ -588,6 +593,41 @@ class MainWindow(QMainWindow):
         self._sample_groups = deepcopy(groups)
         self._mark_results_stale("Sample Groups changed")
 
+    def _refresh_override_statuses(self) -> None:
+        """Refresh definition badges and the plot banner without executing analysis."""
+        strategy = PipelineRunner._strategy_from_mapping({
+            "id": "default_strategy",
+            "name": "Default Strategy",
+            "gates": [asdict(gate) for gate in self._gate_editor.gates()],
+        })
+        try:
+            overrides = tuple(
+                override_spec_from_mapping(value)
+                for value in self._gate_overrides
+            )
+            statuses = inspect_gate_override_statuses(
+                strategy,
+                [sample.id for sample in self._sample_browser.samples()],
+                overrides,
+                results_stale=self._results_stale,
+            )
+        except Exception as exc:
+            logger.warning("Could not inspect gate overrides: %s", exc)
+            statuses = {
+                sample.id: {
+                    "override_status": "missing",
+                    "results_stale": self._results_stale,
+                }
+                for sample in self._sample_browser.samples()
+            }
+        self._workspace_tree.set_override_statuses(statuses)
+        current = statuses.get(self._current_sample_id or "", {})
+        definition_status = str(current.get("override_status", "shared"))
+        banner = "" if definition_status == "shared" else f"override {definition_status}"
+        if current.get("results_stale"):
+            banner = f"{banner}; results stale" if banner else "results stale"
+        self._plot_widget.set_status_banner(banner)
+
     # -- signal connections --------------------------------------------------
 
     def _connect_signals(self) -> None:
@@ -647,6 +687,7 @@ class MainWindow(QMainWindow):
         )
         self._workspace_tree.select("sample", sample.id)
         self._update_workspace_navigation()
+        self._refresh_override_statuses()
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
             self._validate_population_selection(report)
@@ -1132,6 +1173,7 @@ class MainWindow(QMainWindow):
                 }
             ],
             "annotations": deepcopy(self._annotations),
+            "gate_overrides": deepcopy(self._gate_overrides),
             "derived_parameters": deepcopy(self._derived_parameters),
             "transforms": deepcopy(self._transforms),
             "compensation_matrices": deepcopy(self._compensation_matrices),
@@ -1174,6 +1216,7 @@ class MainWindow(QMainWindow):
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
             self._workspace_tree.set_report(report)
+            self._refresh_override_statuses()
             self._diagnostics_panel.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
@@ -1321,6 +1364,7 @@ class MainWindow(QMainWindow):
             manifest.get("group_strategy_bindings", [])
         )
         self._annotations = deepcopy(manifest.get("annotations", []))
+        self._gate_overrides = deepcopy(manifest.get("gate_overrides", []))
         self._group_panel.set_groups(self._sample_groups)
         self.action_advanced_groups.setChecked(
             bool(manifest.get("advanced_groups_enabled", False))
@@ -1999,6 +2043,7 @@ class MainWindow(QMainWindow):
         self._gate_editor.clear_population_results()
         self._selected_population_id = "all_events"
         self._compensation_status_indicator.mark_stale()
+        self._refresh_override_statuses()
         self._update_status(f"{reason} (results stale; rerun pipeline)")
 
     # -- help ----------------------------------------------------------------

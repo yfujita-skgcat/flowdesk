@@ -26,6 +26,7 @@ from flowdesk_core.models import GateOverrideSpec
 from flowdesk_core.overrides import (
   GateOverrideError,
   gate_version_hash,
+  inspect_gate_override_statuses,
   resolve_gate_overrides,
 )
 from flowdesk_core.models import (
@@ -1210,3 +1211,25 @@ def test_sample_gate_override_rejects_stale_base_hash() -> None:
       "sample-1", (override,),
     )
   assert error.value.code == "stale_override"
+
+
+def test_gate_override_statuses_distinguish_shared_stale_and_missing() -> None:
+  gate = GateSpec(id="gate", name="Gate", gate_type="range", x_parameter="x")
+  strategy = GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,))
+  def override(sample_id: str, gate_id: str = "gate", base_hash: str | None = None) -> GateOverrideSpec:
+    return GateOverrideSpec(
+      id=f"{sample_id}-{gate_id}", sample_id=sample_id, base_gate_id=gate_id,
+      base_version_hash=base_hash or gate_version_hash(gate), geometry_mode="full",
+      thresholds={"min": 1.0}, author="analyst",
+      created_at="2026-07-16T00:00:00+00:00", reason="review",
+    )
+  statuses = inspect_gate_override_statuses(
+    strategy, ("shared", "stale", "missing",),
+    (override("stale", base_hash="old"), override("missing", "gone")),
+    results_stale=True,
+  )
+  assert statuses == {
+    "shared": {"override_status": "shared", "results_stale": True},
+    "stale": {"override_status": "stale", "results_stale": True},
+    "missing": {"override_status": "missing", "results_stale": True},
+  }
