@@ -157,6 +157,45 @@ def test_range_unbounded() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Ellipse gate
+# ---------------------------------------------------------------------------
+
+
+def test_rotated_ellipse_inclusive_boundary_and_nan() -> None:
+  gate = GateSpec(
+    id="ellipse",
+    name="ellipse",
+    gate_type="ellipse",
+    thresholds={
+      "center_x": 0.0,
+      "center_y": 0.0,
+      "radius_x": 2.0,
+      "radius_y": 1.0,
+      "rotation": np.pi / 2,
+    },
+  )
+  x = np.array([0.0, 1.0, 0.0, 1.1, np.nan])
+  y = np.array([1.0, 0.0, 2.1, 2.1, 0.0])
+  assert evaluate_gate(gate, x, y).tolist() == [True, True, False, False, False]
+
+
+def test_ellipse_rejects_degenerate_radii() -> None:
+  gate = GateSpec(
+    id="ellipse",
+    name="ellipse",
+    gate_type="ellipse",
+    thresholds={
+      "center_x": 0.0,
+      "center_y": 0.0,
+      "radius_x": 0.0,
+      "radius_y": 1.0,
+    },
+  )
+  with pytest.raises(GateError, match="radii"):
+    evaluate_gate(gate, np.array([0.0]), np.array([0.0]))
+
+
+# ---------------------------------------------------------------------------
 # Polygon gate
 # ---------------------------------------------------------------------------
 

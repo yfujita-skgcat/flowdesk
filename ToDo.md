@@ -298,8 +298,8 @@ override は強い warning と監査記録なしに比較結果へ使わない�
 
 ### Phase B2: Gate engine v2 [S06]
 
-- [ ] `docs/implementation/gate-engine-v2.md`を全文読み、今回実装するgate型のboundary semanticsを追記する。
-- [ ] ellipse、quadrant、offset quadrantをcore model/evaluator/schemaへ追加する。
+- [x] 済み: `docs/implementation/gate-engine-v2.md`を全文読み、ellipseの座標系、inclusive boundary、NaN/Inf、degenerate geometry semanticsを追記する。
+- [x] 済み (ellipse): ellipseをcore model/evaluator/schemaへ追加する。center/radius/rotationをdata coordinatesで保存し、GUI近似polygonを解析に使わない。
 - [ ] inclusive boundary、shared boundary、NaN/Inf、degenerate geometryを定義しtestする。
 - [ ] 全geometric gateのnumeric editorを追加する。
 - [ ] Boolean gateをnested expression treeへmigrationし、AND/OR/NOTを任意に組み合わせる。

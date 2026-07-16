@@ -88,6 +88,9 @@ def evaluate_gate(
   if gate.gate_type == "polygon":
     return _eval_polygon(gate, x_values, y_values)
 
+  if gate.gate_type == "ellipse":
+    return _eval_ellipse(gate, x_values, y_values)
+
   if gate.gate_type == "boolean":
     return _eval_boolean(gate, boolean_masks)
 
@@ -150,6 +153,48 @@ def _eval_range(
 
 
 # ---------------------------------------------------------------------------
+# Ellipse gate
+# ---------------------------------------------------------------------------
+
+
+def _eval_ellipse(
+  gate: GateSpec,
+  x: NDArray[np.float64],
+  y: NDArray[np.float64] | None,
+) -> NDArray[np.bool_]:
+  """Evaluate an inclusive rotated ellipse in stored data coordinates."""
+  if y is None:
+    raise GateError("ellipse gate requires y_values")
+  required = {"center_x", "center_y", "radius_x", "radius_y"}
+  if not required.issubset(gate.thresholds):
+    raise GateError(
+      "ellipse gate requires center_x, center_y, radius_x, and radius_y"
+    )
+  try:
+    center_x = float(gate.thresholds["center_x"])
+    center_y = float(gate.thresholds["center_y"])
+    radius_x = float(gate.thresholds["radius_x"])
+    radius_y = float(gate.thresholds["radius_y"])
+    rotation = float(gate.thresholds.get("rotation", 0.0))
+  except (TypeError, ValueError) as exc:
+    raise GateError("ellipse thresholds must be finite numbers") from exc
+  if not all(np.isfinite(value) for value in (
+    center_x, center_y, radius_x, radius_y, rotation
+  )):
+    raise GateError("ellipse thresholds must be finite numbers")
+  if radius_x <= 0 or radius_y <= 0:
+    raise GateError("ellipse radii must be greater than zero")
+
+  cos_rotation = np.cos(rotation)
+  sin_rotation = np.sin(rotation)
+  dx = x - center_x
+  dy = y - center_y
+  local_x = cos_rotation * dx + sin_rotation * dy
+  local_y = -sin_rotation * dx + cos_rotation * dy
+  value = (local_x / radius_x) ** 2 + (local_y / radius_y) ** 2
+  return np.isfinite(value) & (value <= 1.0)
+
+
 # Polygon gate (ray-casting algorithm)
 # ---------------------------------------------------------------------------
 

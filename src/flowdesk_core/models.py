@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 SourceStage = Literal["raw", "compensated", "transformed"]
-GateType = Literal["rectangle", "polygon", "range", "boolean"]
+GateType = Literal["rectangle", "polygon", "range", "ellipse", "boolean"]
 GateAxisScale = Literal["linear", "log10", "asinh"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
 CompensationBindingScope = Literal["sample", "group", "execution_profile"]

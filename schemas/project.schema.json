@@ -188,7 +188,7 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
-        "gate_type": { "enum": ["rectangle", "polygon", "range", "boolean"] },
+        "gate_type": { "enum": ["rectangle", "polygon", "range", "ellipse", "boolean"] },
         "parent_population_id": { "type": ["string", "null"] },
         "x_parameter": { "type": ["string", "null"] },
         "y_parameter": { "type": ["string", "null"] },

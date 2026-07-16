@@ -26,6 +26,13 @@ Read `gate-engine.md`, `gate-hierarchy-ui.md`, `scientific-transforms-v2.md`, an
   documented so one event is not counted twice unless intentionally allowed.
 - All definitions include parameter and transform IDs; no screen coordinates.
 
+Ellipse v2 stores `center_x`, `center_y`, `radius_x`, `radius_y`, and optional
+`rotation` (radians, counter-clockwise) in `GateSpec.thresholds`. Membership is
+inclusive (`normalized_distance <= 1`); NaN/Inf event values are excluded.
+Centers, radii, and rotation must be finite, and both radii must be strictly
+positive. A zero or negative radius is a degenerate-geometry error rather than
+an empty gate.
+
 ## Boolean contract
 
 Use an expression tree with leaf population references and `and`, `or`, `not` nodes.
@@ -67,4 +74,3 @@ sample-specific fitted geometry. Do not add a GUI placeholder before the core re
 pytest -q tests/test_gates.py tests/test_pipeline_runner.py tests/test_qt_plot_widget.py
 ruff check src tests
 ```
-
