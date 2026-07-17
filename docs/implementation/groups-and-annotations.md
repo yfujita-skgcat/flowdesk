@@ -24,6 +24,12 @@ membership rule, and analysis bindings. A sample may belong to multiple groups.
 `AnnotationSpec` records sample ID, keyword, typed value, and source (`fcs`,
 `workspace`, `imported`). Workspace values shadow FCS display values but never mutate raw metadata.
 
+Phase B7.2 Comparison Sets and roles are separate project display relations. They may
+label reference/target, positive/negative control, or one-to-many visual comparisons, but
+must not create, delete, recolor, or rebind a `SampleGroupSpec`; nor may they select a
+strategy/statistics binding. Scientific Groups remain analysis-assignment units. See
+[`integrated-overlay-controls-and-plot-appearance.md`](integrated-overlay-controls-and-plot-appearance.md).
+
 ## Increments
 
 1. Add typed models/schema and explicit-membership resolver.
@@ -110,6 +116,8 @@ started.
 - Do not use `eval` for membership rules.
 - Do not make group color or tree position scientific state.
 - Do not silently resolve conflicting group analysis bindings.
+- Do not convert a Comparison Set, overlay role, or paired display relation into a Group
+  or treatment/control analysis binding.
 
 ## Verification
 

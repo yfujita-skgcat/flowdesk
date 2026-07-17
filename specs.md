@@ -37,8 +37,10 @@ Flowdeskを、Linuxを第一対象としながら、FlowJoに近い実験単位�
 - scatter、1D Count histogram、top/right marginal histogram
 - `PlotViewSpec`、dot/scatter/histogram/CDF/density/pseudocolor/contourのGUI非依存display preparation
 - `OverlaySpec`/`BackgatingSpec`、full membershipを使う1D/2D overlay/backgating preparation、GUI display layer API
+- `OverlaySourceSpec`、cross-sample compatibility resolver、Overlay Sources汎用editor、definition-only Undo/Redo
+- typed `PlotPresentationSpec`、Plot Presentation汎用editor、GUI/export共通presentation resolutionとstyle provenance
 - GUI-localなscatter color/size/opacity、background、gate color設定
-- CSV/TSV population result export、PNG/SVG/PDF plot exportと基本metadata sidecar
+- CSV/TSV population result export、PNG/SVG/PDF plot exportとoverlay/presentation metadata sidecar
 - GUI test harness、callback exception検出、headless consistency tests
 
 ### 2.2 FlowJoとの機能差
@@ -52,8 +54,8 @@ Flowdeskを、Linuxを第一対象としながら、FlowJoに近い実験単位�
 | Transforms | 基本変換あり。ただし`logicle_like`は近似で、FlowJo互換性を保証しない | 大 | S05 |
 | Gating | rectangle/polygon/range/booleanと階層あり | 中 | S06, S07 |
 | Batch gating | 全sampleに一つのstrategyを適用可能。Group template、copy、override確認UIなし | 大 | S08 |
-| Plot | B6のplot type/display preparation/export基盤あり。完全なpresentation model/editorは未実装 | 中 | S09 |
-| Backgating/overlay | B7のPopulation overlay/backgating基盤あり。cross-sample source model/editorは未実装 | 中 | S10 |
+| Plot | B6/B7.1のplot type、typed presentation、汎用editor、export基盤あり。plot context menuとGate hierarchy Population colorは未実装 | 中 | S09 |
+| Backgating/overlay | B7/B7.1のPopulation/cross-sample overlay、compatibility、汎用editor基盤あり。Samples統合control、persistent control、Comparison Setは未実装 | 中 | S10 |
 | Statistics | count/frequencyとcoreの基本関数はあるが、保存可能なstatistics definition/UIがない | 大 | S11 |
 | Table Editor | fixed population exportのみ | 大 | S12 |
 | Layout Editor | PNG exportのみ | 大 | S13 |
@@ -261,6 +263,13 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 - invalid parent、cycle、missing source、duplicate sibling nameを操作確定前に表示する。
 - gate definition側にはsource axes/scale、shared/override statusを表示し、count、% parent、% total、Statistic resultはResults workspaceで表示する。
 
+#### Population presentation color
+
+- Gate hierarchyへdisplay-onlyなPopulation Color操作を置くが、色はgate geometry、parent relationship、membership、statistics、pipeline revisionから分離したpresentation definitionとして保存する。
+- active sampleのbase layerは、eventが属する色指定Populationのうち最も深いdescendantを優先する。同じ深さのoverlapping siblingはpersisted display z-order、未指定時はstable hierarchy preorderとstable population IDによる決定的な順序で解決し、blendやhash iteration順に依存しない。
+- selected gateのhighlightはPopulation colorを書き換えず、outline、handle、selection markerで表現する。
+- Population Color、Gate Outline Color、`Use Population Color for Outline`は別display field/明示linkとして扱う。色変更はgate ID、geometry、membership、event count、frequency、statisticsを変更しない。
+
 ### S08. Group strategy、template gate、sample override [P1]
 
 - Group共通strategyとsample-specific gate position overrideを別objectで保存する。
@@ -290,6 +299,14 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 - automatic style assignmentとmanual overrideを区別し、manual overrideのないsourceだけをdeterministicな自動割当対象とする。
 - internal parameter IDとaxis display labelは別fieldとする。axis display labelを変更してもparameter ID、transform、gate coordinate、membership、statisticsを変更しない。
 - plot typeごとにsupported style matrixを定義し、unsupported styleを黙って無視せずvalidationまたはstructured diagnosticにする。
+
+#### Plot context appearance interaction
+
+- idleなplot areaのcontext menuから、full `Plot Appearance...` editor、background、title、axis display labels、fonts、legend、default event color/dot size/opacity、view appearance resetへ到達できるようにする。
+- context menu、quick action、既存Analysis menuは同じ`PlotPresentationSpec`とproject commandを使用し、別の設定modelを作らない。
+- pan drag、gate drawing、ROI/handle drag中はcontext menuを誤作動させず、keyboardからも主要appearance操作へ到達できるようにする。
+- appearance変更はdisplay-onlyでpipelineやpreviewを実行しない。title/axis display label変更はstable parameter ID、transform ID、gate coordinate、membership、statisticsを変更しない。
+- GUI表示とPNG/SVG/PDF exportは同じresolved presentation definitionとprovenanceを使用する。
 
 ### S10. Overlayとbackgating [P1]
 
@@ -322,6 +339,35 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 - Layout Editorは同じplot presentation definitionを参照するか、明示的に複製したsnapshotを使用する。Layout側で科学計算を再実装しない。
 - Templateへ保存するsourceは、必要に応じsample IDそのものではなくmapping可能なsample role、population path/role、parameter roleを保持し、適用時にmapping planとuser confirmationを要求できるようにする。
 - font fallbackやrenderer backend差による完全なpixel一致は保証しないが、source順、label、style semantics、objectの欠落、blank outputは検証する。
+
+#### Integrated sample overlay controls
+
+- `active_sample_id`、`display_population_id`、`selected_gate_id`と、manual overlay sample IDs/colors、automatic comparison sources、Comparison Set definitions、overlay modeを独立状態として扱う。行選択とOverlay checkboxは同一stateにしない。
+- 現行Samples listは単一選択でactive sampleを変更し、sample checkboxを持たない。通常overlay用に`Ov | Color | Relation | Name`相当の専用列/roleを追加し、将来のpipeline対象・sample enable・batch checkboxもoverlayへ転用しない。
+- `Ov` checkboxはplot viewのmanual overlayだけを変更し、Color swatchはQColorDialogを開く。active sample自身はsource unionから除外して二重描画せず、disabled stateまたはtooltipで理由を示す。
+- manual checked sampleは現在のdisplay Populationと同じstable Population ID、保存済みpath/role、現在のstable X/Y parameter IDs、transforms、plot typeをB7.1 compatibility resolverで解決する。
+- missing Population、ambiguous path、missing channel、incompatible unit/transform、stale/unresolved sampleをwarning iconとtext/tooltipで示す。zero events、All Events、silent omissionへ変換しない。
+- simple controlは通常の同一Population/axis/transform overlayを扱う。異なるPopulation、axis、transformの組合せはadvanced `Overlay Sources...` dialogに残し、両UIは同じplot-view source state/commandへ接続する。
+
+#### Manual overlay persistence and persistent controls
+
+- manual overlay checkboxはplot view、manual colorはsample × plot viewに保存し、active sample変更後も維持する。positive control、negative control、referenceを別Pin列なしで常設overlayにできることを既定とする。
+- control/comparison roleはrelation text/iconとautomatic style assignmentに使用できるが、科学的Group、treatment/control解析群、gate strategy、compensation/statistics bindingを暗黙変更しない。
+- active sample、overlay、relation、warning/error状態を色だけで表さず、checkbox/swatch/iconへaccessible nameとtooltipを付ける。
+
+#### Comparison Set / paired overlay
+
+- 1対1のPairと将来の1対多を同じ`ComparisonSet`または同等のproject display-relation modelで表現する。memberはsample IDとreference/target等のroleを持てる。
+- Comparison Setは科学的`SampleGroupSpec`やstrategy bindingとは別であり、相互に自動変換しない。同じrelationを複数plotが利用でき、各plotは独立したmanual sources/color overrideを持てる。
+- sample multi-selectionからcreate/pair/add/edit/removeを操作できる。通常overlay modeは`Manual only`と`Manual + comparison set`を基本とする。
+- `Manual + comparison set`はmanual checked samplesとactive sample所属setのother membersの和集合を解決し、active sample変更時にsetを再解決する。
+
+#### Color/style precedence and deduplication
+
+- 同一sample/sourceがmanual、persistent control、comparison、automatic経路から解決された場合はstable resolved identityで一度だけ描画する。
+- source/label routeは`manual source override > comparison source override > comparison role style > automatic source style`で解決する。
+- 最終描画色は`explicit overlay source color > comparison role color > sample automatic overlay color > population display color > plot default event color`で解決する。overlay source colorはoverlay event全体へ適用し、Population colorより優先する。
+- explicit colorがない場合だけfallbackし、fallbackの有無とresolved style provenanceをGUI/sidecarで確認可能にする。remaining tieはComparison Set orderとstable source/sample IDで決定し、selection/hash orderへ依存しない。
 
 ### S11. Statistics definitions [P0/P1]
 
@@ -449,6 +495,9 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 - reset、import/export preferenceを提供する。
 - stable Qt objectName、keyboard navigation、shortcut一覧、color-onlyでないstatus表現、context helpを備える。
 - scientific defaultを変更したときは既存projectの解析結果を暗黙変更しない。
+- plot/viewのtitle、background、font、legend、default event style、Population color、overlay role colorはpresentation/default層に属し、resetは上位overrideを除去して下位値とprovenanceを露出させる。
+- plot context menu、Gate hierarchyのColor swatch、SamplesのOverlay checkbox/Color swatch/Relation iconへstable objectName、accessible name、tooltip、keyboard操作を提供する。active、overlay、comparison、missing/errorを色だけで区別しない。
+- QColorDialogをCancelした場合はlive state、project state、Undo historyを変更しない。
 
 ## 6. 優先順位とrelease境界
 

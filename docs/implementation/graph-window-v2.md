@@ -8,17 +8,19 @@ ToDo: `Phase B6`
 Provide persisted plot definitions and multiple scientifically honest visualization modes
 without coupling rendering aggregates to gate/statistic calculations.
 
-## Completed B6 boundary and B7.1 follow-up
+## Completed B6/B7.1 boundary and B7.2 follow-up
 
 Phase B6 completed the persisted `PlotViewSpec`, plot-type/display-data preparation,
 duplicate view state, interaction modes, and PNG/SVG/PDF export foundation described
 below. That completed history remains valid.
 
-B6 did not complete multi-sample overlay source selection, a typed full presentation
-model/editor, or editable title, axis display labels, legend, source marker/line style,
-colormap, and font controls. Those are independent unfinished Phase B7.1 work; see
+B6 did not complete multi-sample overlay source selection or a typed full presentation
+model/editor. Phase B7.1 subsequently completed those foundations; see
 [`multi-sample-overlay-and-plot-presentation.md`](multi-sample-overlay-and-plot-presentation.md).
-Checked B6 items must not be interpreted as completion of the B7.1 user-facing feature.
+Checked B6/B7.1 items do not complete the integrated plot-area context appearance menu,
+Samples overlay controls, or Gate hierarchy Population colors. Those are unfinished B7.2
+work; see
+[`integrated-overlay-controls-and-plot-appearance.md`](integrated-overlay-controls-and-plot-appearance.md).
 
 ## Inspect first
 
@@ -47,6 +49,11 @@ The existing `PlotWidget` remains display-only: gate labels, population/statisti
 context, and the compensation status badge are supplied by `MainWindow`. PNG, SVG,
 and PDF exports emit a JSON sidecar containing display state and an explicit
 non-statistical export note.
+
+B7.2 context-menu quick actions and the existing Analysis-menu full editor must dispatch
+the same presentation model/commands. Context activation is suppressed during pan drag,
+gate drawing, and ROI drag. Appearance edits never rerun the pipeline or change stable
+axes, transforms, gates, memberships, or statistics.
 
 ## Increments
 

@@ -63,6 +63,7 @@ git status --short
 | B6 | `docs/implementation/graph-window-v2.md` |
 | B7 | `docs/implementation/overlay-and-backgating.md` |
 | B7.1 | `docs/implementation/multi-sample-overlay-and-plot-presentation.md` |
+| B7.2 | `docs/implementation/integrated-overlay-controls-and-plot-appearance.md` |
 | C1 | `docs/implementation/table-editor.md` |
 | C2 | `docs/implementation/layout-editor.md` |
 | C3 | `docs/implementation/templates-and-mapping.md` |
@@ -530,6 +531,109 @@ title/axis/legend編集が実装済みであることを意味しない。
 - [x] project reload後にoverlayとstyleが再現される。
 - [x] Layout Editorへ配置したplotが元のpresentation definitionと一致する。
 - [x] headless環境でfont fallbackが発生してもblank outputやmissing sourceを成功扱いにしない。
+
+### Phase B7.2: Integrated overlay controls and plot appearance UX [S07/S09/S10/S24]
+
+Phase B7.1で完成したmulti-sample source model、typed presentation、compatibility
+resolver、renderer/export、保存、Undo可能な汎用editorを維持する。B7.1の完了は、
+日常的なgating中のmanual overlay、population color、plot appearance操作が統合UIから
+利用できることを意味しない。通常操作をplot area、Gate hierarchy、Samples paneへ
+統合し、高度なsource/axis/transform組合せには既存dialogを残す。
+
+実装前に`docs/implementation/integrated-overlay-controls-and-plot-appearance.md`を全文読む。
+一度のLLM/Codex実行では以下の番号付きincrementを一つだけ実装し、後続incrementへ
+着手しない。Phase B7.1の完了checkや履歴は変更しない。
+
+#### Increment 1: Interaction-state and precedence contract
+
+- [ ] 現行Samples list、active sample、overlay source、plot view、presentation状態を調査し、既存sample checkboxの意味を確認する。現行Samples listにはcheckboxがなく、行選択が`active_sample_id`を変更するため、新しい`Ov`専用列を計画し、別目的のcheckboxが将来存在しても転用しない。
+- [ ] `active_sample_id`、`display_population_id`、`selected_gate_id`、`manual_overlay_sample_ids`、`manual_overlay_colors`、`automatic_overlay_sources`、`comparison_set_definitions`、`overlay_mode`、`population_display_colors`、`plot_presentation`を独立状態として定義する。
+- [ ] manual overlayをactive sampleから分離し、active sample自身をoverlay sourceから除外して二重描画しないcontractを定義する。
+- [ ] 1対1と1対多を表現できる`ComparisonSet`/comparison role modelを科学的`SampleGroupSpec`・strategy bindingから分離して定義する。
+- [ ] population display colorをgate geometry、parent relationship、membership、statistics、pipeline revisionから分離したdisplay definitionとして定義する。
+- [ ] source deduplication、resolved label/style provenance、`manual source override > comparison source override > comparison role style > automatic source style`を定義し、最終color fallbackを`explicit overlay source > comparison role > sample automatic overlay > population display > plot default event`とする。
+- [ ] plot/view、project metadata、project display settings、global preferenceの保存範囲と、B7.1 projectを意味変更せず読むmigration方針を定義する。既存modelで表現可能な部分に不要なschemaを追加しない。
+- [ ] Qt非依存model、round-trip、deduplication、precedence、active/manual分離、科学値不変testをproduction codeより先に追加する計画を確定する。
+
+#### Increment 2: Plot context appearance menu
+
+- [ ] plot areaの右クリックから`Plot Appearance...`、background、title、axis labels、fonts、legend、default event style、resetへ到達できるcontext menuを追加する。
+- [ ] context menuと既存Analysis menuは同じpresentation command/modelを呼び、別設定modelを作らない。
+- [ ] title、subtitle、X/Y display label、background、font、legend、default event color、dot size、opacityを編集し、resetはview overrideを除いて下位defaultを露出させる。
+- [ ] pan、gate drawing、ROI drag中の右クリック競合・誤作動を防ぎ、keyboardからも同じ操作へ到達できるようにする。
+- [ ] appearance変更でpipelineを実行せず、stable parameter ID、transform、gate coordinates、membership、statisticsを変更しないtestを追加する。
+- [ ] project reloadとGUI/PNG/SVG/PDFが同じpresentation definitionを使用するtestを追加する。
+
+#### Increment 3: Gate hierarchy population colors
+
+- [ ] Gate hierarchyへ`Color`列とQColorDialogを使うswatchを追加し、hex直接入力を通常導線にしない。
+- [ ] row context menuへ`Population Color...`、`Gate Outline Color...`、`Use Population Color for Outline`、`Reset Population Color`を追加する。
+- [ ] active sample base layerでは最も深いdescendant population colorを優先し、同じ深さのoverlapはpersisted display z-order、未指定時はstable hierarchy preorderとstable population IDによる決定規則で解決する。
+- [ ] selected gate highlightをpopulation colorから分離し、outline、handle、selection markerで表示する。
+- [ ] population color変更がgate ID/geometry/parent、membership、count、frequency、statistics、pipeline revisionを変えないtestを追加する。
+
+#### Increment 4: Samples manual overlay controls
+
+- [ ] Samples paneを少なくとも`Ov | Color | Relation | Name`相当の専用列を持つmodel/viewへ更新し、行選択はactive sample、`Ov` checkboxはmanual overlayだけを変更する。
+- [ ] `Color` swatchからQColorDialogを開き、Cancelではstateを変更しない。active sample行はcheckboxをdisabledにするか、二重描画されない理由をtooltipで示す。
+- [ ] checked sampleについて現在の`display_population_id`と同じstable population ID/path/mapping role、現在のstable X/Y parameter IDs、transforms、plot typeをB7.1 resolverで解決する。
+- [ ] missing population、ambiguous path、missing channel、incompatible unit/transform、unresolved sampleをwarning iconとtext/tooltipで示し、zero eventsやsilent omissionへ変換しない。
+- [ ] active sample navigation中もmanual overlay checkbox/colorをplot viewに維持し、persistent positive/negative/reference controlを常時表示できるようにする。role変更はGroup bindingや科学解析を変更しない。
+- [ ] simple controlsとadvanced `Overlay Sources...` dialogを同じsource/view stateへ同期し、異なるpopulation/axis/transformの高度設定はdialog側へ残す。
+- [ ] resolved layersを既存rendererへ接続し、active sample二重描画防止、色優先、fallback provenance、navigation維持をGUI E2E testする。
+
+#### Increment 5: Comparison sets and automatic paired overlays
+
+- [ ] 1対1と1対多を保存できるComparisonSet membership、comparison role、role default colorをproject metadata/display settingsへ追加する。
+- [ ] sample multi-selection context menuへ`Create Comparison Set...`、`Pair Selected Samples...`、`Add to Comparison Set...`、`Edit Comparison Relation...`、`Remove from Comparison Set`を追加する。
+- [ ] Samples paneへ通常は`Manual only`と`Manual + comparison set`を示すoverlay mode selectorを追加し、必要性がtestで示された場合だけ`Comparison set only`を追加する。
+- [ ] `Manual + comparison set`でmanual checked samplesとactive sample所属setのother membersの和集合を解決し、active sample変更時にcomparison membersを再解決する。
+- [ ] 同一sampleがmanual、persistent control、comparison経路で重複しても一度だけ描画し、source override、role color、automatic style、labelを決定的に解決する。
+- [ ] pair双方向、1対多round-trip、manual+automatic同時使用、missing member diagnostic、Group/strategy非変更をtestする。
+
+#### Increment 6: Persistence, export, migration and final UX cleanup
+
+- [ ] project reload後にmanual overlay、persistent control role、comparison set、source/role/population colors、plot appearance、overlay modeを復元する。
+- [ ] GUI、PNG、SVG、PDFで同じresolved source order/styleを使用し、metadata sidecarへdeduplication、fallback、resolved style provenance、diagnosticを記録する。
+- [ ] B7.1 projectをactive sampleとmanual overlayを混同せずmigrationし、schema version変更が必要な場合はこのincrementで別途明示する。
+- [ ] advanced dialogsとの責任分界を最終確認し、同じcommandへ到達する重複menu actionだけを整理する。advanced dialog自体は削除しない。
+- [ ] strict Qt teardown、keyboard navigation、accessible name/tooltip、non-color-only statusを含むGUI E2Eを追加する。
+- [ ] user guideとscreenshotsを最終UIへ更新する。
+
+#### Phase B7.2 必須受け入れtest
+
+Plot appearance:
+
+- [ ] plot areaの右クリックからappearance editorを開き、background、title、axis labels、font、legendを変更できる。
+- [ ] appearance変更でpipelineが実行されず、parameter ID、gate membership、statisticsが変わらない。
+- [ ] project reloadとPNG/SVG/PDFでappearanceが再現される。
+
+Population color:
+
+- [ ] Gate hierarchyからpopulation colorを選択でき、nested populationではdeepest descendantが優先される。
+- [ ] sibling overlapの解決がdeterministicで、selected gate highlightとpopulation colorが混同されない。
+- [ ] population color変更で科学値とpipeline revisionが変化しない。
+
+Manual/control overlay:
+
+- [ ] Samples listの専用`Ov` checkboxで別sampleを重ね、隣接swatchから色を変更できる。
+- [ ] active sampleは二重描画されず、active sample変更後もmanual overlayとpositive/negative control overlayが維持される。
+- [ ] explicit overlay colorがpopulation colorより優先し、未指定時だけfallbackとprovenanceを使用する。
+- [ ] checked sampleのsame population pathとstable axes/transformsが解決され、missing/incompatible sourceをzero eventsやsilent omissionにしない。
+- [ ] control role設定がGroup binding、gate strategy、scientific analysisを変更しない。
+
+Comparison sets:
+
+- [ ] 2 sampleからpairを作り、どちらをactiveにしてもpartnerが自動overlayされる。
+- [ ] 1対多comparison setを保存・復元し、manual overlayとautomatic comparison overlayを同時使用できる。
+- [ ] 複数経路の同一sourceを一度だけ描画し、role color/source overrideの優先順位がdeterministicである。
+- [ ] missing comparison memberをsilentに無視しない。
+
+Accessibility:
+
+- [ ] overlay、active、comparison、error状態を色だけで示さない。
+- [ ] checkbox、color swatch、relation iconにaccessible nameとtooltipがあり、keyboardだけで主要操作へ到達できる。
+- [ ] color dialogをCancelした場合はstateを変更しない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

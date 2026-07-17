@@ -39,6 +39,11 @@ Selection is display state and does not create an undo command. Gate geometry, p
 name, type, expression, axes, and scale remain analysis definition state and use the
 existing command/undo path.
 
+Phase B7.2 adds `manual_overlay_sample_ids`, automatic comparison sources, Population
+display colors, and plot presentation as additional independent display states. None of
+them aliases `active_sample_id`, `display_population_id`, or `selected_gate_id`; see
+[`integrated-overlay-controls-and-plot-appearance.md`](integrated-overlay-controls-and-plot-appearance.md).
+
 ## Right-pane layout
 
 Use tabs or an equivalent exclusive mode switch:
@@ -63,6 +68,12 @@ The Gating tab owns definition editing:
 - `Show Gate` and `Show Population` as separate actions
 
 Rename the first hierarchy column from `Population` to `Gate` or `Gate definition`.
+
+Phase B7.2 adds a `Color` column and row actions to this definition hierarchy because the
+gate produces the named Population. The stored color remains Population presentation
+metadata, not `GateSpec` geometry or membership. Selected-gate highlight uses a separate
+outline/handle state. Nested event coloring prefers the deepest containing Population;
+same-depth overlap follows B7.2's deterministic display z-order/hierarchy rule.
 
 Selecting a gate:
 

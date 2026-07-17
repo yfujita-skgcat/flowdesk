@@ -36,6 +36,14 @@ diagnostic rather than being silently dropped. Status and compatibility state mu
 distinguishable by text/icon in addition to color. The complete plot presentation scope
 is defined in
 [`multi-sample-overlay-and-plot-presentation.md`](multi-sample-overlay-and-plot-presentation.md).
+The integrated plot context menu, Population/overlay colors, role status, and reset
+behavior are defined in
+[`integrated-overlay-controls-and-plot-appearance.md`](integrated-overlay-controls-and-plot-appearance.md).
+
+Population colors, comparison-role default colors, and default event appearance follow
+the same presentation precedence principle. A view/sample source override wins its lower
+default; reset removes that override and exposes the next layer with provenance. These
+colors never become gate geometry, Group binding, or scientific defaults.
 
 ## Increments
 
@@ -54,6 +62,9 @@ is defined in
 - New global scientific-looking default cannot change an existing project transform/gate.
 - Keyboard navigation reaches primary workflows.
 - Status can be distinguished by text/icon, not color alone.
+- Overlay checkbox, color swatch, relation icon, Population color swatch, and plot context
+  actions have stable object names, accessible names, tooltips, and keyboard access.
+- Cancelling a color dialog leaves live/project state and Undo history unchanged.
 - Import/export round trip and newer-version refusal.
 
 ## Do not do

@@ -18,6 +18,20 @@ Implement only one numbered increment from this guide per LLM/Codex run. Do not 
 model/schema work, source-selection GUI, full style editing, and renderer integration in
 one run.
 
+## Completed B7.1 boundary and B7.2 follow-up
+
+Phase B7.1 is complete. Its checked history covers the typed cross-sample source and
+presentation models, compatibility resolver, generic source/presentation editors,
+definition-only Undo/Redo, renderer/export reuse, persistence, provenance, and tests.
+
+`Overlay Sources...` may remain as the advanced source configuration editor for explicit
+Population, axis, transform, order, visibility, and detailed source-style combinations.
+`Plot Presentation...` may remain as the full presentation editor. Routine manual overlay
+checkboxes/colors, Population colors, and plot appearance quick actions belong to Phase
+B7.2's integrated Samples/Gate hierarchy/plot-area UI; see
+[`integrated-overlay-controls-and-plot-appearance.md`](integrated-overlay-controls-and-plot-appearance.md).
+B7.1 completion does not mean those integrated daily-operation paths are complete.
+
 ## Inspect first
 
 Read completely before implementation:
@@ -44,9 +58,9 @@ Read completely before implementation:
 Read the `qt-plot-widget`, `scientific-review`, and, where rendering downsampling or
 large overlays are changed, `performance-benchmark` skills.
 
-## Current implementation boundary
+## B7.1 implementation boundary
 
-The repository already has a valid B6/B7 foundation:
+The repository retains the B6/B7 foundation and has completed the B7.1 extension:
 
 - `PlotViewSpec` persists population, X/Y parameter IDs, transform IDs, plot type,
   viewport, free-form style, aggregation, and rendering-downsample fields.
@@ -63,26 +77,15 @@ The repository already has a valid B6/B7 foundation:
   save/load state.
 - PNG/SVG/PDF widget export and a basic JSON sidecar exist.
 
-These capabilities must remain compatible. They do not yet provide the complete B7.1
-feature:
+The B7.1 extension adds stable source/sample/Population/axis/transform identity, typed
+presentation and support validation, generic source and full presentation editors,
+compatibility diagnostics, definition-only Undo/Redo, shared GUI/export resolution,
+Layout/Template reuse contracts, persistence, and provenance.
 
-- `OverlaySpec` has population IDs but no per-source sample ID, source identity,
-  visibility/order, axis pair, unit, or compatibility provenance.
-- current overlay preparation accepts one event array and one sample ID per call.
-- there is no complete GUI for source add/remove/reorder/visibility or cross-sample
-  compatibility resolution.
-- presentation dictionaries are not a typed, validated, plot-type-aware contract.
-- GUI-local style does not cover title, independent axis display labels, legend,
-  per-source marker/line controls, histogram outline/fill, gate width/line style,
-  colormap, or text fonts.
-- axis labels currently originate from selected channel labels; there is no independent
-  persisted display-label override.
-- GUI preview/export/Layout do not yet share one resolved presentation model and
-  provenance contract.
-- current export sidecars do not fully record overlay source identity and resolved style.
-
-Do not mark these missing items complete merely because a free-form `style` dictionary or
-an export method exists.
+These capabilities must remain compatible. They intentionally do not provide B7.2's
+dedicated Samples `Ov`/Color/Relation controls, Gate hierarchy Population Color column,
+plot-area context appearance menu, generalized Comparison Sets, or automatic paired
+overlay mode.
 
 ## Responsibility boundary with B6 and B7
 
@@ -99,6 +102,11 @@ Phase B7.1 owns:
 - a typed plot presentation model and editor;
 - one presentation resolution path for GUI/export/Layout;
 - complete presentation persistence and provenance.
+
+Phase B7.2 owns integrated daily-operation controls, active/manual/automatic state
+separation, Population presentation colors, Comparison Sets, route deduplication, and the
+additional color-precedence contract. It reuses the B7.1 definitions and editors rather
+than replacing them.
 
 B7.1 extends B6/B7. It must not rewrite their completed history or introduce a second
 gate/statistics implementation.
