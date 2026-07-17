@@ -232,6 +232,35 @@ def test_plot_events_accepts_population_display_colors_without_changing_data() -
     QApplication.processEvents()
 
 
+def test_population_color_brushes_are_reused_across_replots() -> None:
+  _app()
+  plot = PlotWidget()
+  x = np.arange(100.0)
+  y = np.arange(100.0)
+  colors = np.where(np.arange(100) % 2, "#ff0000", "#0000ff")
+  try:
+    calls = 0
+    original_make_brush = plot._make_brush
+
+    def counting_make_brush(color: str, opacity: float):
+      nonlocal calls
+      calls += 1
+      return original_make_brush(color, opacity)
+
+    plot._make_brush = counting_make_brush
+    plot.plot_events(x, y, event_colors=colors)
+    first_count = calls
+    cached_brushes = plot._event_brush_cache
+    plot.plot_events(x, y, event_colors=colors)
+    assert first_count == 101  # one default brush plus one per event
+    assert calls == first_count + 1  # only the single default brush is new
+    assert plot._event_brush_cache is cached_brushes
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
 def test_default_drag_delegates_mouse_drag_to_viewbox() -> None:
   app = _app()
   widget = PlotWidget()

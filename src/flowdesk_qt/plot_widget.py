@@ -71,6 +71,9 @@ class PlotWidget(QWidget):
         self.setObjectName("plotWidget")
         self._scatter: ScatterPlotItem | None = None
         self._event_colors: NDArray[np.str_] | None = None
+        self._event_brush_cache_colors: NDArray[np.str_] | None = None
+        self._event_brush_cache_opacity: float | None = None
+        self._event_brush_cache: list[Any] | None = None
         self._gate_items: list[Any] = []
         self._gate_item_callbacks: dict[int, Any] = {}
         self._hidden_gate_reasons: list[str] = []
@@ -367,12 +370,9 @@ class PlotWidget(QWidget):
         self._is_histogram_mode = False
         self._clear_histogram()
         self._clear_scatter()
-        brush = self._make_brush(self._style.dot_color, self._style.dot_opacity)
+        brush: Any = self._make_brush(self._style.dot_color, self._style.dot_opacity)
         if colors_plot is not None:
-            brush = [
-                self._make_brush(str(color), self._style.dot_opacity)
-                for color in colors_plot
-            ]
+            brush = self._event_brushes(colors_plot, self._style.dot_opacity)
         self._scatter = self._plot_item.plot(
             x_plot,
             y_plot,
@@ -744,6 +744,31 @@ class PlotWidget(QWidget):
         except Exception:
             return QColor(color)
 
+    def _event_brushes(
+        self, colors: NDArray[np.str_], opacity: float
+    ) -> list[Any]:
+        """Return cached per-event brushes for a display color array.
+
+        Population colors are display-only, but a normal replot can happen for
+        unrelated navigation or axis changes. Reusing the immutable brush list
+        avoids constructing one QBrush per event on every such replot.
+        """
+        if (
+            self._event_brush_cache is not None
+            and self._event_brush_cache_colors is not None
+            and self._event_brush_cache_opacity == opacity
+            and np.array_equal(self._event_brush_cache_colors, colors)
+        ):
+            return self._event_brush_cache
+        brushes = [
+            self._make_brush(str(color), opacity)
+            for color in colors
+        ]
+        self._event_brush_cache_colors = colors.copy()
+        self._event_brush_cache_opacity = opacity
+        self._event_brush_cache = brushes
+        return brushes
+
     def _apply_style(self) -> None:
         """Apply current style settings to the plot display.
 
@@ -767,10 +792,7 @@ class PlotWidget(QWidget):
         if self._scatter is not None:
             brush: Any = self._make_brush(s.dot_color, s.dot_opacity)
             if self._event_colors is not None:
-                brush = [
-                    self._make_brush(str(color), s.dot_opacity)
-                    for color in self._event_colors
-                ]
+                brush = self._event_brushes(self._event_colors, s.dot_opacity)
                 self._scatter.setData(symbolBrush=brush)
             else:
                 self._scatter.setSymbolBrush(brush)
