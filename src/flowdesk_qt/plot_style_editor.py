@@ -331,7 +331,7 @@ class PlotStyleEditorDialog(QDialog):
         self._legend_position_combo,
         self._presentation.get("legend_position", "right"),
       )
-      self._background_edit.setText(str(self._presentation.get("background_color", "#ffffff")))
+      self._background_edit.setText(str(self._presentation.get("background_color", "#000000")))
       self._gate_color_edit.setText(str(self._presentation.get("gate_outline_color", "#555555")))
       self._gate_width_spin.setValue(float(self._presentation.get("gate_outline_width", 1.5)))
       self._set_data(self._gate_style_combo, self._presentation.get("gate_outline_style", "solid"))

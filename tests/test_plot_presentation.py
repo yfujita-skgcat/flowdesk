@@ -104,6 +104,10 @@ def test_presentation_labels_are_independent_from_analysis_identity() -> None:
   assert view.presentation.x_axis_display_label == "Publication CD3"
 
 
+def test_plot_presentation_defaults_to_black_background() -> None:
+  assert PlotPresentationSpec().background_color == "#000000"
+
+
 def test_unsupported_style_is_rejected_by_shared_validator() -> None:
   presentation = PlotPresentationSpec(
     source_styles=(SourceStyleSpec(source_id="s", marker_shape="circle"),),

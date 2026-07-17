@@ -907,7 +907,7 @@ class PlotPresentationSpec:
   subtitle: str = ""
   x_axis_display_label: str | None = None
   y_axis_display_label: str | None = None
-  background_color: str = "#ffffff"
+  background_color: str = "#000000"
   legend_visible: bool = True
   legend_position: LegendPosition = "right"
   legend_source_ids: tuple[str, ...] = ()
