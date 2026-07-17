@@ -547,7 +547,7 @@ class PlotWidget(QWidget):
             device.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
         painter = QPainter(device)
         try:
-            self.render(painter)
+            self.render(painter, QPoint(0, 0))
         finally:
             painter.end()
         metadata = {

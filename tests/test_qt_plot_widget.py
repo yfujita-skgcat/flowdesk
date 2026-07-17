@@ -79,6 +79,23 @@ def test_prepared_overlay_layers_render_without_recomputing_membership() -> None
   assert plot._overlay_scatter_items == []
 
 
+def test_plot_widget_exports_vector_formats_with_metadata(tmp_path: Path) -> None:
+  _app()
+  plot = PlotWidget()
+  plot.plot_events(np.array([1.0, 2.0]), np.array([2.0, 3.0]), "X", "Y")
+  svg_path = tmp_path / "plot.svg"
+  pdf_path = tmp_path / "plot.pdf"
+  plot.export_vector(svg_path, "SVG")
+  plot.export_vector(pdf_path, "PDF")
+  assert svg_path.stat().st_size > 0
+  assert pdf_path.stat().st_size > 0
+  assert (tmp_path / "plot.svg.json").exists()
+  assert (tmp_path / "plot.pdf.json").exists()
+  plot.close()
+  plot.deleteLater()
+  QApplication.processEvents()
+
+
 def test_group_panel_renders_and_edits_persisted_groups() -> None:
   _app()
   panel = GroupPanel()
