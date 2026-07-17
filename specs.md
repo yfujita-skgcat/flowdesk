@@ -35,7 +35,10 @@ Flowdeskを、Linuxを第一対象としながら、FlowJoに近い実験単位�
 - GUI、CLI、Python APIが共通の`PipelineRunner`を使用
 - population選択によるplot filtering
 - scatter、1D Count histogram、top/right marginal histogram
-- CSV/TSV population result export、PNG plot export
+- `PlotViewSpec`、dot/scatter/histogram/CDF/density/pseudocolor/contourのGUI非依存display preparation
+- `OverlaySpec`/`BackgatingSpec`、full membershipを使う1D/2D overlay/backgating preparation、GUI display layer API
+- GUI-localなscatter color/size/opacity、background、gate color設定
+- CSV/TSV population result export、PNG/SVG/PDF plot exportと基本metadata sidecar
 - GUI test harness、callback exception検出、headless consistency tests
 
 ### 2.2 FlowJoとの機能差
@@ -49,8 +52,8 @@ Flowdeskを、Linuxを第一対象としながら、FlowJoに近い実験単位�
 | Transforms | 基本変換あり。ただし`logicle_like`は近似で、FlowJo互換性を保証しない | 大 | S05 |
 | Gating | rectangle/polygon/range/booleanと階層あり | 中 | S06, S07 |
 | Batch gating | 全sampleに一つのstrategyを適用可能。Group template、copy、override確認UIなし | 大 | S08 |
-| Plot | scatter/histogram/marginalあり | 大 | S09 |
-| Backgating/overlay | なし | 大 | S10 |
+| Plot | B6のplot type/display preparation/export基盤あり。完全なpresentation model/editorは未実装 | 中 | S09 |
+| Backgating/overlay | B7のPopulation overlay/backgating基盤あり。cross-sample source model/editorは未実装 | 中 | S10 |
 | Statistics | count/frequencyとcoreの基本関数はあるが、保存可能なstatistics definition/UIがない | 大 | S11 |
 | Table Editor | fixed population exportのみ | 大 | S12 |
 | Layout Editor | PNG exportのみ | 大 | S13 |
@@ -60,7 +63,7 @@ Flowdeskを、Linuxを第一対象としながら、FlowJoに近い実験単位�
 | Specialized platforms | なし | 大 | S17-S21 |
 | Plugin/scripting | CLI/Python APIはあるがplugin contractなし | 中 | S22 |
 | Performance/QC | scatter downsamplingはあるが大規模benchmark、sample QC、cache policyが未完成 | 大 | S23 |
-| Preferences/help/accessibility | 局所controlのみ | 中 | S24 |
+| Preferences/help/accessibility | GUI-local plot style等の局所controlのみ。優先順位付きproject/global presentation defaultsは未実装 | 中 | S24 |
 
 ### 2.3 現行実装で先に是正すべき科学的リスク
 
@@ -271,11 +274,22 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 
 - dot/scatter、pseudocolor、density、contour、zebra相当、histogram、CDFを提供する。
 - 表示集計はfull selected Populationから作り、rendering downsampleと科学計算を分離する。
-- plot type、axes、transforms、range、color、smoothing、outlier、resolutionを`PlotViewSpec`として保存する。
+- plot type、stable parameter IDs、transform IDs、range、aggregation、rendering設定、presentation参照を`PlotViewSpec`として保存する。
 - 複数Graph tab/window、duplicate view、linked sample navigationを提供する。
 - gate作成中、selection、pan/zoomのmodeを視覚的に区別する。
 - plot上にPopulation名、count、frequency、axis scale、compensation stateを選択表示する。
 - SVG/PDF/PNG exportにtitle、axis、legend、gate labelを含め、metadata sidecarを出力できる。
+
+#### Plot presentation definition
+
+- 保存可能なdisplay-only definitionとして、plot title、optional subtitle/annotation、X/Y axis display label、legend visibility/position/order、sourceごとのlegend labelを表現する。
+- scatter/dotではsourceごとのcolor、alpha、marker shape、marker sizeを表現する。
+- line系表示ではline color、line width、line styleを、histogramではfill、outline、alphaを表現する。
+- plot background、gate outline color/width/line style、plot typeごとのsupported colormapを表現する。
+- title、axis label、tick、legendのfont family、size、weight等を、backendで検証可能なdisplay definitionとして表現する。
+- automatic style assignmentとmanual overrideを区別し、manual overrideのないsourceだけをdeterministicな自動割当対象とする。
+- internal parameter IDとaxis display labelは別fieldとする。axis display labelを変更してもparameter ID、transform、gate coordinate、membership、statisticsを変更しない。
+- plot typeごとにsupported style matrixを定義し、unsupported styleを黙って無視せずvalidationまたはstructured diagnosticにする。
 
 ### S10. Overlayとbackgating [P1]
 
@@ -284,6 +298,30 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 - backgatingはtarget membershipを各ancestor viewへ投影し、targetとparent backgroundを区別する。
 - GUIはrunnerが返したfull membershipを使用し、再gateしない。
 - overlay/backgating definitionをLayoutへ配置し、headless renderできる。
+
+#### Overlay source model
+
+- 各overlay sourceはstable source ID、sample ID、population IDまたはmapping可能なpopulation path/role、表示名、X/Y parameter ID、X/Y transform ID、visibility、orderを保持する。
+- active sampleとは独立したsource一覧として保存し、異なるsampleの同じPopulation pathだけでなく、明示的に選択した異なるPopulationも同じplotへoverlayできる。
+- GUIからsourceを追加、削除、並べ替え、表示/非表示にでき、その状態をprojectへ保存する。
+- missing sample、missing Population、missing channelをzero eventsや空layerへ変換せず、source identityを含むstructured diagnosticとGUI状態を表示する。
+- channel mappingがambiguousな場合はuser confirmationなしに推測しない。
+
+#### Scientific compatibility
+
+- overlay sourceは同じsemantic parameter、軸、transform、unitへ一意に解決できる場合だけ同じplotへ描画する。
+- sample間でchannel orderが異なってもstable channel identityでparameterを解決する。
+- incompatible、ambiguous、missingなsourceはstructured diagnosticとGUI表示で拒否し、silent fallbackしない。
+- sourceのcolor、label、marker、line、alpha、font等はdisplay-only definitionとし、gate membership、count、frequency、Statistic resultを変更しない。
+- rendering downsampleはoverlay描画だけに適用し、membership、normalizationの入力event集合、statisticsを変更しない。
+
+#### Export and reuse
+
+- GUI previewとPNG/SVG/PDF exportは同じoverlay source順とplot presentation definitionを使用する。
+- export metadata sidecarへsource sample/population、parameter IDs、transform IDs、source順、visibility、style definition、diagnosticを記録する。
+- Layout Editorは同じplot presentation definitionを参照するか、明示的に複製したsnapshotを使用する。Layout側で科学計算を再実装しない。
+- Templateへ保存するsourceは、必要に応じsample IDそのものではなくmapping可能なsample role、population path/role、parameter roleを保持し、適用時にmapping planとuser confirmationを要求できるようにする。
+- font fallbackやrenderer backend差による完全なpixel一致は保証しないが、source順、label、style semantics、objectの欠落、blank outputは検証する。
 
 ### S11. Statistics definitions [P0/P1]
 
@@ -325,6 +363,7 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 - align、distribute、group、lock、duplicate、z-order、multi-select、Undo/Redoを提供する。
 - sample/Group/keyword iterationとfiltered batchを定義する。
 - GUI previewとheadless rendererが同じlayout modelを使用する。
+- plot/overlay objectはS09/S10のpresentation definitionを参照するか、provenance付きで複製する。Layout固有の位置・size・annotation overrideと科学計算を分離する。
 - PNG、SVG、PDFを優先し、HTML/PowerPointは後続とする。
 - font fallbackとmissing glyphをdiagnosticに記録する。
 
@@ -406,6 +445,7 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 
 - global preferenceとproject display settingを分離する。
 - plot defaults、number format、autosave、performance、theme、font、export defaultsを設定する。
+- display styleの優先順位は、plot/view単位の明示override、project display default、global preference、built-in defaultの順とする。各layerはpresentationだけを上書きし、stable parameter/source identityや科学定義を変更しない。
 - reset、import/export preferenceを提供する。
 - stable Qt objectName、keyboard navigation、shortcut一覧、color-onlyでないstatus表現、context helpを備える。
 - scientific defaultを変更したときは既存projectの解析結果を暗黙変更しない。

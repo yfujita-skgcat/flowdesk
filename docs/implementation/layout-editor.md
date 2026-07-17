@@ -24,6 +24,14 @@ table, statistic text, legend, shape, and annotation. Each has stable ID, bounds
 style, and data reference. Scene data contains no QWidget, QGraphicsItem, event array, or
 membership mask.
 
+Plot and overlay objects should reuse the typed presentation definition established by
+Phase B7.1, either by stable reference or by an explicit provenance-bearing copy. Layout
+may add scene-specific bounds, clipping, caption, or intentional presentation overrides,
+but must not create a second scientific plot model or calculate membership/statistics.
+Source sample/population/parameter/transform identity remains owned by the referenced
+plot definition. See
+[`multi-sample-overlay-and-plot-presentation.md`](multi-sample-overlay-and-plot-presentation.md).
+
 ## Increments
 
 1. Add scene/page/object models, validation, and serialization.
@@ -57,4 +65,3 @@ pytest -q tests/test_export.py tests/test_project_storage.py
 ./tools/run-gui-tests.sh -q
 ruff check src tests
 ```
-

@@ -8,6 +8,21 @@ ToDo: `Phase B7`
 Compare populations and project a target population through ancestor views using only
 membership produced by the headless pipeline.
 
+## Completed B7 boundary and B7.1 follow-up
+
+Phase B7 completed the population-based `OverlaySpec`/`BackgatingSpec`, membership-based
+display preparation, persisted per-population color/alpha dictionaries, project
+round-trip, and GUI display-layer API described below. That implementation history is
+retained.
+
+B7's overlay contract is primarily one sample plus multiple population IDs. It does not
+provide the complete cross-sample source identity model, source add/remove/reorder UI,
+compatibility resolver, full style editor, or title/axis/legend editing. Those remain
+unfinished Phase B7.1 work; see
+[`multi-sample-overlay-and-plot-presentation.md`](multi-sample-overlay-and-plot-presentation.md).
+Checked B7 items therefore indicate completion of the overlay/backgating foundation,
+not completion of every B7.1 presentation feature.
+
 ## Inspect first
 
 - `src/flowdesk_core/execution_report.py`, `gating_strategy.py`

@@ -61,6 +61,7 @@ release order below.
 | B4 | `group-gating-and-overrides.md` | B1-B3 |
 | B6 | `graph-window-v2.md` | A3, A6 |
 | B7 | `overlay-and-backgating.md` | B3, B6 |
+| B7.1 | `multi-sample-overlay-and-plot-presentation.md` | B6-B7 |
 
 ## Release C: reports and interoperability
 

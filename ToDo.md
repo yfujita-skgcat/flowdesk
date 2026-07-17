@@ -62,6 +62,7 @@ git status --short
 | B4 | `docs/implementation/group-gating-and-overrides.md` |
 | B6 | `docs/implementation/graph-window-v2.md` |
 | B7 | `docs/implementation/overlay-and-backgating.md` |
+| B7.1 | `docs/implementation/multi-sample-overlay-and-plot-presentation.md` |
 | C1 | `docs/implementation/table-editor.md` |
 | C2 | `docs/implementation/layout-editor.md` |
 | C3 | `docs/implementation/templates-and-mapping.md` |
@@ -465,6 +466,70 @@ B3.2で導入した独立`Current Sample Preview` panelと、stale時に
 - [x] backgatingはrunner membershipをancestor viewへ投影するだけにし、GUIで再評価しない。
 - [x] target、parent background、ancestor gateを視覚的に区別するstyleを保存する。
 - [x] project save/load、headless display preparation、GUI display layer APIを同じdefinitionで接続する。
+
+### Phase B7.1: Multi-sample overlay and plot presentation [S09/S10/S13/S24]
+
+Phase B6/B7で完了した`PlotViewSpec`、plot type、display preparation、
+`OverlaySpec`/`BackgatingSpec`、membership-based overlay preparation、export基盤を維持する。
+それらの完了履歴は、multi-sample source selection、完全なstyle editor、
+title/axis/legend編集が実装済みであることを意味しない。
+
+実装前に`docs/implementation/multi-sample-overlay-and-plot-presentation.md`を全文読む。
+一度のLLM/Codex実行では、以下の番号付きincrementを一つだけ実装し、後続incrementへ
+着手しない。未実装項目は受け入れ条件を満たすまで`[ ]`のままにする。
+
+#### Increment 1: Model and compatibility contract
+
+- [ ] 現行`OverlaySpec`/`PlotViewSpec`の不足を確認し、multi-sample overlay source、typed presentation style、schema extension、migration方針を定義する。
+- [ ] source sample、Population、X/Y parameter、X/Y transform、unitをstable identityで保存し、active sampleから独立したsource order/visibilityを表現する。
+- [ ] stable channel identityとsemantic parameter/unit/transformを使うGUI非依存compatibility resolverを追加し、compatible/incompatible/ambiguous/missingをstructured diagnosticで返す。ambiguous mappingをuser confirmationなしに確定しない。
+- [ ] presentation style modelをanalysis definitionから型として分離し、automatic assignmentとmanual override、plot typeごとのsupported style matrix、unsupported style validationを定義する。
+- [ ] source追加・削除・並べ替え・visibility、source style、title/axis display label/legendのsave/load/migration testを先に追加する。display labelとstable parameter IDを別fieldとしてround-tripする。
+
+#### Increment 2: Overlay source selection GUI
+
+- [ ] overlay sourceの追加、削除、並べ替え、表示/非表示を行うGUIを追加し、sample、Population path、X/Y parameter/transformをstable IDで選択する。
+- [ ] compatible/incompatible/ambiguous/missingをtext/iconと詳細diagnosticで表示し、missing sourceをzero eventsとして表示しない。
+- [ ] sourceごとのcolor、alpha、legend labelの基本編集を追加し、manual overrideの有無を表示する。
+- [ ] source selection変更はdisplay definitionだけを更新し、gate、transform binding、membership、Statistic definitionを変更しない。
+- [ ] add/remove/reorder/visibility/style editをproject mutation Undo/Redo対象とし、active sample navigationやpipeline result revisionはUndo payloadへ含めない。
+
+#### Increment 3: Plot style editor
+
+- [ ] title、optional subtitle/annotation、X/Y axis display label、legend visibility/position/orderを編集する。
+- [ ] sourceごとのmarker shape/size/color/alpha、line color/width/style、histogram fill/outline/alphaを編集する。
+- [ ] plot background、gate outline color/width/line style、plot typeごとのcolormap、title/axis/tick/legend fontを編集する。
+- [ ] plot typeごとのsupported/unsupported style matrixをUIとvalidatorで共有し、unsupported fieldを黙って無視しない。density/pseudocolor/contour固有styleは必要なら別subincrementとして一種類ずつ実装する。
+- [ ] automatic style assignmentとmanual override、reset-to-view-default、reset-to-project/global defaultを区別する。
+- [ ] edit中はdisplay-only previewを更新し、pipelineを再実行せず、scientific resultsが不変であることをtestする。
+
+#### Increment 4: Renderer, export, persistence and reuse
+
+- [ ] GUI rendererとGUI非依存/headless export rendererが同じresolved source orderとpresentation definitionを使用する。
+- [ ] PNG/SVG/PDFへ同じtitle、axis labels、legend、source style、gate styleを適用し、metadata sidecarへsample/population/parameter/transform IDsとstyle provenanceを記録する。
+- [ ] project save/load/reload、duplicate plot/viewでoverlay sourceとpresentationを再現する。
+- [ ] Layout Editorがpresentation definitionを参照またはprovenance付き複製できるようにし、Layout独自overrideを科学定義から分離する。
+- [ ] Templateではsample ID固定参照とmapping可能なsource role/pathを区別し、ambiguous/missing mappingをconfirmation/diagnosticなしに適用しない。
+- [ ] style解決優先順位を`view override > project display default > global preference > built-in default`として実装し、resolved provenanceを確認可能にする。
+- [ ] GUI/headless/export consistency、font fallback、blank output、missing source、strict teardownをE2E testする。
+
+#### Phase B7.1 必須受け入れtest
+
+- [ ] 2つ以上の異なるsampleのPopulationをoverlayできる。
+- [ ] channel orderが異なるsampleでもstable identityにより正しい軸へmappingされる。
+- [ ] ambiguous/missing/incompatible channelをsilent fallbackしない。
+- [ ] source追加・削除・並べ替え・visibilityがsave/loadされる。
+- [ ] sourceごとのcolor、alpha、marker、legend labelがsave/loadされる。
+- [ ] title、axis display label、legend設定がsave/loadされる。
+- [ ] axis display label変更がparameter ID、transform ID、gate membership、科学計算を変更しない。
+- [ ] plot style変更がgate membership、count、frequency、statisticsを変更しない。
+- [ ] rendering downsampleを変更してもscientific valuesが変わらない。
+- [ ] GUI previewとPNG/SVG/PDF exportが同じsource順、label、styleを使用する。
+- [ ] unsupported styleは黙って無視せずvalidationまたはstructured diagnosticを出す。
+- [ ] missing overlay sourceをzero eventsとして表示しない。
+- [ ] project reload後にoverlayとstyleが再現される。
+- [ ] Layout Editorへ配置したplotが元のpresentation definitionと一致する。
+- [ ] headless環境でfont fallbackが発生してもblank outputやmissing sourceを成功扱いにしない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

@@ -8,6 +8,18 @@ ToDo: `Phase B6`
 Provide persisted plot definitions and multiple scientifically honest visualization modes
 without coupling rendering aggregates to gate/statistic calculations.
 
+## Completed B6 boundary and B7.1 follow-up
+
+Phase B6 completed the persisted `PlotViewSpec`, plot-type/display-data preparation,
+duplicate view state, interaction modes, and PNG/SVG/PDF export foundation described
+below. That completed history remains valid.
+
+B6 did not complete multi-sample overlay source selection, a typed full presentation
+model/editor, or editable title, axis display labels, legend, source marker/line style,
+colormap, and font controls. Those are independent unfinished Phase B7.1 work; see
+[`multi-sample-overlay-and-plot-presentation.md`](multi-sample-overlay-and-plot-presentation.md).
+Checked B6 items must not be interpreted as completion of the B7.1 user-facing feature.
+
 ## Inspect first
 
 - `src/flowdesk_qt/plot_widget.py`, `plot_toolbar.py`, `plot_style.py`
