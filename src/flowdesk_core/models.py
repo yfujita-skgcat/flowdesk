@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -16,6 +16,9 @@ GateType = Literal["rectangle", "polygon", "range", "ellipse", "boolean"]
 GateAxisScale = Literal["linear", "log10", "asinh"]
 GateOverrideGeometryMode = Literal["delta", "full"]
 GatePurpose = Literal["technical_cleanup", "comparison_critical"]
+AutoGateAlgorithm = Literal["quantile_rectangle"]
+FitStatus = Literal["success", "failed"]
+ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
 CompensationBindingScope = Literal["sample", "group", "execution_profile"]
 CompensationRegressionMethod = Literal["linear", "median"]
@@ -456,6 +459,63 @@ class GateOverrideSpec:
       raise ValueError("override created_at must be an ISO-8601 timestamp") from exc
     if self.geometry_mode == "delta" and not self.coordinates and not self.thresholds:
       raise ValueError("delta override must contain geometry changes")
+
+
+@dataclass(frozen=True)
+class AutoGateTemplateSpec:
+  """Shared automatic-gate definition; no sample-fitted geometry is embedded."""
+
+  id: str
+  name: str
+  algorithm: AutoGateAlgorithm
+  x_parameter: str
+  y_parameter: str
+  parent_population_id: str = "all_events"
+  parameters: dict[str, Any] = field(default_factory=dict)
+  algorithm_version: str = "quantile_rectangle.v1"
+  manual_override_policy: ManualOverridePolicy = "preserve_until_reset"
+  notes: str = ""
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.name or not self.x_parameter or not self.y_parameter:
+      raise ValueError("automatic gate template IDs and parameters are required")
+    if self.algorithm != "quantile_rectangle":
+      raise ValueError(f"unsupported automatic gate algorithm: {self.algorithm!r}")
+    if not self.algorithm_version:
+      raise ValueError("automatic gate algorithm_version must be non-empty")
+    if self.manual_override_policy not in {
+      "preserve_until_reset", "refit_on_input_change"
+    }:
+      raise ValueError(
+        f"invalid automatic gate manual override policy: {self.manual_override_policy!r}"
+      )
+
+
+@dataclass(frozen=True)
+class AutoGateFitResult:
+  """Deterministic sample-specific automatic geometry and provenance."""
+
+  template_id: str
+  sample_id: str
+  input_hash: str
+  algorithm_version: str
+  status: FitStatus
+  gate: GateSpec | None = None
+  diagnostics: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+  failure_reason: str | None = None
+  manual_override: bool = False
+
+  def __post_init__(self) -> None:
+    if not self.template_id or not self.sample_id or not self.input_hash:
+      raise ValueError("automatic fit identity fields are required")
+    if not self.algorithm_version:
+      raise ValueError("automatic fit algorithm_version must be non-empty")
+    if self.status not in {"success", "failed"}:
+      raise ValueError(f"invalid automatic fit status: {self.status!r}")
+    if self.status == "success" and self.gate is None:
+      raise ValueError("successful automatic fit requires a fitted gate")
+    if self.status == "failed" and not self.failure_reason:
+      raise ValueError("failed automatic fit requires failure_reason")
 
 
 @dataclass(frozen=True)

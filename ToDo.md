@@ -340,6 +340,13 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 各gateを一つずつ独立subphaseで実装する。まとめて実装しない。
 
+#### Auto gate subphase
+
+- [x] `quantile_rectangle.v1` のprimary method、parameters、fit failure、determinismをimplementation guideへ記載する。
+- [x] template definitionとsample-specific fitted geometry/provenance modelを分離する。
+- [x] full Populationのfinite eventsだけを使う決定的fitとsynthetic numeric testを追加する。
+- [ ] headless runner、project save/load、GUI表示をAuto fit resultへ接続する。
+
 - [ ] 各algorithmについてprimary/reference method、parameters、fit failure、determinismをimplementation guideへ記載する。
 - [ ] template definitionとsample-specific fitted geometryを分離する。
 - [ ] fitted resultへinput hash、algorithm version、diagnosticsを保存する。

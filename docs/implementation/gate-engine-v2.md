@@ -73,6 +73,29 @@ Implement auto, magnetic, tethered, and clone gates as separate subprojects. Eac
 an algorithm spec, deterministic full-data fit, diagnostics, template definition, and
 sample-specific fitted geometry. Do not add a GUI placeholder before the core result exists.
 
+### B5-Auto: `quantile_rectangle.v1`
+
+This is a Flowdesk-defined automatic gate and must not be presented as FlowJo Auto
+compatibility. The primary method computes independent X/Y quantiles over the full
+selected Population after excluding non-finite paired events. Defaults are
+`q_low=0.01`, `q_high=0.99`, and `minimum_events=20`; all are persisted in the
+`AutoGateTemplateSpec.parameters` mapping. The fitted geometry is an inclusive
+rectangle in data coordinates.
+
+The reference method is NumPy's deterministic linear quantile interpolation on the
+ordered finite values. The implementation version is `quantile_rectangle.v1`; it
+stores a SHA-256 input hash over the selected full-data X/Y matrix and channel IDs.
+Repeated fitting with identical bytes and parameters must produce identical bounds,
+hash, and diagnostics. Non-finite events are excluded and counted in diagnostics;
+too few finite events returns an explicit failed result, never an empty successful
+gate. Invalid parameters raise a configuration error before fitting.
+
+`AutoGateTemplateSpec` is shared strategy definition. `AutoGateFitResult` stores
+sample ID, fitted `GateSpec`, input hash, algorithm version, diagnostics, and manual
+override state separately. The default manual override policy is
+`preserve_until_reset`: a manual geometry edit is retained until an explicit reset
+or refit command; automatic refitting must never infer intent from a displayed ROI.
+
 ## Required tests
 
 - Rotated ellipse inside/outside/on-boundary cases.
