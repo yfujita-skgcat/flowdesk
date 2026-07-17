@@ -56,6 +56,16 @@ pipeline stage. Display histogram bins are never the default statistic source.
   name. Value metrics also retain the selected channel unit, and CSV/TSV export
   writes those fields with value, status, and undefined reason.
 
+## Authoritative batch and interactive preview
+
+`Run Pipeline` is the authoritative calculation boundary because statistic values depend
+on every upstream stage and must match CLI/Python API execution over full events. A future
+current-sample interactive preview may improve gate-edit feedback, but it must call the
+same core statistic dispatcher, carry an analysis revision, and be labelled
+`Preview — current sample only`. Preview statistics do not feed export, Group QC, or the
+saved authoritative `ExecutionReport`. See `interactive-current-sample-preview.md` for
+debounce, descendant invalidation, latest-wins scheduling, and stale-result rejection.
+
 ## Increments
 
 1. Add types/schema for definitions, results, statuses, and undefined reasons.

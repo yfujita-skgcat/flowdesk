@@ -57,6 +57,7 @@ git status --short
 | B2, B5 | `docs/implementation/gate-engine-v2.md` |
 | B3 | `docs/implementation/workspace-tree-and-undo.md` |
 | B3.1 | `docs/implementation/gating-and-results-workspaces.md` |
+| B3.2 | `docs/implementation/interactive-current-sample-preview.md` |
 | B4 | `docs/implementation/group-gating-and-overrides.md` |
 | B6 | `docs/implementation/graph-window-v2.md` |
 | B7 | `docs/implementation/overlay-and-backgating.md` |
@@ -345,6 +346,25 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: Gate selectionがplot filterを変更しないtest、Show Gateが親populationを表示するtest、明示All Eventsで全eventへ戻るtest、Results選択がgate編集対象を変えないtestを追加する。
 - [x] 済み: Hierarchy/Flat tableの結果値、GUI/headless/CLIの既存event count/frequency経路、既存gate編集、Undo/Redo、population filtering、strict GUI teardownの回帰確認を実施する。
 - [x] 済み（延期）: 旧WorkspaceTree/PopulationTreeの完全削除は、既存export/statistics callerとlegacy testのResults API移行後に行う。現段階では非表示のtransitional adapterとして保持する。
+
+### Phase B3.2: revision-safe current-sample preview [S07/S14]
+
+正式なmulti-sample結果、export、QC、diagnosticsは引き続き`Run Pipeline`のauthoritative `ExecutionReport`だけを使用する。gate編集後の操作性を改善するため、active sampleだけを同じcore pipeline stageで再計算する非authoritative previewを追加する。単純な常駐thread＋FIFO queueにはしない。
+
+- [ ] `docs/implementation/interactive-current-sample-preview.md`を全文読み、番号付きincrementを一つだけ実装する。
+- [ ] increment 1: immutableな`PreviewRequest`/`PreviewReport`とGUI非依存`PipelineRunner.preview_sample()`を追加する。full-resolution active sampleへcanonical processing orderを適用し、同一snapshotのbatch実行とmembership、count、frequency、statisticを一致させる。
+- [ ] increment 2: `analysis_revision`、`authoritative_result_revision`、`preview_result_revision`、`preview_status`を分離する。上流定義変更時はrevisionを増加し、変更gateと全descendantをworker開始前にstale化する。
+- [ ] increment 2: stale descendant membershipをplot filterへ使用しない。対象populationのcurrent-revision結果がなければ、currentなnearest ancestor、`All Events`、または明示的なempty/recalculating表示へfallbackする。
+- [ ] increment 3: mouse releaseまたは有効なnumeric edit確定後に200–400 ms debounceするlatest-wins schedulerを追加する。pending jobをrevisionごとにFIFO実行せず、未実行jobを最新revisionへcoalesceする。
+- [ ] increment 3: workerへimmutable project/sample snapshotを渡し、最大worker数をまず1とする。実行中jobの強制terminateはせず、古いrevisionの完了結果をGUI適用前に破棄する。
+- [ ] increment 4: workerがローカルで完全なpreview resultを構築し、GUI threadでrevision照合後にcacheと表示をatomic交換する。workerからQt widget、pyqtgraph item、共有membership辞書を逐次更新しない。
+- [ ] increment 4: plotまたはGating workspaceへ`Current Sample Preview`を追加し、sample/population、Events、`% Parent`、`% Total`、requested statistics、preview revision/status、`Batch results stale`を明示する。authoritative Results rowへ無印で混在させない。
+- [ ] increment 5: 下位populationへ移動した場合、そのtargetまでのancestor pathとrequested statisticsを優先する。他branch、他sample、Group QCはpreview対象にせず`Run Pipeline`へ残す。
+- [ ] increment 5: `Run Pipeline`開始前にpending gate editをcommitし、新規preview投入を抑止する。batch reportも実行snapshotのrevisionと照合し、実行中にdefinitionが変わったreportをcurrentとして受理しない。
+- [ ] increment 6: repeated dragをcoalesceするtest、out-of-order completionを破棄するtest、ancestor変更直後のdescendant navigation test、preview/batch数値一致test、display downsampling非依存testを追加する。
+- [ ] increment 6: project/window close時にtimerとlate resultを無効化し、running QThreadを残さない。代表event数でlatency、memory、queue長を測定し、strict GUI teardownを確認する。
+
+Preview値は保存済みanalysis definitionから再生成できるderived cacheであり、authoritative exportへ直接使用しない。全sample自動再計算や細粒度branch cache reuseは、correctnessとbenchmarkが揃うまで実装しない。
 
 ### Phase B4: Group strategyとsample override review [S08]
 

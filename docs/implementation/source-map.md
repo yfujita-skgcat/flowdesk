@@ -49,6 +49,8 @@ Create only when the selected guide requires them:
 - `diagnostics.py`: structured execution diagnostics shared by runner/CLI/Qt
 - `sample_data.py`: only if `sample.py` cannot cleanly own typed sample arrays
 - `statistics_runner.py`: resolve `StatisticSpec` over memberships
+- `preview.py`: only if typed current-sample preview request/result contracts do not fit
+  cleanly in `pipeline_runner.py` and `execution_report.py`; it must remain Qt-independent
 - `table_runner.py`: resolve table definitions to typed rows
 - `layout_model.py` and `layout_resolver.py`: Qt-independent scene data
 - `groups.py`: safe group membership rules/resolution
@@ -92,7 +94,8 @@ must not implement formulas, matrix operations, gate membership, or platform fit
 | `gate_editor.py` | Gate definition editing/hierarchy UI | New gate editors and command dispatch |
 | `workspace_tree.py` | Transitional unified navigation tree | Do not extend; migrate executed-result behavior to Results workspace |
 | `population_tree.py` | Transitional population/result presentation | Do not add duplicate result views; migrate to Results workspace |
-| proposed `results_workspace.py` | Unified executed sample/population/statistic results | Hierarchy/flat result views and display-population selection |
+| `results_workspace.py` | Unified executed sample/population/statistic results | Hierarchy/flat authoritative result views and display-population selection |
+| proposed `preview_scheduler.py` | Debounce, revision checks, latest-wins job coalescing, Qt worker lifecycle | Schedule only immutable core preview requests; never calculate memberships/statistics or mutate widgets from workers |
 | `diagnostics.py` | Strict callbacks/logging/debug state | New observable UI state, not scientific diagnostics calculation |
 
 Prefer one new widget module per major editor: `compensation_workspace.py`,
@@ -121,6 +124,7 @@ Unknown fields remain preserved unless a documented migration removes them.
 | Statistics/export | `test_population_statistics.py`, `test_export.py` |
 | Storage/migration | `test_project_storage.py`, headless round trip |
 | Plot/Qt | `test_qt_plot_widget.py`, relevant `tests/gui/*` |
+| Interactive preview | core preview/batch equality test, controlled revision-order scheduler test, descendant stale-navigation GUI test, strict Qt teardown |
 | CLI | `test_cli.py` plus the core test for the called behavior |
 
 New scientific platforms should get one core numeric test file and one GUI integration

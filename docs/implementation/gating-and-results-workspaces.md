@@ -144,6 +144,11 @@ Do not encode tree indentation into the population name in flat mode.
   plot filtering; otherwise clear them consistently.
 - Re-running the canonical headless `PipelineRunner` replaces stale result data atomically.
 
+Phase B3.2 may add a revision-labelled current-sample preview through the same core stage
+order; see `interactive-current-sample-preview.md`. Preview values remain a separate
+non-authoritative lifecycle and must not silently turn stale batch Results into `current`,
+feed export/QC, or permit stale descendant membership to filter the plot.
+
 ## Target files
 
 Primary:
