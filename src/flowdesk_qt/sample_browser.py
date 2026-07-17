@@ -11,7 +11,7 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -460,18 +460,21 @@ class SampleBrowser(QWidget):
         self._list_widget.blockSignals(True)
         self._list_widget.clear()
         for sample in self._samples:
-            item = QListWidgetItem(
-                f"[{labels.get(sample.status, '!')}] {sample.name}  "
-                f"({sample.info.event_count} events) — {sample.status}"
-            )
+            item = QListWidgetItem()
             item.setData(Qt.UserRole, sample.id)
-            item.setToolTip(sample.path)
+            item.setToolTip(
+                f"{sample.name}\n{sample.path}\n"
+                f"{sample.info.event_count} events — {sample.status}"
+            )
             self._list_widget.addItem(item)
             row = QWidget()
+            row.setObjectName(f"sampleRow_{sample.id}")
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(2, 1, 2, 1)
+            row_layout.setSpacing(4)
             overlay = QCheckBox()
             overlay.setObjectName(f"overlayCheck_{sample.id}")
+            overlay.setFixedWidth(28)
             overlay.setAccessibleName(f"Overlay {sample.name}")
             overlay.setToolTip("Add this sample as a manual overlay")
             overlay.setChecked(sample.id in self._manual_overlay_sample_ids)
@@ -495,17 +498,22 @@ class SampleBrowser(QWidget):
                 lambda _checked=False, sample_id=sample.id:
                 self._choose_overlay_color(sample_id)
             )
-            relation = QLabel(self._overlay_roles.get(sample.id, "manual"))
-            relation.setObjectName(f"overlayRelation_{sample.id}")
             name = QLabel(
                 f"[{labels.get(sample.status, '!')}] {sample.name} "
                 f"({sample.info.event_count} events) — {sample.status}"
             )
             name.setObjectName(f"sampleName_{sample.id}")
+            name.setToolTip(item.toolTip())
+            name.setWordWrap(False)
+            relation = QLabel(self._overlay_roles.get(sample.id, "manual"))
+            relation.setObjectName(f"overlayRelation_{sample.id}")
+            relation.setFixedWidth(68)
+            relation.setToolTip("Overlay relation or diagnostic status")
             row_layout.addWidget(overlay)
             row_layout.addWidget(swatch)
-            row_layout.addWidget(relation)
             row_layout.addWidget(name, 1)
+            row_layout.addWidget(relation)
+            item.setSizeHint(QSize(0, 30))
             self._list_widget.setItemWidget(item, row)
         self._list_widget.blockSignals(False)
         self._apply_filter(self._filter_edit.text())
@@ -713,6 +721,26 @@ class SampleBrowser(QWidget):
         self._list_widget.customContextMenuRequested.connect(
             self._show_sample_context_menu
         )
+        self._sample_header = QWidget()
+        self._sample_header.setObjectName("sampleListHeader")
+        header_layout = QHBoxLayout(self._sample_header)
+        header_layout.setContentsMargins(2, 0, 2, 0)
+        header_layout.setSpacing(4)
+        ov_header = QLabel("Ov")
+        ov_header.setObjectName("sampleHeaderOv")
+        ov_header.setFixedWidth(28)
+        col_header = QLabel("Col")
+        col_header.setObjectName("sampleHeaderCol")
+        col_header.setFixedWidth(24)
+        name_header = QLabel("Name")
+        name_header.setObjectName("sampleHeaderName")
+        rel_header = QLabel("Rel")
+        rel_header.setObjectName("sampleHeaderRel")
+        rel_header.setFixedWidth(68)
+        header_layout.addWidget(ov_header)
+        header_layout.addWidget(col_header)
+        header_layout.addWidget(name_header, 1)
+        header_layout.addWidget(rel_header)
 
         self._filter_edit = QLineEdit()
         self._filter_edit.setObjectName("sampleFilterEdit")
@@ -756,6 +784,7 @@ class SampleBrowser(QWidget):
         mode_controls.addWidget(mode_label)
         mode_controls.addWidget(self._overlay_mode_combo)
         left_layout.addLayout(mode_controls)
+        left_layout.addWidget(self._sample_header)
         left_layout.addWidget(self._list_widget)
         left_layout.addWidget(self._btn_add)
         left_layout.addWidget(self._btn_remove)

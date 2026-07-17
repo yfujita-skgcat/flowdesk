@@ -20,7 +20,7 @@ pytestmark = pytest.mark.gui
 
 from PySide6.QtCore import QCoreApplication, QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
-from PySide6.QtWidgets import QApplication, QCheckBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel  # noqa: E402
 
 from flowdesk_cli.run_project import run_project_command  # noqa: E402
 from flowdesk_core.execution_context import ExecutionContext  # noqa: E402
@@ -1145,7 +1145,17 @@ def test_sample_browser_metadata_columns_filter_and_mismatch_badges(
 
     assert browser.add_samples_from_paths([str(first), str(second)]) == 2
     assert browser.samples()[1].status == "channel mismatch"
-    assert "[≠]" in browser._list_widget.item(1).text()
+    row = browser._list_widget.itemWidget(browser._list_widget.item(1))
+    assert row is not None
+    label = row.findChild(QLabel, f"sampleName_{browser.samples()[1].id}")
+    assert label is not None and "[≠]" in label.text()
+    assert [
+      browser._sample_header.findChild(QLabel, object_name).text()
+      for object_name in (
+        "sampleHeaderOv", "sampleHeaderCol", "sampleHeaderName", "sampleHeaderRel"
+      )
+    ] == ["Ov", "Col", "Name", "Rel"]
+    assert browser._list_widget.item(1).text() == ""
 
     metadata.set_sample(browser.samples()[0])
     metadata.set_column_visible("id", True)
