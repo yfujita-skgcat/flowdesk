@@ -98,6 +98,24 @@ def test_plot_widget_exports_vector_formats_with_metadata(tmp_path: Path) -> Non
   assert (tmp_path / "plot.svg.json").exists()
   assert (tmp_path / "plot.pdf.json").exists()
   plot.close()
+
+
+def test_plot_context_menu_exposes_display_only_appearance_actions() -> None:
+  _app()
+  plot = PlotWidget()
+  try:
+    menu = plot._build_context_menu()
+    action_ids = {
+      action.objectName()
+      for action in menu.actions()
+      if not action.menu()
+    }
+    assert {"plotAppearance", "plotBackgroundColor", "plotTitle"}.issubset(action_ids)
+    assert plot._glw.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
+    plot.set_interaction_mode("gate")
+    assert plot._interaction_mode == "gate"
+  finally:
+    plot.close()
   plot.deleteLater()
   QApplication.processEvents()
 

@@ -628,6 +628,9 @@ class MainWindow(QMainWindow):
         self._channel_selector = ChannelSelector()
         self._plot_widget = PlotWidget()
         self._plot_widget.set_downsample(1)
+        self._plot_widget.appearance_requested.connect(
+            self._on_plot_appearance_requested
+        )
 
         center_widget = self._create_center_pane()
 
@@ -2066,6 +2069,22 @@ class MainWindow(QMainWindow):
             return
         self._update_status("Plot presentation updated")
         self._replot()
+
+    def _on_plot_appearance_requested(self, action_id: str) -> None:
+        """Route plot-area appearance actions through the existing editor command."""
+        if action_id == "plotResetAppearance":
+            view_id = self._overlay_view_id()
+            try:
+                self._overlay_undo_stack.execute(
+                    EditPlotPresentationCommand(view_id, {})
+                )
+            except ValueError as exc:
+                QMessageBox.warning(self, "Plot Appearance", str(exc))
+                return
+            self._update_status("Plot appearance reset")
+            self._replot()
+            return
+        self._on_edit_plot_presentation()
 
     def _on_overlay_state_changed(self, state: dict[str, Any], reason: str) -> None:
         self._plot_views = deepcopy(state.get("plot_views", []))

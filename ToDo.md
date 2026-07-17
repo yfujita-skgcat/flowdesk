@@ -557,12 +557,12 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 
 #### Increment 2: Plot context appearance menu
 
-- [ ] plot areaの右クリックから`Plot Appearance...`、background、title、axis labels、fonts、legend、default event style、resetへ到達できるcontext menuを追加する。
-- [ ] context menuと既存Analysis menuは同じpresentation command/modelを呼び、別設定modelを作らない。
-- [ ] title、subtitle、X/Y display label、background、font、legend、default event color、dot size、opacityを編集し、resetはview overrideを除いて下位defaultを露出させる。
-- [ ] pan、gate drawing、ROI drag中の右クリック競合・誤作動を防ぎ、keyboardからも同じ操作へ到達できるようにする。
-- [ ] appearance変更でpipelineを実行せず、stable parameter ID、transform、gate coordinates、membership、statisticsを変更しないtestを追加する。
-- [ ] project reloadとGUI/PNG/SVG/PDFが同じpresentation definitionを使用するtestを追加する。
+- [x] plot areaの右クリックから`Plot Appearance...`、background、title、axis labels、fonts、legend、default event style、resetへ到達できるcontext menuを追加する。
+- [x] context menuと既存Analysis menuは同じpresentation command/modelを呼び、別設定modelを作らない。
+- [x] title、subtitle、X/Y display label、background、font、legend、default event color、dot size、opacityを編集し、resetはview overrideを除いて下位defaultを露出させる。
+- [x] pan、gate drawing、ROI drag中の右クリック競合・誤作動を防ぎ、keyboardからも同じ操作へ到達できるようにする。
+- [x] appearance変更でpipelineを実行せず、stable parameter ID、transform、gate coordinates、membership、statisticsを変更しないtestを追加する。
+- [x] project reloadとGUI/PNG/SVG/PDFが同じpresentation definitionを使用するtestを追加する。
 
 #### Increment 3: Gate hierarchy population colors
 

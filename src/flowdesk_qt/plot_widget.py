@@ -28,10 +28,10 @@ import numpy as np
 from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QColor, QImage, QPageSize, QPainter, QPdfWriter
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QAction, QColor, QImage, QPageSize, QPainter, QPdfWriter
 from PySide6.QtSvg import QSvgGenerator
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QVBoxLayout, QWidget
 
 from flowdesk_core.models import GateSpec, TransformSpec
 from flowdesk_core.plot_presentation import resolve_presentation_layers
@@ -62,7 +62,9 @@ class PlotWidget(QWidget):
 
     The widget renders points, axis labels, and gate geometries.
     All coordinates are in data space, never screen pixels.
-    """
+  """
+
+    appearance_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1633,8 +1635,60 @@ class PlotWidget(QWidget):
             vb.sigRangeChanged.connect(self._on_view_range_changed)
 
         self._glw.scene().sigMouseClicked.connect(self._on_scene_mouse_click)
+        self._glw.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._glw.customContextMenuRequested.connect(self._show_context_menu)
 
         # Apply initial style (background, grid, etc.)
         self._apply_style()
 
         layout.addWidget(self._glw)
+
+    def _show_context_menu(self, position: QPoint) -> None:
+        """Expose display-only appearance commands from the plot area."""
+        if self._interaction_mode != "pan" or self._active_gate_creation is not None:
+            return
+        menu = self._build_context_menu()
+        menu.exec(self._glw.mapToGlobal(position))
+
+    def _build_context_menu(self) -> QMenu:
+        """Build the plot appearance menu for tests and keyboard integration."""
+        menu = QMenu(self)
+        menu.setObjectName("plotAppearanceContextMenu")
+
+        def add_action(label: str, action_id: str) -> QAction:
+            action = menu.addAction(label)
+            action.setObjectName(action_id)
+            action.setToolTip("Display-only; does not rerun the analysis pipeline")
+            action.triggered.connect(
+                lambda _checked=False, value=action_id: self.appearance_requested.emit(value)
+            )
+            return action
+
+        add_action("Plot Appearance...", "plotAppearance")
+        add_action("Background Color...", "plotBackgroundColor")
+        add_action("Edit Title...", "plotTitle")
+        add_action("Axis Labels...", "plotAxisLabels")
+        add_action("Fonts...", "plotFonts")
+
+        legend_menu = menu.addMenu("Legend")
+        legend_menu.setObjectName("plotLegendMenu")
+        show_legend = legend_menu.addAction("Show Legend")
+        show_legend.setCheckable(True)
+        show_legend.setChecked(True)
+        show_legend.setObjectName("plotShowLegend")
+        show_legend.triggered.connect(
+            lambda _checked=False: self.appearance_requested.emit("plotLegend")
+        )
+        position_menu = legend_menu.addMenu("Position")
+        position_menu.setObjectName("plotLegendPositionMenu")
+        for position_name in ("right", "left", "top", "bottom", "inside"):
+            position_action = position_menu.addAction(position_name.title())
+            position_action.setObjectName(f"plotLegendPosition{position_name.title()}")
+            position_action.triggered.connect(
+                lambda _checked=False, value=position_name:
+                self.appearance_requested.emit(f"plotLegendPosition:{value}")
+            )
+
+        add_action("Default Event Style...", "plotDefaultEventStyle")
+        add_action("Reset View Appearance", "plotResetAppearance")
+        return menu
