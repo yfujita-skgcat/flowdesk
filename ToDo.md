@@ -566,11 +566,11 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 
 #### Increment 3: Gate hierarchy population colors
 
-- [ ] Gate hierarchyへ`Color`列とQColorDialogを使うswatchを追加し、hex直接入力を通常導線にしない。
-- [ ] row context menuへ`Population Color...`、`Gate Outline Color...`、`Use Population Color for Outline`、`Reset Population Color`を追加する。
-- [ ] active sample base layerでは最も深いdescendant population colorを優先し、同じ深さのoverlapはpersisted display z-order、未指定時はstable hierarchy preorderとstable population IDによる決定規則で解決する。
-- [ ] selected gate highlightをpopulation colorから分離し、outline、handle、selection markerで表示する。
-- [ ] population color変更がgate ID/geometry/parent、membership、count、frequency、statistics、pipeline revisionを変えないtestを追加する。
+- [x] Gate hierarchyへ`Color`列とQColorDialogを使うswatchを追加し、hex直接入力を通常導線にしない。
+- [x] row context menuへ`Population Color...`、`Gate Outline Color...`、`Use Population Color for Outline`、`Reset Population Color`を追加する。
+- [x] active sample base layerでは最も深いdescendant population colorを優先し、同じ深さのoverlapはpersisted display z-order、未指定時はstable hierarchy preorderとstable population IDによる決定規則で解決する。
+- [x] selected gate highlightをpopulation colorから分離し、outline、handle、selection markerで表示する。
+- [x] population color変更がgate ID/geometry/parent、membership、count、frequency、statistics、pipeline revisionを変えないtestを追加する。
 
 #### Increment 4: Samples manual overlay controls
 

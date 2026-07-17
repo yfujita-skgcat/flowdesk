@@ -7,6 +7,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QDialog
 
 from flowdesk_cli.main import run_project_command
@@ -85,6 +86,28 @@ def test_duplicate_names_remain_distinct_by_id(qapp) -> None:
         editor.close()
         editor.deleteLater()
         qapp.processEvents()
+
+
+def test_population_color_is_display_only_and_has_color_column(qapp, monkeypatch) -> None:
+  editor = GateEditor()
+  gates = _three_level_gates()
+  try:
+    editor.set_gates(gates, notify=False)
+    before = [(gate.id, gate.coordinates, gate.thresholds) for gate in editor.gates()]
+    assert editor._tree_widget.columnCount() == 5
+    assert editor._tree_widget.headerItem().text(4) == "Color"
+    monkeypatch.setattr(
+      "flowdesk_qt.gate_editor.QColorDialog.getColor",
+      lambda *_args, **_kwargs: QColor("#123456"),
+    )
+    editor._choose_population_color("positive")
+    assert editor.population_display_definitions()["positive"]["color"] == "#123456"
+    after = [(gate.id, gate.coordinates, gate.thresholds) for gate in editor.gates()]
+    assert before == after
+  finally:
+    editor.close()
+    editor.deleteLater()
+    qapp.processEvents()
 
 
 def test_numeric_ellipse_gate_uses_command_stack_for_deletion(qapp, monkeypatch) -> None:

@@ -15,10 +15,12 @@ import uuid
 from dataclasses import asdict, replace
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QColorDialog,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
@@ -28,6 +30,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QTableWidget,
@@ -353,10 +356,15 @@ class GateEditor(QWidget):
         self._collecting_polygon: bool = False
         self._current_sample_id: str = ""
         self._population_stats: dict[str, tuple[int, float | None, float | None]] = {}
+        self._population_display_colors: dict[str, str] = {}
+        self._gate_outline_colors: dict[str, str] = {}
+        self._use_population_color_for_outline: set[str] = set()
         self._child_gate_mode = False
         self._previous_parent_population_id = "all_events"
         self._build_ui()
         self._reset_undo_stack()
+
+    population_display_color_changed = Signal(str, object)
 
     # -- public API ----------------------------------------------------------
 
@@ -410,6 +418,42 @@ class GateEditor(QWidget):
         self._refresh_hierarchy_tree(
             self.selected_gate().id if self.selected_gate() else None
         )
+
+    def population_display_definitions(self) -> dict[str, dict[str, object]]:
+        """Return display-only population colors, separate from GateSpec."""
+        population_ids = (
+            set(self._population_display_colors)
+            | set(self._gate_outline_colors)
+            | self._use_population_color_for_outline
+        )
+        return {
+            population_id: {
+                "color": self._population_display_colors.get(population_id),
+                "gate_outline_color": self._gate_outline_colors.get(population_id),
+                "use_population_color_for_outline": (
+                    population_id in self._use_population_color_for_outline
+                ),
+            }
+            for population_id in sorted(population_ids)
+        }
+
+    def set_population_display_definitions(
+        self, definitions: dict[str, dict[str, object]]
+    ) -> None:
+        """Load display-only color definitions without changing scientific gates."""
+        self._population_display_colors = {}
+        self._gate_outline_colors = {}
+        self._use_population_color_for_outline = set()
+        for population_id, definition in definitions.items():
+            color = definition.get("color")
+            outline = definition.get("gate_outline_color")
+            if isinstance(color, str) and color:
+                self._population_display_colors[population_id] = color
+            if isinstance(outline, str) and outline:
+                self._gate_outline_colors[population_id] = outline
+            if definition.get("use_population_color_for_outline"):
+                self._use_population_color_for_outline.add(population_id)
+        self._refresh_hierarchy_tree(self.selected_gate().id if self.selected_gate() else None)
 
     def set_parent_population(self, population_id: str) -> None:
         """Set the parent population id for new gates."""
@@ -1063,8 +1107,9 @@ class GateEditor(QWidget):
         try:
             self._tree_widget.clear()
             self._tree_items = {}
-            root = QTreeWidgetItem(["All Events", "root", "-", "-"])
+            root = QTreeWidgetItem(["All Events", "root", "-", "-", ""])
             root.setData(0, Qt.UserRole, "all_events")
+            self._set_population_swatch(root, "all_events")
             self._tree_widget.addTopLevelItem(root)
             root.setExpanded(True)
             pending = list(self._gates)
@@ -1088,8 +1133,9 @@ class GateEditor(QWidget):
                         f"{gate.x_parameter or '-'} / {gate.y_parameter or '-'} "
                         f"[{gate.x_scale}/{gate.y_scale}]"
                     )
-                    item = QTreeWidgetItem([gate.name, gate.gate_type, axes, expression])
+                    item = QTreeWidgetItem([gate.name, gate.gate_type, axes, expression, ""])
                     item.setData(0, Qt.UserRole, gate.id)
+                    self._set_population_swatch(item, gate.id)
                     item.setToolTip(
                         0,
                         self._gate_tooltip(gate, parent_id, expression),
@@ -1126,6 +1172,84 @@ class GateEditor(QWidget):
                 ]
             )
         return "\n".join(lines)
+
+    def _set_population_swatch(self, item: QTreeWidgetItem, population_id: str) -> None:
+        color = self._population_display_colors.get(population_id)
+        item.setText(4, "■" if color else "")
+        if color:
+            item.setForeground(4, QColor(color))
+            item.setToolTip(4, f"Population color {color}")
+        else:
+            item.setToolTip(4, "No population display color; using plot default")
+
+    def _show_population_context_menu(self, position) -> None:
+        item = self._tree_widget.itemAt(position)
+        if item is None:
+            return
+        population_id = str(item.data(0, Qt.UserRole) or "")
+        if not population_id:
+            return
+        menu = QMenu(self)
+        menu.setObjectName("populationColorContextMenu")
+        population_action = menu.addAction("Population Color...")
+        population_action.setObjectName("populationColorAction")
+        population_action.triggered.connect(
+            lambda: self._choose_population_color(population_id)
+        )
+        outline_action = menu.addAction("Gate Outline Color...")
+        outline_action.setObjectName("gateOutlineColorAction")
+        outline_action.triggered.connect(
+            lambda: self._choose_outline_color(population_id)
+        )
+        use_outline = menu.addAction("Use Population Color for Outline")
+        use_outline.setCheckable(True)
+        use_outline.setChecked(population_id in self._use_population_color_for_outline)
+        use_outline.setObjectName("usePopulationColorForOutlineAction")
+        use_outline.triggered.connect(
+            lambda checked: self._set_outline_population_color(population_id, checked)
+        )
+        reset = menu.addAction("Reset Population Color")
+        reset.setObjectName("resetPopulationColorAction")
+        reset.triggered.connect(lambda: self._reset_population_color(population_id))
+        menu.exec(self._tree_widget.viewport().mapToGlobal(position))
+
+    def _choose_population_color(self, population_id: str) -> None:
+        color = QColorDialog.getColor(
+            QColor(self._population_display_colors.get(population_id, "#ffffff")),
+            self,
+            "Population Color",
+        )
+        if not color.isValid():
+            return
+        value = color.name().lower()
+        self._population_display_colors[population_id] = value
+        self._refresh_hierarchy_tree(population_id)
+        self.population_display_color_changed.emit(population_id, self.population_display_definitions())
+
+    def _choose_outline_color(self, population_id: str) -> None:
+        color = QColorDialog.getColor(
+            QColor(self._gate_outline_colors.get(population_id, "#555555")),
+            self,
+            "Gate Outline Color",
+        )
+        if not color.isValid():
+            return
+        self._gate_outline_colors[population_id] = color.name().lower()
+        self.population_display_color_changed.emit(population_id, self.population_display_definitions())
+
+    def _set_outline_population_color(self, population_id: str, enabled: bool) -> None:
+        if enabled:
+            self._use_population_color_for_outline.add(population_id)
+        else:
+            self._use_population_color_for_outline.discard(population_id)
+        self.population_display_color_changed.emit(population_id, self.population_display_definitions())
+
+    def _reset_population_color(self, population_id: str) -> None:
+        self._population_display_colors.pop(population_id, None)
+        self._gate_outline_colors.pop(population_id, None)
+        self._use_population_color_for_outline.discard(population_id)
+        self._refresh_hierarchy_tree(population_id)
+        self.population_display_color_changed.emit(population_id, self.population_display_definitions())
 
     def _refresh_reparent_combo(self) -> None:
         selected = self.selected_gate()
@@ -1407,9 +1531,15 @@ class GateEditor(QWidget):
 
         self._tree_widget = QTreeWidget()
         self._tree_widget.setObjectName("gateHierarchyTree")
-        self._tree_widget.setColumnCount(4)
-        self._tree_widget.setHeaderLabels(["Gate definition", "Type", "Axes / Scale", "Expression"])
+        self._tree_widget.setColumnCount(5)
+        self._tree_widget.setHeaderLabels(
+            ["Gate definition", "Type", "Axes / Scale", "Expression", "Color"]
+        )
         self._tree_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._tree_widget.customContextMenuRequested.connect(
+            self._show_population_context_menu
+        )
         self._tree_widget.currentItemChanged.connect(
             lambda *_args: self._on_tree_selection_changed()
         )
