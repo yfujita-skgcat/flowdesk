@@ -37,6 +37,7 @@ from flowdesk_core.models import (  # noqa: E402
   PopulationResult,
   TransformSpec,
 )
+from flowdesk_core.overlays import Overlay2DLayer  # noqa: E402
 from flowdesk_core.pipeline_runner import PipelineRunner  # noqa: E402
 from flowdesk_core.transforms import (  # noqa: E402
   LOGICLE_IMPLEMENTATION_VERSION,
@@ -57,6 +58,25 @@ def _app() -> QApplication:
   if app is None:
     app = QApplication([])
   return app
+
+
+def test_prepared_overlay_layers_render_without_recomputing_membership() -> None:
+  _app()
+  plot = PlotWidget()
+  layers = (
+    Overlay2DLayer(
+      "ancestor", np.array([1.0, 2.0]), np.array([2.0, 3.0]),
+      {"color": "blue", "alpha": 0.2},
+    ),
+    Overlay2DLayer(
+      "target", np.array([1.5]), np.array([2.5]),
+      {"color": "red", "alpha": 1.0},
+    ),
+  )
+  plot.plot_overlay_layers(layers)
+  assert len(plot._overlay_scatter_items) == 2
+  plot.clear_overlay_layers()
+  assert plot._overlay_scatter_items == []
 
 
 def test_group_panel_renders_and_edits_persisted_groups() -> None:
