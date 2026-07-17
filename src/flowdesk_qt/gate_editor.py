@@ -1224,7 +1224,9 @@ class GateEditor(QWidget):
 
     def _choose_population_color(self, population_id: str) -> None:
         color = QColorDialog.getColor(
-            QColor(self._population_display_colors.get(population_id, "#ffffff")),
+            # A white default disappears on the application's white plot
+            # background when the dialog is accepted without picking a color.
+            QColor(self._population_display_colors.get(population_id, "#d62728")),
             self,
             "Population Color",
         )

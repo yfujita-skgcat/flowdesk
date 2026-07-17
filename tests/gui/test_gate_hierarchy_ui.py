@@ -110,6 +110,25 @@ def test_population_color_is_display_only_and_has_color_column(qapp, monkeypatch
     qapp.processEvents()
 
 
+def test_population_color_dialog_starts_with_visible_default(qapp, monkeypatch) -> None:
+  editor = GateEditor()
+  try:
+    received = {}
+
+    def fake_get_color(initial, *_args, **_kwargs):
+      received["initial"] = initial
+      return QColor()  # cancel; do not change the display definition
+
+    monkeypatch.setattr("flowdesk_qt.gate_editor.QColorDialog.getColor", fake_get_color)
+    editor._choose_population_color("positive")
+    assert received["initial"].name() == "#d62728"
+    assert editor.population_display_definitions() == {}
+  finally:
+    editor.close()
+    editor.deleteLater()
+    qapp.processEvents()
+
+
 def test_numeric_ellipse_gate_uses_command_stack_for_deletion(qapp, monkeypatch) -> None:
     editor = GateEditor()
 
