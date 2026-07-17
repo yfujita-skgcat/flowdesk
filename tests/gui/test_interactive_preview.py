@@ -8,8 +8,9 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, Qt, QTimer
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QWidget
 
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import ChannelSpec, GateSpec
@@ -134,7 +135,7 @@ def test_scheduler_shutdown_waits_for_running_job_and_ignores_late_signal(qapp) 
     scheduler.deleteLater()
 
 
-def test_main_window_presents_current_sample_preview_after_gate_edit(
+def test_main_window_integrates_current_sample_preview_into_results_workspace(
   qapp,
   tmp_path,
 ) -> None:
@@ -187,11 +188,13 @@ def test_main_window_presents_current_sample_preview_after_gate_edit(
 
     assert window.preview_status == "current"
     assert window._preview_report is not None
-    assert window._current_sample_preview._sample.text() == sample.id
-    assert "Preview — current sample only" in (
-      window._current_sample_preview._status.text()
-    )
-    assert "Batch results stale" in window._current_sample_preview._status.text()
+    assert not hasattr(window, "_current_sample_preview")
+    assert window.findChild(QWidget, "currentSamplePreview") is None
+    results_tree = window._results_workspace.tree()
+    positive = results_tree.topLevelItem(0).child(0).child(0)
+    assert positive.text(4) == "current"
+    assert positive.data(0, Qt.UserRole + 4) == "active_sample_preview"
+    assert "Batch results stale" not in positive.toolTip(0)
 
     window._on_population_selected("positive", sample.id)
     qapp.processEvents()

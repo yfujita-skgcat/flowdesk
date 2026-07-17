@@ -96,7 +96,7 @@ must not implement formulas, matrix operations, gate membership, or platform fit
 | `population_tree.py` | Transitional population/result presentation | Do not add duplicate result views; migrate to Results workspace |
 | `results_workspace.py` | Unified executed sample/population/statistic results | Hierarchy/flat authoritative result views and display-population selection |
 | `preview_scheduler.py` | Debounce, revision checks, latest-wins job coalescing, Qt worker lifecycle | Schedule only immutable core preview requests; never calculate memberships/statistics or mutate widgets from workers |
-| `current_sample_preview.py` | Non-authoritative preview provenance and values | Render accepted core reports only; never calculate scientific values |
+| `results_state.py` | Qt-independent authoritative/preview result overlay and row freshness | Merge core reports only; never calculate scientific values |
 | `diagnostics.py` | Strict callbacks/logging/debug state | New observable UI state, not scientific diagnostics calculation |
 
 Prefer one new widget module per major editor: `compensation_workspace.py`,

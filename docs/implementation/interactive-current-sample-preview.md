@@ -242,7 +242,7 @@ Qt:
 
 - `src/flowdesk_qt/main_window.py`
 - `src/flowdesk_qt/preview_scheduler.py`
-- `src/flowdesk_qt/current_sample_preview.py`
+- `src/flowdesk_qt/results_state.py`
 - `src/flowdesk_qt/plot_widget.py` for status consumption only
 - `src/flowdesk_qt/results_workspace.py` only if preview provenance is explicit
 
@@ -263,9 +263,9 @@ one full-resolution sample through the canonical runner. `PreviewRevisionState` 
 tracks analysis, authoritative, and preview revisions, invalidates changed gate
 descendants, and provides transitional stale-navigation fallback. `PreviewScheduler` now adds a
 single-worker debounce/latest-wins queue with immutable project snapshots and obsolete
-completion discard. `CurrentSamplePreview` now presents only accepted current-revision
-preview values with explicit batch-stale provenance, and stale navigation uses a current
-ancestor fallback. Preview requests now carry target statistic IDs, while Run Pipeline
+completion discard. The former `CurrentSamplePreview` presentation is superseded by the
+ResultsWorkspace per-row overlay with explicit batch-stale provenance. Preview requests
+now carry target statistic IDs, while Run Pipeline
 suspends new preview work and accepts only matching batch revisions. Scheduler shutdown,
 late-signal handling, queue coalescing, and full-resolution representative-event tests
 complete the B3.2 implementation.
@@ -282,7 +282,7 @@ complete the B3.2 implementation.
    - Add one-worker scheduling, coalescing, immutable snapshots, and stale-result discard.
    - Add deterministic tests using controlled fake completion order.
 4. **Atomic GUI preview presentation**
-   - Add the transitional `Current Sample Preview` status/values and nearest-valid-ancestor fallback.
+   - Add the transitional `Current Sample Preview` status/values and nearest-valid-ancestor fallback (superseded by B3.3 ResultsWorkspace overlay).
    - Never update Qt widgets from the worker thread.
 5. **Preview statistics and batch interaction**
    - Recompute only requested current-sample statistics through core APIs.

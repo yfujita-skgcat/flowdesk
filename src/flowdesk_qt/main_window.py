@@ -55,7 +55,6 @@ from flowdesk_core.preview import (
 from flowdesk_core.project_commands import CreateGateOverrideCommand, UndoStack
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
-from flowdesk_qt.current_sample_preview import CurrentSamplePreview
 from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
 from flowdesk_qt.gate_override_editor import GateOverrideDialog
@@ -598,7 +597,6 @@ class MainWindow(QMainWindow):
         self._channel_selector = ChannelSelector()
         self._plot_widget = PlotWidget()
         self._plot_widget.set_downsample(1)
-        self._current_sample_preview = CurrentSamplePreview()
 
         center_widget = self._create_center_pane()
 
@@ -644,11 +642,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._channel_selector)
         layout.addWidget(self._plot_toolbar)
         layout.addWidget(self._plot_widget)
-        layout.addWidget(self._current_sample_preview)
         layout.setStretch(0, 0)
         layout.setStretch(1, 0)
         layout.setStretch(2, 1)
-        layout.setStretch(3, 0)
         return widget
 
     def _create_right_pane(self) -> QWidget:
@@ -1054,12 +1050,6 @@ class MainWindow(QMainWindow):
         # descendant membership.  Once a current preview is accepted, its
         # complete sample result can safely drive this display-only selection.
         self._display_population_id = population_id
-        if self._preview_report is not None and self._display_population_id:
-            self._current_sample_preview.set_report(
-                self._preview_report,
-                batch_stale=self._results_stale,
-                population_id=self._display_population_id,
-            )
         self._update_workspace_navigation()
         self._replot()
         if self._results_stale:
@@ -1553,9 +1543,6 @@ class MainWindow(QMainWindow):
         report = worker._report
         if worker.revision != self._preview_revision.analysis_revision:
             self._results_stale = True
-            self._current_sample_preview.set_stale(
-                self._preview_revision.analysis_revision
-            )
             self._update_status(
                 "Pipeline result discarded; analysis definitions changed during execution"
             )
@@ -1593,10 +1580,6 @@ class MainWindow(QMainWindow):
                 self._preview_revision.analysis_revision
             )
             self._preview_scheduler.cancel_pending()
-            self._current_sample_preview.set_batch_current(
-                self._current_sample_id,
-                self._preview_revision.analysis_revision,
-            )
             self._compensation_status_indicator.clear_stale()
             self._validate_population_selection(report)
             self._update_status(f"Pipeline complete: {report.summary}")
@@ -2578,18 +2561,10 @@ class MainWindow(QMainWindow):
                 invalidation_reason="definition_changed",
             )
             self._preview_revision.mark_pending()
-            self._current_sample_preview.set_pending(
-                sample_id,
-                population_id,
-                request.revision,
-                batch_stale=True,
-            )
             self._preview_scheduler.schedule(project, request)
         except Exception as exc:
             self._preview_revision.mark_error()
-            self._current_sample_preview.set_error(
-                str(exc), revision
-            )
+            self._update_status(f"Current-sample preview error: {exc}")
 
     def _on_preview_ready(self, report: PreviewReport) -> None:
         """Atomically accept a current-revision report on the GUI thread."""
@@ -2608,11 +2583,6 @@ class MainWindow(QMainWindow):
         self._old_membership_banner = False
         self._results_workspace.set_result_state(self._result_state)
         self._refresh_override_statuses()
-        self._current_sample_preview.set_report(
-            report,
-            batch_stale=True,
-            population_id=self._display_population_id,
-        )
         self._replot()
 
     def _on_preview_failed(
@@ -2622,9 +2592,7 @@ class MainWindow(QMainWindow):
         if request.sample_id != self._current_sample_id:
             return
         self._preview_revision.mark_error()
-        self._current_sample_preview.set_error(
-            str(error), request.revision
-        )
+        self._update_status(f"Current-sample preview error: {error}")
 
     def _mark_results_stale(
         self,
@@ -2646,9 +2614,6 @@ class MainWindow(QMainWindow):
         self._results_workspace.set_result_state(self._result_state)
         self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
-        self._current_sample_preview.set_stale(
-            self._preview_revision.analysis_revision
-        )
         self._compensation_status_indicator.mark_stale()
         self._refresh_override_statuses()
         self._update_status(f"{reason} (results stale; rerun pipeline)")

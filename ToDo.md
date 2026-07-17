@@ -384,9 +384,9 @@ B3.2で導入した独立`Current Sample Preview` panelと、stale時に
 - [x] 済み: increment 3として、gate変更時に`display_population_id`、active sample、axes、scale、zoomを維持し、`self._display_population_id = "all_events"`の強制resetを削除した。
 - [x] 済み: increment 3として、background再計算中は現在表示中の旧membershipを保持し、plotへ`Recalculating — displayed events are from the previous revision`を明示した。accepted preview completion時にResults state、membership cache、plotをGUI threadで一括更新する経路を接続した。
 - [x] 済み: increment 3として、現在表示しているPopulationが削除された、または同じsampleで利用可能な旧membershipが存在しない場合だけ、親Populationまたは`All Events`へfallbackすることをGUI testした。
-- [ ] increment 4として、独立`Current Sample Preview` panelをlayout、MainWindow caller、testsから削除する。必要なbatch-stale情報はstatus barまたはResults workspaceのglobal indicatorへ移す。
-- [ ] increment 4として、`Run Pipeline`成功時にauthoritative baselineを置換し、preview overlayとrow-level stale/recalculating stateを整理する。batchがstaleな間は、active sample rowが`current`でもauthoritative export、QC、diagnosticsをcurrentとして扱わない。
-- [ ] increment 4として、gate変更中のdescendant表示維持、旧値＋recalculating、obsolete result破棄、active sampleだけcurrent、他sample stale、Run Pipeline後の全row current、export拒否、strict QThread teardownをGUI E2E testする。
+- [x] 済み: increment 4として、独立`Current Sample Preview` panelをlayout、MainWindow caller、testsから削除し、batch-stale情報をResults workspaceのrow statusと既存status/bannerへ移した。
+- [x] 済み: increment 4として、`Run Pipeline`成功時にauthoritative baselineを置換し、preview overlayとrow-level stale/recalculating stateを整理した。batchがstaleな間は、active sample rowが`current`でもauthoritative export、QC、diagnosticsをcurrentとして扱わない既存境界を維持した。
+- [x] 済み: increment 4として、gate変更中のdescendant表示維持、旧値＋recalculating、obsolete result破棄、active sampleだけcurrent、他sample stale、Run Pipeline後の全row current、export拒否、strict QThread teardownを関連GUI E2Eと115件のGUI suiteで検証した。
 
 ### Phase B4: Group strategyとsample override review [S08]
 
