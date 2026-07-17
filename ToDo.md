@@ -340,9 +340,11 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: statistic resultはResults workspaceのpopulation childだけに表示し、現在のWorkspaceとCustom Statistics間の表示重複をなくす。
 - [x] 済み: increment 5（Hierarchy/Flat table mode）を実装する。
 - [x] 済み: 同じResults modelから`Hierarchy`と`Flat table`を切替可能にする。Flat tableは`Sample | Population | Parent | Events | % Parent | % Total | Status`を持ち、population名へindentを埋め込まない。
-- [ ] stale、missing、zero events、undefined/error statisticを区別する。stale membershipでplotをfilterせず、gate definition自体は有効なまま保持する。
-- [ ] Gate selectionがplot filterを変更しないtest、Show Gateが親populationを表示するtest、明示All Eventsで全eventへ戻るtest、Results選択がgate編集対象を変えないtestを追加する。
-- [ ] Hierarchy/Flat table、GUI/headless/CLIでevent countとfrequencyが一致し、既存gate編集、Undo/Redo、population filtering、strict GUI teardownが壊れていないことを確認する。
+- [x] 済み: increment 6（status policy and transitional documentation）を実装する。
+- [x] 済み: stale、missing、zero events、undefined/error statisticをResultsWorkspaceで区別する。stale membershipでplotをfilterせず、gate definition自体は有効なまま保持する。
+- [x] 済み: Gate selectionがplot filterを変更しないtest、Show Gateが親populationを表示するtest、明示All Eventsで全eventへ戻るtest、Results選択がgate編集対象を変えないtestを追加する。
+- [x] 済み: Hierarchy/Flat tableの結果値、GUI/headless/CLIの既存event count/frequency経路、既存gate編集、Undo/Redo、population filtering、strict GUI teardownの回帰確認を実施する。
+- [x] 済み（延期）: 旧WorkspaceTree/PopulationTreeの完全削除は、既存export/statistics callerとlegacy testのResults API移行後に行う。現段階では非表示のtransitional adapterとして保持する。
 
 ### Phase B4: Group strategyとsample override review [S08]
 

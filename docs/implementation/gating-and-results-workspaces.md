@@ -108,6 +108,17 @@ Requirements:
 - Stale results are visibly stale and must not filter the plot.
 - Missing population, zero events, stale results, and execution errors remain distinct.
 
+The Results workspace uses these display statuses for population rows:
+
+- `not run`: no execution report exists yet.
+- `missing`: a current report exists but has no row for a defined population.
+- `zero events`: the current report contains the population with zero members.
+- `stale`: the report is retained for context but cannot be used for plot filtering.
+- `current`: the population result is current and may be explicitly displayed.
+
+Statistic rows preserve core result statuses such as `ok`, `undefined`, and `error`; a
+stale report takes precedence and displays `stale` until the next successful run.
+
 Statistic results may be shown as expandable children or in a detail pane. Prefer a detail
 pane when many statistics would make population navigation difficult. Do not display the
 same statistic simultaneously in two adjacent trees.
@@ -152,6 +163,11 @@ Tests:
 
 Core changes are not expected. If report queries need reusable hierarchy preparation, add
 pure helpers to `flowdesk_core.populations`; do not calculate results in Qt.
+
+`WorkspaceTree` and `PopulationTree` are transitional adapters during this migration. They
+remain instantiated for existing callers and tests, but are not inserted into the visible
+right-pane layout after the Results workspace is enabled. Full removal is deferred until
+all export/statistics callers and legacy tests use Results workspace APIs.
 
 ## Implementation increments
 

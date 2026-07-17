@@ -7,9 +7,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTabWidget
 
 from flowdesk_core.execution_report import ExecutionReport
-from flowdesk_core.models import PopulationResult
-from flowdesk_qt.results_workspace import ResultsWorkspace
+from flowdesk_core.models import PopulationResult, StatisticResult
 from flowdesk_qt.main_window import MainWindow
+from flowdesk_qt.results_workspace import ResultsWorkspace
 
 pytestmark = pytest.mark.gui
 
@@ -109,6 +109,63 @@ def test_flat_table_uses_same_report_values_without_tree_indentation(qapp) -> No
     assert tree.topLevelItem(1).text(3) == "4"
     workspace.set_mode("Hierarchy")
     assert workspace.tree().columnCount() == 5
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
+def test_results_status_distinguishes_missing_zero_stale_and_statistic_errors(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy(
+      {
+        "all_events": None,
+        "zero": "all_events",
+        "missing": "all_events",
+      },
+      {
+        "all_events": "All Events",
+        "zero": "Zero",
+        "missing": "Missing",
+      },
+    )
+    workspace.set_report(
+      ExecutionReport(
+        project_id="project",
+        execution_profile_id="default",
+        pipeline_version="test",
+        status="success",
+        population_results=(
+          PopulationResult("sample-1", "all_events", 10, None, 1.0),
+          PopulationResult("sample-1", "zero", 0, 0.0, 0.0),
+        ),
+        statistic_results=(
+          StatisticResult(
+            "sample-1", "undefined-stat", "zero", "mean", None,
+            status="undefined",
+          ),
+          StatisticResult(
+            "sample-1", "error-stat", "zero", "mean", None,
+            status="error",
+          ),
+        ),
+      )
+    )
+    all_events = workspace.tree().topLevelItem(0).child(0)
+    zero = all_events.child(0)
+    missing = all_events.child(1)
+    assert zero.text(4) == "zero events"
+    assert missing.text(4) == "missing"
+    assert zero.childCount() == 2
+    assert {zero.child(index).text(4) for index in range(2)} == {
+      "undefined", "error"
+    }
+
+    workspace.mark_results_stale()
+    assert workspace.tree().topLevelItem(0).child(0).text(4) == "stale"
+    assert workspace.tree().topLevelItem(0).child(0).child(0).text(4) == "stale"
   finally:
     workspace.close()
     workspace.deleteLater()

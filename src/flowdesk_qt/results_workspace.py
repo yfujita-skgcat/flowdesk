@@ -10,9 +10,9 @@ from collections.abc import Callable, Mapping, Sequence
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-  QHeaderView,
   QAbstractItemView,
   QComboBox,
+  QHeaderView,
   QTreeWidget,
   QTreeWidgetItem,
   QVBoxLayout,
@@ -165,18 +165,43 @@ class ResultsWorkspace(QWidget):
       "Status",
     ])
     sample_names = dict(self._samples)
-    for sample_id, values in results.items():
-      for value in values:
-        population_id = value.population_id
+    result_by_sample = {
+      sample_id: tuple(values) for sample_id, values in results.items()
+    }
+    sample_ids = [sample_id for sample_id, _name in self._samples]
+    for sample_id in result_by_sample:
+      if sample_id not in sample_ids:
+        sample_ids.append(sample_id)
+    for sample_id in sample_ids:
+      values = result_by_sample.get(sample_id, ())
+      result_by_id = {value.population_id: value for value in values}
+      population_ids = ["all_events"]
+      population_ids.extend(
+        population_id for population_id in self._population_parents
+        if population_id != "all_events"
+      )
+      population_ids.extend(
+        value.population_id for value in values
+        if value.population_id not in population_ids
+      )
+      for population_id in population_ids:
+        value = result_by_id.get(population_id)
         parent_id = self._population_parents.get(population_id)
-        status = "stale" if self._results_stale else "current"
+        if self._results_stale:
+          status = "stale"
+        elif value is None:
+          status = "not run" if self._report is None else "missing"
+        elif value.event_count == 0:
+          status = "zero events"
+        else:
+          status = "current"
         item = QTreeWidgetItem([
           sample_names.get(sample_id, sample_id),
           self._population_names.get(population_id, population_id),
           self._population_names.get(parent_id, parent_id or "-"),
-          str(value.event_count),
-          self._format_frequency(value.frequency_of_parent),
-          self._format_frequency(value.frequency_of_total),
+          "-" if value is None else str(value.event_count),
+          "-" if value is None else self._format_frequency(value.frequency_of_parent),
+          "-" if value is None else self._format_frequency(value.frequency_of_total),
           status,
         ])
         self._set_identity(item, "population", population_id, sample_id)
@@ -193,11 +218,29 @@ class ResultsWorkspace(QWidget):
     sample_id: str,
     population_id: str,
   ) -> QTreeWidgetItem:
-    if result is None:
-      status = "stale" if self._results_stale else "not run"
-      values = ["All Events", "-", "-", "-", status]
+    if self._results_stale:
+      status = "stale"
+      values = [
+        self._population_names.get(
+          population_id,
+          "All Events" if population_id == "all_events" else population_id,
+        ),
+        "-" if result is None else str(result.event_count),
+        "-" if result is None else self._format_frequency(result.frequency_of_parent),
+        "-" if result is None else self._format_frequency(result.frequency_of_total),
+        status,
+      ]
+    elif result is None:
+      status = "not run" if self._report is None else "missing"
+      values = [
+        self._population_names.get(
+          population_id,
+          "All Events" if population_id == "all_events" else population_id,
+        ),
+        "-", "-", "-", status,
+      ]
     else:
-      status = "stale" if self._results_stale else "current"
+      status = "zero events" if result.event_count == 0 else "current"
       values = [
         self._population_names.get(population_id, population_id),
         str(result.event_count),
@@ -217,19 +260,28 @@ class ResultsWorkspace(QWidget):
     sample_id: str,
   ) -> None:
     parent_id = parent_item.data(0, Qt.UserRole)
-    children = [
-      value for value in results
-      if (value.population_id != "all_events"
-          and (self._population_parents.get(value.population_id) or "all_events")
-          == parent_id)
+    child_ids = [
+      population_id for population_id, value in self._population_parents.items()
+      if population_id != "all_events"
+      and (value or "all_events") == parent_id
     ]
-    for result in children:
-      item = self._population_item(result, sample_id, result.population_id)
+    for value in results:
+      if value.population_id != "all_events" and (
+        self._population_parents.get(value.population_id) or "all_events"
+      ) == parent_id and value.population_id not in child_ids:
+        child_ids.append(value.population_id)
+    result_by_id = {value.population_id: value for value in results}
+    for population_id in child_ids:
+      result = result_by_id.get(population_id)
+      item = self._population_item(result, sample_id, population_id)
       parent_item.addChild(item)
       for statistic_id, name, value, status in statistics.get(
-        (sample_id, result.population_id), ()
+        (sample_id, population_id), ()
       ):
-        statistic_item = QTreeWidgetItem([name, "-", "-", value, status])
+        statistic_status = "stale" if self._results_stale else status
+        statistic_item = QTreeWidgetItem(
+          [name, "-", "-", value, statistic_status]
+        )
         self._set_identity(statistic_item, "statistic", statistic_id, sample_id)
         item.addChild(statistic_item)
       self._add_population_children(item, results, statistics, sample_id)
