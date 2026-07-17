@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -86,6 +87,7 @@ from flowdesk_core.overrides import (
   override_spec_from_mapping,
   resolve_gate_overrides,
 )
+from flowdesk_core.preview import PreviewReport, PreviewRequest
 from flowdesk_core.sample import SampleData
 from flowdesk_core.statistics import compute_statistic
 from flowdesk_core.tethered_gates import (
@@ -192,7 +194,9 @@ class PipelineRunner:
   """Headless runner used by GUI, CLI, and Python API."""
 
   def __init__(self, project: Mapping[str, Any]) -> None:
-    self._project = dict(project)
+    # A runner is an execution snapshot. Nested GUI/project mutations after
+    # construction must not alter a running batch or preview calculation.
+    self._project = deepcopy(dict(project))
 
   # ------------------------------------------------------------------
   # Public API
@@ -291,6 +295,71 @@ class PipelineRunner:
       context,
       sample_by_id,
       messages,
+    )
+
+  def preview_sample(self, request: PreviewRequest) -> PreviewReport:
+    """Run the canonical pipeline for one full-resolution sample.
+
+    The returned values are non-authoritative preview data. The method is
+    synchronous and GUI-independent so a later Qt scheduler can execute it on
+    a worker without introducing a second scientific implementation.
+    """
+    assignments = self.resolve_group_assignments(request.execution_profile_id)
+    assignment = assignments.get(request.sample_id)
+    if assignment is None:
+      raise PipelineError(
+        f"preview sample is not selected by the execution profile: "
+        f"{request.sample_id!r}"
+      )
+    strategy_id = assignment.get("strategy_id")
+    if request.strategy_id is not None and request.strategy_id != strategy_id:
+      raise PipelineError(
+        "preview strategy does not match the project snapshot: "
+        f"requested {request.strategy_id!r}, resolved {strategy_id!r}"
+      )
+
+    report = self.run_samples(
+      ExecutionContext(execution_profile_id=request.execution_profile_id),
+      (request.sample,),
+    )
+    population_results = tuple(
+      result for result in report.population_results
+      if result.sample_id == request.sample_id
+    )
+    population_membership = tuple(
+      membership for membership in report.population_membership
+      if membership.sample_id == request.sample_id
+    )
+    statistic_results = tuple(
+      result for result in report.statistic_results
+      if result.sample_id == request.sample_id
+    )
+    population_ids = {
+      result.population_id for result in population_results
+    }
+    if request.required_population_id not in population_ids:
+      raise PipelineError(
+        "preview required population was not produced: "
+        f"{request.required_population_id!r}"
+      )
+    diagnostics = tuple(
+      diagnostic for diagnostic in report.diagnostics
+      if diagnostic.sample_id in {None, request.sample_id}
+    )
+    return PreviewReport(
+      revision=request.revision,
+      project_id=report.project_id,
+      execution_profile_id=report.execution_profile_id,
+      sample_id=request.sample_id,
+      strategy_id=strategy_id,
+      required_population_id=request.required_population_id,
+      source_event_count=request.sample.event_count,
+      status=report.status,
+      population_results=population_results,
+      population_membership=population_membership,
+      statistic_results=statistic_results,
+      diagnostics=diagnostics,
+      messages=report.messages,
     )
 
   def preview_derived_parameter(

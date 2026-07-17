@@ -244,13 +244,18 @@ Qt:
 
 Tests:
 
-- proposed `tests/test_interactive_preview.py`
+- `tests/test_interactive_preview.py`
 - proposed `tests/gui/test_interactive_preview.py`
 - existing pipeline, population filtering, gate hierarchy, and strict Qt teardown suites
 
 ## Implementation increments
 
 Implement one increment at a time.
+
+Current status: increment 1 is implemented. `PreviewRequest`, `PreviewReport`, and the
+synchronous GUI-independent `PipelineRunner.preview_sample()` contract execute one
+full-resolution sample through the canonical runner and are covered by batch-identity
+tests. Revision invalidation and asynchronous Qt scheduling begin with increment 2.
 
 1. **Synchronous core preview contract**
    - Add immutable request/result types and `PipelineRunner.preview_sample()`.

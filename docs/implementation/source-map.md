@@ -49,8 +49,8 @@ Create only when the selected guide requires them:
 - `diagnostics.py`: structured execution diagnostics shared by runner/CLI/Qt
 - `sample_data.py`: only if `sample.py` cannot cleanly own typed sample arrays
 - `statistics_runner.py`: resolve `StatisticSpec` over memberships
-- `preview.py`: only if typed current-sample preview request/result contracts do not fit
-  cleanly in `pipeline_runner.py` and `execution_report.py`; it must remain Qt-independent
+- `preview.py`: immutable current-sample `PreviewRequest`/`PreviewReport` contracts;
+  preview values remain separate from authoritative `ExecutionReport` values
 - `table_runner.py`: resolve table definitions to typed rows
 - `layout_model.py` and `layout_resolver.py`: Qt-independent scene data
 - `groups.py`: safe group membership rules/resolution

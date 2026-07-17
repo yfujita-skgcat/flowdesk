@@ -12,6 +12,7 @@ from flowdesk_core.models import (
   SampleSpec,
   TransformSpec,
 )
+from flowdesk_core.preview import PreviewReport, PreviewRequest
 from flowdesk_core.sample import SampleData
 
 __all__ = [
@@ -23,6 +24,8 @@ __all__ = [
   "GateSpec",
   "GatingStrategySpec",
   "PopulationResult",
+  "PreviewReport",
+  "PreviewRequest",
   "SampleSpec",
   "SampleData",
   "TransformSpec",
