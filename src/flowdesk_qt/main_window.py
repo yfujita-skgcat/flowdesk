@@ -38,6 +38,7 @@ from flowdesk_core.compensation import (
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
+from flowdesk_core.integrated_overlay import resolve_overlay_style
 from flowdesk_core.models import CompensationMatrixSpec, OverlaySourceSpec, TransformSpec
 from flowdesk_core.overlays import Overlay2DLayer
 from flowdesk_core.overrides import (
@@ -49,9 +50,9 @@ from flowdesk_core.overrides import (
 )
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_presentation import (
-  SamplePresentationContext,
-  resolve_overlay_sources,
-  resolve_presentation_layers,
+    SamplePresentationContext,
+    resolve_overlay_sources,
+    resolve_presentation_layers,
 )
 from flowdesk_core.preview import (
     PreviewReport,
@@ -2959,6 +2960,7 @@ class MainWindow(QMainWindow):
             "presentation": asdict(resolved.presentation),
             "style_provenance": dict(resolved.provenance),
             "integrated_overlay": self._sample_browser.overlay_state(),
+            "integrated_style_provenance": self._integrated_style_provenance(),
             "population_display_colors": (
                 self._gate_editor.population_display_definitions()
             ),
@@ -2971,6 +2973,33 @@ class MainWindow(QMainWindow):
                 "Presentation settings and display sampling do not alter scientific results."
             ),
         }
+
+    def _integrated_style_provenance(self) -> dict[str, dict[str, object]]:
+        """Expose resolved integrated overlay colors for export sidecars."""
+        state = self._sample_browser.overlay_state()
+        manual_ids = set(state.get("manual_overlay_sample_ids", []))
+        manual_ids.update(
+            self._sample_browser.comparison_overlay_sample_ids(self._current_sample_id)
+        )
+        role_colors = state.get("comparison_role_colors", {})
+        result: dict[str, dict[str, object]] = {}
+        for sample_id in sorted(manual_ids - {self._current_sample_id}):
+            role_color = None
+            for comparison in state.get("comparison_sets", []):
+                for member in comparison.get("members", []):
+                    if member.get("sample_id") == sample_id:
+                        role_color = role_colors.get(member.get("role"))
+            resolution = resolve_overlay_style(
+                explicit_overlay_color=state.get("manual_overlay_colors", {}).get(sample_id),
+                comparison_role_color=role_color,
+                default_event_color=self._plot_widget.style().dot_color,
+            )
+            result[sample_id] = {
+                "color": resolution.color,
+                "provenance": resolution.provenance,
+                "used_fallback": resolution.used_fallback,
+            }
+        return result
 
     def _on_export_population_results(self) -> None:
         """Export population statistics from the latest non-stale report."""
