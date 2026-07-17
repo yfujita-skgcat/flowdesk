@@ -248,7 +248,7 @@ def test_gate_edit_invalidates_population_filter(
         assert window._plot_widget._scatter is not None
         assert len(window._plot_widget._scatter.xData) == 3
 
-        # Add a new gate -> invalidates results, selection resets to all_events
+        # Add a new gate -> retain the displayed population while recalculating.
         new_gate = GateSpec(
             id="neg",
             name="negative",
@@ -260,12 +260,22 @@ def test_gate_edit_invalidates_population_filter(
         window._gate_editor.add_gate(new_gate)
         qapp.processEvents()
 
-        # Results are stale, filter resets to all_events
+        # The previous membership remains visible with explicit provenance.
         assert window._results_stale
-        assert window._selected_population_id == "all_events"
+        assert window._selected_population_id == "pos"
+        assert window._plot_widget._scatter is not None
+        assert len(window._plot_widget._scatter.xData) == 3
+        assert window._plot_widget._status_banner.text() == (
+            "Recalculating — displayed events are from the previous revision"
+        )
         window._on_population_selected("pos", sample.id)
-        assert window._selected_population_id == "all_events"
-        # All 4 points visible (stale flag prevents old membership from being used)
+        assert window._selected_population_id == "pos"
+        assert len(window._plot_widget._scatter.xData) == 3
+
+        # The newly defined gate has no previous membership; selecting it must
+        # not fabricate the old ``pos`` mask.
+        window._on_population_selected("neg", sample.id)
+        assert window._selected_population_id == "neg"
         assert len(window._plot_widget._scatter.xData) == 4
     finally:
         window.close()

@@ -381,9 +381,9 @@ B3.2で導入した独立`Current Sample Preview` panelと、stale時に
 - [x] 済み: increment 1として、gate変更時はactive sampleの変更gateおよび全descendantを`recalculating`、他sampleの同じ範囲を`stale`にし、旧値を削除せずcontextとして保持する。preview completion前に値を部分更新しないatomic acceptとobsolete revision拒否をunit testした。
 - [x] 済み: increment 2として、`ResultsWorkspace`をauthoritative reportとaccepted preview overlayの表示面にし、active sampleのaccepted previewを同一revision単位でatomicに適用して該当populationおよびstatistic rowを`current`へ変更した。
 - [x] 済み: increment 2として、Hierarchy/Flat tableの双方で同じmerged result-stateを表示し、preview値のsource/revisionを内部data roleとtooltipで確認可能にした。Qt内で科学計算は行わない。
-- [ ] increment 3として、gate変更時に`display_population_id`、active sample、axes、scale、zoomを維持する。`self._display_population_id = "all_events"`の強制resetを削除する。
-- [ ] increment 3として、background再計算中は現在表示中の旧membershipを保持し、plotへ`Recalculating — displayed events are from the previous revision`を明示する。accepted preview completion時にResults state、membership cache、plotをGUI threadで一括更新する。
-- [ ] increment 3として、現在表示しているPopulationが削除された、または同じsampleで利用可能な旧membershipが存在しない場合に限り、親Populationまたは`All Events`へfallbackする。
+- [x] 済み: increment 3として、gate変更時に`display_population_id`、active sample、axes、scale、zoomを維持し、`self._display_population_id = "all_events"`の強制resetを削除した。
+- [x] 済み: increment 3として、background再計算中は現在表示中の旧membershipを保持し、plotへ`Recalculating — displayed events are from the previous revision`を明示した。accepted preview completion時にResults state、membership cache、plotをGUI threadで一括更新する経路を接続した。
+- [x] 済み: increment 3として、現在表示しているPopulationが削除された、または同じsampleで利用可能な旧membershipが存在しない場合だけ、親Populationまたは`All Events`へfallbackすることをGUI testした。
 - [ ] increment 4として、独立`Current Sample Preview` panelをlayout、MainWindow caller、testsから削除する。必要なbatch-stale情報はstatus barまたはResults workspaceのglobal indicatorへ移す。
 - [ ] increment 4として、`Run Pipeline`成功時にauthoritative baselineを置換し、preview overlayとrow-level stale/recalculating stateを整理する。batchがstaleな間は、active sample rowが`current`でもauthoritative export、QC、diagnosticsをcurrentとして扱わない。
 - [ ] increment 4として、gate変更中のdescendant表示維持、旧値＋recalculating、obsolete result破棄、active sampleだけcurrent、他sample stale、Run Pipeline後の全row current、export拒否、strict QThread teardownをGUI E2E testする。

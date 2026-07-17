@@ -129,6 +129,19 @@ class RuntimeResultState:
     self._rows = {}
     self._rebuild_from_authoritative()
 
+  def update_definitions(
+    self,
+    *,
+    sample_ids: Sequence[str] = (),
+    population_ids: Sequence[str] = (),
+    statistic_definitions: Sequence[tuple[str, str]] = (),
+  ) -> None:
+    """Register newly defined rows without inventing scientific values."""
+    self._defined_sample_ids.update(sample_ids)
+    self._defined_population_ids.update(population_ids)
+    self._statistic_population_ids.update(dict(statistic_definitions))
+    self._ensure_defined_rows()
+
   def invalidate(
     self,
     *,

@@ -262,6 +262,8 @@ class MainWindow(QMainWindow):
         self._pending_gate_geometry_updates: dict[str, Any] = {}
         self._preview_revision = PreviewRevisionState()
         self._preview_report: PreviewReport | None = None
+        self._last_result_report = None
+        self._old_membership_banner = False
         self._result_state = RuntimeResultState()
         self._preview_scheduler = PreviewScheduler(self)
         self._preview_scheduler.preview_ready.connect(self._on_preview_ready)
@@ -992,6 +994,15 @@ class MainWindow(QMainWindow):
         self._results_workspace.set_population_hierarchy(
             self._population_parent_map(), self._population_name_map()
         )
+        self._result_state.update_definitions(
+            sample_ids=tuple(sample.id for sample in self._sample_browser.samples()),
+            population_ids=tuple(self._population_parent_map()),
+            statistic_definitions=tuple(
+                (str(value.get("id")), str(value.get("population_id", "all_events")))
+                for value in self._statistics
+                if value.get("id")
+            ),
+        )
         self._mark_results_stale("Gates changed")
         self._project_dirty = True
         self._update_undo_actions()
@@ -1042,12 +1053,7 @@ class MainWindow(QMainWindow):
         # is pending, use the closest current ancestor rather than an old
         # descendant membership.  Once a current preview is accepted, its
         # complete sample result can safely drive this display-only selection.
-        if self._results_stale:
-            self._display_population_id = self._preview_fallback_population(
-                population_id
-            )
-        else:
-            self._display_population_id = population_id
+        self._display_population_id = population_id
         if self._preview_report is not None and self._display_population_id:
             self._current_sample_preview.set_report(
                 self._preview_report,
@@ -1056,7 +1062,7 @@ class MainWindow(QMainWindow):
             )
         self._update_workspace_navigation()
         self._replot()
-        if self._results_stale and self._display_population_id != population_id:
+        if self._results_stale:
             self._schedule_current_preview(population_id)
 
     def _update_workspace_navigation(self) -> None:
@@ -1211,6 +1217,11 @@ class MainWindow(QMainWindow):
                 self._plot_widget.display_state()["hidden_gate_reasons"]
             )
 
+        if self._old_membership_banner:
+            self._plot_widget.set_status_banner(
+                "Recalculating — displayed events are from the previous revision"
+            )
+
     def _get_channel_index(self, channel_id: str) -> int:
         """Get a column index by stable ID for the current sample."""
         sample = self._sample_data.get(self._current_sample_id or "")
@@ -1236,11 +1247,17 @@ class MainWindow(QMainWindow):
         no report, or missing population/sample).  In that case the caller should
         fall back to displaying all events.
         """
-        report = (
-            self._preview_report
-            if self._results_stale
-            else self._population_tree.last_report()
-        )
+        self._old_membership_banner = False
+        report = self._preview_report
+        result_revision = None
+        if report is not None:
+            result_revision = report.revision
+        elif self._results_stale:
+            report = self._last_result_report
+            self._old_membership_banner = report is not None
+        else:
+            report = self._last_result_report or self._population_tree.last_report()
+            result_revision = self._preview_revision.authoritative_result_revision
         if report is None:
             return None
         if not hasattr(report, "population_membership") or not report.population_membership:
@@ -1253,13 +1270,8 @@ class MainWindow(QMainWindow):
         if population_id == "all_events":
             return None
 
-        result_revision = (
-            report.revision
-            if self._results_stale
-            else self._preview_revision.authoritative_result_revision
-        )
-        if not self._preview_revision.result_is_current(
-            population_id, result_revision
+        if not self._old_membership_banner and not self._preview_revision.result_is_current(
+          population_id, result_revision
         ):
             return None
 
@@ -1269,6 +1281,7 @@ class MainWindow(QMainWindow):
                 return membership.mask
 
         # Selected population does not exist for this sample; fall back to all events
+        self._old_membership_banner = False
         return None
 
     def _apply_population_filter(
@@ -1556,6 +1569,7 @@ class MainWindow(QMainWindow):
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
             self._workspace_tree.set_report(report)
+            self._last_result_report = report
             self._result_state.set_authoritative_report(
                 report,
                 self._preview_revision.analysis_revision,
@@ -2591,7 +2605,9 @@ class MainWindow(QMainWindow):
         if not self._result_state.accept_preview(report):
             return
         self._preview_report = report
+        self._old_membership_banner = False
         self._results_workspace.set_result_state(self._result_state)
+        self._refresh_override_statuses()
         self._current_sample_preview.set_report(
             report,
             batch_stale=True,
@@ -2630,7 +2646,6 @@ class MainWindow(QMainWindow):
         self._results_workspace.set_result_state(self._result_state)
         self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
-        self._display_population_id = "all_events"
         self._current_sample_preview.set_stale(
             self._preview_revision.analysis_revision
         )
