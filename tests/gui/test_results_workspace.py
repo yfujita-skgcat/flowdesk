@@ -78,6 +78,43 @@ def test_results_workspace_selection_distinguishes_sample_and_population(qapp) -
     qapp.processEvents()
 
 
+def test_flat_table_uses_same_report_values_without_tree_indentation(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy(
+      {"all_events": None, "rect-1": "all_events"},
+      {"all_events": "All Events", "rect-1": "rect_1"},
+    )
+    workspace.set_report(
+      ExecutionReport(
+        project_id="project",
+        execution_profile_id="default",
+        pipeline_version="test",
+        status="success",
+        population_results=(
+          PopulationResult("sample-1", "all_events", 10, None, 1.0),
+          PopulationResult("sample-1", "rect-1", 4, 0.4, 0.4),
+        ),
+      )
+    )
+    workspace.set_mode("Flat table")
+    tree = workspace.tree()
+    assert tree.columnCount() == 7
+    assert [tree.headerItem().text(index) for index in range(7)] == [
+      "Sample", "Population", "Parent", "Events", "% Parent", "% Total", "Status"
+    ]
+    assert tree.topLevelItem(1).text(1) == "rect_1"
+    assert tree.topLevelItem(1).text(2) == "All Events"
+    assert tree.topLevelItem(1).text(3) == "4"
+    workspace.set_mode("Hierarchy")
+    assert workspace.tree().columnCount() == 5
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
 def test_main_window_exposes_exclusive_gating_and_results_tabs(qapp) -> None:
   window = MainWindow()
   try:

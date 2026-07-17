@@ -338,7 +338,8 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: `ResultsWorkspace`へ`Sample -> All Events -> Population`のtree-tableを追加し、`Events`、`% Parent`、`% Total`、`Status`をExecutionReportだけから表示する。
 - [x] 済み: sample rowと`All Events` rowを分ける。sample row選択はactive sampleだけを変更し、`All Events` row選択は`display_population_id = "all_events"`として全event表示を復元する。
 - [x] 済み: statistic resultはResults workspaceのpopulation childだけに表示し、現在のWorkspaceとCustom Statistics間の表示重複をなくす。
-- [ ] 同じResults modelから`Hierarchy`と`Flat table`を切替可能にする。Flat tableは`Sample | Population | Parent | Events | % Parent | % Total | Status`を持ち、population名へindentを埋め込まない。
+- [x] 済み: increment 5（Hierarchy/Flat table mode）を実装する。
+- [x] 済み: 同じResults modelから`Hierarchy`と`Flat table`を切替可能にする。Flat tableは`Sample | Population | Parent | Events | % Parent | % Total | Status`を持ち、population名へindentを埋め込まない。
 - [ ] stale、missing、zero events、undefined/error statisticを区別する。stale membershipでplotをfilterせず、gate definition自体は有効なまま保持する。
 - [ ] Gate selectionがplot filterを変更しないtest、Show Gateが親populationを表示するtest、明示All Eventsで全eventへ戻るtest、Results選択がgate編集対象を変えないtestを追加する。
 - [ ] Hierarchy/Flat table、GUI/headless/CLIでevent countとfrequencyが一致し、既存gate編集、Undo/Redo、population filtering、strict GUI teardownが壊れていないことを確認する。

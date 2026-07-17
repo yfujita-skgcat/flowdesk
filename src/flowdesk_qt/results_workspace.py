@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
   QHeaderView,
   QAbstractItemView,
+  QComboBox,
   QTreeWidget,
   QTreeWidgetItem,
   QVBoxLayout,
@@ -42,6 +43,7 @@ class ResultsWorkspace(QWidget):
     self._population_names: dict[str, str] = {}
     self._report: ExecutionReport | None = None
     self._results_stale = False
+    self._mode = "Hierarchy"
     self._callbacks: list[Callable[[str, str, str], None]] = []
 
     self._tree = QTreeWidget()
@@ -56,6 +58,11 @@ class ResultsWorkspace(QWidget):
       header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
 
     layout = QVBoxLayout(self)
+    self._mode_selector = QComboBox()
+    self._mode_selector.setObjectName("resultsViewModeSelector")
+    self._mode_selector.addItems(["Hierarchy", "Flat table"])
+    self._mode_selector.currentTextChanged.connect(self.set_mode)
+    layout.addWidget(self._mode_selector)
     layout.addWidget(self._tree)
 
   def on_selection_changed(
@@ -93,6 +100,15 @@ class ResultsWorkspace(QWidget):
   def report(self) -> ExecutionReport | None:
     return self._report
 
+  def mode(self) -> str:
+    return self._mode
+
+  def set_mode(self, mode: str) -> None:
+    if mode not in {"Hierarchy", "Flat table"}:
+      raise ValueError(f"unknown Results workspace mode: {mode!r}")
+    self._mode = mode
+    self._rebuild()
+
   def tree(self) -> QTreeWidget:
     """Return the view tree for stable GUI tests and accessibility tooling."""
     return self._tree
@@ -103,6 +119,15 @@ class ResultsWorkspace(QWidget):
       self._tree.clear()
       results = self._results_by_sample()
       statistics = self._statistics_by_sample_population()
+      if self._mode == "Flat table":
+        self._rebuild_flat(results)
+        return
+      self._tree.setColumnCount(len(self._HEADERS))
+      self._tree.setHeaderLabels(self._HEADERS)
+      header = self._tree.header()
+      header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+      for column in range(1, len(self._HEADERS)):
+        header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
       for sample_id, sample_name in self._samples:
         sample_item = QTreeWidgetItem([sample_name, "-", "-", "-", "sample"])
         self._set_identity(sample_item, "sample", sample_id, sample_id)
@@ -125,6 +150,42 @@ class ResultsWorkspace(QWidget):
         all_item.setExpanded(True)
     finally:
       self._tree.blockSignals(blocked)
+
+  def _rebuild_flat(
+    self, results: Mapping[str, Sequence[PopulationResult]]
+  ) -> None:
+    self._tree.setColumnCount(7)
+    self._tree.setHeaderLabels([
+      "Sample",
+      "Population",
+      "Parent",
+      "Events",
+      "% Parent",
+      "% Total",
+      "Status",
+    ])
+    sample_names = dict(self._samples)
+    for sample_id, values in results.items():
+      for value in values:
+        population_id = value.population_id
+        parent_id = self._population_parents.get(population_id)
+        status = "stale" if self._results_stale else "current"
+        item = QTreeWidgetItem([
+          sample_names.get(sample_id, sample_id),
+          self._population_names.get(population_id, population_id),
+          self._population_names.get(parent_id, parent_id or "-"),
+          str(value.event_count),
+          self._format_frequency(value.frequency_of_parent),
+          self._format_frequency(value.frequency_of_total),
+          status,
+        ])
+        self._set_identity(item, "population", population_id, sample_id)
+        self._tree.addTopLevelItem(item)
+    header = self._tree.header()
+    header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+    for column in range(2, 7):
+      header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
 
   def _population_item(
     self,
