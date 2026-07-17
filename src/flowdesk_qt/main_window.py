@@ -792,7 +792,7 @@ class MainWindow(QMainWindow):
 
         # Connect plot mouse events to gate creation
         self._plot_widget.on_mouse_clicked(self._on_plot_mouse_clicked)
-        self._plot_widget.on_gate_geometry_changed(self._on_gate_geometry_changed)
+        self._plot_widget.on_gate_geometry_changed(self._queue_gate_geometry_changed)
 
     # -- sample handling -----------------------------------------------------
 
@@ -1383,6 +1383,7 @@ class MainWindow(QMainWindow):
             worker.wait()
         if worker is not None:
             self._release_pipeline_worker(worker)
+        self._plot_widget.release_transient_items()
         super().closeEvent(event)
 
     def set_autosave_settings(self, settings: AutosaveSettings) -> None:
@@ -2059,6 +2060,15 @@ class MainWindow(QMainWindow):
         """Persist interactive ROI edits back into the gate editor and invalidate results."""
         self._gate_editor.update_gate(gate_index, gate, notify=True)
         self._mark_results_stale(f"Gate updated: {gate.name}")
+
+    def _queue_gate_geometry_changed(self, gate_index: int, gate) -> None:
+        """Persist an ROI edit after its Qt signal finishes dispatching."""
+        QTimer.singleShot(
+            0,
+            lambda gate_index=gate_index, gate=gate: self._on_gate_geometry_changed(
+                gate_index, gate
+            ),
+        )
 
     # -- plot toolbar handlers -----------------------------------------------
 

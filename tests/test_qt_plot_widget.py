@@ -15,9 +15,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 PySide6 = pytest.importorskip("PySide6")
 pytest.importorskip("pyqtgraph")
+shiboken6 = pytest.importorskip("shiboken6")
 pytestmark = pytest.mark.gui
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -58,6 +59,10 @@ def _app() -> QApplication:
   if app is None:
     app = QApplication([])
   return app
+
+
+def _flush_deferred_delete(item: object) -> None:
+  QCoreApplication.sendPostedEvents(item, QEvent.Type.DeferredDelete)
 
 
 def test_prepared_overlay_layers_render_without_recomputing_membership() -> None:
@@ -304,6 +309,68 @@ def test_rectangle_gate_creation_captures_drag_until_finish() -> None:
       vb.mouseClickEvent = widget._default_mouse_click_event
       vb.mouseDragEvent = original_drag
     widget._default_mouse_drag_event = original_drag
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_rectangle_preview_reuses_and_disposes_single_roi() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    widget.begin_gate_creation("rectangle")
+    widget._update_rectangle_preview((1.0, 2.0), (3.0, 5.0))
+    preview = widget._preview_item
+    assert preview is not None
+
+    for offset in range(100):
+      widget._update_rectangle_preview(
+        (2.0, 4.0),
+        (7.0 + offset, 10.0 + offset),
+      )
+
+    assert widget._preview_item is preview
+    state = preview.saveState()
+    assert tuple(state["pos"]) == pytest.approx((2.0, 4.0))
+    assert tuple(state["size"]) == pytest.approx((104.0, 105.0))
+
+    widget.clear_gate_creation()
+    _flush_deferred_delete(preview)
+    assert shiboken6.isValid(preview) is False
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_clear_gates_disconnects_and_disposes_roi() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="gate-disposal",
+      name="disposal",
+      gate_type="rectangle",
+      x_parameter="X",
+      y_parameter="Y",
+      thresholds={
+        "x_min": 1.0,
+        "x_max": 3.0,
+        "y_min": 2.0,
+        "y_max": 5.0,
+      },
+    )
+    for _iteration in range(25):
+      widget.add_gate_overlay(gate, gate_index=0)
+      item = widget._gate_items[0]
+
+      widget.clear_gates()
+      _flush_deferred_delete(item)
+
+      assert widget._gate_items == []
+      assert widget._gate_item_callbacks == {}
+      assert shiboken6.isValid(item) is False
+  finally:
     widget.close()
     widget.deleteLater()
     app.processEvents()

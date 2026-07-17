@@ -1,5 +1,8 @@
-- Population Results の Population に表示されるgate名がDefined gates の名称と一致せずわかりにくいので、Population Results の Population に表示されるgate名を Defined gates の名称と一致させるように修正する
-- Freq. of Parent や Freq. of Total は % of Parent, % of Total と表記するように修正する
-- 表示プロットを特定のgateのみに絞り込む機能を追加する (FSC-A, SSC-A でゲートしたものについて、FSC-A, FL1-A で展開する、など).
-- 縦軸に count を選ぶと、ヒストグラムで表示できるようにする。
-- 2D プロットの上と右にヒストグラムを表示するモードを追加する。
+1. GUIを起動する
+2. data/*.fcs をopen する
+3. 1_A1.fcs を選択する
+4. rectangle gate を作成する
+5. Run pipeline をクリックする
+6. rectangle gate を作成する
+
+5-6 を繰り返すと6で作成した瞬間に時々 Core Dump することがある。

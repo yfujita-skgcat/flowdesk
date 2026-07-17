@@ -315,6 +315,15 @@ Keep transient GUI interaction state out of core models:
 
 Once a gate is finished or edited, convert it to `GateSpec`.
 
+### Qt graphics item lifetime
+
+- Reuse the rectangle and polygon preview item while an interaction is active. Do not
+  allocate a new ROI for every mouse-move event.
+- Before replacing a gate ROI, disconnect its stored signal callback, remove it from the
+  plot, and call `deleteLater()` so the C++ object is destroyed after event dispatch.
+- Do not synchronously destroy or replace the ROI that is currently emitting an edit
+  signal. Queue persistence and redraw until the signal handler has returned.
+
 ## Implementation Order
 
 1. Add a plot toolbar with modes: pan/select, rectangle gate, polygon gate, range gate,

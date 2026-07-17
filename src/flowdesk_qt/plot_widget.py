@@ -19,6 +19,7 @@ membership or any analytical result.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -43,6 +44,8 @@ from flowdesk_core.transforms import (
 from flowdesk_qt.diagnostics import invoke_callback
 from flowdesk_qt.plot_style import PlotStyleSettings
 
+logger = logging.getLogger(__name__)
+
 AxisTransform = Literal["linear", "log10", "asinh"]
 InteractiveGateType = Literal["rectangle", "polygon"]
 InteractionMode = Literal["pan", "select", "gate"]
@@ -65,6 +68,7 @@ class PlotWidget(QWidget):
         self.setObjectName("plotWidget")
         self._scatter: ScatterPlotItem | None = None
         self._gate_items: list[Any] = []
+        self._gate_item_callbacks: dict[int, Any] = {}
         self._hidden_gate_reasons: list[str] = []
         self._preview_item: Any | None = None
         self._gate_geometry_callbacks: list[Any] = []
@@ -428,6 +432,16 @@ class PlotWidget(QWidget):
         self._cached_marginal_y = None
         self._is_histogram_mode = False
         self._update_labels()
+
+    def release_transient_items(self) -> None:
+        """Disconnect and dispose Qt items that can retain Python callbacks."""
+        self._clear_gates()
+        self._clear_preview()
+
+    def closeEvent(self, event: Any) -> None:
+        """Break ROI callback cycles before Qt destroys the graphics scene."""
+        self.release_transient_items()
+        super().closeEvent(event)
 
     def plot_overlay_layers(self, layers: list[Any] | tuple[Any, ...]) -> None:
         """Display prepared core overlay layers with persisted styles."""
@@ -886,14 +900,15 @@ class PlotWidget(QWidget):
     ) -> None:
         if gate_index is None:
             return
+
+        def callback(*_args: Any) -> None:
+            self._emit_gate_geometry_changed(gate_index, gate, item)
+
         try:
-            item.sigRegionChangeFinished.connect(
-                lambda *_args, item=item, gate=gate, gate_index=gate_index: (
-                    self._emit_gate_geometry_changed(gate_index, gate, item)
-                )
-            )
+            item.sigRegionChangeFinished.connect(callback)
+            self._gate_item_callbacks[id(item)] = callback
         except Exception:
-            pass
+            logger.exception("Failed to connect gate ROI callback")
 
     def _emit_gate_geometry_changed(self, gate_index: int, gate: GateSpec, item: Any) -> None:
         updated_gate = self._gate_from_item(gate, item)
@@ -954,32 +969,51 @@ class PlotWidget(QWidget):
             self._histogram_item = None
 
     def _clear_gates(self) -> None:
-        for item in self._gate_items:
-            try:
-                self._plot_item.removeItem(item)
-            except Exception:
-                pass
-        self._gate_items.clear()
+        items = self._gate_items
+        self._gate_items = []
+        for item in items:
+            callback = self._gate_item_callbacks.pop(id(item), None)
+            if callback is not None:
+                try:
+                    item.sigRegionChangeFinished.disconnect(callback)
+                except (RuntimeError, TypeError):
+                    logger.debug("Gate ROI callback was already disconnected", exc_info=True)
+            self._dispose_plot_item(item)
+        self._gate_item_callbacks.clear()
         self._hidden_gate_reasons.clear()
 
+    def _dispose_plot_item(self, item: Any) -> None:
+        """Remove a transient graphics item and defer destruction safely."""
+        try:
+            self._plot_item.removeItem(item)
+        except (RuntimeError, TypeError):
+            logger.debug("Plot item was already removed", exc_info=True)
+        try:
+            item.deleteLater()
+        except (AttributeError, RuntimeError):
+            logger.debug("Plot item could not be scheduled for deletion", exc_info=True)
+
     def _clear_preview(self) -> None:
-        if self._preview_item is not None:
-            try:
-                self._plot_item.removeItem(self._preview_item)
-            except Exception:
-                pass
+        item = self._preview_item
         self._preview_item = None
         self._polygon_preview_vertices.clear()
+        if item is not None:
+            self._dispose_plot_item(item)
 
     def _set_preview_item(self, item: Any | None) -> None:
-        if self._preview_item is not None:
-            try:
-                self._plot_item.removeItem(self._preview_item)
-            except Exception:
-                pass
+        if self._preview_item is item:
+            return
+        previous = self._preview_item
         self._preview_item = item
+        if previous is not None:
+            self._dispose_plot_item(previous)
         if item is not None:
-            self._plot_item.addItem(item)
+            try:
+                self._plot_item.addItem(item)
+            except Exception:
+                self._preview_item = None
+                self._dispose_plot_item(item)
+                raise
 
     def _update_rectangle_preview(
         self,
@@ -993,6 +1027,10 @@ class PlotWidget(QWidget):
         width = abs(end[0] - start[0])
         height = abs(end[1] - start[1])
         if width <= 0 or height <= 0:
+            return
+        if isinstance(self._preview_item, RectROI):
+            self._preview_item.setPos([x_min, y_min], update=False)
+            self._preview_item.setSize([width, height], update=True)
             return
         rect = RectROI(
             [x_min, y_min],
@@ -1011,6 +1049,9 @@ class PlotWidget(QWidget):
             return
         x_vals = [p[0] for p in self._polygon_preview_vertices]
         y_vals = [p[1] for p in self._polygon_preview_vertices]
+        if isinstance(self._preview_item, PlotDataItem):
+            self._preview_item.setData(x_vals, y_vals)
+            return
         item = PlotDataItem(
             x_vals,
             y_vals,
@@ -1281,19 +1322,20 @@ class PlotWidget(QWidget):
         if event.isStart():
             self._drag_start = data_pos
         elif event.isFinish():
-            if self._drag_start is not None:
+            drag_start = self._drag_start
+            self._drag_start = None
+            self._clear_preview()
+            if drag_start is not None:
                 for cb in self._click_callbacks:
                     invoke_callback(
                         cb,
-                        self._drag_start[0],
-                        self._drag_start[1],
+                        drag_start[0],
+                        drag_start[1],
                         False,
                         dragging=False,
                         rect_end_x=data_pos[0],
                         rect_end_y=data_pos[1],
                     )
-            self._drag_start = None
-            self._clear_preview()
         else:
             if self._drag_start is not None:
                 self._update_rectangle_preview(self._drag_start, data_pos)
