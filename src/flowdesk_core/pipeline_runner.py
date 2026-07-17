@@ -333,6 +333,10 @@ class PipelineRunner:
     statistic_results = tuple(
       result for result in report.statistic_results
       if result.sample_id == request.sample_id
+      and (
+        not request.requested_statistic_ids
+        or result.statistic_id in request.requested_statistic_ids
+      )
     )
     population_ids = {
       result.population_id for result in population_results

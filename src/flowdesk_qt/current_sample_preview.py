@@ -116,6 +116,18 @@ class CurrentSamplePreview(QWidget):
     """Display a typed preview failure without changing authoritative results."""
     self._status.setText(f"Preview error (revision {revision}): {message}")
 
+  def set_batch_current(self, sample_id: str | None, revision: int) -> None:
+    """Show that the authoritative batch is current and preview is idle."""
+    self._sample.setText(sample_id or "-")
+    self._population.setText("-")
+    self._events.setText("-")
+    self._parent_frequency.setText("-")
+    self._total_frequency.setText("-")
+    self._statistics.setText("-")
+    self._status.setText(
+      f"Preview idle; Batch results current (revision {revision})"
+    )
+
   @staticmethod
   def _format_percent(value: float | None) -> str:
     return "-" if value is None else f"{value * 100.0:.2f}%"

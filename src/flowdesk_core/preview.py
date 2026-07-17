@@ -110,6 +110,7 @@ class PreviewRequest:
   execution_profile_id: str = "default"
   strategy_id: str | None = None
   required_population_id: str = "all_events"
+  requested_statistic_ids: tuple[str, ...] = ()
   changed_gate_id: str | None = None
   invalidation_reason: str | None = None
 
@@ -120,6 +121,8 @@ class PreviewRequest:
       raise ValueError("preview execution_profile_id must be non-empty")
     if not self.required_population_id:
       raise ValueError("preview required_population_id must be non-empty")
+    if any(not statistic_id for statistic_id in self.requested_statistic_ids):
+      raise ValueError("preview statistic IDs must be non-empty")
 
   @property
   def sample_id(self) -> str:

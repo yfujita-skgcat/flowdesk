@@ -155,6 +155,16 @@ def test_preview_matches_full_batch_for_full_resolution_sample() -> None:
   assert statistics["selected-count"] == 500
   assert statistics["selected-mean"] == pytest.approx(1499.0)
 
+  count_only = runner.preview_sample(PreviewRequest(
+    revision=18,
+    sample=sample,
+    required_population_id="selected",
+    requested_statistic_ids=("selected-count",),
+  ))
+  assert [value.statistic_id for value in count_only.statistic_results] == [
+    "selected-count"
+  ]
+
 
 def test_preview_request_and_report_are_frozen() -> None:
   request = PreviewRequest(revision=1, sample=_sample())
@@ -234,5 +244,7 @@ def test_revision_state_rejects_obsolete_results() -> None:
   state = PreviewRevisionState()
   state.invalidate({"gate"})
   assert not state.accept_preview(0, {"gate"})
+  assert not state.accept_authoritative(0)
+  assert state.authoritative_result_revision is None
   assert state.preview_result_revision is None
   assert state.preview_status == "stale"

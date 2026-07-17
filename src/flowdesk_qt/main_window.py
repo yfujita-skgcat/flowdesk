@@ -167,11 +167,13 @@ class _PipelineWorker(QThread):
         project: dict[str, Any],
         samples: tuple[SampleData, ...],
         profile_id: str = "default",
+        revision: int = 0,
     ) -> None:
         super().__init__()
         self._project = project
         self._samples = samples
         self._profile_id = profile_id
+        self.revision = revision
         self._report: Any = None
         self._error: Exception | None = None
 
@@ -1052,6 +1054,8 @@ class MainWindow(QMainWindow):
             )
         self._update_workspace_navigation()
         self._replot()
+        if self._results_stale and self._display_population_id != population_id:
+            self._schedule_current_preview(population_id)
 
     def _update_workspace_navigation(self) -> None:
         sample = self._sample_browser.selected_sample()
@@ -1403,6 +1407,7 @@ class MainWindow(QMainWindow):
         self._worker = _PipelineWorker(
             project,
             tuple(self._sample_data.values()),
+            revision=self._preview_revision.analysis_revision,
         )
         self._worker.finished.connect(self._on_pipeline_finished)
         self._worker.start()
@@ -1531,6 +1536,17 @@ class MainWindow(QMainWindow):
             return
 
         report = worker._report
+        if worker.revision != self._preview_revision.analysis_revision:
+            self._results_stale = True
+            self._current_sample_preview.set_stale(
+                self._preview_revision.analysis_revision
+            )
+            self._update_status(
+                "Pipeline result discarded; analysis definitions changed during execution"
+            )
+            self._release_pipeline_worker(worker)
+            self._preview_scheduler.resume()
+            return
         if report is not None:
             self._auto_gate_fits = deepcopy(report.auto_gate_fits)
             self._magnetic_gate_fits = deepcopy(report.magnetic_gate_fits)
@@ -1543,8 +1559,14 @@ class MainWindow(QMainWindow):
             self._diagnostics_panel.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
+            self._preview_report = None
             self._preview_revision.accept_authoritative(
                 self._preview_revision.analysis_revision
+            )
+            self._preview_scheduler.cancel_pending()
+            self._current_sample_preview.set_batch_current(
+                self._current_sample_id,
+                self._preview_revision.analysis_revision,
             )
             self._compensation_status_indicator.clear_stale()
             self._validate_population_selection(report)
@@ -2496,7 +2518,9 @@ class MainWindow(QMainWindow):
             pending.extend(children.get(population_id, ()))
         return affected
 
-    def _schedule_current_preview(self) -> None:
+    def _schedule_current_preview(
+        self, requested_population_id: str | None = None
+    ) -> None:
         """Submit the active sample to the debounced core preview scheduler."""
         sample_id = self._current_sample_id
         sample = self._sample_data.get(sample_id or "")
@@ -2504,17 +2528,26 @@ class MainWindow(QMainWindow):
             return
         if self._worker is not None and self._worker.isRunning():
             return
-        population_id = self._display_population_id or "all_events"
-        request = PreviewRequest(
-            revision=self._preview_revision.analysis_revision,
-            sample=sample,
-            execution_profile_id="default",
-            strategy_id="default_strategy",
-            required_population_id=population_id,
-            invalidation_reason="definition_changed",
-        )
+        population_id = requested_population_id or self._display_population_id or "all_events"
+        revision = self._preview_revision.analysis_revision
         try:
             project = self._build_project_manifest()
+            requested_statistic_ids = tuple(
+                str(value.get("id"))
+                for value in project.get("statistics", [])
+                if isinstance(value, dict)
+                and value.get("population_id") == population_id
+                and isinstance(value.get("id"), str)
+            )
+            request = PreviewRequest(
+                revision=revision,
+                sample=sample,
+                execution_profile_id="default",
+                strategy_id="default_strategy",
+                required_population_id=population_id,
+                requested_statistic_ids=requested_statistic_ids,
+                invalidation_reason="definition_changed",
+            )
             self._preview_revision.mark_pending()
             self._current_sample_preview.set_pending(
                 sample_id,
@@ -2526,7 +2559,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._preview_revision.mark_error()
             self._current_sample_preview.set_error(
-                str(exc), request.revision
+                str(exc), revision
             )
 
     def _on_preview_ready(self, report: PreviewReport) -> None:
