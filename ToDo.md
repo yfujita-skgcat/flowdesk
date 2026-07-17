@@ -584,10 +584,10 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 
 #### Increment 5: Comparison sets and automatic paired overlays
 
-- [ ] 1対1と1対多を保存できるComparisonSet membership、comparison role、role default colorをproject metadata/display settingsへ追加する。
-- [ ] sample multi-selection context menuへ`Create Comparison Set...`、`Pair Selected Samples...`、`Add to Comparison Set...`、`Edit Comparison Relation...`、`Remove from Comparison Set`を追加する。
-- [ ] Samples paneへ通常は`Manual only`と`Manual + comparison set`を示すoverlay mode selectorを追加し、必要性がtestで示された場合だけ`Comparison set only`を追加する。
-- [ ] `Manual + comparison set`でmanual checked samplesとactive sample所属setのother membersの和集合を解決し、active sample変更時にcomparison membersを再解決する。
+- [x] 1対1と1対多を保存できるComparisonSet membership、comparison role、role default colorをproject metadata/display settingsへ追加する。
+- [x] sample multi-selection context menuへ`Create Comparison Set...`、`Pair Selected Samples...`、`Add to Comparison Set...`、`Edit Comparison Relation...`、`Remove from Comparison Set`を追加する。
+- [x] Samples paneへ通常は`Manual only`と`Manual + comparison set`を示すoverlay mode selectorを追加し、必要性がtestで示された場合だけ`Comparison set only`を追加する。
+- [x] `Manual + comparison set`でmanual checked samplesとactive sample所属setのother membersの和集合を解決し、active sample変更時にcomparison membersを再解決する。
 - [ ] 同一sampleがmanual、persistent control、comparison経路で重複しても一度だけ描画し、source override、role color、automatic style、labelを決定的に解決する。
 - [ ] pair双方向、1対多round-trip、manual+automatic同時使用、missing member diagnostic、Group/strategy非変更をtestする。
 

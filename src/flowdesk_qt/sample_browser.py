@@ -88,6 +88,8 @@ class SampleBrowser(QWidget):
         self._manual_overlay_sample_ids: set[str] = set()
         self._manual_overlay_colors: dict[str, str] = {}
         self._overlay_roles: dict[str, str] = {}
+        self._comparison_sets: list[dict[str, object]] = []
+        self._overlay_mode = "manual_only"
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -152,6 +154,8 @@ class SampleBrowser(QWidget):
             "manual_overlay_sample_ids": sorted(self._manual_overlay_sample_ids),
             "manual_overlay_colors": dict(self._manual_overlay_colors),
             "overlay_roles": dict(self._overlay_roles),
+            "comparison_sets": [dict(value) for value in self._comparison_sets],
+            "overlay_mode": self._overlay_mode,
         }
 
     def set_overlay_state(
@@ -159,6 +163,8 @@ class SampleBrowser(QWidget):
         sample_ids: list[str] | tuple[str, ...],
         colors: dict[str, str] | None = None,
         roles: dict[str, str] | None = None,
+        comparison_sets: list[dict[str, object]] | None = None,
+        overlay_mode: str = "manual_only",
     ) -> None:
         """Restore manual overlay state without changing active sample selection."""
         known = {sample.id for sample in self._samples}
@@ -171,7 +177,23 @@ class SampleBrowser(QWidget):
         self._overlay_roles = {
             sample_id: role for sample_id, role in (roles or {}).items() if sample_id in known
         }
+        self._comparison_sets = [dict(value) for value in (comparison_sets or [])]
+        self._overlay_mode = overlay_mode if overlay_mode in {
+            "manual_only", "manual_plus_comparison", "comparison_only"
+        } else "manual_only"
         self._rebuild_sample_list()
+
+    def comparison_overlay_sample_ids(self, active_sample_id: str | None) -> set[str]:
+        if self._overlay_mode not in {"manual_plus_comparison", "comparison_only"}:
+            return set()
+        for definition in self._comparison_sets:
+            members = definition.get("members", [])
+            member_ids = {
+                str(member.get("sample_id")) for member in members if isinstance(member, dict)
+            }
+            if active_sample_id in member_ids:
+                return member_ids - {active_sample_id}
+        return set()
 
     def on_overlay_changed(self, callback: Any) -> None:
         self._overlay_callbacks.append(callback)
@@ -515,6 +537,35 @@ class SampleBrowser(QWidget):
         if not sample_id:
             return
         menu = QMenu(self)
+        selected_ids = [
+            str(value.data(Qt.UserRole)) for value in self._list_widget.selectedItems()
+        ]
+        if len(selected_ids) >= 2:
+            pair_action = menu.addAction("Pair Selected Samples...")
+            pair_action.setObjectName("pairSelectedSamplesAction")
+            pair_action.triggered.connect(
+                lambda: self._create_comparison_set(selected_ids)
+            )
+            create_action = menu.addAction("Create Comparison Set...")
+            create_action.setObjectName("createComparisonSetAction")
+            create_action.triggered.connect(
+                lambda: self._create_comparison_set(selected_ids)
+            )
+            add_action = menu.addAction("Add to Comparison Set...")
+            add_action.setObjectName("addToComparisonSetAction")
+            add_action.triggered.connect(
+                lambda: self._add_to_latest_comparison_set(selected_ids)
+            )
+            menu.addSeparator()
+        if self._comparison_sets:
+            edit_action = menu.addAction("Edit Comparison Relation...")
+            edit_action.setObjectName("editComparisonRelationAction")
+            edit_action.triggered.connect(lambda: self._emit_overlay_state())
+            remove_action = menu.addAction("Remove from Comparison Set")
+            remove_action.setObjectName("removeFromComparisonSetAction")
+            remove_action.triggered.connect(
+                lambda: self._remove_from_comparison_sets(sample_id)
+            )
         persistent = menu.addAction("Use as Persistent Overlay")
         persistent.setObjectName("persistentOverlayAction")
         persistent.triggered.connect(
@@ -532,6 +583,57 @@ class SampleBrowser(QWidget):
         clear_role.setObjectName("clearOverlayRoleAction")
         clear_role.triggered.connect(lambda: self._set_overlay_role(sample_id, None))
         menu.exec(self._list_widget.viewport().mapToGlobal(position))
+
+    def _set_overlay_mode(self, _index: int) -> None:
+        self._overlay_mode = str(self._overlay_mode_combo.currentData())
+        for callback in self._overlay_callbacks:
+            invoke_callback(callback, self.overlay_state())
+
+    def _emit_overlay_state(self) -> None:
+        for callback in self._overlay_callbacks:
+            invoke_callback(callback, self.overlay_state())
+
+    def _add_to_latest_comparison_set(self, sample_ids: list[str]) -> None:
+        if not self._comparison_sets:
+            self._create_comparison_set(sample_ids)
+            return
+        members = self._comparison_sets[-1].setdefault("members", [])
+        existing = {
+            str(member.get("sample_id")) for member in members if isinstance(member, dict)
+        }
+        for sample_id in sample_ids:
+            if sample_id not in existing:
+                members.append({"sample_id": sample_id, "role": "target"})
+        self._emit_overlay_state()
+
+    def _remove_from_comparison_sets(self, sample_id: str) -> None:
+        for comparison in self._comparison_sets:
+            members = comparison.get("members", [])
+            comparison["members"] = [
+                member for member in members
+                if not isinstance(member, dict) or member.get("sample_id") != sample_id
+            ]
+        self._comparison_sets = [
+            comparison for comparison in self._comparison_sets
+            if len(comparison.get("members", [])) >= 2
+        ]
+        self._emit_overlay_state()
+
+    def _create_comparison_set(self, sample_ids: list[str]) -> None:
+        members = [
+            {"sample_id": sample_id, "role": "reference" if index == 0 else "target"}
+            for index, sample_id in enumerate(dict.fromkeys(sample_ids))
+        ]
+        if len(members) < 2:
+            return
+        comparison_id = f"comparison_{len(self._comparison_sets) + 1:03d}"
+        self._comparison_sets.append({
+            "id": comparison_id,
+            "name": comparison_id,
+            "members": members,
+        })
+        for callback in self._overlay_callbacks:
+            invoke_callback(callback, self.overlay_state())
 
     def _set_overlay_role(self, sample_id: str, role: str | None) -> None:
         if role is None:
@@ -583,7 +685,7 @@ class SampleBrowser(QWidget):
 
         self._list_widget = QListWidget()
         self._list_widget.setObjectName("sampleList")
-        self._list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._list_widget.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._list_widget.currentRowChanged.connect(self._on_list_selection_changed)
         self._list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list_widget.customContextMenuRequested.connect(
@@ -616,10 +718,22 @@ class SampleBrowser(QWidget):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.addWidget(QLabel("Samples"))
+        mode_label = QLabel("Overlay mode:")
+        self._overlay_mode_combo = QComboBox()
+        self._overlay_mode_combo.setObjectName("overlayModeSelector")
+        self._overlay_mode_combo.addItem("Manual only", "manual_only")
+        self._overlay_mode_combo.addItem(
+            "Manual + comparison set", "manual_plus_comparison"
+        )
+        self._overlay_mode_combo.currentIndexChanged.connect(self._set_overlay_mode)
         controls = QHBoxLayout()
         controls.addWidget(self._filter_edit)
         controls.addWidget(self._sort_combo)
         left_layout.addLayout(controls)
+        mode_controls = QHBoxLayout()
+        mode_controls.addWidget(mode_label)
+        mode_controls.addWidget(self._overlay_mode_combo)
+        left_layout.addLayout(mode_controls)
         left_layout.addWidget(self._list_widget)
         left_layout.addWidget(self._btn_add)
         left_layout.addWidget(self._btn_remove)

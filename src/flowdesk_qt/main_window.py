@@ -1301,6 +1301,9 @@ class MainWindow(QMainWindow):
         self._plot_widget.clear_overlay_layers()
         state = self._sample_browser.overlay_state()
         selected = set(state.get("manual_overlay_sample_ids", []))
+        selected.update(
+            self._sample_browser.comparison_overlay_sample_ids(self._current_sample_id)
+        )
         selected.discard(self._current_sample_id)
         if not selected:
             return
@@ -1346,6 +1349,14 @@ class MainWindow(QMainWindow):
                 y_values = y_values[mask]
             x_values = self._plot_widget._apply_axis_transform(x_values, "x")
             y_values = self._plot_widget._apply_axis_transform(y_values, "y")
+            role_color = None
+            for comparison in state.get("comparison_sets", []):
+                for member in comparison.get("members", []):
+                    if member.get("sample_id") == sample_id:
+                        role_color = {
+                            "reference": "#377eb8",
+                            "target": "#e67e22",
+                        }.get(member.get("role"))
             layers.append(
                 Overlay2DLayer(
                     self._display_population_id,
@@ -1354,6 +1365,7 @@ class MainWindow(QMainWindow):
                     {
                         "color": (
                             state.get("manual_overlay_colors", {}).get(sample_id)
+                            or role_color
                             or self._plot_widget.style().dot_color
                         ),
                         "alpha": 0.65,

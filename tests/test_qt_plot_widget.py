@@ -1171,6 +1171,34 @@ def test_sample_browser_manual_overlay_column_is_separate_from_active_selection(
     app.processEvents()
 
 
+def test_sample_browser_comparison_set_and_overlay_mode_union(
+  tmp_path: Path,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  try:
+    paths = [tmp_path / f"sample-{index}.fcs" for index in range(3)]
+    for path in paths:
+      write_fcs_file(path, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
+    assert browser.add_samples_from_paths([str(path) for path in paths]) == 3
+    ids = [sample.id for sample in browser.samples()]
+    browser._comparison_sets = [{
+      "id": "pair_001",
+      "name": "Pair",
+      "members": [
+        {"sample_id": ids[0], "role": "reference"},
+        {"sample_id": ids[1], "role": "target"},
+      ],
+    }]
+    browser._overlay_mode = "manual_plus_comparison"
+    assert browser.comparison_overlay_sample_ids(ids[0]) == {ids[1]}
+    assert browser.comparison_overlay_sample_ids(ids[2]) == set()
+  finally:
+    browser.close()
+    browser.deleteLater()
+    app.processEvents()
+
+
 def test_sample_browser_reconnect_requires_confirmation_on_hash_mismatch(
   tmp_path: Path,
 ) -> None:
