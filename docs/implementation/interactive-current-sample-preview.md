@@ -238,26 +238,27 @@ Core:
 Qt:
 
 - `src/flowdesk_qt/main_window.py`
-- proposed `src/flowdesk_qt/preview_scheduler.py`
+- `src/flowdesk_qt/preview_scheduler.py`
 - `src/flowdesk_qt/plot_widget.py` for status consumption only
 - `src/flowdesk_qt/results_workspace.py` only if preview provenance is explicit
 
 Tests:
 
 - `tests/test_interactive_preview.py`
-- proposed `tests/gui/test_interactive_preview.py`
+- `tests/gui/test_interactive_preview.py`
 - existing pipeline, population filtering, gate hierarchy, and strict Qt teardown suites
 
 ## Implementation increments
 
 Implement one increment at a time.
 
-Current status: increments 1 and 2 are implemented. `PreviewRequest`, `PreviewReport`,
+Current status: increments 1–3 are implemented. `PreviewRequest`, `PreviewReport`,
 and the synchronous GUI-independent `PipelineRunner.preview_sample()` contract execute
 one full-resolution sample through the canonical runner. `PreviewRevisionState` now
 tracks analysis, authoritative, and preview revisions, invalidates changed gate
-descendants, and forces stale navigation to `All Events`. Asynchronous Qt scheduling
-begins with increment 3.
+descendants, and forces stale navigation to `All Events`. `PreviewScheduler` now adds a
+single-worker debounce/latest-wins queue with immutable project snapshots and obsolete
+completion discard. GUI result presentation begins with increment 4.
 
 1. **Synchronous core preview contract**
    - Add immutable request/result types and `PipelineRunner.preview_sample()`.
