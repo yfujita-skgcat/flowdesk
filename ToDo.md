@@ -379,8 +379,8 @@ B3.2で導入した独立`Current Sample Preview` panelと、stale時に
 - [x] 済み: `docs/implementation/results-integrated-current-sample-recalculation.md`を全文読み、increment 1だけを実装した。
 - [x] 済み: increment 1として、authoritative `ExecutionReport`をbaselineとして保持しつつ、accepted current-sample `PreviewReport`をsample/population/statistic単位でoverlayするQt非依存`RuntimeResultState`を追加した。rowごとにrevision、source provenance、`current`、`recalculating`、`stale`、`error`、`missing`を表現する。
 - [x] 済み: increment 1として、gate変更時はactive sampleの変更gateおよび全descendantを`recalculating`、他sampleの同じ範囲を`stale`にし、旧値を削除せずcontextとして保持する。preview completion前に値を部分更新しないatomic acceptとobsolete revision拒否をunit testした。
-- [ ] increment 2として、`ResultsWorkspace`をauthoritative reportとaccepted preview overlayの唯一の表示面にする。active sampleのaccepted previewを同一revision単位でatomicに適用し、該当populationおよびstatistic rowを`current`へ変更する。
-- [ ] increment 2として、Hierarchy/Flat tableの双方で同じmerged result-stateを表示する。preview値のsource/revisionは内部data roleとtooltip/accessibility textで確認可能にし、Qt内で科学計算を行わない。
+- [x] 済み: increment 2として、`ResultsWorkspace`をauthoritative reportとaccepted preview overlayの表示面にし、active sampleのaccepted previewを同一revision単位でatomicに適用して該当populationおよびstatistic rowを`current`へ変更した。
+- [x] 済み: increment 2として、Hierarchy/Flat tableの双方で同じmerged result-stateを表示し、preview値のsource/revisionを内部data roleとtooltipで確認可能にした。Qt内で科学計算は行わない。
 - [ ] increment 3として、gate変更時に`display_population_id`、active sample、axes、scale、zoomを維持する。`self._display_population_id = "all_events"`の強制resetを削除する。
 - [ ] increment 3として、background再計算中は現在表示中の旧membershipを保持し、plotへ`Recalculating — displayed events are from the previous revision`を明示する。accepted preview completion時にResults state、membership cache、plotをGUI threadで一括更新する。
 - [ ] increment 3として、現在表示しているPopulationが削除された、または同じsampleで利用可能な旧membershipが存在しない場合に限り、親Populationまたは`All Events`へfallbackする。

@@ -8,7 +8,9 @@ from PySide6.QtWidgets import QTabWidget
 
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import PopulationResult, StatisticResult
+from flowdesk_core.preview import PreviewReport
 from flowdesk_qt.main_window import MainWindow
+from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
 
 pytestmark = pytest.mark.gui
@@ -187,4 +189,82 @@ def test_main_window_exposes_exclusive_gating_and_results_tabs(qapp) -> None:
   finally:
     window.close()
     window.deleteLater()
+    qapp.processEvents()
+
+
+def test_results_workspace_renders_preview_overlay_in_both_modes(qapp) -> None:
+  report = ExecutionReport(
+    project_id="project",
+    execution_profile_id="default",
+    pipeline_version="test",
+    status="success",
+    population_results=(
+      PopulationResult("sample-1", "all_events", 10, None, 1.0),
+      PopulationResult("sample-1", "child", 4, 0.4, 0.4),
+    ),
+  )
+  state = RuntimeResultState(
+    report,
+    authoritative_revision=1,
+    sample_ids=("sample-1",),
+    population_ids=("all_events", "child"),
+  )
+  state.invalidate(
+    revision=2,
+    active_sample_id="sample-1",
+    affected_population_ids=("child",),
+  )
+  workspace = ResultsWorkspace()
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy(
+      {"all_events": None, "child": "all_events"},
+      {"all_events": "All Events", "child": "child"},
+    )
+    workspace.set_result_state(state)
+
+    child = workspace.tree().topLevelItem(0).child(0).child(0)
+    assert child.text(1) == "4"
+    assert child.text(4) == "recalculating"
+    assert child.data(0, Qt.UserRole + 3) == 1
+    assert child.data(0, Qt.UserRole + 4) == "authoritative_batch"
+    assert "recalculating" in child.toolTip(0)
+
+    assert state.accept_preview(
+      PreviewReport(
+        revision=2,
+        project_id="project",
+        execution_profile_id="default",
+        sample_id="sample-1",
+        strategy_id="strategy",
+        required_population_id="child",
+        source_event_count=10,
+        status="success",
+        population_results=(
+          PopulationResult("sample-1", "all_events", 10, None, 1.0),
+          PopulationResult("sample-1", "child", 1, 0.1, 0.1),
+        ),
+      )
+    )
+    workspace.set_result_state(state)
+    child = workspace.tree().topLevelItem(0).child(0).child(0)
+    assert child.text(1) == "1"
+    assert child.text(4) == "current"
+    assert child.data(0, Qt.UserRole + 3) == 2
+    assert child.data(0, Qt.UserRole + 4) == "active_sample_preview"
+
+    workspace.set_mode("Flat table")
+    flat_child = next(
+      workspace.tree().topLevelItem(index)
+      for index in range(workspace.tree().topLevelItemCount())
+      if workspace.tree().topLevelItem(index).data(0, Qt.UserRole)
+      == "child"
+    )
+    assert flat_child.text(3) == "1"
+    assert flat_child.text(6) == "current"
+    assert flat_child.data(0, Qt.UserRole + 3) == 2
+    assert flat_child.data(0, Qt.UserRole + 4) == "active_sample_preview"
+  finally:
+    workspace.close()
+    workspace.deleteLater()
     qapp.processEvents()

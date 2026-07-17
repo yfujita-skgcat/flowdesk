@@ -20,8 +20,12 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.execution_report import ExecutionReport
-from flowdesk_core.models import PopulationResult
+from flowdesk_core.models import PopulationResult, StatisticResult
 from flowdesk_qt.diagnostics import invoke_callback
+from flowdesk_qt.results_state import (
+  ResultRowState,
+  RuntimeResultState,
+)
 
 
 class ResultsWorkspace(QWidget):
@@ -42,7 +46,9 @@ class ResultsWorkspace(QWidget):
     self._population_parents: dict[str, str | None] = {}
     self._population_names: dict[str, str] = {}
     self._report: ExecutionReport | None = None
+    self._result_state: RuntimeResultState | None = None
     self._results_stale = False
+    self._force_all_stale = False
     self._mode = "Hierarchy"
     self._callbacks: list[Callable[[str, str, str], None]] = []
 
@@ -86,15 +92,38 @@ class ResultsWorkspace(QWidget):
 
   def set_report(self, report: ExecutionReport | None) -> None:
     self._report = report
+    statistic_definitions = () if report is None else tuple(
+      (value.statistic_id, value.population_id)
+      for value in report.statistic_results
+    )
+    self._result_state = RuntimeResultState(
+      report,
+      authoritative_revision=0 if report is not None else None,
+      sample_ids=tuple(sample_id for sample_id, _name in self._samples),
+      population_ids=tuple(self._population_parents),
+      statistic_definitions=statistic_definitions,
+    )
     self._results_stale = False
+    self._force_all_stale = False
+    self._rebuild()
+
+  def set_result_state(self, state: RuntimeResultState | None) -> None:
+    """Render one merged authoritative/preview runtime state snapshot."""
+    self._result_state = state
+    self._report = None if state is None else state.authoritative_report
+    self._results_stale = False if state is None else state.batch_stale
+    self._force_all_stale = False
     self._rebuild()
 
   def mark_results_stale(self) -> None:
     self._results_stale = True
+    self._force_all_stale = True
     self._rebuild()
 
   def clear(self) -> None:
     self._report = None
+    self._result_state = None
+    self._force_all_stale = False
     self._rebuild()
 
   def report(self) -> ExecutionReport | None:
@@ -135,7 +164,7 @@ class ResultsWorkspace(QWidget):
 
         all_result = next(
           (value for value in results.get(sample_id, ())
-           if value.population_id == "all_events"),
+           if value.key.result_id == "all_events"),
           None,
         )
         all_item = self._population_item(all_result, sample_id, "all_events")
@@ -152,7 +181,7 @@ class ResultsWorkspace(QWidget):
       self._tree.blockSignals(blocked)
 
   def _rebuild_flat(
-    self, results: Mapping[str, Sequence[PopulationResult]]
+    self, results: Mapping[str, Sequence[ResultRowState]]
   ) -> None:
     self._tree.setColumnCount(7)
     self._tree.setHeaderLabels([
@@ -174,37 +203,33 @@ class ResultsWorkspace(QWidget):
         sample_ids.append(sample_id)
     for sample_id in sample_ids:
       values = result_by_sample.get(sample_id, ())
-      result_by_id = {value.population_id: value for value in values}
+      result_by_id = {value.key.result_id: value for value in values}
       population_ids = ["all_events"]
       population_ids.extend(
         population_id for population_id in self._population_parents
         if population_id != "all_events"
       )
       population_ids.extend(
-        value.population_id for value in values
-        if value.population_id not in population_ids
+        value.key.result_id for value in values
+        if value.key.result_id not in population_ids
       )
       for population_id in population_ids:
         value = result_by_id.get(population_id)
         parent_id = self._population_parents.get(population_id)
-        if self._results_stale:
-          status = "stale"
-        elif value is None:
-          status = "not run" if self._report is None else "missing"
-        elif value.event_count == 0:
-          status = "zero events"
-        else:
-          status = "current"
+        result = None if value is None else value.result
+        status = self._row_status(value, result)
         item = QTreeWidgetItem([
           sample_names.get(sample_id, sample_id),
           self._population_names.get(population_id, population_id),
           self._population_names.get(parent_id, parent_id or "-"),
-          "-" if value is None else str(value.event_count),
-          "-" if value is None else self._format_frequency(value.frequency_of_parent),
-          "-" if value is None else self._format_frequency(value.frequency_of_total),
+          "-" if not isinstance(result, PopulationResult) else str(result.event_count),
+          "-" if not isinstance(result, PopulationResult)
+          else self._format_frequency(result.frequency_of_parent),
+          "-" if not isinstance(result, PopulationResult)
+          else self._format_frequency(result.frequency_of_total),
           status,
         ])
-        self._set_identity(item, "population", population_id, sample_id)
+        self._set_identity(item, "population", population_id, sample_id, value)
         self._tree.addTopLevelItem(item)
     header = self._tree.header()
     header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -214,49 +239,34 @@ class ResultsWorkspace(QWidget):
 
   def _population_item(
     self,
-    result: PopulationResult | None,
+    row: ResultRowState | None,
     sample_id: str,
     population_id: str,
   ) -> QTreeWidgetItem:
-    if self._results_stale:
-      status = "stale"
-      values = [
-        self._population_names.get(
-          population_id,
-          "All Events" if population_id == "all_events" else population_id,
-        ),
-        "-" if result is None else str(result.event_count),
-        "-" if result is None else self._format_frequency(result.frequency_of_parent),
-        "-" if result is None else self._format_frequency(result.frequency_of_total),
-        status,
-      ]
-    elif result is None:
-      status = "not run" if self._report is None else "missing"
-      values = [
-        self._population_names.get(
-          population_id,
-          "All Events" if population_id == "all_events" else population_id,
-        ),
-        "-", "-", "-", status,
-      ]
-    else:
-      status = "zero events" if result.event_count == 0 else "current"
-      values = [
-        self._population_names.get(population_id, population_id),
-        str(result.event_count),
-        self._format_frequency(result.frequency_of_parent),
-        self._format_frequency(result.frequency_of_total),
-        status,
-      ]
+    result = None if row is None else row.result
+    population_result = result if isinstance(result, PopulationResult) else None
+    status = self._row_status(row, population_result)
+    values = [
+      self._population_names.get(
+        population_id,
+        "All Events" if population_id == "all_events" else population_id,
+      ),
+      "-" if population_result is None else str(population_result.event_count),
+      "-" if population_result is None
+      else self._format_frequency(population_result.frequency_of_parent),
+      "-" if population_result is None
+      else self._format_frequency(population_result.frequency_of_total),
+      status,
+    ]
     item = QTreeWidgetItem(values)
-    self._set_identity(item, "population", population_id, sample_id)
+    self._set_identity(item, "population", population_id, sample_id, row)
     return item
 
   def _add_population_children(
     self,
     parent_item: QTreeWidgetItem,
-    results: Sequence[PopulationResult],
-    statistics: Mapping[tuple[str, str], Sequence[tuple[str, str, str, str]]],
+    results: Sequence[ResultRowState],
+    statistics: Mapping[tuple[str, str], Sequence[ResultRowState]],
     sample_id: str,
   ) -> None:
     parent_id = parent_item.data(0, Qt.UserRole)
@@ -266,50 +276,92 @@ class ResultsWorkspace(QWidget):
       and (value or "all_events") == parent_id
     ]
     for value in results:
-      if value.population_id != "all_events" and (
-        self._population_parents.get(value.population_id) or "all_events"
-      ) == parent_id and value.population_id not in child_ids:
-        child_ids.append(value.population_id)
-    result_by_id = {value.population_id: value for value in results}
+      if value.key.result_id != "all_events" and (
+        self._population_parents.get(value.key.result_id) or "all_events"
+      ) == parent_id and value.key.result_id not in child_ids:
+        child_ids.append(value.key.result_id)
+    result_by_id = {value.key.result_id: value for value in results}
     for population_id in child_ids:
       result = result_by_id.get(population_id)
       item = self._population_item(result, sample_id, population_id)
       parent_item.addChild(item)
-      for statistic_id, name, value, status in statistics.get(
-        (sample_id, population_id), ()
-      ):
-        statistic_status = "stale" if self._results_stale else status
-        statistic_item = QTreeWidgetItem(
-          [name, "-", "-", value, statistic_status]
+      for statistic_row in statistics.get((sample_id, population_id), ()):
+        statistic = statistic_row.result
+        statistic_result = statistic if isinstance(statistic, StatisticResult) else None
+        statistic_name = (
+          statistic_result.statistic_name or statistic_result.statistic_id
+          if statistic_result is not None else statistic_row.key.result_id
         )
-        self._set_identity(statistic_item, "statistic", statistic_id, sample_id)
+        statistic_value = (
+          "-" if statistic_result is None or statistic_result.value is None
+          else str(statistic_result.value)
+        )
+        statistic_item = QTreeWidgetItem(
+          [
+            statistic_name,
+            "-",
+            "-",
+            statistic_value,
+            self._row_status(statistic_row, statistic_result),
+          ]
+        )
+        self._set_identity(
+          statistic_item, "statistic", statistic_row.key.result_id, sample_id,
+          statistic_row,
+        )
         item.addChild(statistic_item)
       self._add_population_children(item, results, statistics, sample_id)
 
-  def _results_by_sample(self) -> dict[str, tuple[PopulationResult, ...]]:
-    if self._report is None:
+  def _results_by_sample(self) -> dict[str, tuple[ResultRowState, ...]]:
+    if self._result_state is None:
       return {}
-    result: dict[str, list[PopulationResult]] = {}
-    for value in self._report.population_results:
-      result.setdefault(value.sample_id, []).append(value)
+    result: dict[str, list[ResultRowState]] = {}
+    for row in self._result_state.rows():
+      if row.key.kind == "population":
+        result.setdefault(row.key.sample_id, []).append(row)
     return {sample_id: tuple(values) for sample_id, values in result.items()}
 
   def _statistics_by_sample_population(
     self,
-  ) -> dict[tuple[str, str], list[tuple[str, str, str, str]]]:
-    if self._report is None:
+  ) -> dict[tuple[str, str], list[ResultRowState]]:
+    if self._result_state is None:
       return {}
-    result: dict[tuple[str, str], list[tuple[str, str, str, str]]] = {}
-    for value in self._report.statistic_results:
-      result.setdefault((value.sample_id, value.population_id), []).append(
-        (
-          value.statistic_id,
-          value.statistic_name or value.statistic_id,
-          "-" if value.value is None else str(value.value),
-          value.status,
-        )
-      )
+    result: dict[tuple[str, str], list[ResultRowState]] = {}
+    for row in self._result_state.rows():
+      if row.key.kind != "statistic":
+        continue
+      population_id = self._statistic_population_id(row)
+      if population_id is not None:
+        result.setdefault((row.key.sample_id, population_id), []).append(row)
     return result
+
+  def _statistic_population_id(self, row: ResultRowState) -> str | None:
+    result = row.result
+    if isinstance(result, StatisticResult):
+      return result.population_id
+    if self._result_state is None:
+      return None
+    for definition_id, population_id in self._result_state.statistic_definitions.items():
+      if definition_id == row.key.result_id:
+        return population_id
+    return None
+
+  def _row_status(
+    self,
+    row: ResultRowState | None,
+    result: PopulationResult | StatisticResult | None,
+  ) -> str:
+    if self._force_all_stale:
+      return "stale"
+    if row is None:
+      return "not run" if self._report is None else "missing"
+    if row.freshness != "current":
+      return row.freshness
+    if isinstance(result, StatisticResult) and result.status != "ok":
+      return result.status
+    if isinstance(result, PopulationResult) and result.event_count == 0:
+      return "zero events"
+    return "current"
 
   @staticmethod
   def _format_frequency(value: float | None) -> str:
@@ -321,10 +373,18 @@ class ResultsWorkspace(QWidget):
     kind: str,
     stable_id: str,
     sample_id: str,
+    row: ResultRowState | None = None,
   ) -> None:
     item.setData(0, Qt.UserRole, stable_id)
     item.setData(0, Qt.UserRole + 1, kind)
     item.setData(0, Qt.UserRole + 2, sample_id)
+    if row is not None:
+      item.setData(0, Qt.UserRole + 3, row.revision)
+      item.setData(0, Qt.UserRole + 4, row.source)
+      item.setToolTip(
+        0,
+        f"source={row.source}; revision={row.revision}; freshness={row.freshness}",
+      )
 
   def _on_selection_changed(
     self, item: QTreeWidgetItem | None, _previous: QTreeWidgetItem | None

@@ -6,7 +6,7 @@ does not evaluate gates, memberships, frequencies, or statistics.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -103,6 +103,11 @@ class RuntimeResultState:
   @property
   def batch_stale(self) -> bool:
     return self._batch_stale
+
+  @property
+  def statistic_definitions(self) -> Mapping[str, str]:
+    """Return statistic-to-population identities for missing overlay rows."""
+    return dict(self._statistic_population_ids)
 
   def set_authoritative_report(
     self,

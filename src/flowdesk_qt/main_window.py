@@ -40,17 +40,17 @@ from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.models import CompensationMatrixSpec, TransformSpec
 from flowdesk_core.overrides import (
-  GateOverrideError,
-  gate_version_hash,
-  inspect_gate_override_statuses,
-  override_spec_from_mapping,
-  resolve_gate_overrides,
+    GateOverrideError,
+    gate_version_hash,
+    inspect_gate_override_statuses,
+    override_spec_from_mapping,
+    resolve_gate_overrides,
 )
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.preview import (
-  PreviewReport,
-  PreviewRequest,
-  PreviewRevisionState,
+    PreviewReport,
+    PreviewRequest,
+    PreviewRevisionState,
 )
 from flowdesk_core.project_commands import CreateGateOverrideCommand, UndoStack
 from flowdesk_core.sample import SampleData
@@ -64,6 +64,7 @@ from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.preview_scheduler import PreviewScheduler
+from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
 from flowdesk_qt.workspace_tree import WorkspaceTree
@@ -261,6 +262,7 @@ class MainWindow(QMainWindow):
         self._pending_gate_geometry_updates: dict[str, Any] = {}
         self._preview_revision = PreviewRevisionState()
         self._preview_report: PreviewReport | None = None
+        self._result_state = RuntimeResultState()
         self._preview_scheduler = PreviewScheduler(self)
         self._preview_scheduler.preview_ready.connect(self._on_preview_ready)
         self._preview_scheduler.preview_failed.connect(self._on_preview_failed)
@@ -1554,7 +1556,20 @@ class MainWindow(QMainWindow):
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
             self._workspace_tree.set_report(report)
-            self._results_workspace.set_report(report)
+            self._result_state.set_authoritative_report(
+                report,
+                self._preview_revision.analysis_revision,
+                sample_ids=tuple(
+                    sample.id for sample in self._sample_browser.samples()
+                ),
+                population_ids=tuple(self._population_parent_map()),
+                statistic_definitions=tuple(
+                    (str(value.get("id")), str(value.get("population_id", "all_events")))
+                    for value in self._statistics
+                    if value.get("id")
+                ),
+            )
+            self._results_workspace.set_result_state(self._result_state)
             self._refresh_override_statuses()
             self._diagnostics_panel.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
@@ -2573,7 +2588,10 @@ class MainWindow(QMainWindow):
             report.revision, population_ids
         ):
             return
+        if not self._result_state.accept_preview(report):
+            return
         self._preview_report = report
+        self._results_workspace.set_result_state(self._result_state)
         self._current_sample_preview.set_report(
             report,
             batch_stale=True,
@@ -2597,14 +2615,19 @@ class MainWindow(QMainWindow):
         reason: str,
         affected_gate_ids: set[str] | frozenset[str] | None = None,
     ) -> None:
-        self._preview_revision.invalidate(
-            self._population_ids_for_gates(affected_gate_ids)
-        )
+        affected_population_ids = self._population_ids_for_gates(affected_gate_ids)
+        revision = self._preview_revision.invalidate(affected_population_ids)
+        if self._current_sample_id is not None:
+            self._result_state.invalidate(
+                revision=revision,
+                active_sample_id=self._current_sample_id,
+                affected_population_ids=tuple(affected_population_ids),
+            )
         self._preview_report = None
         self._results_stale = True
         self._population_tree.clear()
         self._population_tree.mark_results_stale()
-        self._results_workspace.mark_results_stale()
+        self._results_workspace.set_result_state(self._result_state)
         self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
         self._display_population_id = "all_events"
