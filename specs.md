@@ -239,14 +239,24 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 - gate rename、duplicate、subtree delete、copy/paste、multi-selectをUndo可能にする。
 - auto/magnetic/tethered/clone gateは、algorithmとsample-specific resultを分離したmodelを設計してから実装する。
 
-### S07. Gate hierarchy UX [P1]
+### S07. Gating definitionとResults workspace UX [P1]
 
-- sample/Group/Population/statistics/platform resultを一つのtreeで表示する。
-- selectionとplotは双方向同期する。
+- Gate definitionの編集と、sampleへ適用したResultsの閲覧を別workspaceとして表示する。
+- `active_sample_id`、`selected_gate_id`、`display_population_id`を独立した状態として扱う。
+- Gate hierarchyのselectionは編集対象とoutline highlightを変更するが、plotの表示Populationを暗黙変更しない。
+- `Show Gate`はgateの親Population、対応axes/scale、gate outlineを表示する。
+- Results workspaceをPopulation count、% parent、% total、Statistic resultの唯一の表示面とする。
+- gate変更時も現在のsample、表示Population、axes、scale、zoomを維持する。
+- gate変更直後は、変更gateおよびdescendantの旧値を残したまま`recalculating`と表示する。
+- active sampleをGUI非依存core pipelineでbackground再計算し、完了した同一revisionの結果をResultsとplotへatomicに反映する。
+- active sampleの更新済み行は`current`、他sampleの影響を受ける行は`stale`とする。
+- stale/recalculatingなplot membershipを表示する場合は明確なbannerを表示し、current resultとして誤認させない。
+- Result rowはrevisionとsource provenanceを内部で保持する。表示上の`current`はそのsample rowが現在定義と一致することを表し、multi-sample batchがcurrentであることを意味しない。
+- `Run Pipeline`は全sample、Group、QC、diagnostics、exportのauthoritative実行境界として維持する。
 - breadcrumbで祖先へ移動し、前後sampleを同じPopulation pathとviewで巡回する。
 - subtreeをdrag/dropまたはCopy Analysis操作で別Population、sample、Groupへ複製する。
 - invalid parent、cycle、missing source、duplicate sibling nameを操作確定前に表示する。
-- gate rowにcount、% parent、% total、source axes/scale、shared/override/stale statusを表示する。
+- gate definition側にはsource axes/scale、shared/override statusを表示し、count、% parent、% total、Statistic resultはResults workspaceで表示する。
 
 ### S08. Group strategy、template gate、sample override [P1]
 
@@ -288,7 +298,9 @@ projectを保存し、autosave/recoveryを利用する。CLIで同じprojectを�
 
 - Population treeまたはGraphからAdd Statistic dialogを開く。
 - metric、parameter、percentile、formatを選び、結果をlive nodeとして表示する。
-- gate/transform/matrix変更時に依存statisticsをstale化し、pipeline後に更新する。
+- gate/transform/matrix変更時に依存statisticsをstale化する。
+- active sampleの依存statisticsはbackground current-sample実行後にResults workspaceへatomicに反映する。
+- 他sampleのstatisticsは`Run Pipeline`までstaleとし、authoritative export/QCにはcurrentなbatch resultだけを使用する。
 
 #### 受け入れ条件
 

@@ -57,6 +57,7 @@ release order below.
 | B3 | `workspace-tree-and-undo.md` | B2 |
 | B3.1 | `gating-and-results-workspaces.md` | B3 |
 | B3.2 | `interactive-current-sample-preview.md` | B3.1 |
+| B3.3 | `results-integrated-current-sample-recalculation.md` | B3.2 |
 | B4 | `group-gating-and-overrides.md` | B1-B3 |
 | B6 | `graph-window-v2.md` | A3, A6 |
 | B7 | `overlay-and-backgating.md` | B3, B6 |

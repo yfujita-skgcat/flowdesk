@@ -1,5 +1,12 @@
 # Interactive Current-Sample Preview
 
+> **Presentation superseded by Phase B3.3**
+>
+> The core preview contract, revision checking, debounce, latest-wins scheduling, and
+> worker lifecycle in this guide remain valid. The separate Current Sample Preview panel
+> and the default All Events fallback are transitional B3.2 behavior and are replaced by
+> `results-integrated-current-sample-recalculation.md`.
+
 Spec: `S07`, `S14`
 ToDo: `Phase B3.2`
 
@@ -163,23 +170,14 @@ items.
 
 ## Navigation while preview is pending
 
-If an ancestor gate changes and the user immediately selects a descendant, do not display
-the descendant's old membership as a normal result.
+The B3.2 fallback below is retained only as implementation history. Under B3.3, preserve
+the selected descendant, its old membership, and its old values when they exist. Mark the
+affected rows `recalculating` and show the explicit plot banner
+`Recalculating — displayed events are from the previous revision`.
 
-Preferred fallback:
-
-```text
-Showing: nearest ancestor with a result valid for the current revision
-Target: requested descendant population
-Status: recalculating
-```
-
-If no current-revision ancestor exists, show All Events or an empty plot with a clear
-`Recalculating population...` message. Gate outlines remain visible and editable.
-
-Retaining an old result for context is allowed only with an unmistakable `Stale preview`
-banner and disabled scientific interpretation. The default should be current ancestor or
-All Events, not silent stale display.
+Fallback to a parent population or All Events only when the displayed population was
+deleted, is no longer resolvable, has no prior membership for that sample, or the sample
+became unavailable. Gate outlines remain visible and editable.
 
 Selecting a new descendant while a job is pending updates the required population. The
 scheduler prioritizes the ancestor path to that target and its requested statistics. Other
@@ -188,13 +186,16 @@ affected branches and other samples remain deferred to Run Pipeline.
 ## User-interface presentation
 
 Do not present preview values as authoritative `ResultsWorkspace` rows without provenance.
-Use a compact `Current Sample Preview` area near the plot or Gating workspace with:
+Use the ResultsWorkspace as the sole visible result surface. The former compact
+`Current Sample Preview` area is transitional B3.2 presentation and is replaced by the
+ResultsWorkspace overlay defined in `results-integrated-current-sample-recalculation.md`.
+
+The ResultsWorkspace must show:
 
 - sample and population identity
 - Events, `% Parent`, `% Total`, and requested statistics
-- `Preview — current sample only`
-- preview revision/status
-- `Batch results stale` when Run Pipeline has not accepted the current definitions
+- preview source, revision, and row freshness status
+- a global `Batch results stale` indicator when Run Pipeline has not accepted the current definitions
 
 Recommended combined status examples:
 
@@ -203,8 +204,10 @@ Current-sample preview: current (revision 43)
 Batch results: stale (revision 42)
 ```
 
-Authoritative Results, export, QC, and diagnostics continue to use only an accepted batch
-`ExecutionReport`. Preview values may never silently replace them.
+ResultsWorkspace may overlay an accepted current-sample `PreviewReport` on the batch
+baseline, but authoritative export, QC, and diagnostics continue to use only an accepted
+batch `ExecutionReport`. Preview values may never silently replace that authoritative
+baseline.
 
 ## Run Pipeline interaction
 
@@ -253,11 +256,12 @@ Tests:
 
 Implement one increment at a time.
 
-Current status: increments 1–6 are implemented. `PreviewRequest`, `PreviewReport`,
+Current status: increments 1–6 are implemented and retained as the B3.2 execution
+foundation. `PreviewRequest`, `PreviewReport`,
 and the synchronous GUI-independent `PipelineRunner.preview_sample()` contract execute
 one full-resolution sample through the canonical runner. `PreviewRevisionState` now
 tracks analysis, authoritative, and preview revisions, invalidates changed gate
-descendants, and forces stale navigation to `All Events`. `PreviewScheduler` now adds a
+descendants, and provides transitional stale-navigation fallback. `PreviewScheduler` now adds a
 single-worker debounce/latest-wins queue with immutable project snapshots and obsolete
 completion discard. `CurrentSamplePreview` now presents only accepted current-revision
 preview values with explicit batch-stale provenance, and stale navigation uses a current
@@ -278,7 +282,7 @@ complete the B3.2 implementation.
    - Add one-worker scheduling, coalescing, immutable snapshots, and stale-result discard.
    - Add deterministic tests using controlled fake completion order.
 4. **Atomic GUI preview presentation**
-   - Add `Current Sample Preview` status/values and nearest-valid-ancestor fallback.
+   - Add the transitional `Current Sample Preview` status/values and nearest-valid-ancestor fallback.
    - Never update Qt widgets from the worker thread.
 5. **Preview statistics and batch interaction**
    - Recompute only requested current-sample statistics through core APIs.
@@ -295,8 +299,8 @@ complete the B3.2 implementation.
 - Parent gate change invalidates every descendant before navigation can display it.
 - Results arriving out of order accept only the current revision.
 - Repeated edits coalesce to the newest pending revision.
-- Descendant selection during recalculation shows a current ancestor/All Events fallback,
-  never an unlabelled stale mask.
+- Descendant selection during recalculation preserves the old result with explicit
+  `recalculating` provenance, and falls back only when no prior membership is available.
 - Worker output is applied atomically in the GUI thread.
 - Run Pipeline commits pending edits and remains authoritative for all samples/export/QC.
 - Definition changes during preview or batch execution prevent obsolete results from being

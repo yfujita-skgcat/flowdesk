@@ -144,10 +144,15 @@ Do not encode tree indentation into the population name in flat mode.
   plot filtering; otherwise clear them consistently.
 - Re-running the canonical headless `PipelineRunner` replaces stale result data atomically.
 
-Phase B3.2 may add a revision-labelled current-sample preview through the same core stage
-order; see `interactive-current-sample-preview.md`. Preview values remain a separate
-non-authoritative lifecycle and must not silently turn stale batch Results into `current`,
-feed export/QC, or permit stale descendant membership to filter the plot.
+Phase B3.3 keeps preview values non-authoritative for export/QC, but integrates accepted
+current-sample values into ResultsWorkspace as an explicit per-row overlay. A row may be
+`current` for one sample while the multi-sample batch remains stale. Source provenance and
+revision must remain explicit; see
+`results-integrated-current-sample-recalculation.md`.
+
+Scientific values must originate only from core report objects. ResultsWorkspace uses the
+authoritative `ExecutionReport` as its baseline and may overlay an accepted
+current-sample `PreviewReport`. Qt must not calculate or infer scientific values.
 
 ## Target files
 

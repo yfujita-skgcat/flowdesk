@@ -58,6 +58,7 @@ git status --short
 | B3 | `docs/implementation/workspace-tree-and-undo.md` |
 | B3.1 | `docs/implementation/gating-and-results-workspaces.md` |
 | B3.2 | `docs/implementation/interactive-current-sample-preview.md` |
+| B3.3 | `docs/implementation/results-integrated-current-sample-recalculation.md` |
 | B4 | `docs/implementation/group-gating-and-overrides.md` |
 | B6 | `docs/implementation/graph-window-v2.md` |
 | B7 | `docs/implementation/overlay-and-backgating.md` |
@@ -365,6 +366,27 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: increment 6としてproject/window close時にtimerとlate resultを無効化し、running workerを残さない。代表event数でfull-resolution preview、queue長、clean scheduler shutdownを確認する。
 
 Preview値は保存済みanalysis definitionから再生成できるderived cacheであり、authoritative exportへ直接使用しない。全sample自動再計算や細粒度branch cache reuseは、correctnessとbenchmarkが揃うまで実装しない。
+
+### Phase B3.3: Results-integrated current-sample recalculation [S07/S11/S14]
+
+B3.2で実装したcore preview、revision guard、debounce、latest-wins scheduler、
+immutable snapshot、obsolete result discardは維持する。
+
+B3.2で導入した独立`Current Sample Preview` panelと、stale時に
+`display_population_id`を`all_events`へ強制変更するpresentation policyは、
+このPhaseで廃止する。
+
+- [x] 済み: `docs/implementation/results-integrated-current-sample-recalculation.md`を全文読み、increment 1だけを実装した。
+- [x] 済み: increment 1として、authoritative `ExecutionReport`をbaselineとして保持しつつ、accepted current-sample `PreviewReport`をsample/population/statistic単位でoverlayするQt非依存`RuntimeResultState`を追加した。rowごとにrevision、source provenance、`current`、`recalculating`、`stale`、`error`、`missing`を表現する。
+- [x] 済み: increment 1として、gate変更時はactive sampleの変更gateおよび全descendantを`recalculating`、他sampleの同じ範囲を`stale`にし、旧値を削除せずcontextとして保持する。preview completion前に値を部分更新しないatomic acceptとobsolete revision拒否をunit testした。
+- [ ] increment 2として、`ResultsWorkspace`をauthoritative reportとaccepted preview overlayの唯一の表示面にする。active sampleのaccepted previewを同一revision単位でatomicに適用し、該当populationおよびstatistic rowを`current`へ変更する。
+- [ ] increment 2として、Hierarchy/Flat tableの双方で同じmerged result-stateを表示する。preview値のsource/revisionは内部data roleとtooltip/accessibility textで確認可能にし、Qt内で科学計算を行わない。
+- [ ] increment 3として、gate変更時に`display_population_id`、active sample、axes、scale、zoomを維持する。`self._display_population_id = "all_events"`の強制resetを削除する。
+- [ ] increment 3として、background再計算中は現在表示中の旧membershipを保持し、plotへ`Recalculating — displayed events are from the previous revision`を明示する。accepted preview completion時にResults state、membership cache、plotをGUI threadで一括更新する。
+- [ ] increment 3として、現在表示しているPopulationが削除された、または同じsampleで利用可能な旧membershipが存在しない場合に限り、親Populationまたは`All Events`へfallbackする。
+- [ ] increment 4として、独立`Current Sample Preview` panelをlayout、MainWindow caller、testsから削除する。必要なbatch-stale情報はstatus barまたはResults workspaceのglobal indicatorへ移す。
+- [ ] increment 4として、`Run Pipeline`成功時にauthoritative baselineを置換し、preview overlayとrow-level stale/recalculating stateを整理する。batchがstaleな間は、active sample rowが`current`でもauthoritative export、QC、diagnosticsをcurrentとして扱わない。
+- [ ] increment 4として、gate変更中のdescendant表示維持、旧値＋recalculating、obsolete result破棄、active sampleだけcurrent、他sample stale、Run Pipeline後の全row current、export拒否、strict QThread teardownをGUI E2E testする。
 
 ### Phase B4: Group strategyとsample override review [S08]
 
