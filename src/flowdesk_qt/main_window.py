@@ -38,7 +38,7 @@ from flowdesk_core.compensation import (
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
-from flowdesk_core.models import CompensationMatrixSpec, TransformSpec
+from flowdesk_core.models import CompensationMatrixSpec, OverlaySourceSpec, TransformSpec
 from flowdesk_core.overrides import (
     GateOverrideError,
     gate_version_hash,
@@ -47,12 +47,20 @@ from flowdesk_core.overrides import (
     resolve_gate_overrides,
 )
 from flowdesk_core.pipeline_runner import PipelineRunner
+from flowdesk_core.plot_presentation import (
+    SamplePresentationContext,
+    resolve_overlay_sources,
+)
 from flowdesk_core.preview import (
     PreviewReport,
     PreviewRequest,
     PreviewRevisionState,
 )
-from flowdesk_core.project_commands import CreateGateOverrideCommand, UndoStack
+from flowdesk_core.project_commands import (
+    CreateGateOverrideCommand,
+    EditOverlaySourcesCommand,
+    UndoStack,
+)
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_metadata import ChannelMetadataWorkspace
 from flowdesk_qt.channel_selector import ChannelSelector
@@ -242,6 +250,9 @@ class MainWindow(QMainWindow):
         self._statistics: list[dict[str, Any]] = []
         self._plot_views: list[dict[str, Any]] = []
         self._overlays: list[dict[str, Any]] = []
+        self._overlay_undo_stack = UndoStack(
+            {"plot_views": []}, on_changed=self._on_overlay_state_changed
+        )
         self._backgating_specs: list[dict[str, Any]] = []
         self._auto_gate_templates: list[dict[str, Any]] = []
         self._auto_gate_fits: list[dict[str, Any]] = []
@@ -484,6 +495,14 @@ class MainWindow(QMainWindow):
             self._on_create_gate_override
         )
         edit_menu.addAction(self.action_create_gate_override)
+        self.action_undo_overlay_sources = QAction("Undo Overlay Source Change", self)
+        self.action_undo_overlay_sources.setObjectName("actionUndoOverlaySourceChange")
+        self.action_undo_overlay_sources.triggered.connect(self._on_undo_overlay_sources)
+        edit_menu.addAction(self.action_undo_overlay_sources)
+        self.action_redo_overlay_sources = QAction("Redo Overlay Source Change", self)
+        self.action_redo_overlay_sources.setObjectName("actionRedoOverlaySourceChange")
+        self.action_redo_overlay_sources.triggered.connect(self._on_redo_overlay_sources)
+        edit_menu.addAction(self.action_redo_overlay_sources)
 
         # Analysis menu
         analysis_menu = menubar.addMenu("&Analysis")
@@ -533,6 +552,11 @@ class MainWindow(QMainWindow):
         self.action_annotations.setObjectName("actionAnnotations")
         self.action_annotations.triggered.connect(self._on_edit_annotations)
         analysis_menu.addAction(self.action_annotations)
+
+        self.action_overlay_sources = QAction("Overlay &Sources...", self)
+        self.action_overlay_sources.setObjectName("actionOverlaySources")
+        self.action_overlay_sources.triggered.connect(self._on_edit_overlay_sources)
+        analysis_menu.addAction(self.action_overlay_sources)
 
         analysis_menu.addSeparator()
         self.action_advanced_groups = QAction(
@@ -1025,6 +1049,8 @@ class MainWindow(QMainWindow):
     def _update_undo_actions(self) -> None:
         self.action_undo.setEnabled(self._gate_editor.can_undo())
         self.action_redo.setEnabled(self._gate_editor.can_redo())
+        self.action_undo_overlay_sources.setEnabled(self._overlay_undo_stack.can_undo)
+        self.action_redo_overlay_sources.setEnabled(self._overlay_undo_stack.can_redo)
 
     # -- channel selection ---------------------------------------------------
 
@@ -1781,6 +1807,10 @@ class MainWindow(QMainWindow):
         self._statistics = deepcopy(manifest.get("statistics", []))
         self._plot_views = deepcopy(manifest.get("plot_views", []))
         self._overlays = deepcopy(manifest.get("overlays", []))
+        self._overlay_undo_stack = UndoStack(
+            {"plot_views": deepcopy(self._plot_views)},
+            on_changed=self._on_overlay_state_changed,
+        )
         self._backgating_specs = deepcopy(manifest.get("backgating_specs", []))
         self._auto_gate_templates = deepcopy(manifest.get("auto_gate_templates", []))
         self._auto_gate_fits = deepcopy(manifest.get("auto_gate_fits", []))
@@ -1880,6 +1910,127 @@ class MainWindow(QMainWindow):
             return
         self._annotations = dialog.annotations()
         self._mark_results_stale("Annotations changed")
+
+    def _overlay_view_id(self) -> str:
+        """Return the stable persisted view receiving source-list edits."""
+        if self._plot_views and self._plot_views[0].get("id"):
+            return str(self._plot_views[0]["id"])
+        return "main-view"
+
+    def _overlay_samples_for_editor(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": sample.id,
+                "name": sample.name,
+                "channels": [asdict(channel) for channel in sample.info.channels],
+            }
+            for sample in self._sample_browser.samples()
+        ]
+
+    def _overlay_population_ids_for_editor(self) -> tuple[str, ...]:
+        report = self._last_result_report or self._population_tree.last_report()
+        population_ids = {"all_events"}
+        if report is not None:
+            population_ids.update(result.population_id for result in report.population_results)
+        population_ids.update(gate.id for gate in self._gate_editor.gates())
+        return tuple(sorted(population_ids))
+
+    def _overlay_status_resolver(
+        self,
+        sources: list[dict[str, Any]],
+    ) -> dict[str, tuple[str, tuple[str, ...]]]:
+        """Adapt persisted JSON definitions to the core compatibility resolver."""
+        contexts: dict[str, SamplePresentationContext] = {}
+        report = self._last_result_report or self._population_tree.last_report()
+        populations_by_sample: dict[str, set[str]] = {}
+        if report is not None:
+            for result in report.population_results:
+                populations_by_sample.setdefault(result.sample_id, set()).add(result.population_id)
+        transform_specs: list[TransformSpec] = []
+        for value in self._transforms:
+            try:
+                transform_specs.append(TransformSpec(**value))
+            except (TypeError, ValueError):
+                continue
+        for sample in self._sample_browser.samples():
+            population_ids = populations_by_sample.get(sample.id, set()) | {"all_events"}
+            population_ids.update(gate.id for gate in self._gate_editor.gates())
+            contexts[sample.id] = SamplePresentationContext(
+                sample_id=sample.id,
+                channels=tuple(sample.info.channels),
+                population_ids=tuple(sorted(population_ids)),
+                transform_ids=tuple(transform.id for transform in transform_specs),
+                transforms=tuple(transform_specs),
+                analysis_revision=str(self.analysis_revision),
+            )
+        typed_sources: list[OverlaySourceSpec] = []
+        source_by_id: dict[str, dict[str, Any]] = {}
+        for value in sources:
+            source_by_id[str(value.get("source_id", ""))] = value
+            source = dict(value)
+            source.pop("style", None)
+            source.pop("display_name", None)
+            source.setdefault("display_name", str(value.get("source_id", "source")))
+            source.setdefault("sample_id", None)
+            source.setdefault("population_id", None)
+            try:
+                typed_sources.append(OverlaySourceSpec(**source))
+            except (TypeError, ValueError):
+                continue
+        resolutions = resolve_overlay_sources(tuple(typed_sources), contexts)
+        result: dict[str, tuple[str, tuple[str, ...]]] = {
+            source_id: ("error", ("malformed overlay source definition",))
+            for source_id in source_by_id
+        }
+        for resolution in resolutions:
+            result[resolution.source_id] = (
+                resolution.status,
+                tuple(diagnostic.message for diagnostic in resolution.diagnostics),
+            )
+        return result
+
+    def _on_edit_overlay_sources(self) -> None:
+        """Edit display sources; this operation never reruns the scientific pipeline."""
+        from flowdesk_qt.overlay_source_editor import OverlaySourceEditorDialog
+
+        view_id = self._overlay_view_id()
+        view = next((item for item in self._plot_views if item.get("id") == view_id), None)
+        sources = [] if view is None else list(view.get("overlay_sources", []))
+        dialog = OverlaySourceEditorDialog(
+            self._overlay_samples_for_editor(),
+            self._overlay_population_ids_for_editor(),
+            self._transforms,
+            sources,
+            status_resolver=self._overlay_status_resolver,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._overlay_undo_stack.execute(
+                EditOverlaySourcesCommand(view_id, dialog.sources())
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Overlay Sources", str(exc))
+            return
+        self._update_status("Overlay display definition updated")
+        self._replot()
+
+    def _on_overlay_state_changed(self, state: dict[str, Any], reason: str) -> None:
+        self._plot_views = deepcopy(state.get("plot_views", []))
+        self._project_dirty = True
+        self._update_undo_actions()
+        self._update_status(reason)
+
+    def _on_undo_overlay_sources(self) -> None:
+        if self._overlay_undo_stack.can_undo:
+            self._overlay_undo_stack.undo()
+            self._replot()
+
+    def _on_redo_overlay_sources(self) -> None:
+        if self._overlay_undo_stack.can_redo:
+            self._overlay_undo_stack.redo()
+            self._replot()
 
     def _on_edit_transforms(self) -> None:
         """Edit versioned transform definitions without changing used IDs in place."""

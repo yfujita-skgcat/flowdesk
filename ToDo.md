@@ -488,11 +488,11 @@ title/axis/legend編集が実装済みであることを意味しない。
 
 #### Increment 2: Overlay source selection GUI
 
-- [ ] overlay sourceの追加、削除、並べ替え、表示/非表示を行うGUIを追加し、sample、Population path、X/Y parameter/transformをstable IDで選択する。
-- [ ] compatible/incompatible/ambiguous/missingをtext/iconと詳細diagnosticで表示し、missing sourceをzero eventsとして表示しない。
-- [ ] sourceごとのcolor、alpha、legend labelの基本編集を追加し、manual overrideの有無を表示する。
-- [ ] source selection変更はdisplay definitionだけを更新し、gate、transform binding、membership、Statistic definitionを変更しない。
-- [ ] add/remove/reorder/visibility/style editをproject mutation Undo/Redo対象とし、active sample navigationやpipeline result revisionはUndo payloadへ含めない。
+- [x] overlay sourceの追加、削除、並べ替え、表示/非表示を行うGUIを追加し、sample、Population path、X/Y parameter/transformをstable IDで選択する。
+- [x] compatible/incompatible/ambiguous/missingをtext/iconと詳細diagnosticで表示し、missing sourceをzero eventsとして表示しない。
+- [x] sourceごとのcolor、alpha、legend labelの基本編集を追加し、manual overrideの有無を表示する。
+- [x] source selection変更はdisplay definitionだけを更新し、gate、transform binding、membership、Statistic definitionを変更しない。
+- [x] add/remove/reorder/visibility/style editをproject mutation Undo/Redo対象とし、active sample navigationやpipeline result revisionはUndo payloadへ含めない。
 
 #### Increment 3: Plot style editor
 

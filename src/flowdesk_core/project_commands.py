@@ -91,6 +91,71 @@ class ProjectCommand(ABC):
     """Return a new state with this command reversed."""
 
 
+class EditOverlaySourcesCommand(ProjectCommand):
+  """Replace one plot's display sources without capturing analysis results."""
+
+  type = "plot.overlay_sources.edit"
+  invalidation_reason = "Overlay display definition changed"
+
+  def __init__(self, view_id: str, sources: list[dict[str, Any]]) -> None:
+    if not view_id:
+      raise ProjectCommandError("overlay view ID must be non-empty")
+    self.view_id = view_id
+    self.sources = deepcopy(sources)
+    self._before: list[dict[str, Any]] | None = None
+    self._created_view = False
+    self._validate_sources(self.sources)
+
+  @staticmethod
+  def _validate_sources(sources: list[dict[str, Any]]) -> None:
+    if not isinstance(sources, list):
+      raise ProjectCommandError("overlay sources must be a list")
+    source_ids = [source.get("source_id") for source in sources]
+    if any(not isinstance(source_id, str) or not source_id for source_id in source_ids):
+      raise ProjectCommandError("overlay source IDs must be non-empty strings")
+    if len(source_ids) != len(set(source_ids)):
+      raise ProjectCommandError("overlay source IDs must be unique")
+    orders = [source.get("order", index) for index, source in enumerate(sources)]
+    if any(isinstance(order, bool) or not isinstance(order, int) or order < 0 for order in orders):
+      raise ProjectCommandError("overlay source order must be non-negative integers")
+    if len(orders) != len(set(orders)):
+      raise ProjectCommandError("overlay source order values must be unique")
+
+  def _update(self, state: ProjectState, sources: list[dict[str, Any]]) -> ProjectState:
+    candidate = deepcopy(state)
+    views = candidate.setdefault("plot_views", [])
+    if not isinstance(views, list):
+      raise ProjectCommandError("plot_views must be a list")
+    view = next((item for item in views if item.get("id") == self.view_id), None)
+    if view is None:
+      view = {"id": self.view_id, "overlay_sources": []}
+      views.append(view)
+    view["overlay_sources"] = deepcopy(sources)
+    return candidate
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    self._validate_sources(self.sources)
+    views = state.get("plot_views", [])
+    existing = next((item for item in views if item.get("id") == self.view_id), None)
+    self._created_view = existing is None
+    self._before = None if existing is None else deepcopy(existing.get("overlay_sources", []))
+    return self._update(state, self.sources)
+
+  def undo(self, state: ProjectState) -> ProjectState:
+    candidate = deepcopy(state)
+    views = candidate.get("plot_views", [])
+    if self._created_view:
+      candidate["plot_views"] = [item for item in views if item.get("id") != self.view_id]
+      return candidate
+    if self._before is None:
+      raise ProjectCommandError("cannot undo overlay source edit before apply")
+    view = next((item for item in views if item.get("id") == self.view_id), None)
+    if view is None:
+      raise ProjectCommandError(f"plot view not found: {self.view_id!r}")
+    view["overlay_sources"] = deepcopy(self._before)
+    return candidate
+
+
 class _GateListCommand(ProjectCommand):
   strategy_id: str
 
