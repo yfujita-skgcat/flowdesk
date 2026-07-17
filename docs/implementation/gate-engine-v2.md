@@ -102,6 +102,15 @@ successful fitted gate to the selected strategy, and exposes serialized
 fitted gate through the normal population/result and diagnostics views; it does not
 implement a second fitting path.
 
+### B5-Tethered: `translated_rectangle.v1`
+
+This Flowdesk-defined algorithm copies a rectangle anchor's data-coordinate geometry
+and applies explicit X/Y offsets. The template stores only the anchor relationship
+and offsets; the sample-specific result stores the anchor hash, algorithm version,
+diagnostics, and fitted geometry. Missing or non-rectangle anchors fail explicitly,
+and no display geometry is used. Runner, manifest, and Qt all consume this one core
+fit result.
+
 ### B5-Magnetic: `largest_gap_range.v1`
 
 This is a Flowdesk-defined magnetic-bead heuristic. It sorts all finite values of

@@ -18,6 +18,7 @@ GateOverrideGeometryMode = Literal["delta", "full"]
 GatePurpose = Literal["technical_cleanup", "comparison_critical"]
 AutoGateAlgorithm = Literal["quantile_rectangle"]
 MagneticGateAlgorithm = Literal["largest_gap_range"]
+TetheredGateAlgorithm = Literal["translated_rectangle"]
 FitStatus = Literal["success", "failed"]
 ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
@@ -563,6 +564,49 @@ class MagneticGateFitResult:
       raise ValueError("successful magnetic fit requires a fitted gate")
     if self.status == "failed" and not self.failure_reason:
       raise ValueError("failed magnetic fit requires failure_reason")
+
+
+@dataclass(frozen=True)
+class TetheredGateTemplateSpec:
+  """Reusable geometry relation to a named anchor gate."""
+
+  id: str
+  name: str
+  algorithm: TetheredGateAlgorithm
+  anchor_gate_id: str
+  x_offset: float = 0.0
+  y_offset: float = 0.0
+  parent_population_id: str | None = None
+  algorithm_version: str = "translated_rectangle.v1"
+  manual_override_policy: ManualOverridePolicy = "preserve_until_reset"
+  notes: str = ""
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.name or not self.anchor_gate_id:
+      raise ValueError("tethered gate IDs and anchor are required")
+    if self.algorithm != "translated_rectangle":
+      raise ValueError(f"unsupported tethered gate algorithm: {self.algorithm!r}")
+
+
+@dataclass(frozen=True)
+class TetheredGateFitResult:
+  """Sample-specific translated geometry and anchor provenance."""
+
+  template_id: str
+  sample_id: str
+  input_hash: str
+  algorithm_version: str
+  status: FitStatus
+  gate: GateSpec | None = None
+  diagnostics: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+  failure_reason: str | None = None
+  manual_override: bool = False
+
+  def __post_init__(self) -> None:
+    if self.status == "success" and self.gate is None:
+      raise ValueError("successful tethered fit requires a fitted gate")
+    if self.status == "failed" and not self.failure_reason:
+      raise ValueError("failed tethered fit requires failure_reason")
 
 
 @dataclass(frozen=True)

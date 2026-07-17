@@ -59,6 +59,7 @@ class ExecutionReport:
   diagnostics: tuple[ExecutionDiagnostic, ...] = field(default_factory=tuple)
   auto_gate_fits: tuple[dict[str, Any], ...] = field(default_factory=tuple)
   magnetic_gate_fits: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+  tethered_gate_fits: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
   @property
   def summary(self) -> str:

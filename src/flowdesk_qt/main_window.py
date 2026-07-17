@@ -217,6 +217,8 @@ class MainWindow(QMainWindow):
         self._auto_gate_fits: list[dict[str, Any]] = []
         self._magnetic_gate_templates: list[dict[str, Any]] = []
         self._magnetic_gate_fits: list[dict[str, Any]] = []
+        self._tethered_gate_templates: list[dict[str, Any]] = []
+        self._tethered_gate_fits: list[dict[str, Any]] = []
         self._default_compensation_matrix_id: str | None = None
         self._migration_diagnostics: list[dict[str, Any]] = []
         self._advanced_groups_enabled = False
@@ -1289,6 +1291,8 @@ class MainWindow(QMainWindow):
             "auto_gate_fits": deepcopy(self._auto_gate_fits),
             "magnetic_gate_templates": deepcopy(self._magnetic_gate_templates),
             "magnetic_gate_fits": deepcopy(self._magnetic_gate_fits),
+            "tethered_gate_templates": deepcopy(self._tethered_gate_templates),
+            "tethered_gate_fits": deepcopy(self._tethered_gate_fits),
             "default_compensation_matrix_id": self._default_compensation_matrix_id,
             "migration_diagnostics": deepcopy(self._migration_diagnostics),
             "sample_path_resolution_policy": "relative_to_project_or_absolute",
@@ -1322,6 +1326,7 @@ class MainWindow(QMainWindow):
         if report is not None:
             self._auto_gate_fits = deepcopy(report.auto_gate_fits)
             self._magnetic_gate_fits = deepcopy(report.magnetic_gate_fits)
+            self._tethered_gate_fits = deepcopy(report.tethered_gate_fits)
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
             self._workspace_tree.set_report(report)
@@ -1472,6 +1477,8 @@ class MainWindow(QMainWindow):
         self._auto_gate_fits = deepcopy(manifest.get("auto_gate_fits", []))
         self._magnetic_gate_templates = deepcopy(manifest.get("magnetic_gate_templates", []))
         self._magnetic_gate_fits = deepcopy(manifest.get("magnetic_gate_fits", []))
+        self._tethered_gate_templates = deepcopy(manifest.get("tethered_gate_templates", []))
+        self._tethered_gate_fits = deepcopy(manifest.get("tethered_gate_fits", []))
         self._sample_groups = deepcopy(manifest.get("sample_groups", []))
         self._group_strategy_bindings = deepcopy(
             manifest.get("group_strategy_bindings", [])
