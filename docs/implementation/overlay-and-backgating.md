@@ -23,6 +23,12 @@ Read `population-filtering-and-histograms.md`, `gate-hierarchy-ui.md`, and
 (`count`, `mode`, `unit_area`), and styles. `BackgatingSpec` stores target population,
 ancestor views, and styles. Neither stores copied event values or masks.
 
+`prepare_overlay_1d` reads only full-length `ExecutionReport.population_membership`
+and applies count, max-normalized mode, or unit-area normalization after finite-value
+filtering. `prepare_backgating` reuses target and ancestor masks and verifies subset
+relationships; it never re-evaluates gate geometry. Empty populations remain explicit
+diagnostic layers.
+
 ## Increments
 
 1. Add models/schema and reference validation.
@@ -53,4 +59,3 @@ ancestor views, and styles. Neither stores copied event values or masks.
 pytest -q tests/test_gates.py tests/gui/test_population_filtering.py tests/test_qt_plot_widget.py
 ./tools/run-gui-tests.sh -q
 ```
-

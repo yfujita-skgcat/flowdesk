@@ -21,6 +21,7 @@ MagneticGateAlgorithm = Literal["largest_gap_range"]
 TetheredGateAlgorithm = Literal["translated_rectangle"]
 CloneConflictPolicy = Literal["leader_wins", "reject_conflict"]
 PlotType = Literal["dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"]
+OverlayNormalization = Literal["count", "mode", "unit_area"]
 FitStatus = Literal["success", "failed"]
 ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
@@ -671,6 +672,43 @@ class PlotViewSpec:
       and not self.y_parameter
     ):
       raise ValueError(f"plot type {self.plot_type!r} requires y_parameter")
+
+
+@dataclass(frozen=True)
+class OverlaySpec:
+  """Persisted population comparison definition without copied event data."""
+
+  id: str
+  population_ids: tuple[str, ...]
+  parameter: str
+  transform_id: str | None = None
+  normalization: OverlayNormalization = "count"
+  bins: int = 64
+  styles: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.population_ids or not self.parameter:
+      raise ValueError("overlay ID, populations, and parameter are required")
+    if self.normalization not in {"count", "mode", "unit_area"}:
+      raise ValueError(f"invalid overlay normalization: {self.normalization!r}")
+    if isinstance(self.bins, bool) or self.bins < 1:
+      raise ValueError("overlay bins must be positive")
+
+
+@dataclass(frozen=True)
+class BackgatingSpec:
+  """Persisted projection of a target membership through ancestor views."""
+
+  id: str
+  target_population_id: str
+  ancestor_population_ids: tuple[str, ...]
+  target_style: dict[str, Any] = field(default_factory=dict)
+  ancestor_style: dict[str, Any] = field(default_factory=dict)
+  background_style: dict[str, Any] = field(default_factory=dict)
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.target_population_id or not self.ancestor_population_ids:
+      raise ValueError("backgating ID, target, and ancestors are required")
 
 
 @dataclass(frozen=True)

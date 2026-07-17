@@ -391,11 +391,11 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 ### Phase B7: Overlayとbackgating [S10]
 
-- [ ] `docs/implementation/overlay-and-backgating.md`を全文読み、normalizationまたはprojection policyを追記する。
-- [ ] OverlaySpecとBackgatingSpecをcore/storageへ追加する。
-- [ ] 1D overlayのcount/mode/unit-area normalizationを実装する。
+- [x] `docs/implementation/overlay-and-backgating.md`を全文読み、normalizationまたはprojection policyを追記する。
+- [x] OverlaySpecとBackgatingSpecをcoreへ追加する。
+- [x] 1D overlayのcount/mode/unit-area normalizationを実装する。
 - [ ] 2D overlayはPopulationごとの色とalphaを保存する。
-- [ ] backgatingはrunner membershipをancestor viewへ投影するだけにし、GUIで再評価しない。
+- [x] backgatingはrunner membershipをancestor viewへ投影するだけにし、GUIで再評価しない。
 - [ ] target、parent background、ancestor gateを視覚的に区別する。
 - [ ] project save/load、headless render、GUI displayを同じdefinitionでtestする。
 
