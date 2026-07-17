@@ -61,6 +61,11 @@ migrated manifest is written; the backup is never used as an analysis input.
 4. Offer open recovery as a copy; never overwrite the original automatically.
 5. Test active worker, interrupted write, disk error, and recovery cleanup.
 
+`AutosaveSettings` is a global preference and `RecoveryManager` writes only dirty,
+non-read-only projects to a separate recovery root through the existing atomic project
+save path. Recovery candidates are compared by manifest timestamp and are opened as a
+new copy; retention cleanup never touches the original project.
+
 ## Required tests
 
 - Each old fixture migrates to the expected exact JSON structure.

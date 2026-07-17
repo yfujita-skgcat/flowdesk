@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import Qt, QThread
+from PySide6.QtCore import QSettings, Qt, QThread, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
@@ -60,6 +60,7 @@ from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
 from flowdesk_qt.workspace_tree import WorkspaceTree
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import load_project, resolve_sample_paths, save_project
+from flowdesk_storage.recovery import AutosaveSettings, RecoveryManager
 from flowdesk_storage.serialization import now_iso
 
 logger = logging.getLogger(__name__)
@@ -205,6 +206,17 @@ class MainWindow(QMainWindow):
         self._worker: _PipelineWorker | None = None
         self._results_stale = False
         self._project_dirty = False
+        self._autosave_settings = AutosaveSettings(
+            enabled=bool(QSettings().value("autosave/enabled", True, type=bool)),
+            interval_seconds=int(QSettings().value("autosave/interval_seconds", 300)),
+            retention=int(QSettings().value("autosave/retention", 5)),
+        )
+        self._recovery_manager = RecoveryManager(Path.home() / ".cache" / "flowdesk" / "recovery")
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setInterval(self._autosave_settings.interval_seconds * 1000)
+        self._autosave_timer.timeout.connect(self._autosave_tick)
+        if self._autosave_settings.enabled:
+            self._autosave_timer.start()
         self._project_id = "flowdesk_session"
         self._project_path: Path | None = None
         self._derived_parameters: list[dict[str, Any]] = []
@@ -1364,6 +1376,33 @@ class MainWindow(QMainWindow):
             self._release_pipeline_worker(worker)
         super().closeEvent(event)
 
+    def set_autosave_settings(self, settings: AutosaveSettings) -> None:
+        """Update global autosave preference and restart its timer."""
+        self._autosave_settings = settings
+        values = QSettings()
+        values.setValue("autosave/enabled", settings.enabled)
+        values.setValue("autosave/interval_seconds", settings.interval_seconds)
+        values.setValue("autosave/retention", settings.retention)
+        self._autosave_timer.stop()
+        self._autosave_timer.setInterval(settings.interval_seconds * 1000)
+        if settings.enabled:
+            self._autosave_timer.start()
+
+    def _autosave_tick(self) -> None:
+        """Autosave only dirty projects and never while analysis is executing."""
+        if not self._project_dirty or self._project_path is None:
+            return
+        if self._worker is not None and self._worker.isRunning():
+            return
+        try:
+            self._recovery_manager.autosave(
+                self._project_id, self._build_project_manifest(), dirty=True,
+                retention=self._autosave_settings.retention,
+            )
+            self._update_status("Autosaved recovery copy")
+        except Exception as exc:
+            logger.error("Autosave failed: %s", exc)
+
     # -- file handling -------------------------------------------------------
 
     def _on_open_directory(self) -> None:
@@ -1441,6 +1480,26 @@ class MainWindow(QMainWindow):
         """Load saved samples, gates, and display-only plot settings."""
         project_path = Path(path)
         manifest = load_project(project_path)
+        recovery_candidates = self._recovery_manager.newer_than(
+            project_path, str(manifest["project_id"])
+        )
+        if recovery_candidates:
+            choice = QMessageBox.question(
+                self, "Recovery Available",
+                "A newer recovery copy is available. Open it as a separate copy?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if choice == QMessageBox.StandardButton.Yes:
+                destination = QFileDialog.getExistingDirectory(
+                    self, "Select recovery copy destination", str(project_path.parent)
+                )
+                if destination:
+                    recovered_path = Path(destination)
+                    if recovered_path.suffix != ".flowdesk":
+                        recovered_path = recovered_path.with_suffix(".flowdesk")
+                    self._recovery_manager.recover_copy(recovery_candidates[0], recovered_path)
+                    project_path = recovered_path
+                    manifest = load_project(project_path)
         strategy_data = manifest.get("gating_strategies_data", {}).get(
             "default_strategy",
             {"id": "default_strategy", "name": "Default Strategy", "gates": []},

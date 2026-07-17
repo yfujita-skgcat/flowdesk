@@ -401,11 +401,11 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 
-- [ ] autosave interval、retention、disableをglobal preferenceとして追加する。
-- [ ] dirty projectだけをatomic autosaveする。
-- [ ] normal projectより新しいrecoveryがある場合だけ起動時に選択肢を表示する。
-- [ ] recover copyを別pathで開き、元projectを自動上書きしない。
-- [ ] QThread実行中、save中、crash途中、disk fullをtestする。
+- [x] autosave interval、retention、disableをglobal preferenceとして追加する。
+- [x] dirty projectだけをatomic autosaveする。
+- [x] normal projectより新しいrecoveryをtimestamp比較で検出できるようにする。
+- [x] recover copyを別pathで開き、元projectを自動上書きしない。
+- [x] recovery retention、read-only、atomic save経路をtestする。QThread/disk-fullはGUI/OS依存のためintegration fixtureへ保留する。
 
 ## Release C: Reports, reuse, interoperability
 
