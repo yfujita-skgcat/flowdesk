@@ -70,6 +70,7 @@ class PlotWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("plotWidget")
         self._scatter: ScatterPlotItem | None = None
+        self._event_colors: NDArray[np.str_] | None = None
         self._gate_items: list[Any] = []
         self._gate_item_callbacks: dict[int, Any] = {}
         self._hidden_gate_reasons: list[str] = []
@@ -312,6 +313,7 @@ class PlotWidget(QWidget):
         y_label: str = "",
         marginal_x_data: NDArray[np.float64] | None = None,
         marginal_y_data: NDArray[np.float64] | None = None,
+        event_colors: NDArray[np.str_] | list[str] | None = None,
     ) -> None:
         """Render a scatter plot.
 
@@ -337,12 +339,17 @@ class PlotWidget(QWidget):
         # Apply axis transforms (display only).
         x_plot = self._apply_axis_transform(x_data, "x")
         y_plot = self._apply_axis_transform(y_data, "y")
+        colors_plot = None if event_colors is None else np.asarray(event_colors, dtype=str)
+        if colors_plot is not None and colors_plot.shape[0] != x_plot.shape[0]:
+            raise ValueError("event_colors must have one color per event")
 
         # Apply display downsample.
         if self._downsample_factor > 1 and len(x_plot) > 10_000:
             step = max(1, len(x_plot) // 10_000)
             x_plot = x_plot[::step]
             y_plot = y_plot[::step]
+            if colors_plot is not None:
+                colors_plot = colors_plot[::step]
 
         # Remove NaN/Inf for plotting safety (does not affect analysis data).
         valid = np.isfinite(x_plot) & np.isfinite(y_plot)
@@ -353,10 +360,19 @@ class PlotWidget(QWidget):
         self._excluded_event_count = int(len(x_plot) - np.count_nonzero(valid))
         x_plot = x_plot[valid]
         y_plot = y_plot[valid]
+        if colors_plot is not None:
+            colors_plot = colors_plot[valid]
+        self._event_colors = colors_plot
 
         self._is_histogram_mode = False
         self._clear_histogram()
         self._clear_scatter()
+        brush = self._make_brush(self._style.dot_color, self._style.dot_opacity)
+        if colors_plot is not None:
+            brush = [
+                self._make_brush(str(color), self._style.dot_opacity)
+                for color in colors_plot
+            ]
         self._scatter = self._plot_item.plot(
             x_plot,
             y_plot,
@@ -364,7 +380,7 @@ class PlotWidget(QWidget):
             symbol="o",
             symbolSize=self._style.dot_size,
             pxMode=True,
-            brush=self._make_brush(self._style.dot_color, self._style.dot_opacity),
+            brush=brush,
         )
 
         self._update_labels()
@@ -499,9 +515,14 @@ class PlotWidget(QWidget):
             self._plot_item.removeItem(item)
         self._overlay_scatter_items.clear()
 
-    def add_gate_overlay(self, gate: GateSpec, gate_index: int | None = None) -> None:
+    def add_gate_overlay(
+        self,
+        gate: GateSpec,
+        gate_index: int | None = None,
+        outline_color: str | None = None,
+    ) -> None:
         """Add a gate geometry overlay in data coordinates."""
-        item = self._create_gate_item(gate, gate_index)
+        item = self._create_gate_item(gate, gate_index, outline_color)
         if item is not None:
             self._plot_item.addItem(item)
             self._gate_items.append(item)
@@ -738,8 +759,15 @@ class PlotWidget(QWidget):
 
         # Re-apply scatter brush/size if scatter exists
         if self._scatter is not None:
-            brush = self._make_brush(s.dot_color, s.dot_opacity)
-            self._scatter.setBrush(brush)
+            brush: Any = self._make_brush(s.dot_color, s.dot_opacity)
+            if self._event_colors is not None:
+                brush = [
+                    self._make_brush(str(color), s.dot_opacity)
+                    for color in self._event_colors
+                ]
+                self._scatter.setData(brush=brush)
+            else:
+                self._scatter.setBrush(brush)
             self._scatter.setSymbolSize(s.dot_size)
 
         # Re-apply gate overlay colors
@@ -847,14 +875,23 @@ class PlotWidget(QWidget):
             y=self._y_transform_spec is None and self._y_transform == "log10",
         )
 
-    def _create_gate_item(self, gate: GateSpec, gate_index: int | None = None) -> Any:
+    def _create_gate_item(
+        self,
+        gate: GateSpec,
+        gate_index: int | None = None,
+        outline_color: str | None = None,
+    ) -> Any:
         """Create a pyqtgraph geometry item for a gate."""
         from pyqtgraph import mkPen  # type: ignore[attr-defined]
 
         if not self._gate_matches_current_axes(gate):
             return None
 
-        pen = mkPen(color="y", width=2, style=Qt.DashLine)
+        pen = mkPen(
+            color=outline_color or self._style.gate_outline_color,
+            width=2,
+            style=Qt.DashLine,
+        )
 
         if gate.gate_type == "rectangle":
             x_min = gate.thresholds.get("x_min", 0)

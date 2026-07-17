@@ -19,8 +19,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QColorDialog,
+    QComboBox,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
@@ -29,8 +29,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QMenu,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTableWidget,
@@ -436,6 +436,15 @@ class GateEditor(QWidget):
             }
             for population_id in sorted(population_ids)
         }
+
+    def population_outline_color(self, population_id: str) -> str | None:
+        """Return the display-only outline color for one population."""
+        definition = self.population_display_definitions().get(population_id, {})
+        if definition.get("use_population_color_for_outline"):
+            value = definition.get("color")
+            return value if isinstance(value, str) else None
+        value = definition.get("gate_outline_color")
+        return value if isinstance(value, str) else None
 
     def set_population_display_definitions(
         self, definitions: dict[str, dict[str, object]]
@@ -1224,7 +1233,9 @@ class GateEditor(QWidget):
         value = color.name().lower()
         self._population_display_colors[population_id] = value
         self._refresh_hierarchy_tree(population_id)
-        self.population_display_color_changed.emit(population_id, self.population_display_definitions())
+        self.population_display_color_changed.emit(
+            population_id, self.population_display_definitions()
+        )
 
     def _choose_outline_color(self, population_id: str) -> None:
         color = QColorDialog.getColor(
@@ -1235,21 +1246,27 @@ class GateEditor(QWidget):
         if not color.isValid():
             return
         self._gate_outline_colors[population_id] = color.name().lower()
-        self.population_display_color_changed.emit(population_id, self.population_display_definitions())
+        self.population_display_color_changed.emit(
+            population_id, self.population_display_definitions()
+        )
 
     def _set_outline_population_color(self, population_id: str, enabled: bool) -> None:
         if enabled:
             self._use_population_color_for_outline.add(population_id)
         else:
             self._use_population_color_for_outline.discard(population_id)
-        self.population_display_color_changed.emit(population_id, self.population_display_definitions())
+        self.population_display_color_changed.emit(
+            population_id, self.population_display_definitions()
+        )
 
     def _reset_population_color(self, population_id: str) -> None:
         self._population_display_colors.pop(population_id, None)
         self._gate_outline_colors.pop(population_id, None)
         self._use_population_color_for_outline.discard(population_id)
         self._refresh_hierarchy_tree(population_id)
-        self.population_display_color_changed.emit(population_id, self.population_display_definitions())
+        self.population_display_color_changed.emit(
+            population_id, self.population_display_definitions()
+        )
 
     def _refresh_reparent_combo(self) -> None:
         selected = self.selected_gate()

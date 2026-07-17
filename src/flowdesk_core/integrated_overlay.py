@@ -109,6 +109,7 @@ def deduplicate_overlay_sources(
 def resolve_overlay_style(
   *,
   explicit_overlay_color: str | None = None,
+  comparison_source_color: str | None = None,
   comparison_role_color: str | None = None,
   automatic_overlay_color: str | None = None,
   population_display_color: str | None = None,
@@ -117,6 +118,7 @@ def resolve_overlay_style(
   """Resolve the documented overlay color precedence."""
   choices = (
     ("explicit_overlay_source", explicit_overlay_color),
+    ("comparison_source_override", comparison_source_color),
     ("comparison_role", comparison_role_color),
     ("sample_automatic_overlay", automatic_overlay_color),
     ("population_display_color", population_display_color),

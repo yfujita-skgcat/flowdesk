@@ -15,17 +15,17 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QCheckBox,
     QColorDialog,
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QMenu,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -89,6 +89,12 @@ class SampleBrowser(QWidget):
         self._manual_overlay_colors: dict[str, str] = {}
         self._overlay_roles: dict[str, str] = {}
         self._comparison_sets: list[dict[str, object]] = []
+        self._comparison_role_colors: dict[str, str] = {
+            "reference": "#377eb8",
+            "target": "#e67e22",
+            "positive_control": "#2ca02c",
+            "negative_control": "#7f7f7f",
+        }
         self._overlay_mode = "manual_only"
         self._build_ui()
 
@@ -155,6 +161,7 @@ class SampleBrowser(QWidget):
             "manual_overlay_colors": dict(self._manual_overlay_colors),
             "overlay_roles": dict(self._overlay_roles),
             "comparison_sets": [dict(value) for value in self._comparison_sets],
+            "comparison_role_colors": dict(self._comparison_role_colors),
             "overlay_mode": self._overlay_mode,
         }
 
@@ -165,6 +172,7 @@ class SampleBrowser(QWidget):
         roles: dict[str, str] | None = None,
         comparison_sets: list[dict[str, object]] | None = None,
         overlay_mode: str = "manual_only",
+        role_colors: dict[str, str] | None = None,
     ) -> None:
         """Restore manual overlay state without changing active sample selection."""
         known = {sample.id for sample in self._samples}
@@ -178,6 +186,8 @@ class SampleBrowser(QWidget):
             sample_id: role for sample_id, role in (roles or {}).items() if sample_id in known
         }
         self._comparison_sets = [dict(value) for value in (comparison_sets or [])]
+        if role_colors:
+            self._comparison_role_colors.update(role_colors)
         self._overlay_mode = overlay_mode if overlay_mode in {
             "manual_only", "manual_plus_comparison", "comparison_only"
         } else "manual_only"
@@ -478,8 +488,13 @@ class SampleBrowser(QWidget):
             swatch.setAccessibleName(f"Overlay color {sample.name}")
             swatch.setToolTip("Choose overlay source color")
             swatch.setFixedWidth(24)
-            self._set_swatch_style(swatch, self._manual_overlay_colors.get(sample.id, "#4c78a8"))
-            swatch.clicked.connect(lambda _checked=False, sample_id=sample.id: self._choose_overlay_color(sample_id))
+            self._set_swatch_style(
+                swatch, self._manual_overlay_colors.get(sample.id, "#4c78a8")
+            )
+            swatch.clicked.connect(
+                lambda _checked=False, sample_id=sample.id:
+                self._choose_overlay_color(sample_id)
+            )
             relation = QLabel(self._overlay_roles.get(sample.id, "manual"))
             relation.setObjectName(f"overlayRelation_{sample.id}")
             name = QLabel(
@@ -581,8 +596,9 @@ class SampleBrowser(QWidget):
         for role in ("Positive control", "Negative control", "Reference"):
             role_action = role_menu.addAction(role)
             role_action.setObjectName("overlayRole" + role.replace(" ", ""))
+            role_value = role.lower().replace(" ", "_")
             role_action.triggered.connect(
-                lambda _checked=False, value=role.lower().replace(" ", "_"):
+                lambda _checked=False, value=role_value:
                 self._set_overlay_role(sample_id, value)
             )
         clear_role = menu.addAction("Clear Overlay Role")

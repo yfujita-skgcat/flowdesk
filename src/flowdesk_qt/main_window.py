@@ -904,6 +904,9 @@ class MainWindow(QMainWindow):
 
         # When the gate list changes (add/delete/clear), refresh overlays and invalidate results
         self._gate_editor.on_gates_changed(self._on_gates_changed)
+        self._gate_editor.population_display_color_changed.connect(
+            self._on_population_display_color_changed
+        )
 
         # Interactive gate creation starts from the gate editor.
         self._gate_editor.on_interactive_gate_requested(self._on_interactive_gate_requested)
@@ -1003,6 +1006,13 @@ class MainWindow(QMainWindow):
                 state.get("manual_overlay_colors", {})
             )
             view["overlay_mode"] = state.get("overlay_mode", "manual_only")
+        self._project_dirty = True
+        self._replot()
+
+    def _on_population_display_color_changed(
+        self, _population_id: str, _definitions: object
+    ) -> None:
+        """Persist and redraw display-only population color edits."""
         self._project_dirty = True
         self._replot()
 
@@ -1251,7 +1261,13 @@ class MainWindow(QMainWindow):
             y_data = data[:, y_idx]
 
             # Apply population membership mask (display filter, Phase 3).
+            display_mask = self._get_population_mask()
             x_data, y_data = self._apply_population_filter(x_data, y_data)
+            event_colors = self._population_event_colors(
+                self._current_sample_id,
+                data.shape[0],
+                display_mask,
+            )
 
             # For marginal histograms, use unfiltered data (or population-filtered if preferred).
             # Use the same filtered data for marginal histograms.
@@ -1268,6 +1284,7 @@ class MainWindow(QMainWindow):
                 x_label=x_name, y_label=y_name,
                 marginal_x_data=marginal_x,
                 marginal_y_data=marginal_y,
+                event_colors=event_colors,
             )
             self._render_manual_overlays(x_id, y_id)
 
@@ -1275,7 +1292,11 @@ class MainWindow(QMainWindow):
             self._plot_widget.clear_gates()
             for idx, gate in enumerate(self._display_gates()):
                 if gate.x_parameter == x_id and gate.y_parameter == y_id:
-                    self._plot_widget.add_gate_overlay(gate, idx)
+                    self._plot_widget.add_gate_overlay(
+                        gate,
+                        idx,
+                        self._gate_editor.population_outline_color(gate.id),
+                    )
             self._gate_editor.set_overlay_status(
                 self._plot_widget.display_state()["hidden_gate_reasons"]
             )
@@ -1319,11 +1340,37 @@ class MainWindow(QMainWindow):
         selected.discard(self._current_sample_id)
         if not selected:
             return
-        report = self._preview_report or self._last_result_report or self._population_tree.last_report()
+        report = (
+            self._preview_report
+            or self._last_result_report
+            or self._population_tree.last_report()
+        )
         memberships = getattr(report, "population_membership", ()) if report is not None else ()
         layers: list[Overlay2DLayer] = []
         diagnostics: list[str] = []
+        x_transform = self._transform_for_parameter(x_parameter_id)
+        y_transform = self._transform_for_parameter(y_parameter_id)
+        source_definitions: list[dict[str, Any]] = []
+        for order, sample_id in enumerate(sorted(selected)):
+            source_definitions.append({
+                "source_id": f"manual:{sample_id}",
+                "sample_id": sample_id,
+                "population_id": self._display_population_id,
+                "display_name": sample_id,
+                "x_parameter_id": x_parameter_id,
+                "y_parameter_id": y_parameter_id,
+                "x_transform_id": None if x_transform is None else x_transform.id,
+                "y_transform_id": None if y_transform is None else y_transform.id,
+                "order": order,
+            })
+        source_statuses = self._overlay_status_resolver(source_definitions)
         for sample_id in sorted(selected):
+            source_status, source_messages = source_statuses.get(
+                f"manual:{sample_id}", ("error", ("unresolved source",))
+            )
+            if source_status != "compatible":
+                diagnostics.append(f"{sample_id}: " + "; ".join(source_messages))
+                continue
             events = self._event_data.get(sample_id)
             if events is None:
                 diagnostics.append(f"{sample_id}: unresolved sample")
@@ -1365,10 +1412,9 @@ class MainWindow(QMainWindow):
             for comparison in state.get("comparison_sets", []):
                 for member in comparison.get("members", []):
                     if member.get("sample_id") == sample_id:
-                        role_color = {
-                            "reference": "#377eb8",
-                            "target": "#e67e22",
-                        }.get(member.get("role"))
+                        role_color = state.get("comparison_role_colors", {}).get(
+                            member.get("role")
+                        )
             layers.append(
                 Overlay2DLayer(
                     self._display_population_id,
@@ -1388,6 +1434,78 @@ class MainWindow(QMainWindow):
         self._plot_widget.plot_overlay_layers(layers)
         if diagnostics:
             self._plot_widget.set_status_banner("Overlay warning: " + "; ".join(diagnostics))
+
+    def _population_event_colors(
+        self,
+        sample_id: str | None,
+        event_count: int,
+        display_mask: NDArray[np.bool_] | None,
+    ) -> NDArray[np.str_] | None:
+        """Resolve active-layer colors from existing membership masks only."""
+        definitions = self._gate_editor.population_display_definitions()
+        colored = {
+            population_id: value.get("color")
+            for population_id, value in definitions.items()
+            if isinstance(value.get("color"), str) and value.get("color")
+        }
+        if not colored:
+            return None
+        report = (
+            self._preview_report
+            or self._last_result_report
+            or self._population_tree.last_report()
+        )
+        memberships = getattr(report, "population_membership", ()) if report is not None else ()
+        colors = np.full(event_count, self._plot_widget.style().dot_color, dtype=str)
+        parents = self._population_parent_map()
+        hierarchy_order = {
+            population_id: index
+            for index, population_id in enumerate(
+                sorted(set(parents) | set(colored))
+            )
+        }
+
+        def depth(population_id: str) -> int:
+            current = population_id
+            seen: set[str] = set()
+            value = 0
+            while current in parents and current not in seen:
+                seen.add(current)
+                parent = parents.get(current)
+                if not parent or parent == "all_events":
+                    break
+                value += 1
+                current = parent
+            return value
+
+        ordered = sorted(
+            colored,
+            key=lambda population_id: (
+                depth(population_id),
+                -int(definitions[population_id].get("z_order") or 2**31 - 1),
+                -hierarchy_order.get(population_id, 0),
+                population_id,
+            ),
+        )
+        for population_id in ordered:
+            membership = next(
+                (
+                    value.mask for value in memberships
+                    if value.sample_id == sample_id
+                    and value.population_id == population_id
+                    and len(value.mask) == event_count
+                ),
+                None,
+            )
+            if membership is None:
+                continue
+            mask = membership.copy()
+            if display_mask is not None and len(display_mask) == event_count:
+                mask &= display_mask
+            colors[mask] = str(colored[population_id])
+        if display_mask is not None and len(display_mask) == event_count:
+            colors = colors[display_mask]
+        return colors
 
     def _get_population_mask(self) -> NDArray[np.bool_] | None:
         """Return the membership boolean mask for the current sample and selected population.
@@ -1621,6 +1739,15 @@ class MainWindow(QMainWindow):
             "project_version": CURRENT_PROJECT_VERSION,
             "pipeline_version": "0.1",
             "samples": samples,
+            "comparison_set_definitions": deepcopy(
+                self._sample_browser.overlay_state().get("comparison_sets", [])
+            ),
+            "comparison_role_colors": {
+                "reference": "#377eb8",
+                "target": "#e67e22",
+                "positive_control": "#2ca02c",
+                "negative_control": "#7f7f7f",
+            },
             "execution_profiles": [
                 {
                     "id": "default",
@@ -1969,14 +2096,20 @@ class MainWindow(QMainWindow):
             integrated_overlay = {
                 "manual_overlay_sample_ids": view.get("manual_overlay_sample_ids", []),
                 "manual_overlay_colors": view.get("manual_overlay_colors", {}),
+                "comparison_sets": manifest.get("comparison_set_definitions", []),
                 "overlay_mode": view.get("overlay_mode", "manual_only"),
             }
         self._sample_browser.set_overlay_state(
             integrated_overlay.get("manual_overlay_sample_ids", []),
             integrated_overlay.get("manual_overlay_colors", {}),
             integrated_overlay.get("overlay_roles", {}),
-            integrated_overlay.get("comparison_sets", []),
+            integrated_overlay.get(
+                "comparison_sets", manifest.get("comparison_set_definitions", [])
+            ),
             integrated_overlay.get("overlay_mode", "manual_only"),
+            integrated_overlay.get(
+                "comparison_role_colors", manifest.get("comparison_role_colors", {})
+            ),
         )
         self._gate_editor.set_population_display_definitions(
             display.get("population_display_colors", {})

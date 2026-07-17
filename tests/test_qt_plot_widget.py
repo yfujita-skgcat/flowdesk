@@ -213,6 +213,25 @@ def test_plot_widget_exports_png(tmp_path: Path) -> None:
     app.processEvents()
 
 
+def test_plot_events_accepts_population_display_colors_without_changing_data() -> None:
+  _app()
+  plot = PlotWidget()
+  x = np.array([1.0, 2.0, 3.0])
+  y = np.array([3.0, 2.0, 1.0])
+  colors = np.array(["#ff0000", "#00ff00", "#0000ff"])
+  try:
+    plot.plot_events(x, y, event_colors=colors)
+    assert np.array_equal(plot._cached_x, x)
+    assert np.array_equal(plot._cached_y, y)
+    assert np.array_equal(plot._event_colors, colors)
+    plot.set_style(replace(plot.style(), dot_opacity=0.5))
+    assert np.array_equal(plot._event_colors, colors)
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
 def test_default_drag_delegates_mouse_drag_to_viewbox() -> None:
   app = _app()
   widget = PlotWidget()

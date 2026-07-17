@@ -117,6 +117,14 @@ def test_style_precedence_reports_explicit_source_and_fallback_provenance() -> N
   assert fallback.color == "#040506"
   assert fallback.provenance == "comparison_role"
 
+  comparison_override = resolve_overlay_style(
+    comparison_source_color="#101112",
+    comparison_role_color="#040506",
+    default_event_color="#0d0e0f",
+  )
+  assert comparison_override.color == "#101112"
+  assert comparison_override.provenance == "comparison_source_override"
+
 
 def test_old_plot_view_state_round_trips_with_independent_overlay_defaults() -> None:
   state = IntegratedOverlayState.from_mapping({

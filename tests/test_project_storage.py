@@ -116,6 +116,26 @@ class TestValidateManifest:
     with pytest.raises(ManifestValidationError, match="unknown strategy"):
       validate_manifest(data)
 
+  def test_integrated_comparison_metadata_is_validated_separately_from_groups(self) -> None:
+    data = migrate_manifest(MINIMAL_MANIFEST)
+    data["samples"] = [
+      {"id": "s1", "name": "S1", "path": "", "channels": []},
+      {"id": "s2", "name": "S2", "path": "", "channels": []},
+    ]
+    data["comparison_set_definitions"] = [{
+      "id": "pair-1",
+      "name": "Pair",
+      "members": [
+        {"sample_id": "s1", "role": "reference"},
+        {"sample_id": "s2", "role": "target"},
+      ],
+    }]
+    data["comparison_role_colors"] = {"reference": "#123456"}
+    validate_manifest(data)
+    data["comparison_set_definitions"][0]["members"][1]["sample_id"] = "missing"
+    with pytest.raises(ManifestValidationError, match="unknown sample"):
+      validate_manifest(data)
+
 
 # -- Load manifest --
 

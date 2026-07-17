@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,7 @@ def validate_manifest(data: dict[str, Any]) -> None:
     _validate_current_groups_and_annotations(data, gate_ids)
     _validate_current_gate_overrides(data, gate_ids)
     _validate_current_plot_definitions(data)
+    _validate_current_integrated_overlay(data)
 
 
 def _validate_current_plot_definitions(data: Mapping[str, Any]) -> None:
@@ -136,6 +138,65 @@ def _validate_current_plot_definitions(data: Mapping[str, Any]) -> None:
         if order in orders:
           raise ManifestValidationError(f"overlay source {source_id!r} has duplicate order")
         orders.add(order)
+
+
+def _validate_current_integrated_overlay(data: Mapping[str, Any]) -> None:
+  """Validate display-only comparison metadata without binding scientific groups."""
+  sample_ids = {
+    sample.get("id") for sample in data.get("samples", [])
+    if isinstance(sample, dict) and isinstance(sample.get("id"), str)
+  }
+  comparisons = data.get("comparison_set_definitions", [])
+  if not isinstance(comparisons, list):
+    raise ManifestValidationError("comparison_set_definitions must be an array")
+  comparison_ids: set[str] = set()
+  valid_roles = {"reference", "target", "positive_control", "negative_control", "control"}
+  for index, comparison in enumerate(comparisons):
+    if not isinstance(comparison, dict):
+      raise ManifestValidationError(f"comparison_set_definitions[{index}] must be an object")
+    comparison_id = comparison.get("id")
+    if not isinstance(comparison_id, str) or not comparison_id:
+      raise ManifestValidationError(f"comparison_set_definitions[{index}].id must be non-empty")
+    if comparison_id in comparison_ids:
+      raise ManifestValidationError(f"duplicate comparison set ID {comparison_id!r}")
+    comparison_ids.add(comparison_id)
+    members = comparison.get("members")
+    if not isinstance(members, list) or len(members) < 2:
+      raise ManifestValidationError(f"comparison set {comparison_id!r} needs at least two members")
+    member_ids: set[str] = set()
+    for member in members:
+      if not isinstance(member, dict):
+        raise ManifestValidationError(f"comparison set {comparison_id!r} member must be an object")
+      sample_id = member.get("sample_id")
+      if not isinstance(sample_id, str) or sample_id not in sample_ids:
+        raise ManifestValidationError(
+          f"comparison set {comparison_id!r} references an unknown sample"
+        )
+      if sample_id in member_ids:
+        raise ManifestValidationError(
+          f"comparison set {comparison_id!r} has duplicate sample {sample_id!r}"
+        )
+      member_ids.add(sample_id)
+      if member.get("role", "target") not in valid_roles:
+        raise ManifestValidationError(f"comparison set {comparison_id!r} has invalid role")
+    role_colors = comparison.get("role_colors", {})
+    if not isinstance(role_colors, dict):
+      raise ManifestValidationError(
+        f"comparison set {comparison_id!r}.role_colors must be an object"
+      )
+    for role, color in role_colors.items():
+      if role not in valid_roles or not isinstance(color, str) or not re.fullmatch(
+        r"#[0-9a-fA-F]{6}", color
+      ):
+        raise ManifestValidationError(f"comparison set {comparison_id!r} has invalid role color")
+  role_colors = data.get("comparison_role_colors", {})
+  if not isinstance(role_colors, dict):
+    raise ManifestValidationError("comparison_role_colors must be an object")
+  for role, color in role_colors.items():
+    if role not in valid_roles or not isinstance(color, str) or not re.fullmatch(
+      r"#[0-9a-fA-F]{6}", color
+    ):
+      raise ManifestValidationError("invalid comparison role default color")
 
 
 def _validate_current_groups_and_annotations(
