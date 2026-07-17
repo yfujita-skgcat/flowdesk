@@ -202,7 +202,10 @@ class MainWindow(QMainWindow):
         self._event_data: dict[str, NDArray[np.float64]] = {}
         self._sample_data: dict[str, SampleData] = {}
         self._channel_names: list[str] = []
-        self._current_sample_id: str | None = None
+        # These are deliberately independent display states.  The sample being
+        # viewed, the population membership used for filtering, and the gate
+        # definition being edited must not be inferred from one another.
+        self._active_sample_id: str | None = None
         self._worker: _PipelineWorker | None = None
         self._results_stale = False
         self._project_dirty = False
@@ -242,8 +245,8 @@ class MainWindow(QMainWindow):
         self._annotations: list[dict[str, Any]] = []
         self._gate_overrides: list[dict[str, Any]] = []
         self._override_undo_stack = UndoStack({"gate_overrides": []})
-        # Display-only: selected population for plot filtering.
-        self._selected_population_id: str = "all_events"
+        self._display_population_id: str = "all_events"
+        self._selected_gate_id: str | None = None
 
         self._compensation_status_indicator = _CompensationStatusIndicator()
         self._build_menu()
@@ -255,6 +258,36 @@ class MainWindow(QMainWindow):
         self._update_undo_actions()
 
     # -- public API ----------------------------------------------------------
+
+    @property
+    def _current_sample_id(self) -> str | None:
+        """Backward-compatible name for the active sample display state."""
+        return self._active_sample_id
+
+    @_current_sample_id.setter
+    def _current_sample_id(self, value: str | None) -> None:
+        self._active_sample_id = value
+
+    @property
+    def _selected_population_id(self) -> str:
+        """Backward-compatible name for the display population state."""
+        return self._display_population_id
+
+    @_selected_population_id.setter
+    def _selected_population_id(self, value: str) -> None:
+        self._display_population_id = value
+
+    @property
+    def active_sample_id(self) -> str | None:
+        return self._active_sample_id
+
+    @property
+    def display_population_id(self) -> str:
+        return self._display_population_id
+
+    @property
+    def selected_gate_id(self) -> str | None:
+        return self._selected_gate_id
 
     def load_samples_from_directory(self, directory: str | Path) -> int:
         """Load FCS samples from a directory."""
@@ -277,6 +310,9 @@ class MainWindow(QMainWindow):
                 "path": None if self._project_path is None else str(self._project_path),
             },
             "current_sample_id": self._current_sample_id,
+            "active_sample_id": self._active_sample_id,
+            "display_population_id": self._display_population_id,
+            "selected_gate_id": self._selected_gate_id,
             "samples": [
                 {
                     "id": sample.id,
@@ -320,7 +356,7 @@ class MainWindow(QMainWindow):
                 },
             },
             "population_filter": {
-                "selected_population_id": self._selected_population_id,
+                "selected_population_id": self._display_population_id,
                 "memberships": []
                 if report is None
                 else [
@@ -912,17 +948,14 @@ class MainWindow(QMainWindow):
         """
         if sample_id and sample_id != self._current_sample_id:
             self._sample_browser.select_sample(sample_id)
-        self._selected_population_id = population_id
+        self._display_population_id = population_id
         self._update_workspace_navigation()
-        if population_id != "all_events":
-            self._gate_editor.select_gate(population_id)
-            self._workspace_tree.select("population", population_id)
         self._replot()
 
     def _update_workspace_navigation(self) -> None:
         sample = self._sample_browser.selected_sample()
         sample_name = sample.name if sample is not None else "-"
-        population_id = self._selected_population_id or "all_events"
+        population_id = self._display_population_id or "all_events"
         names = self._population_name_map()
         chain: list[str] = []
         current = population_id
@@ -942,7 +975,7 @@ class MainWindow(QMainWindow):
         self._next_sample_button.setEnabled(0 <= index < len(samples) - 1)
 
     def _navigate_to_parent(self) -> None:
-        population_id = self._selected_population_id or "all_events"
+        population_id = self._display_population_id or "all_events"
         parent_id = self._population_parent_map().get(population_id) or "all_events"
         self._on_population_selected(parent_id, self._current_sample_id or "")
 
@@ -1094,7 +1127,7 @@ class MainWindow(QMainWindow):
             return None
 
         sample_id = self._current_sample_id
-        population_id = self._selected_population_id
+        population_id = self._display_population_id
 
         # all_events is always valid: no filter needed
         if population_id == "all_events":
@@ -1131,9 +1164,7 @@ class MainWindow(QMainWindow):
         self._plot_widget.highlight_gate_index(gate_index)
         gates = self._gate_editor.gates()
         if 0 <= gate_index < len(gates):
-            self._selected_population_id = gates[gate_index].id
-            self._workspace_tree.select("population", gates[gate_index].id)
-            self._update_workspace_navigation()
+            self._selected_gate_id = gates[gate_index].id
 
     def _on_show_gate(self, gate) -> None:
         """Navigate display controls to a gate without changing analysis state."""
@@ -1796,7 +1827,7 @@ class MainWindow(QMainWindow):
     def _on_add_statistic_from_graph(self) -> None:
         """Open a new statistic definition using the graph X parameter."""
         self._open_statistics_editor(
-            population_id=self._selected_population_id,
+            population_id=self._display_population_id,
             parameter_id=self._channel_selector.x_channel_id() or None,
         )
 
@@ -1966,15 +1997,15 @@ class MainWindow(QMainWindow):
         If the selected population does not exist in the new report data for the
         current sample, fall back to ``all_events``.
         """
-        if self._selected_population_id == "all_events":
+        if self._display_population_id == "all_events":
             return
         population_ids = {
             r.population_id
             for r in report.population_results
             if r.sample_id == self._current_sample_id
         }
-        if self._selected_population_id not in population_ids:
-            self._selected_population_id = "all_events"
+        if self._display_population_id not in population_ids:
+            self._display_population_id = "all_events"
 
     # -- plot mouse handlers -------------------------------------------------
 
@@ -2270,7 +2301,7 @@ class MainWindow(QMainWindow):
         self._population_tree.mark_results_stale()
         self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
-        self._selected_population_id = "all_events"
+        self._display_population_id = "all_events"
         self._compensation_status_indicator.mark_stale()
         self._refresh_override_statuses()
         self._update_status(f"{reason} (results stale; rerun pipeline)")

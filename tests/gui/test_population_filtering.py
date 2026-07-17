@@ -163,6 +163,23 @@ def test_population_filter_persists_across_channel_switch(
         assert window._plot_widget._scatter is not None
         assert len(window._plot_widget._scatter.xData) == 3
 
+        # Selecting the gate definition is independent from the displayed
+        # population.  The filtered result remains visible for this test.
+        window._on_gate_selected(0)
+        assert window.selected_gate_id == "pos"
+        assert window.display_population_id == "pos"
+        assert len(window._plot_widget._scatter.xData) == 3
+
+        # Returning to All Events changes the display only; it must not move
+        # the gate editing target.
+        window._on_population_selected("all_events", sample.id)
+        assert window.display_population_id == "all_events"
+        assert window.selected_gate_id == "pos"
+        assert len(window._plot_widget._scatter.xData) == 4
+
+        window._on_population_selected("pos", sample.id)
+        assert window.display_population_id == "pos"
+
         # Switch X/Y to different channels, membership still 3
         window._channel_selector.set_selected_channels("X", "Z")
         qapp.processEvents()

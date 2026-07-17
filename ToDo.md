@@ -326,8 +326,8 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 現在のGate hierarchy、WorkspaceTree、Population Results、Custom Statisticsの常時縦積みは廃止する。Gate definitionとsampleへ適用した実行結果は異なるlifecycleを持つため、一つの巨大tableへ統合しない。
 
-- [ ] `docs/implementation/gating-and-results-workspaces.md`を全文読み、番号付きincrementを一つだけ実装する。
-- [ ] MainWindowの表示状態を`active_sample_id`、`display_population_id`、`selected_gate_id`へ分離する。gate selectionとpopulation membership filteringを同一stateとして扱わない。
+- [x] 済み: `docs/implementation/gating-and-results-workspaces.md`を全文読み、increment 1（state separation）を実装する。
+- [x] 済み: MainWindowの表示状態を`active_sample_id`、`display_population_id`、`selected_gate_id`へ分離する。gate selectionとpopulation membership filteringを同一stateとして扱わない。
 - [ ] 右paneを`Gating`と`Results`のtabまたは排他的modeへ変更し、3つのtableを同時に縦積み表示しない。
 - [ ] `Gating`にはGate hierarchyとdefinition編集操作だけを置く。先頭列を`Gate`または`Gate definition`とし、Pipeline実行前・失敗時・results stale時も編集可能にする。
 - [ ] Gate hierarchy選択は`selected_gate_id`とoutline highlightだけを変更する。暗黙にchild populationへplotを絞り込まず、軸・scaleも変更しない。
