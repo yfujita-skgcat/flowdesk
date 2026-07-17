@@ -227,6 +227,10 @@ Implementation rules:
   membership after a successful, non-stale pipeline run.
 - Editing a gate changes project analysis state and must invalidate cached results.
 - Editing must emit a gates-changed signal.
+- Every gate creation path, including click-finished polygon creation, must execute the
+  same `CreateGateCommand` used by programmatic creation. Never append only to the widget's
+  visible gate list, because the following edit/undo command would target a gate absent
+  from command-stack project state.
 - Store edited coordinates in the same coordinate system used by gate creation.
 - A gate drawn for one X/Y parameter pair must not be shown as editable on an unrelated
   X/Y pair unless transformed/mapped intentionally.

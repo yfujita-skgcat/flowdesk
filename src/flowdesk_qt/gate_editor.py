@@ -719,12 +719,11 @@ class GateEditor(QWidget):
             y_transform_id=self._y_transform_id,
             coordinates=coords,
         )
-        self._gates.append(gate)
-        self._add_gate_list_item(gate)
-        self._refresh_all_views(select_gate_id=gate.id)
+        # Keep the visible gate list and the command-stack project state in
+        # lockstep.  Directly appending here leaves CreateGateCommand absent,
+        # so the first ROI edit cannot find this gate in EditGateCommand.
         self._cancel_polygon()
-        self._emit_gates_changed()
-        self._finish_child_gate_mode()
+        self.add_gate(gate)
 
     def start_polygon_collection(self) -> None:
         """Begin collecting polygon vertices from plot clicks."""

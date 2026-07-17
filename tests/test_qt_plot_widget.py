@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import numpy as np
@@ -1218,31 +1218,27 @@ def test_project_manifest_flushes_pending_polygon_roi_edit() -> None:
   app = _app()
   window = MainWindow()
   try:
-    gate = GateSpec(
-      id="polygon-1",
-      name="polygon",
-      gate_type="polygon",
-      x_parameter="X",
-      y_parameter="Y",
-      coordinates=((1.0, 1.0), (5.0, 1.0), (3.0, 4.0)),
-    )
-    updated = GateSpec(
-      id="polygon-1",
-      name="polygon",
-      gate_type="polygon",
-      x_parameter="X",
-      y_parameter="Y",
+    editor = window._gate_editor
+    editor.set_plot_channels("X", "Y")
+    editor.start_polygon_collection()
+    for point in ((1.0, 1.0), (5.0, 1.0), (3.0, 4.0)):
+      editor.receive_polygon_vertex(*point)
+    editor.finish_polygon_gate("polygon")
+    gate = editor.gates()[0]
+    updated = replace(
+      gate,
       coordinates=((2.0, 2.0), (6.0, 2.0), (4.0, 5.0)),
     )
-    window._gate_editor.set_gates([gate], notify=False)
 
     window._queue_gate_geometry_changed(0, updated)
     manifest = window._build_project_manifest()
 
     saved_gate = manifest["gating_strategies_data"]["default_strategy"]["gates"][0]
     assert saved_gate["coordinates"] == updated.coordinates
-    assert window._gate_editor.gates()[0].coordinates == updated.coordinates
+    assert editor.gates()[0].coordinates == updated.coordinates
     assert window._pending_gate_geometry_updates == {}
+    assert editor.undo()
+    assert editor.gates()[0].coordinates == gate.coordinates
   finally:
     window.close()
     window.deleteLater()
