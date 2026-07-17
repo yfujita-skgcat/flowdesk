@@ -19,6 +19,7 @@ GatePurpose = Literal["technical_cleanup", "comparison_critical"]
 AutoGateAlgorithm = Literal["quantile_rectangle"]
 MagneticGateAlgorithm = Literal["largest_gap_range"]
 TetheredGateAlgorithm = Literal["translated_rectangle"]
+CloneConflictPolicy = Literal["leader_wins", "reject_conflict"]
 FitStatus = Literal["success", "failed"]
 ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
@@ -607,6 +608,38 @@ class TetheredGateFitResult:
       raise ValueError("successful tethered fit requires a fitted gate")
     if self.status == "failed" and not self.failure_reason:
       raise ValueError("failed tethered fit requires failure_reason")
+
+
+@dataclass(frozen=True)
+class CloneSyncGroupSpec:
+  """Explicit sample group and leader policy for cloned gate geometry."""
+
+  id: str
+  gate_id: str
+  sample_ids: tuple[str, ...]
+  leader_sample_id: str
+  conflict_policy: CloneConflictPolicy = "leader_wins"
+  algorithm_version: str = "clone_gate.v1"
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.gate_id or not self.sample_ids:
+      raise ValueError("clone sync group identity and samples are required")
+    if self.leader_sample_id not in self.sample_ids:
+      raise ValueError("clone leader must be a member of sample_ids")
+    if self.conflict_policy not in {"leader_wins", "reject_conflict"}:
+      raise ValueError(f"invalid clone conflict policy: {self.conflict_policy!r}")
+
+
+@dataclass(frozen=True)
+class CloneSyncResult:
+  """Auditable clone operation with reversible before/after state."""
+
+  group_id: str
+  leader_sample_id: str
+  applied_sample_ids: tuple[str, ...]
+  conflict_sample_ids: tuple[str, ...] = field(default_factory=tuple)
+  before: dict[str, Any] = field(default_factory=dict)
+  after: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

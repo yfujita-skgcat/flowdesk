@@ -111,6 +111,14 @@ diagnostics, and fitted geometry. Missing or non-rectangle anchors fail explicit
 and no display geometry is used. Runner, manifest, and Qt all consume this one core
 fit result.
 
+### B5-Clone: `clone_gate.v1`
+
+Clone synchronization is a pure core command over an explicit sample group. The
+leader sample is mandatory; `leader_wins` records conflicts and copies leader geometry,
+while `reject_conflict` fails before mutation. `CloneSyncResult` stores before/after
+state so the same command supports apply and undo. GUI code may dispatch this command
+and render its result, but may not implement a second conflict or geometry policy.
+
 ### B5-Magnetic: `largest_gap_range.v1`
 
 This is a Flowdesk-defined magnetic-bead heuristic. It sorts all finite values of

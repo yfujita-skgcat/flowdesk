@@ -361,6 +361,13 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] anchor geometryから決定的にtethered gateを生成するsynthetic numeric testを追加する。
 - [x] headless runner、project save/load、GUI表示をtethered fit resultへ接続する。
 
+#### Clone gate subphase
+
+- [x] `clone_gate.v1` のleader、conflict policy、同期group、Undo behaviorをimplementation guideへ記載する。
+- [x] template definitionとsample-specific synchronized geometryを分離する。
+- [x] leader_winsとreject_conflict、apply/undoのsynthetic testを追加する。
+- [x] clone同期をGUI-independent core commandとして実装し、GUIは結果表示に限定する。
+
 - [ ] 各algorithmについてprimary/reference method、parameters、fit failure、determinismをimplementation guideへ記載する。
 - [ ] template definitionとsample-specific fitted geometryを分離する。
 - [ ] fitted resultへinput hash、algorithm version、diagnosticsを保存する。
