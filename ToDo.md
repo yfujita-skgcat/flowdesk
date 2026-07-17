@@ -546,14 +546,14 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 
 #### Increment 1: Interaction-state and precedence contract
 
-- [ ] 現行Samples list、active sample、overlay source、plot view、presentation状態を調査し、既存sample checkboxの意味を確認する。現行Samples listにはcheckboxがなく、行選択が`active_sample_id`を変更するため、新しい`Ov`専用列を計画し、別目的のcheckboxが将来存在しても転用しない。
-- [ ] `active_sample_id`、`display_population_id`、`selected_gate_id`、`manual_overlay_sample_ids`、`manual_overlay_colors`、`automatic_overlay_sources`、`comparison_set_definitions`、`overlay_mode`、`population_display_colors`、`plot_presentation`を独立状態として定義する。
-- [ ] manual overlayをactive sampleから分離し、active sample自身をoverlay sourceから除外して二重描画しないcontractを定義する。
-- [ ] 1対1と1対多を表現できる`ComparisonSet`/comparison role modelを科学的`SampleGroupSpec`・strategy bindingから分離して定義する。
-- [ ] population display colorをgate geometry、parent relationship、membership、statistics、pipeline revisionから分離したdisplay definitionとして定義する。
-- [ ] source deduplication、resolved label/style provenance、`manual source override > comparison source override > comparison role style > automatic source style`を定義し、最終color fallbackを`explicit overlay source > comparison role > sample automatic overlay > population display > plot default event`とする。
-- [ ] plot/view、project metadata、project display settings、global preferenceの保存範囲と、B7.1 projectを意味変更せず読むmigration方針を定義する。既存modelで表現可能な部分に不要なschemaを追加しない。
-- [ ] Qt非依存model、round-trip、deduplication、precedence、active/manual分離、科学値不変testをproduction codeより先に追加する計画を確定する。
+- [x] 現行Samples list、active sample、overlay source、plot view、presentation状態を調査し、既存sample checkboxの意味を確認する。現行Samples listにはcheckboxがなく、行選択が`active_sample_id`を変更するため、新しい`Ov`専用列を計画し、別目的のcheckboxが将来存在しても転用しない。
+- [x] `active_sample_id`、`display_population_id`、`selected_gate_id`、`manual_overlay_sample_ids`、`manual_overlay_colors`、`automatic_overlay_sources`、`comparison_set_definitions`、`overlay_mode`、`population_display_colors`、`plot_presentation`を独立状態として定義する。
+- [x] manual overlayをactive sampleから分離し、active sample自身をoverlay sourceから除外して二重描画しないcontractを定義する。
+- [x] 1対1と1対多を表現できる`ComparisonSet`/comparison role modelを科学的`SampleGroupSpec`・strategy bindingから分離して定義する。
+- [x] population display colorをgate geometry、parent relationship、membership、statistics、pipeline revisionから分離したdisplay definitionとして定義する。
+- [x] source deduplication、resolved label/style provenance、`manual source override > comparison source override > comparison role style > automatic source style`を定義し、最終color fallbackを`explicit overlay source > comparison role > sample automatic overlay > population display > plot default event`とする。
+- [x] plot/view、project metadata、project display settings、global preferenceの保存範囲と、B7.1 projectを意味変更せず読むmigration方針を定義する。既存modelで表現可能な部分に不要なschemaを追加しない。
+- [x] Qt非依存model、round-trip、deduplication、precedence、active/manual分離、科学値不変testをproduction codeより先に追加する計画を確定する。
 
 #### Increment 2: Plot context appearance menu
 

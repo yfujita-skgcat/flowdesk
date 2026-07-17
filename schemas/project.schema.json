@@ -64,6 +64,14 @@
       "type": "array",
       "items": { "$ref": "#/$defs/plotView" }
     },
+    "comparison_set_definitions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/comparisonSet" }
+    },
+    "comparison_role_colors": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+    },
     "overlays": {
       "type": "array",
       "items": { "$ref": "#/$defs/overlay" }
@@ -135,7 +143,18 @@
           "type": "array",
           "items": { "$ref": "#/$defs/overlaySource" }
         },
-        "presentation": { "type": ["object", "null"] }
+        "presentation": { "type": ["object", "null"] },
+        "manual_overlay_sample_ids": {
+          "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true
+        },
+        "manual_overlay_colors": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+        },
+        "overlay_mode": { "enum": ["manual_only", "manual_plus_comparison", "comparison_only"] },
+        "population_display_colors": {
+          "type": "array", "items": { "$ref": "#/$defs/populationDisplay" }
+        }
       },
       "additionalProperties": true
     },
@@ -174,6 +193,44 @@
         "population_path": { "type": "string", "minLength": 1 },
         "parameter_role": { "type": "string", "minLength": 1 },
         "transform_role": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "comparisonSet": {
+      "type": "object",
+      "required": ["id", "name", "members"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "members": {
+          "type": "array", "minItems": 2,
+          "items": { "$ref": "#/$defs/comparisonMember" }
+        },
+        "role_colors": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "comparisonMember": {
+      "type": "object",
+      "required": ["sample_id", "role"],
+      "properties": {
+        "sample_id": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["reference", "target", "positive_control", "negative_control", "control"] }
+      },
+      "additionalProperties": true
+    },
+    "populationDisplay": {
+      "type": "object",
+      "required": ["population_id"],
+      "properties": {
+        "population_id": { "type": "string", "minLength": 1 },
+        "color": { "type": ["string", "null"], "pattern": "^#[0-9a-fA-F]{6}$" },
+        "gate_outline_color": { "type": ["string", "null"], "pattern": "^#[0-9a-fA-F]{6}$" },
+        "use_population_color_for_outline": { "type": "boolean" },
+        "z_order": { "type": ["integer", "null"], "minimum": 0 }
       },
       "additionalProperties": true
     },

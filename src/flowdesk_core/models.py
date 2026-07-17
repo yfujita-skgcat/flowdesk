@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -23,6 +23,10 @@ TetheredGateAlgorithm = Literal["translated_rectangle"]
 CloneConflictPolicy = Literal["leader_wins", "reject_conflict"]
 PlotType = Literal["dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"]
 InteractionMode = Literal["pan", "select", "gate"]
+OverlayMode = Literal["manual_only", "manual_plus_comparison", "comparison_only"]
+ComparisonRole = Literal[
+  "reference", "target", "positive_control", "negative_control", "control"
+]
 OverlayNormalization = Literal["count", "mode", "unit_area"]
 MarkerShape = Literal["circle", "square", "triangle", "cross", "plus"]
 LineStyle = Literal["solid", "dashed", "dotted", "dashdot"]
@@ -150,6 +154,198 @@ class SampleGroupSpec:
       raise ValueError("sample group sample IDs must be unique")
     if self.membership_rule is not None and not isinstance(self.membership_rule, dict):
       raise ValueError("sample group membership_rule must be an object or null")
+
+
+@dataclass(frozen=True)
+class ComparisonMemberSpec:
+  """One display-only member of a generalized comparison set."""
+
+  sample_id: str
+  role: ComparisonRole = "target"
+
+  def __post_init__(self) -> None:
+    if not self.sample_id:
+      raise ValueError("comparison member sample_id must be non-empty")
+    if self.role not in {
+      "reference", "target", "positive_control", "negative_control", "control"
+    }:
+      raise ValueError(f"invalid comparison role: {self.role!r}")
+
+
+@dataclass(frozen=True)
+class ComparisonSetSpec:
+  """Display-only relation that supports pairs and one-to-many comparisons."""
+
+  id: str
+  name: str
+  members: tuple[ComparisonMemberSpec, ...]
+  role_colors: dict[str, str] = field(default_factory=dict)
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.name:
+      raise ValueError("comparison set ID and name must be non-empty")
+    if len(self.members) < 2:
+      raise ValueError("comparison set requires at least two members")
+    sample_ids = [member.sample_id for member in self.members]
+    if len(sample_ids) != len(set(sample_ids)):
+      raise ValueError("comparison set member sample IDs must be unique")
+    for role, color in self.role_colors.items():
+      if role not in {
+        "reference", "target", "positive_control", "negative_control", "control"
+      }:
+        raise ValueError(f"invalid comparison role color key: {role!r}")
+      _validate_display_color(color, "comparison role color")
+
+  def member(self, sample_id: str) -> ComparisonMemberSpec:
+    for member in self.members:
+      if member.sample_id == sample_id:
+        return member
+    raise KeyError(sample_id)
+
+
+def _validate_display_color(value: str, field_name: str) -> None:
+  if (
+    not isinstance(value, str)
+    or len(value) != 7
+    or value[0] != "#"
+    or any(character not in "0123456789abcdefABCDEF" for character in value[1:])
+  ):
+    raise ValueError(f"{field_name} must be a #RRGGBB color")
+
+
+@dataclass(frozen=True)
+class PopulationDisplaySpec:
+  """Display-only color and outline settings for one resolved Population."""
+
+  population_id: str
+  color: str | None = None
+  gate_outline_color: str | None = None
+  use_population_color_for_outline: bool = False
+  z_order: int | None = None
+
+  def __post_init__(self) -> None:
+    if not self.population_id:
+      raise ValueError("population display population_id must be non-empty")
+    if self.color is not None:
+      _validate_display_color(self.color, "population color")
+    if self.gate_outline_color is not None:
+      _validate_display_color(self.gate_outline_color, "gate outline color")
+    if self.z_order is not None and (
+      isinstance(self.z_order, bool) or self.z_order < 0
+    ):
+      raise ValueError("population display z_order must be non-negative")
+
+
+@dataclass(frozen=True)
+class IntegratedOverlayState:
+  """Serializable display state kept independent from scientific definitions."""
+
+  active_sample_id: str | None = None
+  display_population_id: str = "all_events"
+  selected_gate_id: str | None = None
+  manual_overlay_sample_ids: tuple[str, ...] = ()
+  manual_overlay_colors: dict[str, str] = field(default_factory=dict)
+  automatic_overlay_sources: tuple[OverlaySourceSpec, ...] = ()
+  comparison_set_definitions: tuple[ComparisonSetSpec, ...] = ()
+  overlay_mode: OverlayMode = "manual_only"
+  population_display_colors: tuple[PopulationDisplaySpec, ...] = ()
+  plot_presentation: PlotPresentationSpec | None = None
+
+  def __post_init__(self) -> None:
+    if not self.display_population_id:
+      raise ValueError("display_population_id must be non-empty")
+    if self.overlay_mode not in {
+      "manual_only", "manual_plus_comparison", "comparison_only"
+    }:
+      raise ValueError(f"invalid overlay mode: {self.overlay_mode!r}")
+    if any(not sample_id for sample_id in self.manual_overlay_sample_ids):
+      raise ValueError("manual overlay sample IDs must be non-empty")
+    if len(set(self.manual_overlay_sample_ids)) != len(self.manual_overlay_sample_ids):
+      raise ValueError("manual overlay sample IDs must be unique")
+    for sample_id, color in self.manual_overlay_colors.items():
+      if sample_id not in self.manual_overlay_sample_ids:
+        raise ValueError(
+          f"manual overlay color has no selected sample: {sample_id!r}"
+        )
+      _validate_display_color(color, "manual overlay color")
+    comparison_ids = [comparison.id for comparison in self.comparison_set_definitions]
+    if len(comparison_ids) != len(set(comparison_ids)):
+      raise ValueError("comparison set IDs must be unique")
+    population_ids = [
+      display.population_id for display in self.population_display_colors
+    ]
+    if len(population_ids) != len(set(population_ids)):
+      raise ValueError("population display IDs must be unique")
+
+  def to_mapping(self) -> dict[str, Any]:
+    """Return JSON-compatible display state without scientific result data."""
+    def json_value(value: Any) -> Any:
+      if isinstance(value, dict):
+        return {key: json_value(item) for key, item in value.items()}
+      if isinstance(value, (tuple, list)):
+        return [json_value(item) for item in value]
+      return value
+
+    return json_value(asdict(self))
+
+  @classmethod
+  def from_mapping(cls, value: dict[str, Any] | None) -> IntegratedOverlayState:
+    """Load current or old B7.1 display state without inferring new meanings."""
+    raw = dict(value or {})
+    comparisons = tuple(
+      ComparisonSetSpec(
+        id=str(item["id"]),
+        name=str(item.get("name", item["id"])),
+        members=tuple(
+          ComparisonMemberSpec(str(member["sample_id"]), str(member.get("role", "target")))
+          for member in item.get("members", [])
+        ),
+        role_colors=dict(item.get("role_colors", {})),
+      )
+      for item in raw.get("comparison_set_definitions", [])
+    )
+    def source_from_mapping(item: dict[str, Any]) -> OverlaySourceSpec:
+      source = dict(item)
+      style = source.get("style")
+      if isinstance(style, dict):
+        source["style"] = SourceStyleSpec(**style)
+      return OverlaySourceSpec(**source)
+
+    automatic_sources = tuple(
+      source_from_mapping(dict(item))
+      for item in raw.get("automatic_overlay_sources", [])
+    )
+    population_colors = tuple(
+      PopulationDisplaySpec(**dict(item))
+      for item in raw.get("population_display_colors", [])
+    )
+    presentation = raw.get("plot_presentation")
+    plot_presentation = None
+    if isinstance(presentation, dict):
+      presentation_data = dict(presentation)
+      for font_key in ("title_font", "axis_label_font", "tick_font", "legend_font"):
+        if isinstance(presentation_data.get(font_key), dict):
+          presentation_data[font_key] = FontSpec(**presentation_data[font_key])
+      presentation_data["source_styles"] = tuple(
+        SourceStyleSpec(**dict(style))
+        for style in presentation_data.get("source_styles", [])
+      )
+      presentation_data["legend_source_ids"] = tuple(
+        presentation_data.get("legend_source_ids", ())
+      )
+      plot_presentation = PlotPresentationSpec(**presentation_data)
+    return cls(
+      active_sample_id=raw.get("active_sample_id"),
+      display_population_id=str(raw.get("display_population_id", "all_events")),
+      selected_gate_id=raw.get("selected_gate_id"),
+      manual_overlay_sample_ids=tuple(raw.get("manual_overlay_sample_ids", ())),
+      manual_overlay_colors=dict(raw.get("manual_overlay_colors", {})),
+      automatic_overlay_sources=automatic_sources,
+      comparison_set_definitions=comparisons,
+      overlay_mode=str(raw.get("overlay_mode", "manual_only")),
+      population_display_colors=population_colors,
+      plot_presentation=plot_presentation,
+    )
 
 
 @dataclass(frozen=True)
@@ -794,6 +990,10 @@ class PlotViewSpec:
   rendering_downsample: dict[str, Any] = field(default_factory=dict)
   overlay_sources: tuple[OverlaySourceSpec, ...] = ()
   presentation: PlotPresentationSpec | None = None
+  manual_overlay_sample_ids: tuple[str, ...] = ()
+  manual_overlay_colors: dict[str, str] = field(default_factory=dict)
+  overlay_mode: OverlayMode = "manual_only"
+  population_display_colors: tuple[PopulationDisplaySpec, ...] = ()
 
   def __post_init__(self) -> None:
     if not self.id or not self.population_id or not self.x_parameter:
@@ -813,6 +1013,23 @@ class PlotViewSpec:
     source_orders = [source.order for source in self.overlay_sources]
     if len(source_orders) != len(set(source_orders)):
       raise ValueError("plot view overlay sources must have unique order values")
+    if self.overlay_mode not in {
+      "manual_only", "manual_plus_comparison", "comparison_only"
+    }:
+      raise ValueError(f"invalid overlay mode: {self.overlay_mode!r}")
+    if len(set(self.manual_overlay_sample_ids)) != len(self.manual_overlay_sample_ids):
+      raise ValueError("plot view manual overlay sample IDs must be unique")
+    for sample_id, color in self.manual_overlay_colors.items():
+      if sample_id not in self.manual_overlay_sample_ids:
+        raise ValueError(
+          f"plot view overlay color has no selected sample: {sample_id!r}"
+        )
+      _validate_display_color(color, "manual overlay color")
+    population_ids = [
+      display.population_id for display in self.population_display_colors
+    ]
+    if len(population_ids) != len(set(population_ids)):
+      raise ValueError("plot view population display IDs must be unique")
 
 
 @dataclass(frozen=True)
