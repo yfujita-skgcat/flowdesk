@@ -23,6 +23,9 @@ CloneConflictPolicy = Literal["leader_wins", "reject_conflict"]
 PlotType = Literal["dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"]
 InteractionMode = Literal["pan", "select", "gate"]
 OverlayNormalization = Literal["count", "mode", "unit_area"]
+MarkerShape = Literal["circle", "square", "triangle", "cross", "plus"]
+LineStyle = Literal["solid", "dashed", "dotted", "dashdot"]
+LegendPosition = Literal["right", "left", "top", "bottom", "inside"]
 FitStatus = Literal["success", "failed"]
 ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
@@ -646,6 +649,133 @@ class CloneSyncResult:
 
 
 @dataclass(frozen=True)
+class FontSpec:
+  """Validated display-only font request."""
+
+  family: str = "DejaVu Sans"
+  size: float = 10.0
+  weight: str = "normal"
+  italic: bool = False
+
+  def __post_init__(self) -> None:
+    if not self.family or not math.isfinite(self.size) or not 1.0 <= self.size <= 96.0:
+      raise ValueError("font family must be non-empty and size must be between 1 and 96")
+    if self.weight not in {"normal", "bold", "light"}:
+      raise ValueError(f"invalid font weight: {self.weight!r}")
+
+
+@dataclass(frozen=True)
+class SourceStyleSpec:
+  """Typed display style for one overlay source."""
+
+  source_id: str
+  legend_label: str | None = None
+  color: str | None = None
+  alpha: float = 1.0
+  marker_shape: MarkerShape | None = None
+  marker_size: float = 4.0
+  line_color: str | None = None
+  line_width: float = 1.5
+  line_style: LineStyle = "solid"
+  histogram_fill_color: str | None = None
+  histogram_outline_color: str | None = None
+  histogram_alpha: float = 0.35
+  manual_fields: tuple[str, ...] = ()
+
+  def __post_init__(self) -> None:
+    if not self.source_id:
+      raise ValueError("source style source_id must be non-empty")
+    for name, value, low, high in (
+      ("alpha", self.alpha, 0.0, 1.0),
+      ("histogram_alpha", self.histogram_alpha, 0.0, 1.0),
+      ("marker_size", self.marker_size, 0.1, 100.0),
+      ("line_width", self.line_width, 0.1, 100.0),
+    ):
+      if not math.isfinite(value) or not low <= value <= high:
+        raise ValueError(f"{name} must be finite and between {low} and {high}")
+    if self.line_style not in {"solid", "dashed", "dotted", "dashdot"}:
+      raise ValueError(f"invalid line style: {self.line_style!r}")
+    if self.marker_shape is not None and self.marker_shape not in {
+      "circle", "square", "triangle", "cross", "plus"
+    }:
+      raise ValueError(f"invalid marker shape: {self.marker_shape!r}")
+
+
+@dataclass(frozen=True)
+class PlotPresentationSpec:
+  """Persisted, display-only presentation independent of analysis identity."""
+
+  title: str = ""
+  subtitle: str = ""
+  x_axis_display_label: str | None = None
+  y_axis_display_label: str | None = None
+  background_color: str = "#ffffff"
+  legend_visible: bool = True
+  legend_position: LegendPosition = "right"
+  legend_source_ids: tuple[str, ...] = ()
+  title_font: FontSpec = field(default_factory=lambda: FontSpec(size=14, weight="bold"))
+  axis_label_font: FontSpec = field(default_factory=FontSpec)
+  tick_font: FontSpec = field(default_factory=FontSpec)
+  legend_font: FontSpec = field(default_factory=FontSpec)
+  gate_outline_color: str = "#555555"
+  gate_outline_width: float = 1.5
+  gate_outline_style: LineStyle = "solid"
+  colormap: str | None = None
+  automatic_style_policy: str = "palette.v1"
+  source_styles: tuple[SourceStyleSpec, ...] = ()
+
+  def __post_init__(self) -> None:
+    if self.legend_position not in {"right", "left", "top", "bottom", "inside"}:
+      raise ValueError(f"invalid legend position: {self.legend_position!r}")
+    if not math.isfinite(self.gate_outline_width) or not 0.1 <= self.gate_outline_width <= 100:
+      raise ValueError("gate_outline_width must be finite and between 0.1 and 100")
+    if self.gate_outline_style not in {"solid", "dashed", "dotted", "dashdot"}:
+      raise ValueError(f"invalid gate outline style: {self.gate_outline_style!r}")
+    source_ids = [style.source_id for style in self.source_styles]
+    if len(source_ids) != len(set(source_ids)):
+      raise ValueError("presentation source styles must have unique source IDs")
+    if len(self.legend_source_ids) != len(set(self.legend_source_ids)):
+      raise ValueError("legend source IDs must be unique")
+
+
+@dataclass(frozen=True)
+class OverlaySourceSpec:
+  """One explicitly selected, sample-independent overlay source."""
+
+  source_id: str
+  sample_id: str | None
+  population_id: str | None
+  display_name: str
+  x_parameter_id: str
+  y_parameter_id: str | None = None
+  x_transform_id: str | None = None
+  y_transform_id: str | None = None
+  unit: str | None = None
+  x_unit: str | None = None
+  y_unit: str | None = None
+  x_semantic: str | None = None
+  y_semantic: str | None = None
+  visible: bool = True
+  order: int = 0
+  style: SourceStyleSpec | None = None
+  template_source_role: str | None = None
+  template_population_path: str | None = None
+  analysis_revision: str | None = None
+
+  def __post_init__(self) -> None:
+    if not self.source_id or not self.display_name or not self.x_parameter_id:
+      raise ValueError("overlay source identity and x parameter are required")
+    if self.sample_id is None and not self.template_source_role:
+      raise ValueError("overlay source requires sample_id or template_source_role")
+    if self.population_id is None and not self.template_population_path:
+      raise ValueError("overlay source requires population_id or template_population_path")
+    if self.order < 0:
+      raise ValueError("overlay source order must be non-negative")
+    if self.style is not None and self.style.source_id != self.source_id:
+      raise ValueError("overlay source style must reference the same source_id")
+
+
+@dataclass(frozen=True)
 class PlotViewSpec:
   """Persisted display definition; it never stores event values or masks."""
 
@@ -660,6 +790,8 @@ class PlotViewSpec:
   style: dict[str, Any] = field(default_factory=dict)
   aggregation: dict[str, Any] = field(default_factory=lambda: {"bins": 64})
   rendering_downsample: dict[str, Any] = field(default_factory=dict)
+  overlay_sources: tuple[OverlaySourceSpec, ...] = ()
+  presentation: PlotPresentationSpec | None = None
 
   def __post_init__(self) -> None:
     if not self.id or not self.population_id or not self.x_parameter:
@@ -673,6 +805,12 @@ class PlotViewSpec:
       and not self.y_parameter
     ):
       raise ValueError(f"plot type {self.plot_type!r} requires y_parameter")
+    source_ids = [source.source_id for source in self.overlay_sources]
+    if len(source_ids) != len(set(source_ids)):
+      raise ValueError("plot view overlay sources must have unique source IDs")
+    source_orders = [source.order for source in self.overlay_sources]
+    if len(source_orders) != len(set(source_orders)):
+      raise ValueError("plot view overlay sources must have unique order values")
 
 
 @dataclass(frozen=True)
@@ -704,6 +842,8 @@ class OverlaySpec:
   normalization: OverlayNormalization = "count"
   bins: int = 64
   styles: dict[str, dict[str, Any]] = field(default_factory=dict)
+  sources: tuple[OverlaySourceSpec, ...] = ()
+  presentation: PlotPresentationSpec | None = None
 
   def __post_init__(self) -> None:
     if not self.id or not self.population_ids or not self.parameter:
@@ -712,6 +852,12 @@ class OverlaySpec:
       raise ValueError(f"invalid overlay normalization: {self.normalization!r}")
     if isinstance(self.bins, bool) or self.bins < 1:
       raise ValueError("overlay bins must be positive")
+    source_ids = [source.source_id for source in self.sources]
+    if len(source_ids) != len(set(source_ids)):
+      raise ValueError("overlay sources must have unique source IDs")
+    source_orders = [source.order for source in self.sources]
+    if len(source_orders) != len(set(source_orders)):
+      raise ValueError("overlay sources must have unique order values")
 
 
 @dataclass(frozen=True)

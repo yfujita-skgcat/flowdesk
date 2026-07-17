@@ -480,11 +480,11 @@ title/axis/legend編集が実装済みであることを意味しない。
 
 #### Increment 1: Model and compatibility contract
 
-- [ ] 現行`OverlaySpec`/`PlotViewSpec`の不足を確認し、multi-sample overlay source、typed presentation style、schema extension、migration方針を定義する。
-- [ ] source sample、Population、X/Y parameter、X/Y transform、unitをstable identityで保存し、active sampleから独立したsource order/visibilityを表現する。
-- [ ] stable channel identityとsemantic parameter/unit/transformを使うGUI非依存compatibility resolverを追加し、compatible/incompatible/ambiguous/missingをstructured diagnosticで返す。ambiguous mappingをuser confirmationなしに確定しない。
-- [ ] presentation style modelをanalysis definitionから型として分離し、automatic assignmentとmanual override、plot typeごとのsupported style matrix、unsupported style validationを定義する。
-- [ ] source追加・削除・並べ替え・visibility、source style、title/axis display label/legendのsave/load/migration testを先に追加する。display labelとstable parameter IDを別fieldとしてround-tripする。
+- [x] 現行`OverlaySpec`/`PlotViewSpec`の不足を確認し、multi-sample overlay source、typed presentation style、schema extension、migration方針を定義する。
+- [x] source sample、Population、X/Y parameter、X/Y transform、unitをstable identityで保存し、active sampleから独立したsource order/visibilityを表現する。
+- [x] stable channel identityとsemantic parameter/unit/transformを使うGUI非依存compatibility resolverを追加し、compatible/incompatible/ambiguous/missingをstructured diagnosticで返す。ambiguous mappingをuser confirmationなしに確定しない。
+- [x] presentation style modelをanalysis definitionから型として分離し、automatic assignmentとmanual override、plot typeごとのsupported style matrix、unsupported style validationを定義する。
+- [x] source追加・削除・並べ替え・visibility、source style、title/axis display label/legendのsave/load/migration testを先に追加する。display labelとstable parameter IDを別fieldとしてround-tripする。
 
 #### Increment 2: Overlay source selection GUI
 

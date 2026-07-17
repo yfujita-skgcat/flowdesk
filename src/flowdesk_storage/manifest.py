@@ -84,6 +84,54 @@ def validate_manifest(data: dict[str, Any]) -> None:
     )
     _validate_current_groups_and_annotations(data, gate_ids)
     _validate_current_gate_overrides(data, gate_ids)
+    _validate_current_plot_definitions(data)
+
+
+def _validate_current_plot_definitions(data: Mapping[str, Any]) -> None:
+  """Validate typed overlay source identity without resolving runtime data."""
+  for collection_name, source_key in (("plot_views", "overlay_sources"), ("overlays", "sources")):
+    definitions = data.get(collection_name, [])
+    if not isinstance(definitions, list):
+      raise ManifestValidationError(f"{collection_name} must be an array")
+    definition_ids: set[str] = set()
+    for index, definition in enumerate(definitions):
+      if not isinstance(definition, dict):
+        raise ManifestValidationError(f"{collection_name}[{index}] must be an object")
+      definition_id = definition.get("id")
+      if not isinstance(definition_id, str) or not definition_id:
+        raise ManifestValidationError(f"{collection_name}[{index}].id must be non-empty")
+      if definition_id in definition_ids:
+        raise ManifestValidationError(f"duplicate {collection_name[:-1]} ID {definition_id!r}")
+      definition_ids.add(definition_id)
+      sources = definition.get(source_key, [])
+      if not isinstance(sources, list):
+        raise ManifestValidationError(f"{collection_name}[{index}].{source_key} must be an array")
+      source_ids: set[str] = set()
+      orders: set[int] = set()
+      for source_index, source in enumerate(sources):
+        if not isinstance(source, dict):
+          raise ManifestValidationError(f"{source_key}[{source_index}] must be an object")
+        required = ("source_id", "display_name", "x_parameter_id")
+        if any(not isinstance(source.get(key), str) or not source[key] for key in required):
+          raise ManifestValidationError(f"{source_key}[{source_index}] has missing identity fields")
+        source_id = source["source_id"]
+        if source_id in source_ids:
+          raise ManifestValidationError(f"duplicate overlay source ID {source_id!r}")
+        source_ids.add(source_id)
+        if source.get("sample_id") is None and not source.get("template_source_role"):
+          raise ManifestValidationError(
+            f"overlay source {source_id!r} needs sample_id or template_source_role"
+          )
+        if source.get("population_id") is None and not source.get("template_population_path"):
+          raise ManifestValidationError(
+            f"overlay source {source_id!r} needs population_id or template_population_path"
+          )
+        order = source.get("order", 0)
+        if isinstance(order, bool) or not isinstance(order, int) or order < 0:
+          raise ManifestValidationError(f"overlay source {source_id!r} has invalid order")
+        if order in orders:
+          raise ManifestValidationError(f"overlay source {source_id!r} has duplicate order")
+        orders.add(order)
 
 
 def _validate_current_groups_and_annotations(
@@ -202,7 +250,10 @@ def _validate_current_gate_overrides(
   for index, override in enumerate(overrides):
     if not isinstance(override, dict):
       raise ManifestValidationError(f"gate_overrides[{index}] must be an object")
-    required = ("id", "sample_id", "base_gate_id", "base_version_hash", "geometry_mode", "author", "created_at", "reason")
+    required = (
+      "id", "sample_id", "base_gate_id", "base_version_hash", "geometry_mode",
+      "author", "created_at", "reason",
+    )
     if any(not isinstance(override.get(key), str) or not override[key] for key in required):
       raise ManifestValidationError(f"gate_overrides[{index}] has missing required fields")
     override_id = override["id"]
@@ -216,11 +267,15 @@ def _validate_current_gate_overrides(
     if gate_id not in gate_ids:
       raise ManifestValidationError(f"override {override_id!r} references an unknown gate")
     if (sample_id, gate_id) in targets:
-      raise ManifestValidationError(f"duplicate override for sample {sample_id!r} and gate {gate_id!r}")
+      raise ManifestValidationError(
+        f"duplicate override for sample {sample_id!r} and gate {gate_id!r}"
+      )
     targets.add((sample_id, gate_id))
     if override["geometry_mode"] not in {"delta", "full"}:
       raise ManifestValidationError(f"override {override_id!r} has invalid geometry_mode")
-    if override.get("gate_purpose", "technical_cleanup") not in {"technical_cleanup", "comparison_critical"}:
+    if override.get("gate_purpose", "technical_cleanup") not in {
+      "technical_cleanup", "comparison_critical"
+    }:
       raise ManifestValidationError(f"override {override_id!r} has invalid gate_purpose")
     if not isinstance(override.get("coordinates", []), list):
       raise ManifestValidationError(f"override {override_id!r} coordinates must be an array")

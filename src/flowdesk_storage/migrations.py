@@ -477,6 +477,39 @@ def _ensure_compensation_bindings(
       diagnostics.append(diagnostic)
 
 
+def _migrate_overlay_definitions(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Keep legacy population-only overlays without inventing sample identity."""
+  for collection_name in ("overlays", "plot_views"):
+    definitions = migrated.get(collection_name, [])
+    if not isinstance(definitions, list):
+      continue
+    for definition in definitions:
+      if not isinstance(definition, dict):
+        continue
+      has_sources = bool(definition.get("sources") or definition.get("overlay_sources"))
+      if has_sources:
+        continue
+      identifier = definition.get("id", "<unknown>")
+      diagnostic = {
+        "code": "legacy_overlay_source_identity_unknown",
+        "severity": "warning",
+        "stage": "migration",
+        "message": (
+          f"{collection_name[:-1].capitalize()} {identifier!r} uses population-only "
+          "overlay fields; sample identity was not inferred"
+        ),
+        "details": {
+          "definition_id": identifier,
+          "compatibility_policy": "requires_explicit_source_selection",
+        },
+      }
+      if diagnostic not in diagnostics:
+        diagnostics.append(diagnostic)
+
+
 MigrationFunction = Callable[[dict[str, Any], list[dict[str, Any]]], None]
 
 
@@ -492,6 +525,7 @@ def _normalize_historical_manifest(
   _migrate_boolean_expressions(migrated, diagnostics)
   _migrate_compensation_matrices(migrated, diagnostics)
   _ensure_compensation_bindings(migrated, diagnostics)
+  _migrate_overlay_definitions(migrated, diagnostics)
 
 
 def _add_default_sample_group(
@@ -500,6 +534,7 @@ def _add_default_sample_group(
 ) -> None:
   """Add the always-present default Group/Strategy model introduced in 1.6."""
   _migrate_boolean_expressions(migrated, diagnostics)
+  _migrate_overlay_definitions(migrated, diagnostics)
   groups = migrated.get("sample_groups")
   if groups is None:
     migrated["sample_groups"] = [{

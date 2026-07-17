@@ -60,6 +60,14 @@
     "sample_path_resolution_policy": { "type": "string" },
     "software": { "type": "object" },
     "plot_display_settings": { "$ref": "#/$defs/plotDisplaySettings" },
+    "plot_views": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/plotView" }
+    },
+    "overlays": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/overlay" }
+    },
     "statistics": {
       "type": "array",
       "items": { "$ref": "#/$defs/statistic" }
@@ -83,6 +91,59 @@
     }
   },
   "$defs": {
+    "overlaySource": {
+      "type": "object",
+      "required": ["source_id", "display_name", "x_parameter_id", "order"],
+      "properties": {
+        "source_id": { "type": "string", "minLength": 1 },
+        "sample_id": { "type": ["string", "null"] },
+        "template_source_role": { "type": ["string", "null"] },
+        "population_id": { "type": ["string", "null"] },
+        "template_population_path": { "type": ["string", "null"] },
+        "display_name": { "type": "string", "minLength": 1 },
+        "x_parameter_id": { "type": "string", "minLength": 1 },
+        "y_parameter_id": { "type": ["string", "null"] },
+        "x_transform_id": { "type": ["string", "null"] },
+        "y_transform_id": { "type": ["string", "null"] },
+        "unit": { "type": ["string", "null"] },
+        "x_unit": { "type": ["string", "null"] },
+        "y_unit": { "type": ["string", "null"] },
+        "visible": { "type": "boolean" },
+        "order": { "type": "integer", "minimum": 0 },
+        "analysis_revision": { "type": ["string", "null"] }
+      },
+      "anyOf": [
+        { "required": ["sample_id"] },
+        { "required": ["template_source_role"] }
+      ],
+      "additionalProperties": true
+    },
+    "plotView": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "overlay_sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/overlaySource" }
+        },
+        "presentation": { "type": ["object", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "overlay": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/overlaySource" }
+        },
+        "presentation": { "type": ["object", "null"] }
+      },
+      "additionalProperties": true
+    },
     "sampleGroup": {
       "type": "object",
       "required": ["id", "name", "role", "sample_ids"],
