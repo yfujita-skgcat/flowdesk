@@ -71,6 +71,7 @@ class PreviewScheduler(QObject):
     self._active: _PreviewRunnable | None = None
     self._latest_revision: int | None = None
     self._closed = False
+    self._paused = False
 
   def schedule(
     self,
@@ -95,6 +96,17 @@ class PreviewScheduler(QObject):
     self._timer.stop()
     self._pending = None
 
+  def suspend(self) -> None:
+    """Pause new preview work while an authoritative batch is running."""
+    self._paused = True
+    self.cancel_pending()
+
+  def resume(self) -> None:
+    """Resume preview scheduling after the authoritative batch completes."""
+    self._paused = False
+    if self._pending is not None:
+      self._timer.start()
+
   def shutdown(self) -> None:
     """Stop scheduling and wait for the one running job to finish safely."""
     if self._closed:
@@ -113,7 +125,12 @@ class PreviewScheduler(QObject):
     return self._pending is not None
 
   def _start_pending(self) -> None:
-    if self._closed or self._active is not None or self._pending is None:
+    if (
+      self._closed
+      or self._paused
+      or self._active is not None
+      or self._pending is None
+    ):
       return
     project, request = self._pending
     self._pending = None

@@ -47,10 +47,15 @@ from flowdesk_core.overrides import (
   resolve_gate_overrides,
 )
 from flowdesk_core.pipeline_runner import PipelineRunner
-from flowdesk_core.preview import PreviewRevisionState
+from flowdesk_core.preview import (
+  PreviewReport,
+  PreviewRequest,
+  PreviewRevisionState,
+)
 from flowdesk_core.project_commands import CreateGateOverrideCommand, UndoStack
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
+from flowdesk_qt.current_sample_preview import CurrentSamplePreview
 from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
 from flowdesk_qt.gate_override_editor import GateOverrideDialog
@@ -58,6 +63,7 @@ from flowdesk_qt.group_panel import GroupPanel
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
+from flowdesk_qt.preview_scheduler import PreviewScheduler
 from flowdesk_qt.results_workspace import ResultsWorkspace
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
 from flowdesk_qt.workspace_tree import WorkspaceTree
@@ -252,6 +258,10 @@ class MainWindow(QMainWindow):
         self._selected_gate_id: str | None = None
         self._pending_gate_geometry_updates: dict[str, Any] = {}
         self._preview_revision = PreviewRevisionState()
+        self._preview_report: PreviewReport | None = None
+        self._preview_scheduler = PreviewScheduler(self)
+        self._preview_scheduler.preview_ready.connect(self._on_preview_ready)
+        self._preview_scheduler.preview_failed.connect(self._on_preview_failed)
 
         self._compensation_status_indicator = _CompensationStatusIndicator()
         self._build_menu()
@@ -582,6 +592,7 @@ class MainWindow(QMainWindow):
         self._channel_selector = ChannelSelector()
         self._plot_widget = PlotWidget()
         self._plot_widget.set_downsample(1)
+        self._current_sample_preview = CurrentSamplePreview()
 
         center_widget = self._create_center_pane()
 
@@ -627,9 +638,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._channel_selector)
         layout.addWidget(self._plot_toolbar)
         layout.addWidget(self._plot_widget)
+        layout.addWidget(self._current_sample_preview)
         layout.setStretch(0, 0)
         layout.setStretch(1, 0)
         layout.setStretch(2, 1)
+        layout.setStretch(3, 0)
         return widget
 
     def _create_right_pane(self) -> QWidget:
@@ -998,6 +1011,22 @@ class MainWindow(QMainWindow):
         """Called when X or Y channel selection changes."""
         self._replot()
 
+    def _preview_fallback_population(self, target_population_id: str) -> str:
+        """Return a current preview ancestor or All Events during recalculation."""
+        report = self._preview_report
+        if report is None:
+            return "all_events"
+        available = {
+            result.population_id for result in report.population_results
+        }
+        fallback = self._preview_revision.nearest_valid_population(
+            target_population_id,
+            self._population_parent_map(),
+            available,
+            report.revision,
+        )
+        return fallback or "all_events"
+
     def _on_population_selected(self, population_id: str, sample_id: str) -> None:
         """Called when the user selects a population in the results table.
 
@@ -1005,13 +1034,22 @@ class MainWindow(QMainWindow):
         """
         if sample_id and sample_id != self._current_sample_id:
             self._sample_browser.select_sample(sample_id)
-        # A definition change clears the authoritative report.  Do not retain
-        # the requested descendant ID while its old membership could be
-        # mistaken for a current filter; All Events is the safe fallback until
-        # a current-revision result is accepted.
-        self._display_population_id = (
-            "all_events" if self._results_stale else population_id
-        )
+        # A definition change clears the authoritative report.  While preview
+        # is pending, use the closest current ancestor rather than an old
+        # descendant membership.  Once a current preview is accepted, its
+        # complete sample result can safely drive this display-only selection.
+        if self._results_stale:
+            self._display_population_id = self._preview_fallback_population(
+                population_id
+            )
+        else:
+            self._display_population_id = population_id
+        if self._preview_report is not None and self._display_population_id:
+            self._current_sample_preview.set_report(
+                self._preview_report,
+                batch_stale=self._results_stale,
+                population_id=self._display_population_id,
+            )
         self._update_workspace_navigation()
         self._replot()
 
@@ -1192,10 +1230,12 @@ class MainWindow(QMainWindow):
         no report, or missing population/sample).  In that case the caller should
         fall back to displaying all events.
         """
-        report = self._population_tree.last_report()
+        report = (
+            self._preview_report
+            if self._results_stale
+            else self._population_tree.last_report()
+        )
         if report is None:
-            return None
-        if self._results_stale:
             return None
         if not hasattr(report, "population_membership") or not report.population_membership:
             return None
@@ -1205,6 +1245,16 @@ class MainWindow(QMainWindow):
 
         # all_events is always valid: no filter needed
         if population_id == "all_events":
+            return None
+
+        result_revision = (
+            report.revision
+            if self._results_stale
+            else self._preview_revision.authoritative_result_revision
+        )
+        if not self._preview_revision.result_is_current(
+            population_id, result_revision
+        ):
             return None
 
         # Find matching membership entry for (sample_id, population_id)
@@ -1347,6 +1397,7 @@ class MainWindow(QMainWindow):
             )
             return
 
+        self._preview_scheduler.suspend()
         project = self._build_project_manifest()
         self._update_status("Running pipeline...")
         self._worker = _PipelineWorker(
@@ -1476,6 +1527,7 @@ class MainWindow(QMainWindow):
             self._update_status(f"Pipeline error: {exc}")
             QMessageBox.critical(self, "Pipeline Error", str(exc))
             self._release_pipeline_worker(worker)
+            self._preview_scheduler.resume()
             return
 
         report = worker._report
@@ -1504,6 +1556,7 @@ class MainWindow(QMainWindow):
             self._update_status("Pipeline finished with no report")
 
         self._release_pipeline_worker(worker)
+        self._preview_scheduler.resume()
 
     def _release_pipeline_worker(self, worker: _PipelineWorker) -> None:
         """Disconnect and schedule a completed worker for Qt-owned deletion."""
@@ -1517,6 +1570,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Do not destroy the window while its pipeline thread is running."""
+        self._preview_scheduler.shutdown()
         worker = self._worker
         if worker is not None and worker.isRunning():
             worker.wait()
@@ -2442,6 +2496,69 @@ class MainWindow(QMainWindow):
             pending.extend(children.get(population_id, ()))
         return affected
 
+    def _schedule_current_preview(self) -> None:
+        """Submit the active sample to the debounced core preview scheduler."""
+        sample_id = self._current_sample_id
+        sample = self._sample_data.get(sample_id or "")
+        if sample is None:
+            return
+        if self._worker is not None and self._worker.isRunning():
+            return
+        population_id = self._display_population_id or "all_events"
+        request = PreviewRequest(
+            revision=self._preview_revision.analysis_revision,
+            sample=sample,
+            execution_profile_id="default",
+            strategy_id="default_strategy",
+            required_population_id=population_id,
+            invalidation_reason="definition_changed",
+        )
+        try:
+            project = self._build_project_manifest()
+            self._preview_revision.mark_pending()
+            self._current_sample_preview.set_pending(
+                sample_id,
+                population_id,
+                request.revision,
+                batch_stale=True,
+            )
+            self._preview_scheduler.schedule(project, request)
+        except Exception as exc:
+            self._preview_revision.mark_error()
+            self._current_sample_preview.set_error(
+                str(exc), request.revision
+            )
+
+    def _on_preview_ready(self, report: PreviewReport) -> None:
+        """Atomically accept a current-revision report on the GUI thread."""
+        if report.sample_id != self._current_sample_id:
+            return
+        population_ids = {
+            result.population_id for result in report.population_results
+        }
+        if not self._preview_revision.accept_preview(
+            report.revision, population_ids
+        ):
+            return
+        self._preview_report = report
+        self._current_sample_preview.set_report(
+            report,
+            batch_stale=True,
+            population_id=self._display_population_id,
+        )
+        self._replot()
+
+    def _on_preview_failed(
+        self, request: PreviewRequest, error: Exception
+    ) -> None:
+        """Keep authoritative results unchanged when preview execution fails."""
+        if request.sample_id != self._current_sample_id:
+            return
+        self._preview_revision.mark_error()
+        self._current_sample_preview.set_error(
+            str(error), request.revision
+        )
+
     def _mark_results_stale(
         self,
         reason: str,
@@ -2450,6 +2567,7 @@ class MainWindow(QMainWindow):
         self._preview_revision.invalidate(
             self._population_ids_for_gates(affected_gate_ids)
         )
+        self._preview_report = None
         self._results_stale = True
         self._population_tree.clear()
         self._population_tree.mark_results_stale()
@@ -2457,9 +2575,13 @@ class MainWindow(QMainWindow):
         self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
         self._display_population_id = "all_events"
+        self._current_sample_preview.set_stale(
+            self._preview_revision.analysis_revision
+        )
         self._compensation_status_indicator.mark_stale()
         self._refresh_override_statuses()
         self._update_status(f"{reason} (results stale; rerun pipeline)")
+        self._schedule_current_preview()
 
     # -- help ----------------------------------------------------------------
 

@@ -46,6 +46,10 @@ class PreviewRevisionState:
     """Mark a current revision as being calculated."""
     self.preview_status = "running"
 
+  def mark_error(self) -> None:
+    """Record a preview failure without changing accepted result revisions."""
+    self.preview_status = "error"
+
   def accept_preview(self, revision: int, population_ids: set[str]) -> bool:
     """Accept only a preview produced for the current definition revision."""
     if revision != self.analysis_revision:

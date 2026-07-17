@@ -357,8 +357,8 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: increment 2としてstale descendant membershipをplot filterへ使用しない。対象populationのcurrent-revision結果がなければ`All Events`へfallbackするrevision stateとGUI回帰を追加する。
 - [x] 済み: increment 3としてmouse releaseまたは有効なnumeric edit確定後に200–400 ms debounceするlatest-wins schedulerを追加する。pending jobをrevisionごとにFIFO実行せず、未実行jobを最新revisionへcoalesceする。
 - [x] 済み: increment 3としてworkerへimmutable project/sample snapshotを渡し、最大worker数を1とする。実行中jobの強制terminateはせず、古いrevisionの完了結果をGUI適用前に破棄する。
-- [ ] increment 4: workerがローカルで完全なpreview resultを構築し、GUI threadでrevision照合後にcacheと表示をatomic交換する。workerからQt widget、pyqtgraph item、共有membership辞書を逐次更新しない。
-- [ ] increment 4: plotまたはGating workspaceへ`Current Sample Preview`を追加し、sample/population、Events、`% Parent`、`% Total`、requested statistics、preview revision/status、`Batch results stale`を明示する。authoritative Results rowへ無印で混在させない。
+- [x] 済み: increment 4としてworkerがローカルで完全なpreview resultを構築し、GUI threadでrevision照合後にcacheと表示をatomic交換する。workerからQt widget、pyqtgraph item、共有membership辞書を逐次更新しない。
+- [x] 済み: increment 4としてplotへ`Current Sample Preview`を追加し、sample/population、Events、`% Parent`、`% Total`、statistics、preview revision/status、`Batch results stale`を明示する。authoritative Results rowへ無印で混在させない。
 - [ ] increment 5: 下位populationへ移動した場合、そのtargetまでのancestor pathとrequested statisticsを優先する。他branch、他sample、Group QCはpreview対象にせず`Run Pipeline`へ残す。
 - [ ] increment 5: `Run Pipeline`開始前にpending gate editをcommitし、新規preview投入を抑止する。batch reportも実行snapshotのrevisionと照合し、実行中にdefinitionが変わったreportをcurrentとして受理しない。
 - [ ] increment 6: repeated dragをcoalesceするtest、out-of-order completionを破棄するtest、ancestor変更直後のdescendant navigation test、preview/batch数値一致test、display downsampling非依存testを追加する。

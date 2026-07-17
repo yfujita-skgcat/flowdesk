@@ -25,6 +25,10 @@ def test_main_window_object_names_and_debug_state(qapp) -> None:
     assert state["pipeline"] == {
       "worker_present": False,
       "running": False,
+      "analysis_revision": 0,
+      "authoritative_result_revision": None,
+      "preview_result_revision": None,
+      "preview_status": "idle",
       "error_type": None,
       "error_message": None,
     }

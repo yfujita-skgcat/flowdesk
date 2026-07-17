@@ -7,11 +7,14 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtTest import QTest
 
-from flowdesk_core.models import ChannelSpec
+from flowdesk_core.fcs_io import write_fcs_file
+from flowdesk_core.models import ChannelSpec, GateSpec
 from flowdesk_core.preview import PreviewRequest
 from flowdesk_core.sample import SampleData
+from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.preview_scheduler import PreviewScheduler
 
 pytestmark = pytest.mark.gui
@@ -103,3 +106,71 @@ def test_scheduler_copies_project_snapshot_and_shuts_down_cleanly(qapp) -> None:
     with pytest.raises(RuntimeError, match="closed"):
       scheduler.schedule({}, _request(2))
     scheduler.deleteLater()
+
+
+def test_main_window_presents_current_sample_preview_after_gate_edit(
+  qapp,
+  tmp_path,
+) -> None:
+  fcs_path = tmp_path / "preview.fcs"
+  write_fcs_file(
+    fcs_path,
+    np.array(
+      [[0.0, 0.0], [2.0, 1.0], [3.0, 2.0], [4.0, 3.0]],
+      dtype=np.float64,
+    ),
+    ["X", "Y"],
+  )
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(fcs_path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    assert window._sample_browser.select_sample(sample.id)
+    gate = GateSpec(
+      id="positive",
+      name="positive",
+      gate_type="range",
+      parent_population_id="all_events",
+      x_parameter=sample.info.channels[0].id,
+      thresholds={"min": 2.0},
+    )
+    window._gate_editor.set_gates([gate])
+    window._on_run_pipeline()
+    worker = window._worker
+    assert worker is not None
+    loop = QEventLoop()
+    worker.finished.connect(loop.quit)
+    QTimer.singleShot(5000, loop.quit)
+    loop.exec()
+    qapp.processEvents()
+
+    updated = GateSpec(
+      id="positive",
+      name="positive",
+      gate_type="range",
+      parent_population_id="all_events",
+      x_parameter=sample.info.channels[0].id,
+      thresholds={"min": 3.0},
+    )
+    window._gate_editor.update_gate(0, updated)
+    for _ in range(200):
+      if window.preview_status == "current":
+        break
+      QTest.qWait(5)
+
+    assert window.preview_status == "current"
+    assert window._preview_report is not None
+    assert window._current_sample_preview._sample.text() == sample.id
+    assert "Preview — current sample only" in (
+      window._current_sample_preview._status.text()
+    )
+    assert "Batch results stale" in window._current_sample_preview._status.text()
+
+    window._on_population_selected("positive", sample.id)
+    qapp.processEvents()
+    assert window.display_population_id == "positive"
+    assert len(window._plot_widget._scatter.xData) == 2
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
