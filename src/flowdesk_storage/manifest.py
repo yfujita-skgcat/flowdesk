@@ -46,6 +46,13 @@ def validate_manifest(data: dict[str, Any]) -> None:
   if not isinstance(data["samples"], list):
     raise ManifestValidationError("samples must be an array")
 
+  # Statistic definitions use the same stable contract across the legacy
+  # 1.5 manifest and the current format.  Validate them whenever present so
+  # malformed definitions cannot bypass validation solely because the rest of
+  # of the manifest still requires migration.
+  if "statistics" in data:
+    _validate_current_statistics(data.get("statistics"), None)
+
   if "advanced_groups_enabled" in data and not isinstance(
     data["advanced_groups_enabled"], bool
   ):
@@ -74,10 +81,7 @@ def validate_manifest(data: dict[str, Any]) -> None:
       } | calculated_matrix_ids,
     )
     gate_ids = _collect_gate_ids(data.get("gating_strategies_data", {}))
-    _validate_current_statistics(
-      data.get("statistics", []),
-      gate_ids,
-    )
+    _validate_current_statistics(data.get("statistics", []), gate_ids)
     _validate_current_gate_parent_references(
       data.get("gating_strategies_data", {}),
       gate_ids,
