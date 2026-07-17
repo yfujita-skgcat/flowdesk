@@ -509,6 +509,13 @@ class SampleBrowser(QWidget):
             relation.setObjectName(f"overlayRelation_{sample.id}")
             relation.setFixedWidth(68)
             relation.setToolTip("Overlay relation or diagnostic status")
+            if active is not None and active.id == sample.id:
+                swatch.setEnabled(False)
+                swatch.setToolTip(
+                    "Active sample uses the base-layer event style; "
+                    "choose an overlay color on a different sample"
+                )
+                relation.setText("active")
             row_layout.addWidget(overlay)
             row_layout.addWidget(swatch)
             row_layout.addWidget(name, 1)
@@ -546,6 +553,19 @@ class SampleBrowser(QWidget):
                 if is_active else "Add this sample as a manual overlay"
             )
             checkbox.blockSignals(False)
+            swatch = row.findChild(QPushButton, f"overlayColor_{sample.id}")
+            if swatch is not None:
+                swatch.setEnabled(not is_active)
+                swatch.setToolTip(
+                    "Active sample uses the base-layer event style; "
+                    "choose an overlay color on a different sample"
+                    if is_active else "Choose overlay source color"
+                )
+            relation = row.findChild(QLabel, f"overlayRelation_{sample.id}")
+            if relation is not None:
+                relation.setText(
+                    "active" if is_active else self._overlay_roles.get(sample.id, "manual")
+                )
 
     def _set_manual_overlay(self, sample_id: str, enabled: bool) -> None:
         active = self.selected_sample()

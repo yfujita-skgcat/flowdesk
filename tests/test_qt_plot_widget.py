@@ -20,7 +20,7 @@ pytestmark = pytest.mark.gui
 
 from PySide6.QtCore import QCoreApplication, QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
-from PySide6.QtWidgets import QApplication, QCheckBox, QLabel  # noqa: E402
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QPushButton  # noqa: E402
 
 from flowdesk_cli.run_project import run_project_command  # noqa: E402
 from flowdesk_core.execution_context import ExecutionContext  # noqa: E402
@@ -1192,11 +1192,44 @@ def test_sample_browser_manual_overlay_column_is_separate_from_active_selection(
     browser.select_sample(browser.samples()[1].id)
     active_row = browser._list_widget.itemWidget(browser._list_widget.item(1))
     active_checkbox = active_row.findChild(QCheckBox)
+    active_swatch = active_row.findChild(
+      QPushButton, f"overlayColor_{browser.samples()[1].id}"
+    )
     assert active_checkbox is not None and not active_checkbox.isEnabled()
+    assert active_swatch is not None and not active_swatch.isEnabled()
+    assert active_row.findChild(
+      QLabel, f"overlayRelation_{browser.samples()[1].id}"
+    ).text() == "active"
     assert browser.overlay_state()["manual_overlay_sample_ids"] == [browser.samples()[1].id]
   finally:
     browser.close()
     browser.deleteLater()
+    app.processEvents()
+
+
+def test_manual_overlay_loads_checked_sample_and_uses_its_color(tmp_path: Path) -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    first = tmp_path / "active.fcs"
+    second = tmp_path / "overlay.fcs"
+    values = np.array([[1.0, 2.0], [2.0, 3.0]], dtype=np.float64)
+    write_fcs_file(first, values, ["X", "Y"])
+    write_fcs_file(second, values * 2.0, ["X", "Y"])
+    assert window._sample_browser.add_samples_from_paths([str(first), str(second)]) == 2
+    active, overlay = window._sample_browser.samples()
+    assert window._sample_browser.select_sample(active.id)
+    assert overlay.id not in window._event_data
+    window._sample_browser._manual_overlay_colors[overlay.id] = "#ff0000"
+    window._sample_browser._set_manual_overlay(overlay.id, True)
+    app.processEvents()
+    assert overlay.id in window._event_data
+    assert len(window._plot_widget._overlay_scatter_items) == 1
+    brush = window._plot_widget._overlay_scatter_items[0].scatter.opts["brush"]
+    assert brush.color().name() == "#ff0000"
+  finally:
+    window.close()
+    window.deleteLater()
     app.processEvents()
 
 

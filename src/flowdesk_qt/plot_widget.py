@@ -377,10 +377,11 @@ class PlotWidget(QWidget):
             x_plot,
             y_plot,
             pen=None,
+            symbolPen=None,
             symbol="o",
             symbolSize=self._style.dot_size,
             pxMode=True,
-            brush=brush,
+            symbolBrush=brush,
         )
 
         self._update_labels()
@@ -500,9 +501,14 @@ class PlotWidget(QWidget):
         for layer in layers:
             style = dict(getattr(layer, "style", {}))
             item = self._plot_item.plot(
-                layer.x, layer.y, pen=None, symbol="o", symbolSize=self._style.dot_size,
+                layer.x,
+                layer.y,
+                pen=None,
+                symbolPen=None,
+                symbol="o",
+                symbolSize=self._style.dot_size,
                 pxMode=True,
-                brush=self._make_brush(
+                symbolBrush=self._make_brush(
                     style.get("color", self._style.dot_color),
                     float(style.get("alpha", self._style.dot_opacity)),
                 ),
@@ -765,9 +771,9 @@ class PlotWidget(QWidget):
                     self._make_brush(str(color), s.dot_opacity)
                     for color in self._event_colors
                 ]
-                self._scatter.setData(brush=brush)
+                self._scatter.setData(symbolBrush=brush)
             else:
-                self._scatter.setBrush(brush)
+                self._scatter.setSymbolBrush(brush)
             self._scatter.setSymbolSize(s.dot_size)
 
         # Re-apply gate overlay colors

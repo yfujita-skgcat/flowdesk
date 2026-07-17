@@ -1333,6 +1333,7 @@ class MainWindow(QMainWindow):
     def _render_manual_overlays(self, x_parameter_id: str, y_parameter_id: str) -> None:
         """Render checked samples using existing membership results only."""
         self._plot_widget.clear_overlay_layers()
+        self._plot_widget.set_status_banner("")
         state = self._sample_browser.overlay_state()
         selected = set(state.get("manual_overlay_sample_ids", []))
         selected.update(
@@ -1341,6 +1342,18 @@ class MainWindow(QMainWindow):
         selected.discard(self._current_sample_id)
         if not selected:
             return
+        samples_by_id = {
+            sample.id: sample for sample in self._sample_browser.samples()
+        }
+        for sample_id in sorted(selected):
+            if sample_id in self._event_data:
+                continue
+            sample = samples_by_id.get(sample_id)
+            if sample is None:
+                continue
+            if sample.status in {"missing", "fingerprint mismatch"}:
+                continue
+            self._load_sample_events(sample)
         report = (
             self._preview_report
             or self._last_result_report
