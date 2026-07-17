@@ -779,6 +779,7 @@ class MainWindow(QMainWindow):
         self._plot_toolbar.on_export_svg(self._on_export_svg)
         self._plot_toolbar.on_export_pdf(self._on_export_pdf)
         self._plot_toolbar.on_add_statistic(self._on_add_statistic_from_graph)
+        self._plot_toolbar.on_interaction_mode(self._on_interaction_mode)
         self._plot_toolbar.on_marginal_toggled(self._on_marginal_toggled)
         self._group_panel.groups_changed.connect(self._on_groups_changed)
 
@@ -2108,6 +2109,11 @@ class MainWindow(QMainWindow):
         status = "Marginal histograms enabled" if enabled else "Marginal histograms disabled"
         self._update_status(status)
         self._replot()
+
+    def _on_interaction_mode(self, mode: str) -> None:
+        """Forward the exclusive toolbar mode to the display widget."""
+        self._plot_widget.set_interaction_mode(mode)  # type: ignore[arg-type]
+        self._update_status(f"Plot interaction mode: {mode}")
 
     def _on_export_png(self) -> None:
         """Export current plot view to PNG."""

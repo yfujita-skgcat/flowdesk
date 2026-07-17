@@ -35,3 +35,28 @@ def test_plot_view_registry_duplicates_and_links_sample_navigation() -> None:
   assert [item.id for item in duplicate.views] == ["v", "v-copy"]
   assert duplicate.active_view_id == "v-copy"
   assert duplicate.linked_sample_navigation is True
+
+
+@pytest.mark.parametrize(
+  "plot_type", ["dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"]
+)
+def test_all_plot_types_accept_constant_finite_and_caller_transformed_data(plot_type: str) -> None:
+  if plot_type in {"histogram", "cdf"}:
+    view = PlotViewSpec(id="v", x_parameter="X", plot_type=plot_type, x_transform_id="logicle")
+  else:
+    view = PlotViewSpec(
+      id="v", x_parameter="X", y_parameter="Y", plot_type=plot_type,
+      x_transform_id="logicle", y_transform_id="logicle",
+    )
+  events = np.full((100, 2), 2.0)
+  result = prepare_display_data(view, events, ["X", "Y"])
+  assert np.all(np.isfinite(result.x))
+  assert np.all(np.isfinite(result.y))
+
+
+def test_large_density_uses_all_finite_events() -> None:
+  events = np.column_stack((np.arange(100_000, dtype=float), np.arange(100_000, dtype=float)))
+  view = PlotViewSpec(id="v", x_parameter="X", y_parameter="Y", plot_type="contour",
+                      aggregation={"bins": (100, 100)})
+  result = prepare_display_data(view, events, ["X", "Y"])
+  assert int(result.values.sum()) == len(events)

@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtWidgets import QToolBar, QToolButton, QWidget
+from PySide6.QtWidgets import QButtonGroup, QToolBar, QToolButton, QWidget
 
 from flowdesk_qt.diagnostics import invoke_callback
 
@@ -39,6 +39,7 @@ class PlotToolbar(QToolBar):
             "export_pdf": [],
             "marginal_toggled": [],
             "add_statistic": [],
+            "interaction_mode": [],
         }
         self._marginal_enabled: bool = False
         self._build_toolbar()
@@ -83,6 +84,9 @@ class PlotToolbar(QToolBar):
         """Register a callback to create a statistic from the graph context."""
         self._callbacks["add_statistic"].append(callback)
 
+    def on_interaction_mode(self, callback: Callable[[str], None]) -> None:
+        self._callbacks["interaction_mode"].append(callback)
+
     def _emit(self, key: str, *args: Any) -> None:
         for cb in self._callbacks.get(key, []):
             invoke_callback(cb, *args)
@@ -108,6 +112,9 @@ class PlotToolbar(QToolBar):
     def _on_marginal_toggled(self, checked: bool) -> None:
         self._marginal_enabled = checked
         self._emit("marginal_toggled", checked)
+
+    def _on_interaction_mode(self, mode: str) -> None:
+        self._emit("interaction_mode", mode)
 
     def _build_toolbar(self) -> None:
         btn_robust = QToolButton()
@@ -153,6 +160,19 @@ class PlotToolbar(QToolBar):
         )
         btn_statistic.clicked.connect(self._on_add_statistic_clicked)
         self.addWidget(btn_statistic)
+
+        self.addSeparator()
+        mode_group = QButtonGroup(self)
+        mode_group.setExclusive(True)
+        for mode, label in (("pan", "Pan"), ("select", "Select"), ("gate", "Gate")):
+            button = QToolButton()
+            button.setObjectName(f"{mode}InteractionModeButton")
+            button.setText(label)
+            button.setCheckable(True)
+            button.setChecked(mode == "pan")
+            button.clicked.connect(lambda _checked, value=mode: self._on_interaction_mode(value))
+            mode_group.addButton(button)
+            self.addWidget(button)
 
         self.addSeparator()
 
