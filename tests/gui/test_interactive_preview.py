@@ -108,6 +108,30 @@ def test_scheduler_copies_project_snapshot_and_shuts_down_cleanly(qapp) -> None:
     scheduler.deleteLater()
 
 
+def test_scheduler_shutdown_waits_for_running_job_and_ignores_late_signal(qapp) -> None:
+  started = threading.Event()
+  release = threading.Event()
+  received: list[int] = []
+
+  def execute(_project, request):
+    started.set()
+    assert release.wait(2.0)
+    return SimpleNamespace(revision=request.revision)
+
+  scheduler = PreviewScheduler(debounce_ms=0, executor=execute)
+  scheduler.preview_ready.connect(lambda report: received.append(report.revision))
+  try:
+    scheduler.schedule({}, _request(1))
+    _wait_until(qapp, started.is_set)
+    threading.Timer(0.05, release.set).start()
+    scheduler.shutdown()
+    assert scheduler._pool.activeThreadCount() == 0
+    assert received == []
+  finally:
+    release.set()
+    scheduler.deleteLater()
+
+
 def test_main_window_presents_current_sample_preview_after_gate_edit(
   qapp,
   tmp_path,

@@ -361,8 +361,8 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: increment 4としてplotへ`Current Sample Preview`を追加し、sample/population、Events、`% Parent`、`% Total`、statistics、preview revision/status、`Batch results stale`を明示する。authoritative Results rowへ無印で混在させない。
 - [x] 済み: increment 5として下位population選択時にtarget populationとそのrequested statisticsをpreview requestへ渡す。他sample、Group QC、authoritative exportはpreview対象にせず`Run Pipeline`へ残す。
 - [x] 済み: increment 5として`Run Pipeline`開始前にpending gate editをcommitし、新規preview投入を抑止する。batch reportを実行snapshotのrevisionと照合し、実行中にdefinitionが変わったreportをcurrentとして受理しない。
-- [ ] increment 6: repeated dragをcoalesceするtest、out-of-order completionを破棄するtest、ancestor変更直後のdescendant navigation test、preview/batch数値一致test、display downsampling非依存testを追加する。
-- [ ] increment 6: project/window close時にtimerとlate resultを無効化し、running QThreadを残さない。代表event数でlatency、memory、queue長を測定し、strict GUI teardownを確認する。
+- [x] 済み: increment 6としてrepeated dragをcoalesceするtest、out-of-order completionを破棄するtest、ancestor変更直後のdescendant navigation test、preview/batch数値一致test、display downsampling非依存testを追加する。
+- [x] 済み: increment 6としてproject/window close時にtimerとlate resultを無効化し、running workerを残さない。代表event数でfull-resolution preview、queue長、clean scheduler shutdownを確認する。
 
 Preview値は保存済みanalysis definitionから再生成できるderived cacheであり、authoritative exportへ直接使用しない。全sample自動再計算や細粒度branch cache reuseは、correctnessとbenchmarkが揃うまで実装しない。
 

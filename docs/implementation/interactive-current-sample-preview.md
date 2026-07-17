@@ -253,7 +253,7 @@ Tests:
 
 Implement one increment at a time.
 
-Current status: increments 1–5 are implemented. `PreviewRequest`, `PreviewReport`,
+Current status: increments 1–6 are implemented. `PreviewRequest`, `PreviewReport`,
 and the synchronous GUI-independent `PipelineRunner.preview_sample()` contract execute
 one full-resolution sample through the canonical runner. `PreviewRevisionState` now
 tracks analysis, authoritative, and preview revisions, invalidates changed gate
@@ -262,8 +262,9 @@ single-worker debounce/latest-wins queue with immutable project snapshots and ob
 completion discard. `CurrentSamplePreview` now presents only accepted current-revision
 preview values with explicit batch-stale provenance, and stale navigation uses a current
 ancestor fallback. Preview requests now carry target statistic IDs, while Run Pipeline
-suspends new preview work and accepts only matching batch revisions. Increment 6 covers
-shutdown and performance verification.
+suspends new preview work and accepts only matching batch revisions. Scheduler shutdown,
+late-signal handling, queue coalescing, and full-resolution representative-event tests
+complete the B3.2 implementation.
 
 1. **Synchronous core preview contract**
    - Add immutable request/result types and `PipelineRunner.preview_sample()`.
