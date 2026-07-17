@@ -20,6 +20,7 @@ AutoGateAlgorithm = Literal["quantile_rectangle"]
 MagneticGateAlgorithm = Literal["largest_gap_range"]
 TetheredGateAlgorithm = Literal["translated_rectangle"]
 CloneConflictPolicy = Literal["leader_wins", "reject_conflict"]
+PlotType = Literal["dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"]
 FitStatus = Literal["success", "failed"]
 ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
@@ -640,6 +641,36 @@ class CloneSyncResult:
   conflict_sample_ids: tuple[str, ...] = field(default_factory=tuple)
   before: dict[str, Any] = field(default_factory=dict)
   after: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PlotViewSpec:
+  """Persisted display definition; it never stores event values or masks."""
+
+  id: str
+  population_id: str = "all_events"
+  x_parameter: str = ""
+  y_parameter: str | None = None
+  x_transform_id: str | None = None
+  y_transform_id: str | None = None
+  plot_type: PlotType = "scatter"
+  viewport: dict[str, Any] = field(default_factory=dict)
+  style: dict[str, Any] = field(default_factory=dict)
+  aggregation: dict[str, Any] = field(default_factory=lambda: {"bins": 64})
+  rendering_downsample: dict[str, Any] = field(default_factory=dict)
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.population_id or not self.x_parameter:
+      raise ValueError("plot view ID, population, and x parameter are required")
+    if self.plot_type not in {
+      "dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"
+    }:
+      raise ValueError(f"unsupported plot type: {self.plot_type!r}")
+    if (
+      self.plot_type in {"pseudocolor", "density", "contour", "scatter", "dot"}
+      and not self.y_parameter
+    ):
+      raise ValueError(f"plot type {self.plot_type!r} requires y_parameter")
 
 
 @dataclass(frozen=True)

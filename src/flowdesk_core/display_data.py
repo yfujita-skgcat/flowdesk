@@ -1,0 +1,105 @@
+"""GUI-independent preparation of reproducible plot display data."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from flowdesk_core.execution_report import ExecutionReport
+from flowdesk_core.models import PlotViewSpec
+
+
+@dataclass(frozen=True)
+class DisplayData:
+  """Prepared display aggregate; never used for scientific membership/statistics."""
+
+  plot_type: str
+  x: NDArray[np.float64]
+  y: NDArray[np.float64]
+  values: NDArray[np.float64]
+  x_edges: NDArray[np.float64]
+  y_edges: NDArray[np.float64]
+  diagnostics: tuple[dict[str, Any], ...] = ()
+
+
+def prepare_display_data(
+  view: PlotViewSpec,
+  events: NDArray[np.float64],
+  channel_names: list[str] | tuple[str, ...],
+  report: ExecutionReport | None = None,
+  *,
+  sample_id: str | None = None,
+) -> DisplayData:
+  """Prepare a view from full events and report membership, with deterministic bins."""
+  names = tuple(channel_names)
+  try:
+    x_index = names.index(view.x_parameter)
+  except ValueError as exc:
+    raise ValueError(f"display X parameter is missing: {view.x_parameter!r}") from exc
+  if events.ndim != 2 or events.shape[1] != len(names):
+    raise ValueError("display events and channel names do not align")
+  mask = np.ones(len(events), dtype=np.bool_)
+  if view.population_id != "all_events" and (report is None or sample_id is None):
+    raise ValueError(f"display population membership is missing: {view.population_id!r}")
+  if report is not None and sample_id is not None and view.population_id != "all_events":
+    memberships = [
+      item for item in report.population_membership
+      if item.sample_id == sample_id and item.population_id == view.population_id
+    ]
+    if not memberships:
+      raise ValueError(f"display population membership is missing: {view.population_id!r}")
+    mask = np.asarray(memberships[0].mask, dtype=np.bool_)
+  selected_x = np.asarray(events[mask, x_index], dtype=np.float64)
+  finite_x = selected_x[np.isfinite(selected_x)]
+  diagnostics = [{
+    "code": "display_nonfinite_excluded", "event_count": int(len(selected_x)),
+    "finite_event_count": int(len(finite_x)),
+  }]
+  if view.plot_type in {"histogram", "cdf"}:
+    if view.plot_type == "cdf":
+      ordered = np.sort(finite_x)
+      return DisplayData("cdf", ordered, np.linspace(0.0, 1.0, len(ordered), endpoint=True),
+                         np.empty(0), np.empty(0), np.empty(0), tuple(diagnostics))
+    bins = _bins(view, 1)[0]
+    counts, edges = _histogram(finite_x, bins)
+    return DisplayData("histogram", (edges[:-1] + edges[1:]) / 2.0, counts,
+                       np.empty(0), edges, np.empty(0), tuple(diagnostics))
+  if not view.y_parameter:
+    raise ValueError(f"plot type {view.plot_type!r} requires y_parameter")
+  try:
+    y_index = names.index(view.y_parameter)
+  except ValueError as exc:
+    raise ValueError(f"display Y parameter is missing: {view.y_parameter!r}") from exc
+  selected_y = np.asarray(events[mask, y_index], dtype=np.float64)
+  pair = np.isfinite(selected_x) & np.isfinite(selected_y)
+  x_values, y_values = selected_x[pair], selected_y[pair]
+  if view.plot_type in {"scatter", "dot"}:
+    return DisplayData(
+      view.plot_type, x_values, y_values, np.empty(0), np.empty(0), np.empty(0),
+      tuple(diagnostics),
+    )
+  bins_x, bins_y = _bins(view, 2)
+  density, x_edges, y_edges = np.histogram2d(x_values, y_values, bins=(bins_x, bins_y))
+  return DisplayData(
+    view.plot_type, x_edges, y_edges, density, x_edges, y_edges, tuple(diagnostics),
+  )
+
+
+def _bins(view: PlotViewSpec, dimensions: int) -> tuple[int, ...]:
+  value = view.aggregation.get("bins", (64,) * dimensions)
+  if isinstance(value, int):
+    value = (value,) * dimensions
+  if len(value) != dimensions or any(isinstance(item, bool) or int(item) < 1 for item in value):
+    raise ValueError("plot aggregation bins must be positive")
+  return tuple(int(item) for item in value)
+
+
+def _histogram(
+  values: NDArray[np.float64], bins: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+  if values.size == 0:
+    return np.zeros(bins, dtype=np.float64), np.zeros(bins + 1, dtype=np.float64)
+  return np.histogram(values, bins=bins)

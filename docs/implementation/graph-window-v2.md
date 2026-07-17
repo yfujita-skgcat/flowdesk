@@ -25,6 +25,12 @@ style. It is display state except where transform IDs define gate coordinate con
 Render input is the full selected membership; display sampling/aggregation is a separate,
 versioned setting and never changes scientific counts.
 
+The core `PlotViewSpec` and `prepare_display_data` adapter implement this contract.
+`scatter`/`dot` return finite paired points; `histogram` and `cdf` are one-dimensional;
+`density`, `pseudocolor`, and `contour` share deterministic `numpy.histogram2d` bin
+edges without smoothing. `rendering_downsample` is display metadata and is never
+applied to density aggregation or pipeline membership.
+
 ## Increments
 
 1. Add PlotViewSpec serialization and restore existing scatter/histogram state.
@@ -57,4 +63,3 @@ versioned setting and never changes scientific counts.
 pytest -q tests/test_qt_plot_widget.py tests/gui/test_population_filtering.py
 ./tools/run-gui-tests.sh -q
 ```
-

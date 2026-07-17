@@ -378,11 +378,11 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 ### Phase B6: Graph Window plot types [S09]
 
-- [ ] `docs/implementation/graph-window-v2.md`を全文読み、今回追加するplot typeのaggregation/display policyを追記する。
-- [ ] `PlotViewSpec`をmodel化し、Population、axes、transforms、plot type、range、styleを保存する。
-- [ ] dot/scatter、pseudocolor、density、contour、histogram、CDFを段階実装する。
-- [ ] density/contour binningはfull selected Populationを入力にする。
-- [ ] rendering downsampleとdensity aggregationの設定を区別する。
+- [x] `docs/implementation/graph-window-v2.md`を全文読み、plot typeのaggregation/display policyを追記する。
+- [x] `PlotViewSpec`をmodel化し、Population、axes、transforms、plot type、range、styleを保存する。
+- [x] dot/scatter、pseudocolor、density、contour、histogram、CDFをcore display adapterへ段階実装する。
+- [x] density/contour binningはfull selected Populationを入力にする。
+- [x] rendering downsampleとdensity aggregationの設定を区別する。
 - [ ] duplicate graph tab/windowとlinked sample navigationを追加する。
 - [ ] selection、gate draw、pan/zoom modeをtoolbarで排他的に表示する。
 - [ ] gate label、Population statistics、compensation badgeをoverlay可能にする。
