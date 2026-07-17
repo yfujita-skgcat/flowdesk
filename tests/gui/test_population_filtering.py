@@ -170,6 +170,14 @@ def test_population_filter_persists_across_channel_switch(
         assert window.display_population_id == "pos"
         assert len(window._plot_widget._scatter.xData) == 3
 
+        # Show Gate displays the parent population for editing, while the
+        # explicit Show Population action displays the gate result.
+        window._on_show_gate(gate)
+        assert window.display_population_id == "all_events"
+        window._on_show_population(gate)
+        assert window.display_population_id == "pos"
+        assert len(window._plot_widget._scatter.xData) == 3
+
         # Returning to All Events changes the display only; it must not move
         # the gate editing target.
         window._on_population_selected("all_events", sample.id)

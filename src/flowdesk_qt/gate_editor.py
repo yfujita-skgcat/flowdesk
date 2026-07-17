@@ -770,6 +770,10 @@ class GateEditor(QWidget):
         """Register display-only navigation callback receiving a GateSpec."""
         self._show_gate_callbacks.append(callback)
 
+    def on_show_population(self, callback) -> None:
+        """Register an explicit request to display a gate's child population."""
+        self._show_population_callbacks.append(callback)
+
     def on_migrate_gate(self, callback) -> None:
         """Register an explicit coordinate-migration request callback."""
         self._migrate_gate_callbacks.append(callback)
@@ -1154,6 +1158,10 @@ class GateEditor(QWidget):
         if gate is not None:
             index = next(i for i, value in enumerate(self._gates) if value.id == gate.id)
             self._list_widget.setCurrentRow(index)
+        else:
+            # Selecting the explicit All Events root clears the gate editing
+            # target instead of leaving the previously selected gate active.
+            self._list_widget.setCurrentRow(-1)
         self._refresh_reparent_combo()
 
     def _on_tree_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
@@ -1190,6 +1198,13 @@ class GateEditor(QWidget):
         if gate is None:
             return
         for callback in self._show_gate_callbacks:
+            invoke_callback(callback, gate)
+
+    def _on_show_population_clicked(self) -> None:
+        gate = self.selected_gate()
+        if gate is None:
+            return
+        for callback in self._show_population_callbacks:
             invoke_callback(callback, gate)
 
     def _on_migrate_gate_clicked(self) -> None:
@@ -1314,6 +1329,7 @@ class GateEditor(QWidget):
         self._gates_changed_callbacks: list[Any] = []
         self._interactive_gate_callbacks: list[Any] = []
         self._show_gate_callbacks: list[Any] = []
+        self._show_population_callbacks: list[Any] = []
         self._migrate_gate_callbacks: list[Any] = []
         self._updating_list_item = False
         self._updating_tree = False
@@ -1359,6 +1375,10 @@ class GateEditor(QWidget):
         self._btn_show_gate.setObjectName("showGateButton")
         self._btn_show_gate.clicked.connect(self._on_show_gate_clicked)
 
+        self._btn_show_population = QPushButton("Show Population")
+        self._btn_show_population.setObjectName("showPopulationButton")
+        self._btn_show_population.clicked.connect(self._on_show_population_clicked)
+
         self._btn_migrate_gate = QPushButton("Migrate Transform")
         self._btn_migrate_gate.setObjectName("migrateGateTransformButton")
         self._btn_migrate_gate.clicked.connect(self._on_migrate_gate_clicked)
@@ -1389,7 +1409,7 @@ class GateEditor(QWidget):
         self._tree_widget = QTreeWidget()
         self._tree_widget.setObjectName("gateHierarchyTree")
         self._tree_widget.setColumnCount(4)
-        self._tree_widget.setHeaderLabels(["Population", "Type", "Axes / Scale", "Expression"])
+        self._tree_widget.setHeaderLabels(["Gate definition", "Type", "Axes / Scale", "Expression"])
         self._tree_widget.setSelectionMode(QAbstractItemView.SingleSelection)
         self._tree_widget.currentItemChanged.connect(
             lambda *_args: self._on_tree_selection_changed()
@@ -1419,6 +1439,7 @@ class GateEditor(QWidget):
         box_layout.addWidget(self._tree_widget)
         detail_row = QHBoxLayout()
         detail_row.addWidget(self._btn_show_gate)
+        detail_row.addWidget(self._btn_show_population)
         detail_row.addWidget(self._btn_migrate_gate)
         detail_row.addWidget(self._reparent_combo)
         detail_row.addWidget(self._btn_apply_parent)

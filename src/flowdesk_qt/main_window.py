@@ -806,6 +806,7 @@ class MainWindow(QMainWindow):
         # Interactive gate creation starts from the gate editor.
         self._gate_editor.on_interactive_gate_requested(self._on_interactive_gate_requested)
         self._gate_editor.on_show_gate(self._on_show_gate)
+        self._gate_editor.on_show_population(self._on_show_population)
         self._gate_editor.on_migrate_gate(self._on_migrate_gate)
 
         # Plot toolbar callbacks
@@ -1167,7 +1168,8 @@ class MainWindow(QMainWindow):
             self._selected_gate_id = gates[gate_index].id
 
     def _on_show_gate(self, gate) -> None:
-        """Navigate display controls to a gate without changing analysis state."""
+        """Display the gate's parent population with the gate outline."""
+        self._display_population_id = gate.parent_population_id or "all_events"
         if gate.x_parameter:
             y_parameter = gate.y_parameter or self._channel_selector.y_channel_id()
             self._channel_selector.set_selected_channels(
@@ -1187,6 +1189,32 @@ class MainWindow(QMainWindow):
             f"{gate.x_transform_id or gate.x_scale}/"
             f"{gate.y_transform_id or gate.y_scale}"
         )
+
+    def _on_show_population(self, gate) -> None:
+        """Display a gate-derived population only when its result is current."""
+        report = self._population_tree.last_report()
+        if report is None or self._results_stale:
+            self._update_status(
+                f"Population unavailable for {gate.name}; run Pipeline first"
+            )
+            return
+        result = next(
+            (
+                value for value in report.population_results
+                if value.sample_id == self._current_sample_id
+                and value.population_id == gate.id
+            ),
+            None,
+        )
+        if result is None:
+            self._update_status(
+                f"Population unavailable for {gate.name} in the active sample"
+            )
+            return
+        self._display_population_id = gate.id
+        self._update_workspace_navigation()
+        self._replot()
+        self._update_status(f"Showing population: {gate.name} [{gate.id}]")
 
     def _transform_specs(self) -> tuple[TransformSpec, ...]:
         return tuple(

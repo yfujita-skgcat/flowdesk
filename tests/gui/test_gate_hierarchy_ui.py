@@ -86,6 +86,22 @@ def test_duplicate_names_remain_distinct_by_id(qapp) -> None:
         qapp.processEvents()
 
 
+def test_all_events_root_clears_gate_definition_selection(qapp) -> None:
+    editor = GateEditor()
+    try:
+        editor.set_gates(_three_level_gates(), notify=False)
+        assert editor.select_gate("cells")
+        assert editor.selected_gate() is not None
+        editor._tree_widget.setCurrentItem(editor._tree_widget.topLevelItem(0))
+        qapp.processEvents()
+        assert editor.selected_gate() is None
+        assert editor._list_widget.currentRow() == -1
+    finally:
+        editor.close()
+        editor.deleteLater()
+        qapp.processEvents()
+
+
 def test_explicit_child_mode_sets_parent_and_context(qapp) -> None:
     editor = GateEditor()
     try:
