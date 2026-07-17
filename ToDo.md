@@ -56,6 +56,7 @@ git status --short
 | B1 | `docs/implementation/groups-and-annotations.md` |
 | B2, B5 | `docs/implementation/gate-engine-v2.md` |
 | B3 | `docs/implementation/workspace-tree-and-undo.md` |
+| B3.1 | `docs/implementation/gating-and-results-workspaces.md` |
 | B4 | `docs/implementation/group-gating-and-overrides.md` |
 | B6 | `docs/implementation/graph-window-v2.md` |
 | B7 | `docs/implementation/overlay-and-backgating.md` |
@@ -320,6 +321,24 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: `CopySubtreeAnalysisCommand`でresolved target strategy（population/sample/group scope）へsubtreeをatomic適用する。全targetの候補を事前検証し、一つでも失敗した場合は全targetを変更しない。
 - [x] 済み: duplicate sibling name、cycle/missing parent、reference deleteを確定前preflightで表示し、失敗はUndo履歴へ追加しない。
 - [x] 済み: MainWindowのUndo/Redo action・Ctrl+Z/Ctrl+Shift+Z・enabled labelを追加し、保存時clean markerを更新する。Undo後のgate変更は既存stale経路へ入り、cache/reportを破棄するGUI回帰testを追加する。
+
+### Phase B3.1: Gating definitionとExecuted Results workspaceの分離 [S07/S14]
+
+現在のGate hierarchy、WorkspaceTree、Population Results、Custom Statisticsの常時縦積みは廃止する。Gate definitionとsampleへ適用した実行結果は異なるlifecycleを持つため、一つの巨大tableへ統合しない。
+
+- [ ] `docs/implementation/gating-and-results-workspaces.md`を全文読み、番号付きincrementを一つだけ実装する。
+- [ ] MainWindowの表示状態を`active_sample_id`、`display_population_id`、`selected_gate_id`へ分離する。gate selectionとpopulation membership filteringを同一stateとして扱わない。
+- [ ] 右paneを`Gating`と`Results`のtabまたは排他的modeへ変更し、3つのtableを同時に縦積み表示しない。
+- [ ] `Gating`にはGate hierarchyとdefinition編集操作だけを置く。先頭列を`Gate`または`Gate definition`とし、Pipeline実行前・失敗時・results stale時も編集可能にする。
+- [ ] Gate hierarchy選択は`selected_gate_id`とoutline highlightだけを変更する。暗黙にchild populationへplotを絞り込まず、軸・scaleも変更しない。
+- [ ] `Show Gate`はgateの軸・scaleへ移動し、親populationを表示してgate outlineを強調する。`Show Population`はcurrentなPipeline resultがある場合だけgate由来のchild populationを表示する。
+- [ ] `Results`へ現在のWorkspace population/statisticsとPopulation Resultsを統合し、`Sample -> All Events -> Population`のtree-tableを実装する。`Events`、`% Parent`、`% Total`、`Status`はExecutionReportだけから表示する。
+- [ ] sample rowと`All Events` rowを分ける。sample row選択はactive sampleだけを変更し、`All Events` row選択は`display_population_id = "all_events"`として全event表示を復元する。
+- [ ] statistic resultはpopulation childまたはdetail paneの一方だけに表示し、現在のWorkspaceとCustom Statistics間の重複表示をなくす。
+- [ ] 同じResults modelから`Hierarchy`と`Flat table`を切替可能にする。Flat tableは`Sample | Population | Parent | Events | % Parent | % Total | Status`を持ち、population名へindentを埋め込まない。
+- [ ] stale、missing、zero events、undefined/error statisticを区別する。stale membershipでplotをfilterせず、gate definition自体は有効なまま保持する。
+- [ ] Gate selectionがplot filterを変更しないtest、Show Gateが親populationを表示するtest、明示All Eventsで全eventへ戻るtest、Results選択がgate編集対象を変えないtestを追加する。
+- [ ] Hierarchy/Flat table、GUI/headless/CLIでevent countとfrequencyが一致し、既存gate編集、Undo/Redo、population filtering、strict GUI teardownが壊れていないことを確認する。
 
 ### Phase B4: Group strategyとsample override review [S08]
 

@@ -16,7 +16,8 @@ resides in `flowdesk_qt`.
 - `src/flowdesk_core/pipeline_runner.py` — collect and forward membership masks
 
 ### GUI (Phase 3)
-- `src/flowdesk_qt/population_tree.py` — selection callback API
+- proposed `src/flowdesk_qt/results_workspace.py` — executed results navigation
+- transitional `src/flowdesk_qt/population_tree.py` — existing selection callback API
 - `src/flowdesk_qt/main_window.py` — apply membership filter to plot
 - `src/flowdesk_qt/plot_widget.py` — accept filtered event data
 
@@ -39,8 +40,8 @@ resides in `flowdesk_qt`.
   (compensation → derived parameters → transforms → gating)
 
 ### Display (flowdesk_qt)
-- `PopulationTree` selection callback emitting `(population_id, sample_id)`
-- `MainWindow` storing the selected population ID as display state
+- Results workspace selection callback emitting `(population_id, sample_id)`
+- `MainWindow` storing `display_population_id` independently from `selected_gate_id`
 - `MainWindow._replot()` applying the membership mask to X/Y columns before
   passing to `PlotWidget.plot_events()`
 - Histogram binning, marginal histogram layout, and "Count" display option
@@ -84,23 +85,26 @@ resides in `flowdesk_qt`.
 ## Phase 3: Population Filtering Display
 
 ### Rules
-1. `PopulationTree` emits `(population_id, sample_id)` on row selection via
+1. Results workspace emits `(population_id, sample_id)` on population row selection via
    `flowdesk_qt.diagnostics.invoke_callback()`.
-2. Selecting `all_events` restores full-event display.
+2. Every sample has separate sample and `all_events` rows. A sample row changes only the
+   active sample; selecting `all_events` restores full-event display.
 3. On report clear/stale, sample removal, or project reload, invalidate selection.
 4. `MainWindow._replot()` fetches the full-length mask for the current sample
    and selected population, applies it to X/Y columns, then calls `plot_events()`.
 5. Switching samples: if the same population ID exists in the new sample's report,
    use that sample's mask; otherwise fall back to `all_events`.
 6. Gate edit/add/delete marks results stale; old membership must not be displayed.
-7. Plot status or Population Results status shows selected population name and
+7. Plot status or Results workspace status shows selected population name and
    full event count.
+8. Gate definition selection does not change `display_population_id`; `Show Gate` displays
+   the parent population, while explicit `Show Population` displays child membership.
 
 ### Required GUI Tests
 - 4-event synthetic FCS, gate selects 2 events → scatter receives exactly 2 points.
 - Changing X/Y channels still shows 2 points.
 - Selecting `all_events` restores 4 points.
-- Population Results event count matches membership sum and displayed full count.
+- Results workspace event count matches membership sum and displayed full count.
 - Gate edit stale-ifies report; old 2-point display is not reused.
 - GUI and headless runner population counts match exactly.
 - Changing display downsampling does not change headless counts.

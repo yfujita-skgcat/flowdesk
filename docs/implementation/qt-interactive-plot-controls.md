@@ -219,6 +219,12 @@ The GUI should support:
 
 Implementation rules:
 
+- Gate definition selection updates `selected_gate_id` and outline highlight only. It
+  must not implicitly set the plot's `display_population_id` to the gate's child result.
+- `Show Gate` is explicit: navigate to matching axes/scales and display the gate's parent
+  population so events outside the boundary remain visible while editing.
+- `Show Population` is a separate explicit action for displaying the gate's child
+  membership after a successful, non-stale pipeline run.
 - Editing a gate changes project analysis state and must invalidate cached results.
 - Editing must emit a gates-changed signal.
 - Store edited coordinates in the same coordinate system used by gate creation.
@@ -241,7 +247,7 @@ Acceptance criteria:
 
 The GUI should support:
 
-- selecting a population from the population tree
+- selecting a population from the Results workspace
 - highlighting events in the selected population
 - optionally showing all events dimmed and selected population in a stronger color
 - showing gate overlays relevant to the selected population
@@ -312,6 +318,11 @@ Keep transient GUI interaction state out of core models:
 - in-progress polygon vertices
 - hovered gate/vertex
 - selected gate id
+- active sample id
+- displayed population id
+
+The selected gate and displayed population are independent. Do not reuse one variable for
+both concepts.
 
 Once a gate is finished or edited, convert it to `GateSpec`.
 

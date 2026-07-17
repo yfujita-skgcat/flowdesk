@@ -90,7 +90,9 @@ must not implement formulas, matrix operations, gate membership, or platform fit
 | `plot_toolbar.py` | Plot actions/display toggles | Exclusive interaction modes |
 | `plot_style.py` | Display-only plot settings | Theme/style defaults |
 | `gate_editor.py` | Gate definition editing/hierarchy UI | New gate editors and command dispatch |
-| `population_tree.py` | Population/result presentation | Statistics/platform child nodes |
+| `workspace_tree.py` | Transitional unified navigation tree | Do not extend; migrate executed-result behavior to Results workspace |
+| `population_tree.py` | Transitional population/result presentation | Do not add duplicate result views; migrate to Results workspace |
+| proposed `results_workspace.py` | Unified executed sample/population/statistic results | Hierarchy/flat result views and display-population selection |
 | `diagnostics.py` | Strict callbacks/logging/debug state | New observable UI state, not scientific diagnostics calculation |
 
 Prefer one new widget module per major editor: `compensation_workspace.py`,
@@ -135,4 +137,3 @@ documented generator, never as a large opaque binary.
   and column dialogs in Qt; export reads core rows.
 - “Make 10M points faster”: runner/cache benchmark separately from plot downsampling;
   prove gate/statistic counts are unchanged.
-

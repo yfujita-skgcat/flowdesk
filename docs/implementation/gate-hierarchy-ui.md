@@ -24,17 +24,27 @@ Display state consists of selected/expanded rows, viewport, displayed sample
 and population, and displayed channels/scales. Selection alone never changes a
 gate parent.
 
+Keep `selected_gate_id` separate from `display_population_id`. Selecting a gate definition
+changes the editing target and outline highlight only; it must not implicitly filter the
+plot to that gate's child population.
+
 ## Required Workflows
 
-1. A tree rooted at All Events stores population ids in `Qt.UserRole`.
+1. A definition tree rooted at All Events stores gate ids in `Qt.UserRole`; label the
+   first column `Gate` or `Gate definition`, not `Population`.
 2. Create Child Gate explicitly fixes the selected population as parent and
    shows parent id, sample, parameters, and scales before drawing.
 3. Reparent validates the complete graph before committing and rolls back on
    self/descendant/missing-parent/cycle failures.
 4. Boolean AND/OR require at least two sources; NOT requires exactly one.
    Existing Boolean gates can be edited using hierarchy ids.
-5. Show Gate navigates to matching parameters/scales without changing analysis.
+5. Show Gate navigates to matching parameters/scales, displays the parent population, and
+   highlights the outline without changing analysis.
 6. Deletion of a referenced gate is rejected.
+7. Show Population is a separate action that displays child membership only when current,
+   non-stale pipeline results exist.
+8. The Gating All Events root clears gate editing selection; Results owns explicit
+   `all_events` population display selection.
 
 ## Required Tests
 
@@ -44,6 +54,8 @@ gate parent.
 - Boolean create/edit, arity, self/cycle/dangling-source validation
 - GUI/headless/CLI agreement after project round-trip
 - Mixed scales, multiple samples, stale invalidation, stable object names
+- Gate selection versus displayed population independence, Show Gate parent display, and
+  explicit Show Population behavior
 
 ## Acceptance Criteria
 

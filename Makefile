@@ -16,6 +16,7 @@ gui:
 	flowdesk-gui
 
 zip:
+	if [ -e rep.zip ]; then rm rep.zip; fi
 	zip -r rep.zip *.md Makefile  docs/ examples/ logs/ pyproject.toml  schemas/ src/ tests/ tools/
 
 help:

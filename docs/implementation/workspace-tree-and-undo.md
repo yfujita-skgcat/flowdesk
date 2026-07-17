@@ -8,6 +8,11 @@ ToDo: `Phase B3`
 Unify sample/population/statistic navigation and make project mutations reversible
 without embedding cached scientific results in undo history.
 
+This guide records the completed B3 baseline. Do not extend the current vertically
+stacked `WorkspaceTree` and `PopulationTree` design. The required follow-up architecture is
+defined by `gating-and-results-workspaces.md` (Phase B3.1): keep Gate definition editing
+separate and merge executed sample/population/statistic results into one Results workspace.
+
 ## Inspect first
 
 - `src/flowdesk_qt/gate_editor.py`, `population_tree.py`, `main_window.py`
@@ -59,10 +64,11 @@ invalidation reason; the GUI may use that reason to mark cached results stale.
    GateEditor, marks the project clean after save/load, and routes undo mutations
    through the existing results-stale invalidation path.
 
-Selection synchronization is display-only: GateEditor selection updates plot
-highlight and WorkspaceTree selection, while WorkspaceTree/PopulationTree
-selection routes back to the same sample and population IDs. No selection
-callback creates a project command.
+The original B3 implementation synchronizes GateEditor, WorkspaceTree, and PopulationTree
+selection as display-only state. This is transitional behavior, not the final selection
+contract. Phase B3.1 must separate `active_sample_id`, `display_population_id`, and
+`selected_gate_id`; selecting a gate definition must not implicitly filter the plot to the
+gate's child population. No selection callback creates a project command.
 
 ## Required tests
 
