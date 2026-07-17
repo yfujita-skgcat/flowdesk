@@ -289,6 +289,11 @@ except Exception:
 
 GUIテストは原則としてstrict callback modeで実行してください。
 
+GUI marker付きテストでは、`QApplication` のPython参照をtest process全体で保持して
+ください。各テスト終了時はtop-level widgetを閉じ、`deleteLater()`後に
+`QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)`を呼び、
+pytest終了時の強制GCまで破棄待ちQObjectを残さないでください。
+
 ---
 
 ## 8. ログと未処理例外
