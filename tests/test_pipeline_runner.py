@@ -39,6 +39,7 @@ def _make_project(
   gate_overrides: list[dict] | None = None,
   sample_groups: list[dict] | None = None,
   auto_gate_templates: list[dict] | None = None,
+  magnetic_gate_templates: list[dict] | None = None,
 ) -> dict:
   return {
     "project_id": project_id,
@@ -59,6 +60,7 @@ def _make_project(
     "gate_overrides": gate_overrides or [],
     "sample_groups": sample_groups or [],
     "auto_gate_templates": auto_gate_templates or [],
+    "magnetic_gate_templates": magnetic_gate_templates or [],
   }
 
 
@@ -1018,6 +1020,31 @@ def test_pipeline_fits_auto_gate_from_full_events_and_reports_provenance() -> No
   assert fit["sample_id"] == "s1"
   assert fit["algorithm_version"] == "quantile_rectangle.v1"
   assert any(diagnostic.stage == "auto_gate_fit" for diagnostic in report.diagnostics)
+
+
+def test_pipeline_fits_magnetic_gate_from_full_events_and_reports_provenance() -> None:
+  sample = SampleData(
+    "s1", np.array([[1.0], [1.1], [1.2], [9.0], [9.1], [9.2]]),
+    (ChannelSpec(id="FSC", name="FSC"),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    execution_profiles=[{"id": "default", "gating_strategy_id": "strategy"}],
+    gating_strategies_data={"strategy": {"id": "strategy", "name": "Strategy", "gates": []}},
+    magnetic_gate_templates=[{
+      "id": "magnetic-template", "name": "Magnetic", "algorithm": "largest_gap_range",
+      "parameter": "FSC", "parameters": {"minimum_events": 2},
+    }],
+  )
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+  result = next(
+    value for value in report.population_results
+    if value.population_id == "magnetic-template:s1"
+  )
+  assert result.event_count == 3
+  assert len(report.magnetic_gate_fits) == 1
+  assert report.magnetic_gate_fits[0]["input_hash"]
+  assert any(diagnostic.stage == "magnetic_gate_fit" for diagnostic in report.diagnostics)
 
 
 # ---------------------------------------------------------------------------

@@ -102,6 +102,17 @@ successful fitted gate to the selected strategy, and exposes serialized
 fitted gate through the normal population/result and diagnostics views; it does not
 implement a second fitting path.
 
+### B5-Magnetic: `largest_gap_range.v1`
+
+This is a Flowdesk-defined magnetic-bead heuristic. It sorts all finite values of
+the selected full Population on one configured parameter, finds the largest adjacent
+gap, and uses its midpoint as the inclusive lower bound of a range gate. The
+reference method is NumPy sorting and `argmax`; ties resolve to the first gap.
+`minimum_events` defaults to 20 and too few finite events produce an explicit failed
+fit. The result stores the full-data input hash, algorithm version, diagnostics, and
+manual override policy separately from the reusable template. The headless runner
+persists and reports the fitted result; Qt uses the same result and persistence path.
+
 ## Required tests
 
 - Rotated ellipse inside/outside/on-boundary cases.

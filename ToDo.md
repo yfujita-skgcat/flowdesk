@@ -347,6 +347,13 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] full Populationのfinite eventsだけを使う決定的fitとsynthetic numeric testを追加する。
 - [x] headless runner、project save/load、GUI表示をAuto fit resultへ接続する。
 
+#### Magnetic gate subphase
+
+- [x] `largest_gap_range.v1` のprimary/reference method、parameters、fit failure、determinismをimplementation guideへ記載する。
+- [x] template definitionとsample-specific fitted geometry/provenance modelを分離する。
+- [x] full Populationのfinite eventsだけを使う決定的fitとsynthetic numeric testを追加する。
+- [x] headless runner、project save/load、GUI表示をmagnetic fit resultへ接続する。
+
 - [ ] 各algorithmについてprimary/reference method、parameters、fit failure、determinismをimplementation guideへ記載する。
 - [ ] template definitionとsample-specific fitted geometryを分離する。
 - [ ] fitted resultへinput hash、algorithm version、diagnosticsを保存する。

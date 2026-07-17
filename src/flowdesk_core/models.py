@@ -17,6 +17,7 @@ GateAxisScale = Literal["linear", "log10", "asinh"]
 GateOverrideGeometryMode = Literal["delta", "full"]
 GatePurpose = Literal["technical_cleanup", "comparison_critical"]
 AutoGateAlgorithm = Literal["quantile_rectangle"]
+MagneticGateAlgorithm = Literal["largest_gap_range"]
 FitStatus = Literal["success", "failed"]
 ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
@@ -516,6 +517,52 @@ class AutoGateFitResult:
       raise ValueError("successful automatic fit requires a fitted gate")
     if self.status == "failed" and not self.failure_reason:
       raise ValueError("failed automatic fit requires failure_reason")
+
+
+@dataclass(frozen=True)
+class MagneticGateTemplateSpec:
+  """Shared definition for a deterministic magnetic-bead range gate."""
+
+  id: str
+  name: str
+  algorithm: MagneticGateAlgorithm
+  parameter: str
+  parent_population_id: str = "all_events"
+  parameters: dict[str, Any] = field(default_factory=dict)
+  algorithm_version: str = "largest_gap_range.v1"
+  manual_override_policy: ManualOverridePolicy = "preserve_until_reset"
+  notes: str = ""
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.name or not self.parameter:
+      raise ValueError("magnetic gate template IDs and parameter are required")
+    if self.algorithm != "largest_gap_range":
+      raise ValueError(f"unsupported magnetic gate algorithm: {self.algorithm!r}")
+    if not self.algorithm_version:
+      raise ValueError("magnetic gate algorithm_version must be non-empty")
+
+
+@dataclass(frozen=True)
+class MagneticGateFitResult:
+  """Sample-specific magnetic-gate geometry and provenance."""
+
+  template_id: str
+  sample_id: str
+  input_hash: str
+  algorithm_version: str
+  status: FitStatus
+  gate: GateSpec | None = None
+  diagnostics: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+  failure_reason: str | None = None
+  manual_override: bool = False
+
+  def __post_init__(self) -> None:
+    if not self.template_id or not self.sample_id or not self.input_hash:
+      raise ValueError("magnetic fit identity fields are required")
+    if self.status == "success" and self.gate is None:
+      raise ValueError("successful magnetic fit requires a fitted gate")
+    if self.status == "failed" and not self.failure_reason:
+      raise ValueError("failed magnetic fit requires failure_reason")
 
 
 @dataclass(frozen=True)

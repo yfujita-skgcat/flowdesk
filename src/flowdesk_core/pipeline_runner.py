@@ -58,6 +58,12 @@ from flowdesk_core.groups import (
   resolve_group_strategy_bindings,
   sample_group_specs_from_mapping,
 )
+from flowdesk_core.magnetic_gates import (
+  MagneticGateFitError,
+  fit_magnetic_gate,
+  magnetic_gate_fit_to_mapping,
+  magnetic_gate_template_from_mapping,
+)
 from flowdesk_core.models import (
   ChannelSpec,
   CompensationBindingSpec,
@@ -429,6 +435,7 @@ class PipelineRunner:
     all_population_membership: list[PopulationMembership] = []
     all_statistic_results: list[StatisticResult] = []
     all_auto_gate_fits: list[dict[str, Any]] = []
+    all_magnetic_gate_fits: list[dict[str, Any]] = []
     input_files: list[dict[str, Any]] = []
     diagnostics: list[ExecutionDiagnostic] = []
     failed_sample_count = 0
@@ -532,7 +539,12 @@ class PipelineRunner:
             diagnostic for fit in auto_gate_fits for diagnostic in fit["diagnostics"]
           )
           all_auto_gate_fits.extend(
-            auto_gate_fit_to_mapping(fit["result"]) for fit in auto_gate_fits
+            auto_gate_fit_to_mapping(fit["result"])
+            for fit in auto_gate_fits if fit["kind"] == "auto"
+          )
+          all_magnetic_gate_fits.extend(
+            magnetic_gate_fit_to_mapping(fit["result"])
+            for fit in auto_gate_fits if fit["kind"] == "magnetic"
           )
         except GatingStrategyError as exc:
           raise PipelineError(
@@ -600,6 +612,7 @@ class PipelineRunner:
       messages=tuple(messages),
       diagnostics=tuple(diagnostics),
       auto_gate_fits=tuple(all_auto_gate_fits),
+      magnetic_gate_fits=tuple(all_magnetic_gate_fits),
     )
 
   def _group_override_qc_diagnostics(
@@ -1364,7 +1377,42 @@ class PipelineRunner:
         )
       auto_gates.append(fit.gate)
       existing_gate_ids.add(fit.gate.id)
-      auto_fit_records.append({"result": fit, "diagnostics": fit_diagnostics})
+      auto_fit_records.append({"kind": "auto", "result": fit, "diagnostics": fit_diagnostics})
+    for value in self._project.get("magnetic_gate_templates", []):
+      if not isinstance(value, Mapping):
+        continue
+      try:
+        template = magnetic_gate_template_from_mapping(value)
+        fit = fit_magnetic_gate(template, data.events, data.channel_ids, sample_id)
+      except MagneticGateFitError as exc:
+        raise PipelineError(
+          f"magnetic_gate_fit_invalid: {exc}", code="magnetic_gate_fit_invalid",
+          details={"template_id": value.get("id"), "sample_id": sample_id},
+        ) from exc
+      fit_diagnostics = tuple(
+        ExecutionDiagnostic(
+          code=str(item.get("code", "magnetic_gate_diagnostic")),
+          message=str(item.get("reason", item.get("code", "magnetic gate fit"))),
+          severity=str(item.get("severity", "info")), stage="magnetic_gate_fit",
+          sample_id=sample_id, parameter_id=template.id, details=dict(item),
+        ) for item in fit.diagnostics
+      )
+      if fit.status == "failed" or fit.gate is None:
+        raise PipelineError(
+          f"magnetic_gate_fit_failed: {fit.failure_reason}",
+          code="magnetic_gate_fit_failed",
+          details={"template_id": template.id, "sample_id": sample_id,
+                   "input_hash": fit.input_hash, "diagnostics": list(fit.diagnostics)},
+        )
+      if fit.gate.id in existing_gate_ids:
+        raise PipelineError(
+          f"magnetic_gate_id_conflict: {fit.gate.id!r}",
+          code="magnetic_gate_id_conflict",
+          details={"template_id": template.id, "sample_id": sample_id},
+        )
+      auto_gates.append(fit.gate)
+      existing_gate_ids.add(fit.gate.id)
+      auto_fit_records.append({"kind": "magnetic", "result": fit, "diagnostics": fit_diagnostics})
     if auto_gates != list(strat.gates):
       strat = GatingStrategySpec(**{
         **asdict(strat),
