@@ -146,6 +146,28 @@ class PlotWidget(QWidget):
         """Return the current display style settings."""
         return self._style
 
+    def set_presentation(self, presentation: dict[str, Any] | None) -> None:
+        """Apply display-only presentation labels and basic appearance.
+
+        This method consumes persisted presentation state only.  It never
+        changes event data, memberships, gates, or pipeline results.
+        """
+        value = dict(presentation or {})
+        title = str(value.get("title", ""))
+        self._plot_item.setTitle(title)
+        self._plot_item.setLabel(
+            "bottom", str(value.get("x_axis_display_label") or self._x_label)
+        )
+        self._plot_item.setLabel(
+            "left", str(value.get("y_axis_display_label") or self._y_label)
+        )
+        style_updates: dict[str, Any] = {}
+        for key in ("background_color", "gate_outline_color"):
+            if isinstance(value.get(key), str) and value[key]:
+                style_updates[key] = value[key]
+        if style_updates:
+            self.set_style(replace(self._style, **style_updates))
+
     # -- range reset API (display-only) ---------------------------------------
 
     def set_robust_range(self) -> None:

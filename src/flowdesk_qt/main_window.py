@@ -59,6 +59,7 @@ from flowdesk_core.preview import (
 from flowdesk_core.project_commands import (
     CreateGateOverrideCommand,
     EditOverlaySourcesCommand,
+    EditPlotPresentationCommand,
     UndoStack,
 )
 from flowdesk_core.sample import SampleData
@@ -557,6 +558,10 @@ class MainWindow(QMainWindow):
         self.action_overlay_sources.setObjectName("actionOverlaySources")
         self.action_overlay_sources.triggered.connect(self._on_edit_overlay_sources)
         analysis_menu.addAction(self.action_overlay_sources)
+        self.action_plot_presentation = QAction("Plot &Presentation...", self)
+        self.action_plot_presentation.setObjectName("actionPlotPresentation")
+        self.action_plot_presentation.triggered.connect(self._on_edit_plot_presentation)
+        analysis_menu.addAction(self.action_plot_presentation)
 
         analysis_menu.addSeparator()
         self.action_advanced_groups = QAction(
@@ -1153,6 +1158,13 @@ class MainWindow(QMainWindow):
         When Y channel is set to the Count option, renders a 1D histogram instead
         of a 2D scatter plot (Phase 4).
         """
+        view = next(
+            (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+            None,
+        )
+        self._plot_widget.set_presentation(
+            {} if view is None else view.get("presentation", {})
+        )
         if self._current_sample_id is None:
             return
 
@@ -1247,6 +1259,11 @@ class MainWindow(QMainWindow):
             self._plot_widget.set_status_banner(
                 "Recalculating — displayed events are from the previous revision"
             )
+        # plot_events updates labels from stable channel IDs; apply independent
+        # presentation labels last so display edits never alter those IDs.
+        self._plot_widget.set_presentation(
+            {} if view is None else view.get("presentation", {})
+        )
 
     def _get_channel_index(self, channel_id: str) -> int:
         """Get a column index by stable ID for the current sample."""
@@ -2014,6 +2031,39 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Overlay Sources", str(exc))
             return
         self._update_status("Overlay display definition updated")
+        self._replot()
+
+    def _on_edit_plot_presentation(self) -> None:
+        """Edit display presentation only; no authoritative pipeline rerun occurs."""
+        from flowdesk_qt.plot_style_editor import PlotStyleEditorDialog
+
+        view_id = self._overlay_view_id()
+        view = next((item for item in self._plot_views if item.get("id") == view_id), None)
+        source_ids = tuple(
+            str(source.get("source_id"))
+            for source in (view or {}).get("overlay_sources", [])
+            if source.get("source_id")
+        )
+        plot_type = str((view or {}).get(
+            "plot_type",
+            "histogram" if self._channel_selector.is_count_mode() else "scatter",
+        ))
+        dialog = PlotStyleEditorDialog(
+            plot_type,
+            (view or {}).get("presentation", {}),
+            source_ids,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._overlay_undo_stack.execute(
+                EditPlotPresentationCommand(view_id, dialog.presentation())
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Plot Presentation", str(exc))
+            return
+        self._update_status("Plot presentation updated")
         self._replot()
 
     def _on_overlay_state_changed(self, state: dict[str, Any], reason: str) -> None:

@@ -156,6 +156,52 @@ class EditOverlaySourcesCommand(ProjectCommand):
     return candidate
 
 
+class EditPlotPresentationCommand(ProjectCommand):
+  """Replace a plot presentation without touching sources or analysis state."""
+
+  type = "plot.presentation.edit"
+  invalidation_reason = "Plot presentation changed"
+
+  def __init__(self, view_id: str, presentation: dict[str, Any]) -> None:
+    if not view_id:
+      raise ProjectCommandError("presentation view ID must be non-empty")
+    if not isinstance(presentation, dict):
+      raise ProjectCommandError("presentation must be an object")
+    self.view_id = view_id
+    self.presentation = deepcopy(presentation)
+    self._before: dict[str, Any] | None = None
+    self._created_view = False
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    candidate = deepcopy(state)
+    views = candidate.setdefault("plot_views", [])
+    if not isinstance(views, list):
+      raise ProjectCommandError("plot_views must be a list")
+    view = next((item for item in views if item.get("id") == self.view_id), None)
+    self._created_view = view is None
+    if view is None:
+      view = {"id": self.view_id}
+      views.append(view)
+    self._before = None if self._created_view else deepcopy(view.get("presentation"))
+    view["presentation"] = deepcopy(self.presentation)
+    return candidate
+
+  def undo(self, state: ProjectState) -> ProjectState:
+    candidate = deepcopy(state)
+    views = candidate.get("plot_views", [])
+    if self._created_view:
+      candidate["plot_views"] = [item for item in views if item.get("id") != self.view_id]
+      return candidate
+    view = next((item for item in views if item.get("id") == self.view_id), None)
+    if view is None:
+      raise ProjectCommandError(f"plot view not found: {self.view_id!r}")
+    if self._before is None:
+      view.pop("presentation", None)
+    else:
+      view["presentation"] = deepcopy(self._before)
+    return candidate
+
+
 class _GateListCommand(ProjectCommand):
   strategy_id: str
 

@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+import pytest
+
+from flowdesk_qt.plot_style_editor import PlotStyleEditorDialog
+
+pytestmark = pytest.mark.gui
+
+
+def test_style_editor_round_trips_plot_and_source_presentation(qapp) -> None:
+  dialog = PlotStyleEditorDialog(
+    "histogram",
+    {
+      "title": "Before", "x_axis_display_label": "CD3", "legend_visible": True,
+      "legend_position": "right", "source_styles": [{
+        "source_id": "source-a", "legend_label": "A",
+        "histogram_fill_color": "#112233", "histogram_alpha": 0.4,
+        "manual_fields": ["legend_label", "histogram_fill_color", "histogram_alpha"],
+      }],
+    },
+    ("source-a", "source-b"),
+  )
+  try:
+    dialog._title_edit.setText("After")
+    dialog._subtitle_edit.setText("annotation")
+    dialog._x_label_edit.setText("Publication CD3")
+    dialog._legend_position_combo.setCurrentText("bottom")
+    dialog._legend_visible_check.setChecked(False)
+    dialog._source_combo.setCurrentIndex(0)
+    dialog._hist_fill_edit.setText("#ff0000")
+    dialog._hist_alpha_spin.setValue(0.6)
+    dialog._accept()
+
+    result = dialog.presentation()
+    assert result["title"] == "After"
+    assert result["subtitle"] == "annotation"
+    assert result["x_axis_display_label"] == "Publication CD3"
+    assert result["legend_visible"] is False
+    assert result["legend_position"] == "bottom"
+    assert result["source_styles"][0]["histogram_fill_color"] == "#ff0000"
+    assert result["source_styles"][0]["histogram_alpha"] == 0.6
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_style_editor_reset_removes_manual_source_overrides(qapp) -> None:
+  dialog = PlotStyleEditorDialog(
+    "scatter",
+    {"source_styles": [{
+      "source_id": "source-a", "marker_shape": "square", "marker_size": 12,
+      "manual_fields": ["marker_shape", "marker_size"],
+    }]},
+    ("source-a",),
+  )
+  try:
+    dialog._reset_source_button.click()
+    style = dialog.presentation()["source_styles"][0]
+    assert style["manual_fields"] == []
+    assert style["marker_shape"] is None
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_style_editor_rejects_unsupported_source_style(qapp) -> None:
+  dialog = PlotStyleEditorDialog(
+    "histogram",
+    {"source_styles": [{
+      "source_id": "source-a", "marker_shape": "circle",
+      "manual_fields": ["marker_shape"],
+    }]},
+    ("source-a",),
+  )
+  try:
+    dialog._accept()
+    assert "unsupported" in dialog._status_label.text()
+    assert dialog.result() == 0
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_style_editor_distinguishes_project_and_global_default_resolution(qapp) -> None:
+  dialog = PlotStyleEditorDialog(
+    "scatter",
+    {"source_styles": [{"source_id": "source-a", "manual_fields": ["color"]}]},
+    ("source-a",),
+    {"source_styles": [{"source_id": "source-a", "color": "#112233"}]},
+    {"source_styles": [{"source_id": "source-a", "color": "#445566"}]},
+  )
+  try:
+    dialog._reset_project_button.click()
+    project_style = dialog.presentation()["source_styles"][0]
+    assert project_style["color"] == "#112233"
+    assert project_style["provenance"]["style"] == "project_default"
+    dialog._reset_global_button.click()
+    global_style = dialog.presentation()["source_styles"][0]
+    assert global_style["color"] == "#445566"
+    assert global_style["provenance"]["style"] == "global_default"
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()

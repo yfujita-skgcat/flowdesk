@@ -496,12 +496,12 @@ title/axis/legend編集が実装済みであることを意味しない。
 
 #### Increment 3: Plot style editor
 
-- [ ] title、optional subtitle/annotation、X/Y axis display label、legend visibility/position/orderを編集する。
-- [ ] sourceごとのmarker shape/size/color/alpha、line color/width/style、histogram fill/outline/alphaを編集する。
-- [ ] plot background、gate outline color/width/line style、plot typeごとのcolormap、title/axis/tick/legend fontを編集する。
-- [ ] plot typeごとのsupported/unsupported style matrixをUIとvalidatorで共有し、unsupported fieldを黙って無視しない。density/pseudocolor/contour固有styleは必要なら別subincrementとして一種類ずつ実装する。
-- [ ] automatic style assignmentとmanual override、reset-to-view-default、reset-to-project/global defaultを区別する。
-- [ ] edit中はdisplay-only previewを更新し、pipelineを再実行せず、scientific resultsが不変であることをtestする。
+- [x] title、optional subtitle/annotation、X/Y axis display label、legend visibility/position/orderを編集する。
+- [x] sourceごとのmarker shape/size/color/alpha、line color/width/style、histogram fill/outline/alphaを編集する。
+- [x] plot background、gate outline color/width/line style、plot typeごとのcolormap、title/axis/tick/legend fontを編集する。
+- [x] plot typeごとのsupported/unsupported style matrixをUIとvalidatorで共有し、unsupported fieldを黙って無視しない。density/pseudocolor/contour固有styleは必要なら別subincrementとして一種類ずつ実装する。
+- [x] automatic style assignmentとmanual override、reset-to-view-default、reset-to-project/global defaultを区別する。
+- [x] edit中はdisplay-only previewを更新し、pipelineを再実行せず、scientific resultsが不変であることをtestする。
 
 #### Increment 4: Renderer, export, persistence and reuse
 

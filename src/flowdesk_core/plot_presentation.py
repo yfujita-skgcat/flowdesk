@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -71,6 +72,16 @@ class PresentationValidationError(ValueError):
   """Raised when a style field is not supported by a plot type."""
 
 
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _validate_color(value: str | None, field_name: str) -> None:
+  if value is not None and not _COLOR_RE.fullmatch(value):
+    raise PresentationValidationError(
+      f"{field_name} must be a #RRGGBB color, got {value!r}"
+    )
+
+
 def _style_fields(style: SourceStyleSpec) -> set[str]:
   values = {
     "marker_shape": style.marker_shape,
@@ -97,7 +108,13 @@ def validate_presentation(
 ) -> None:
   """Validate source styles against the one shared plot support matrix."""
   supported = SUPPORTED_STYLE_FIELDS[plot_type]
+  _validate_color(presentation.background_color, "background_color")
+  _validate_color(presentation.gate_outline_color, "gate_outline_color")
   for style in presentation.source_styles:
+    for field_name in (
+      "color", "line_color", "histogram_fill_color", "histogram_outline_color"
+    ):
+      _validate_color(getattr(style, field_name), field_name)
     unsupported = _style_fields(style) - supported
     if unsupported:
       fields = ", ".join(sorted(unsupported))

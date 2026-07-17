@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from flowdesk_core.project_commands import EditOverlaySourcesCommand, UndoStack
+from flowdesk_core.project_commands import (
+  EditOverlaySourcesCommand,
+  EditPlotPresentationCommand,
+  UndoStack,
+)
 
 
 def _source(source_id: str, order: int) -> dict[str, object]:
@@ -35,3 +39,12 @@ def test_overlay_source_command_is_definition_only_and_reversible() -> None:
   assert updated["statistics"] == state["statistics"]
   assert stack.undo()["plot_views"][0]["overlay_sources"][0]["source_id"] == "old"
   assert stack.redo()["plot_views"][0]["overlay_sources"][1]["source_id"] == "second"
+
+
+def test_plot_presentation_command_is_definition_only_and_reversible() -> None:
+  state = {"plot_views": [{"id": "view", "presentation": {"title": "old"}}]}
+  stack = UndoStack(state)
+  updated = stack.execute(EditPlotPresentationCommand("view", {"title": "new"}))
+  assert updated["plot_views"][0]["presentation"] == {"title": "new"}
+  assert stack.undo()["plot_views"][0]["presentation"] == {"title": "old"}
+  assert stack.redo()["plot_views"][0]["presentation"] == {"title": "new"}

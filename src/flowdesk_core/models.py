@@ -681,6 +681,7 @@ class SourceStyleSpec:
   histogram_outline_color: str | None = None
   histogram_alpha: float = 0.35
   manual_fields: tuple[str, ...] = ()
+  provenance: dict[str, str] = field(default_factory=dict)
 
   def __post_init__(self) -> None:
     if not self.source_id:
