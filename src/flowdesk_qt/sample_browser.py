@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -22,13 +21,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMenu,
     QMessageBox,
     QPushButton,
-    QSplitter,
-    QTableWidget,
-    QTableWidgetItem,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -41,20 +35,6 @@ from flowdesk_core.file_fingerprint import (
 )
 from flowdesk_core.models import ChannelSpec
 from flowdesk_qt.diagnostics import invoke_callback
-
-_CHANNEL_COLUMNS = (
-    ("id", "Stable ID"),
-    ("name", "$PnN"),
-    ("short_name", "$PnS"),
-    ("detector", "Detector"),
-    ("stain", "Stain"),
-    ("unit", "Unit"),
-    ("fcs_parameter_index", "FCS index"),
-    ("gain", "Gain (PnG)"),
-    ("exponent", "Exponent (PnE)"),
-    ("range", "Range (PnR)"),
-)
-_DEFAULT_COLUMNS = {"name", "short_name", "detector", "stain", "fcs_parameter_index"}
 
 # ---------------------------------------------------------------------------
 # Per-sample metadata model (GUI-side only, no scientific logic)
@@ -89,7 +69,7 @@ class _SampleInfo:
 
 
 class SampleBrowser(QWidget):
-    """Left-pane widget that lists samples and shows channel metadata.
+    """Left-pane widget that lists samples and manages sample selection.
 
     Signals:
       sample_selected: Emitted when the user selects a sample.
@@ -158,7 +138,6 @@ class SampleBrowser(QWidget):
         self._known_paths.clear()
         self._selected_index = -1
         self._list_widget.clear()
-        self._clear_channel_table()
 
     def select_sample(self, sample_id: str) -> bool:
         """Select a sample by stable id and emit the normal selection callback."""
@@ -199,23 +178,12 @@ class SampleBrowser(QWidget):
             self._list_widget.setCurrentRow(min(idx, len(self._samples) - 1))
         else:
             self._selected_index = -1
-            self._clear_channel_table()
 
         # Notify callbacks about removal.
         for cb in self._removed_callbacks:
             invoke_callback(cb, removed)
 
         return removed
-
-    def set_channel_column_visible(self, key: str, visible: bool) -> None:
-        """Show or hide one channel metadata column by stable key."""
-        column = next((i for i, (name, _) in enumerate(_CHANNEL_COLUMNS) if name == key), -1)
-        if column < 0:
-            raise KeyError(key)
-        self._channel_table.setColumnHidden(column, not visible)
-        action = self._column_actions.get(key)
-        if action is not None and action.isChecked() != visible:
-            action.setChecked(visible)
 
     def reconnect_sample(
         self,
@@ -376,7 +344,6 @@ class SampleBrowser(QWidget):
         item = self._list_widget.currentItem()
         if item is None:
             self._selected_index = -1
-            self._clear_channel_table()
             return
 
         sample_id = str(item.data(Qt.UserRole))
@@ -386,24 +353,8 @@ class SampleBrowser(QWidget):
         if self._selected_index < 0:
             return
         sample = self._samples[self._selected_index]
-        self._populate_channel_table(sample.info)
-
         for cb in self._selection_callbacks:
             invoke_callback(cb, sample)
-
-    def _populate_channel_table(self, info: FcsFileInfo) -> None:
-        self._channel_table.setSortingEnabled(False)
-        self._channel_table.setRowCount(len(info.channels))
-        for row, ch in enumerate(info.channels):
-            values = (
-                ch.id, ch.name, ch.short_name, ch.detector, ch.stain, ch.unit,
-                ch.fcs_parameter_index, ch.metadata.get("png", ""),
-                ch.metadata.get("pne", ""), ch.metadata.get("pnr", ""),
-            )
-            for column, value in enumerate(values):
-                text = "" if value is None else str(value)
-                self._channel_table.setItem(row, column, QTableWidgetItem(text))
-        self._channel_table.setSortingEnabled(True)
 
     def _refresh_channel_statuses(self) -> None:
         reference = next(
@@ -462,9 +413,6 @@ class SampleBrowser(QWidget):
         self._samples.sort(key=lambda sample: str(getattr(sample, key, "")).casefold())
         self._rebuild_sample_list(selected.id if selected is not None else None)
 
-    def _clear_channel_table(self) -> None:
-        self._channel_table.setRowCount(0)
-
     # -- UI construction -----------------------------------------------------
 
     def _build_ui(self) -> None:
@@ -489,33 +437,6 @@ class SampleBrowser(QWidget):
         self._sort_combo.addItem("Status", "status")
         self._sort_combo.currentIndexChanged.connect(lambda _index: self._sort_samples())
 
-        self._channel_table = QTableWidget()
-        self._channel_table.setObjectName("channelMetadataTable")
-        self._channel_table.setColumnCount(len(_CHANNEL_COLUMNS))
-        self._channel_table.setHorizontalHeaderLabels([label for _, label in _CHANNEL_COLUMNS])
-        self._channel_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._channel_table.setSortingEnabled(True)
-
-        self._column_button = QToolButton()
-        self._column_button.setObjectName("channelColumnButton")
-        self._column_button.setText("Columns")
-        self._column_button.setPopupMode(QToolButton.InstantPopup)
-        column_menu = QMenu(self._column_button)
-        self._column_actions: dict[str, QAction] = {}
-        for key, label in _CHANNEL_COLUMNS:
-            action = QAction(label, column_menu)
-            action.setObjectName(f"channelColumn_{key}")
-            action.setCheckable(True)
-            action.setChecked(key in _DEFAULT_COLUMNS)
-            action.toggled.connect(
-                lambda visible, column_key=key: self.set_channel_column_visible(column_key, visible)
-            )
-            column_menu.addAction(action)
-            self._column_actions[key] = action
-        self._column_button.setMenu(column_menu)
-        for key, _ in _CHANNEL_COLUMNS:
-            self.set_channel_column_visible(key, key in _DEFAULT_COLUMNS)
-
         self._btn_add = QPushButton("Add FCS Files...")
         self._btn_add.setObjectName("addFcsFilesButton")
         self._btn_add.clicked.connect(self._on_add_files)
@@ -528,7 +449,6 @@ class SampleBrowser(QWidget):
         self._btn_reconnect.setObjectName("reconnectSampleButton")
         self._btn_reconnect.clicked.connect(self._on_reconnect_selected)
 
-        splitter = QSplitter(Qt.Horizontal)
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.addWidget(QLabel("Samples"))
@@ -541,21 +461,8 @@ class SampleBrowser(QWidget):
         left_layout.addWidget(self._btn_remove)
         left_layout.addWidget(self._btn_reconnect)
 
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        metadata_header = QHBoxLayout()
-        metadata_header.addWidget(QLabel("Channel Metadata"))
-        metadata_header.addWidget(self._column_button)
-        right_layout.addLayout(metadata_header)
-        right_layout.addWidget(self._channel_table)
-
-        splitter.addWidget(left)
-        splitter.addWidget(right)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
-
         layout = QVBoxLayout(self)
-        layout.addWidget(splitter)
+        layout.addWidget(left)
 
     def _on_add_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(

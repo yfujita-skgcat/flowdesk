@@ -45,6 +45,7 @@ from flowdesk_core.transforms import (  # noqa: E402
   apply_transform,
 )
 from flowdesk_qt.annotation_editor import AnnotationEditorDialog  # noqa: E402
+from flowdesk_qt.channel_metadata import ChannelMetadataWorkspace  # noqa: E402
 from flowdesk_qt.gate_editor import GateEditor, _GateDialog  # noqa: E402
 from flowdesk_qt.gate_override_editor import GateOverrideDialog  # noqa: E402
 from flowdesk_qt.group_panel import GroupPanel  # noqa: E402
@@ -1064,6 +1065,7 @@ def test_sample_browser_metadata_columns_filter_and_mismatch_badges(
 ) -> None:
   app = _app()
   browser = SampleBrowser()
+  metadata = ChannelMetadataWorkspace()
   try:
     first = tmp_path / "alpha.fcs"
     second = tmp_path / "beta.fcs"
@@ -1074,14 +1076,17 @@ def test_sample_browser_metadata_columns_filter_and_mismatch_badges(
     assert browser.samples()[1].status == "channel mismatch"
     assert "[≠]" in browser._list_widget.item(1).text()
 
-    browser.set_channel_column_visible("id", True)
-    assert not browser._channel_table.isColumnHidden(0)
+    metadata.set_sample(browser.samples()[0])
+    metadata.set_column_visible("id", True)
+    assert not metadata.table.isColumnHidden(0)
     browser._filter_edit.setText("alpha")
     assert not browser._list_widget.item(0).isHidden()
     assert browser._list_widget.item(1).isHidden()
   finally:
     browser.close()
     browser.deleteLater()
+    metadata.close()
+    metadata.deleteLater()
     app.processEvents()
 
 

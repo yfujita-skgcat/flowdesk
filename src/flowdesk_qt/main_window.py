@@ -54,6 +54,7 @@ from flowdesk_core.preview import (
 )
 from flowdesk_core.project_commands import CreateGateOverrideCommand, UndoStack
 from flowdesk_core.sample import SampleData
+from flowdesk_qt.channel_metadata import ChannelMetadataWorkspace
 from flowdesk_qt.channel_selector import ChannelSelector
 from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
@@ -606,6 +607,7 @@ class MainWindow(QMainWindow):
         self._group_panel.setVisible(False)
         self._population_tree = PopulationTree()
         self._results_workspace = ResultsWorkspace()
+        self._channel_metadata = ChannelMetadataWorkspace()
         self._workspace_tree = WorkspaceTree()
         self._diagnostics_panel = DiagnosticsPanel()
         self._workspace_navigation = self._create_workspace_navigation()
@@ -675,6 +677,12 @@ class MainWindow(QMainWindow):
         results_layout.setStretch(1, 1)
         results_layout.setStretch(2, 1)
         tabs.addTab(results_tab, "Results")
+
+        channels_tab = QWidget()
+        channels_layout = QVBoxLayout(channels_tab)
+        channels_layout.setContentsMargins(0, 0, 0, 0)
+        channels_layout.addWidget(self._channel_metadata)
+        tabs.addTab(channels_tab, "Channels")
 
         # Transitional adapters remain available to existing callers/tests,
         # but duplicate result tables are no longer visible in the GUI.
@@ -913,6 +921,7 @@ class MainWindow(QMainWindow):
         self._results_workspace.set_population_hierarchy(
             self._population_parent_map(), self._population_name_map()
         )
+        self._channel_metadata.set_sample(sample)
         self._workspace_tree.select("sample", sample.id)
         self._update_workspace_navigation()
         self._refresh_override_statuses()
@@ -955,6 +964,7 @@ class MainWindow(QMainWindow):
         # If the removed sample was the currently selected one, clear UI state
         if self._current_sample_id == sample.id:
             self._current_sample_id = None
+            self._channel_metadata.set_sample(None)
             self._channel_names = []
             self._channel_selector.set_channels([])
             self._plot_widget.clear_plot()

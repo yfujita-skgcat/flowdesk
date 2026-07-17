@@ -86,7 +86,8 @@ must not implement formulas, matrix operations, gate membership, or platform fit
 | File | Current owner responsibility | Extend here for |
 |---|---|---|
 | `main_window.py` | App composition, project state, worker orchestration | New docks/actions and core runner calls |
-| `sample_browser.py` | Sample list and channel metadata | Catalog/group/annotation presentation |
+| `sample_browser.py` | Sample list and sample selection | Catalog/group/annotation presentation; channel identity remains in sample model |
+| `channel_metadata.py` | Read-only selected-sample channel identity/FCS metadata tab | Diagnostic presentation only; no mapping or scientific execution |
 | `channel_selector.py` | X/Y and display transform selection | Stable ID selection, not transform math |
 | `plot_widget.py` | pyqtgraph rendering and ROI interaction | Plot types, overlays, display preparation consumption |
 | `plot_toolbar.py` | Plot actions/display toggles | Exclusive interaction modes |

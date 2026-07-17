@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
   QAbstractItemView,
   QComboBox,
@@ -30,6 +31,17 @@ from flowdesk_qt.results_state import (
 
 class ResultsWorkspace(QWidget):
   """Tree-table showing samples, explicit All Events, and executed results."""
+
+  _STATUS_COLORS = {
+    "current": "#2e7d32",
+    "zero events": "#c47f00",
+    "recalculating": "#b58900",
+    "stale": "#c62828",
+    "error": "#b71c1c",
+    "undefined": "#6a1b9a",
+    "missing": "#757575",
+    "not run": "#757575",
+  }
 
   _HEADERS = [
     "Sample / Population",
@@ -230,6 +242,7 @@ class ResultsWorkspace(QWidget):
           status,
         ])
         self._set_identity(item, "population", population_id, sample_id, value)
+        self._set_status_color(item, status, 6)
         self._tree.addTopLevelItem(item)
     header = self._tree.header()
     header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -260,6 +273,7 @@ class ResultsWorkspace(QWidget):
     ]
     item = QTreeWidgetItem(values)
     self._set_identity(item, "population", population_id, sample_id, row)
+    self._set_status_color(item, status, 4)
     return item
 
   def _add_population_children(
@@ -308,6 +322,11 @@ class ResultsWorkspace(QWidget):
         self._set_identity(
           statistic_item, "statistic", statistic_row.key.result_id, sample_id,
           statistic_row,
+        )
+        self._set_status_color(
+          statistic_item,
+          self._row_status(statistic_row, statistic_result),
+          4,
         )
         item.addChild(statistic_item)
       self._add_population_children(item, results, statistics, sample_id)
@@ -366,6 +385,15 @@ class ResultsWorkspace(QWidget):
   @staticmethod
   def _format_frequency(value: float | None) -> str:
     return "-" if value is None else f"{value:.4f}"
+
+  @classmethod
+  def _set_status_color(
+    cls, item: QTreeWidgetItem, status: str, column: int
+  ) -> None:
+    """Color only the status text; values and status semantics remain unchanged."""
+    color = cls._STATUS_COLORS.get(status)
+    if color is not None:
+      item.setForeground(column, QBrush(QColor(color)))
 
   @staticmethod
   def _set_identity(

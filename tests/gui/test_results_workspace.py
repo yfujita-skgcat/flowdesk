@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QTabWidget
+from PySide6.QtWidgets import QTableWidget, QTabWidget, QWidget
 
 from flowdesk_core.execution_report import ExecutionReport
+from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import PopulationResult, StatisticResult
 from flowdesk_core.preview import PreviewReport
 from flowdesk_qt.main_window import MainWindow
@@ -166,8 +168,12 @@ def test_results_status_distinguishes_missing_zero_stale_and_statistic_errors(qa
     }
 
     workspace.mark_results_stale()
-    assert workspace.tree().topLevelItem(0).child(0).text(4) == "stale"
-    assert workspace.tree().topLevelItem(0).child(0).child(0).text(4) == "stale"
+    stale_item = workspace.tree().topLevelItem(0).child(0)
+    assert stale_item.text(4) == "stale"
+    assert stale_item.foreground(4).color().name() == "#c62828"
+    stale_stat = stale_item.child(0)
+    assert stale_stat.text(4) == "stale"
+    assert stale_stat.foreground(4).color().name() == "#c62828"
   finally:
     workspace.close()
     workspace.deleteLater()
@@ -183,9 +189,40 @@ def test_main_window_exposes_exclusive_gating_and_results_tabs(qapp) -> None:
     assert [tab_widget.tabText(index) for index in range(tab_widget.count())] == [
       "Gating",
       "Results",
+      "Channels",
     ]
+    channels_tab = tab_widget.widget(2)
+    assert channels_tab.findChild(QWidget, "channelMetadataWorkspace") is not None
+    assert channels_tab.findChild(QTableWidget, "channelMetadataTable") is not None
     assert not window._workspace_tree.isVisible()
     assert not window._population_tree.isVisible()
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_channels_tab_tracks_selected_sample_metadata(qapp, tmp_path) -> None:
+  first = tmp_path / "alpha.fcs"
+  second = tmp_path / "beta.fcs"
+  write_fcs_file(first, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
+  write_fcs_file(second, np.ones((2, 2), dtype=np.float64), ["X", "Z"])
+  window = MainWindow()
+  try:
+    browser = window._sample_browser
+    assert browser.add_samples_from_paths([str(first), str(second)]) == 2
+    samples = browser.samples()
+    assert browser.select_sample(samples[1].id)
+    qapp.processEvents()
+
+    metadata = window._channel_metadata
+    assert metadata.findChild(QTableWidget, "channelMetadataTable").rowCount() == 2
+    assert metadata.findChild(QWidget, "channelMetadataSampleLabel").text() == (
+      f"Sample: {samples[1].name} ({samples[1].id})"
+    )
+    assert metadata.findChild(QWidget, "channelMetadataStatusLabel").text() == (
+      "Channel status: channel mismatch"
+    )
   finally:
     window.close()
     window.deleteLater()
@@ -226,6 +263,7 @@ def test_results_workspace_renders_preview_overlay_in_both_modes(qapp) -> None:
     child = workspace.tree().topLevelItem(0).child(0).child(0)
     assert child.text(1) == "4"
     assert child.text(4) == "recalculating"
+    assert child.foreground(4).color().name() == "#b58900"
     assert child.data(0, Qt.UserRole + 3) == 1
     assert child.data(0, Qt.UserRole + 4) == "authoritative_batch"
     assert "recalculating" in child.toolTip(0)
@@ -250,6 +288,7 @@ def test_results_workspace_renders_preview_overlay_in_both_modes(qapp) -> None:
     child = workspace.tree().topLevelItem(0).child(0).child(0)
     assert child.text(1) == "1"
     assert child.text(4) == "current"
+    assert child.foreground(4).color().name() == "#2e7d32"
     assert child.data(0, Qt.UserRole + 3) == 2
     assert child.data(0, Qt.UserRole + 4) == "active_sample_preview"
 
@@ -262,6 +301,7 @@ def test_results_workspace_renders_preview_overlay_in_both_modes(qapp) -> None:
     )
     assert flat_child.text(3) == "1"
     assert flat_child.text(6) == "current"
+    assert flat_child.foreground(6).color().name() == "#2e7d32"
     assert flat_child.data(0, Qt.UserRole + 3) == 2
     assert flat_child.data(0, Qt.UserRole + 4) == "active_sample_preview"
   finally:

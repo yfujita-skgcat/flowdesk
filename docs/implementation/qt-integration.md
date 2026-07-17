@@ -8,6 +8,7 @@ Implement Qt UI components that edit project state and call core APIs without em
 
 - `src/flowdesk_qt/main_window.py`
 - `src/flowdesk_qt/sample_browser.py`
+- `src/flowdesk_qt/channel_metadata.py`
 - `src/flowdesk_qt/channel_selector.py`
 - `src/flowdesk_qt/plot_widget.py`
 - `src/flowdesk_qt/gate_editor.py`
@@ -26,6 +27,10 @@ Implement Qt UI components that edit project state and call core APIs without em
 
 - Load or receive a project model.
 - Show samples and channels from core/storage state.
+- Keep the SampleBrowser focused on sample navigation. Show read-only channel identity
+  and FCS metadata in the right-pane `Channels` tab alongside `Gating` and `Results`.
+- Updating the selected sample must refresh the Channels tab without changing channel
+  identity, mismatch, reconnect, or pipeline behavior.
 - Let user select plot parameters.
 - Let user create/edit gate definitions as project data.
 - Trigger pipeline execution through core runner and display `ExecutionReport`.
@@ -36,6 +41,8 @@ Implement Qt UI components that edit project state and call core APIs without em
 - Add import tests that `flowdesk_qt` imports only when GUI dependencies are installed.
 - Add unit tests for coordinate conversion if gate editor maps screen to data coordinates.
 - Add tests or screenshots only after a runnable GUI harness exists.
+- Test that channel metadata is not a permanently visible part of the SampleBrowser,
+  that the Channels tab is present, and that selected-sample metadata is refreshed.
 
 ## Acceptance Criteria
 
