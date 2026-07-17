@@ -303,6 +303,17 @@ raw FCS events
 
 ## Current Status
 
+### Integrated overlay and appearance controls
+
+During routine gating, use the plot-area context menu for display-only appearance
+changes, the Gate hierarchy `Color` swatch for population display colors, and the
+Samples pane `Ov` checkbox/swatch for manual overlays. The Samples pane also supports
+comparison sets and `Manual + comparison set` mode. Active-sample selection remains
+separate from overlay selection; missing or incompatible overlay sources are reported
+instead of being treated as zero events. The advanced `Overlay Sources...` and
+`Plot Presentation...` dialogs remain available for explicit population/axis/transform
+configuration.
+
 Implemented: core dataclasses, pipeline runner, FCS I/O, compensation, derived parameters, transforms, gates, population statistics, TSV/CSV export, CLI commands, and synthetic tests. PySide6 GUI with sample browser, scatter and histogram plots, hierarchy-tree and Boolean gate editing, population filtering, validated reparenting, and pipeline execution. The current suite has 325 passing tests, and `ruff` passes for all source and test files.
 
 Not yet implemented: complete FlowJo compatibility, full GatingML support, production GUI behavior, and large-file FCS rendering.

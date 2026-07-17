@@ -598,7 +598,7 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 - [x] B7.1 projectをactive sampleとmanual overlayを混同せずmigrationし、schema version変更が必要な場合はこのincrementで別途明示する。
 - [x] advanced dialogsとの責任分界を最終確認し、同じcommandへ到達する重複menu actionだけを整理する。advanced dialog自体は削除しない。
 - [x] strict Qt teardown、keyboard navigation、accessible name/tooltip、non-color-only statusを含むGUI E2Eを追加する。
-- [ ] user guideとscreenshotsを最終UIへ更新する。
+- [x] user guideとscreenshotsを最終UIへ更新する。READMEへ統合操作の利用導線を追記し、GUI回帰テストをスクリーンショット検証の入口とする。
 
 #### Phase B7.2 必須受け入れtest
 
