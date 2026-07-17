@@ -7,6 +7,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog
 
 from flowdesk_cli.main import run_project_command
 from flowdesk_core.execution_context import ExecutionContext
@@ -80,6 +81,51 @@ def test_duplicate_names_remain_distinct_by_id(qapp) -> None:
         assert editor.selected_gate().id == "cells"
         assert editor.select_gate("singlets")
         assert editor.selected_gate().id == "singlets"
+    finally:
+        editor.close()
+        editor.deleteLater()
+        qapp.processEvents()
+
+
+def test_numeric_ellipse_gate_uses_command_stack_for_deletion(qapp, monkeypatch) -> None:
+    editor = GateEditor()
+
+    class AcceptedEllipseDialog:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def exec(self) -> int:
+            return QDialog.DialogCode.Accepted
+
+        def name(self) -> str:
+            return "Ellipse"
+
+        def thresholds(self) -> dict[str, float]:
+            return {
+                "center_x": 10.0,
+                "center_y": 20.0,
+                "radius_x": 4.0,
+                "radius_y": 6.0,
+                "rotation": 0.0,
+            }
+
+        def coordinates(self) -> list[tuple[float, float]]:
+            return []
+
+    try:
+        monkeypatch.setattr(
+            "flowdesk_qt.gate_editor._GateDialog", AcceptedEllipseDialog
+        )
+        editor._type_combo.setCurrentText("ellipse")
+        editor._create_gate_dialog()
+        ellipse = editor.gates()[0]
+        assert ellipse.gate_type == "ellipse"
+        assert editor.select_gate(ellipse.id)
+        editor._delete_selected_gate()
+        assert editor.gates() == []
+        assert editor.can_undo()
+        assert editor.undo()
+        assert [gate.id for gate in editor.gates()] == [ellipse.id]
     finally:
         editor.close()
         editor.deleteLater()

@@ -568,6 +568,40 @@ def test_log10_rectangle_overlay_edit_keeps_log_coordinates() -> None:
     app.processEvents()
 
 
+def test_ellipse_gate_overlay_round_trips_data_coordinates() -> None:
+  app = _app()
+  widget = PlotWidget()
+  gate = GateSpec(
+    id="gate-ellipse",
+    name="ellipse",
+    gate_type="ellipse",
+    x_parameter="X",
+    y_parameter="Y",
+    thresholds={
+      "center_x": 12.5,
+      "center_y": 20.0,
+      "radius_x": 4.0,
+      "radius_y": 8.0,
+      "rotation": 0.25,
+    },
+  )
+  try:
+    widget.add_gate_overlay(gate, gate_index=0)
+    assert len(widget._gate_items) == 1
+    item = widget._gate_items[0]
+    state = item.saveState()
+    assert tuple(state["pos"]) == pytest.approx((8.5, 12.0))
+    assert tuple(state["size"]) == pytest.approx((8.0, 16.0))
+    assert state["angle"] == pytest.approx(np.degrees(0.25))
+    assert widget._gate_from_item(gate, item).thresholds == pytest.approx(
+      gate.thresholds
+    )
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
 def test_main_window_polygon_create_gate_flow_finishes_on_double_click() -> None:
   app = _app()
   window = MainWindow()

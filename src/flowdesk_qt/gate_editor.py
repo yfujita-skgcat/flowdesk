@@ -938,11 +938,11 @@ class GateEditor(QWidget):
             self.cancel_child_gate_mode()
             return
 
-        self._gates.append(gate)
-        self._add_gate_list_item(gate)
-        self._refresh_all_views(select_gate_id=gate.id)
-        self._emit_gates_changed()
-        self._finish_child_gate_mode()
+        try:
+            self.add_gate(gate)
+        except GatingStrategyError as exc:
+            QMessageBox.warning(self, "Invalid gate", str(exc))
+            self.cancel_child_gate_mode()
 
     def _on_edit_geometry_clicked(self) -> None:
         """Edit geometric thresholds/vertices in data coordinates."""

@@ -1,7 +1,7 @@
 """Plot widget for 2D scatter plots.
 
 Uses pyqtgraph for fast rendering.  Gate overlays are drawn as geometry
-items (rectangles / polygons) in **data coordinates**.
+items (rectangles / polygons / ellipses) in **data coordinates**.
 
 This widget contains NO scientific execution logic.  It receives pre-
 computed event arrays and gate definitions from the caller.
@@ -835,6 +835,28 @@ class PlotWidget(QWidget):
             self._connect_gate_item_changed(poly, gate, gate_index)
             return poly
 
+        if gate.gate_type == "ellipse":
+            from pyqtgraph import EllipseROI  # type: ignore[attr-defined]
+
+            values = gate.thresholds
+            center_x = float(values.get("center_x", 0.0))
+            center_y = float(values.get("center_y", 0.0))
+            radius_x = abs(float(values.get("radius_x", 0.0)))
+            radius_y = abs(float(values.get("radius_y", 0.0)))
+            if radius_x <= 0.0 or radius_y <= 0.0:
+                return None
+            rotation = float(values.get("rotation", 0.0))
+            ellipse = EllipseROI(
+                [center_x - radius_x, center_y - radius_y],
+                [2.0 * radius_x, 2.0 * radius_y],
+                angle=np.degrees(rotation),
+                pen=pen,
+                movable=True,
+                removable=False,
+            )
+            self._connect_gate_item_changed(ellipse, gate, gate_index)
+            return ellipse
+
         # range / boolean gates do not have a 2D geometry overlay.
         return None
 
@@ -850,7 +872,7 @@ class PlotWidget(QWidget):
                 return False
         elif self._x_transform_spec is not None or gate.x_scale != self._x_transform:
             return False
-        if gate.gate_type in {"rectangle", "polygon"}:
+        if gate.gate_type in {"rectangle", "polygon", "ellipse"}:
             if y_transform_id is not None:
                 if (
                     self._y_transform_spec is None
@@ -949,6 +971,25 @@ class PlotWidget(QWidget):
             if len(coordinates) < 3:
                 return None
             return replace(gate, coordinates=coordinates)
+
+        if gate.gate_type == "ellipse":
+            state = item.saveState()
+            pos = state.get("pos", (0.0, 0.0))
+            size = state.get("size", (0.0, 0.0))
+            width = abs(float(size[0]))
+            height = abs(float(size[1]))
+            if width <= 0.0 or height <= 0.0:
+                return None
+            return replace(
+                gate,
+                thresholds={
+                    "center_x": float(pos[0]) + width / 2.0,
+                    "center_y": float(pos[1]) + height / 2.0,
+                    "radius_x": width / 2.0,
+                    "radius_y": height / 2.0,
+                    "rotation": float(state.get("angle", 0.0)) * np.pi / 180.0,
+                },
+            )
 
         return None
 

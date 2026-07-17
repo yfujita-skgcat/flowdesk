@@ -105,7 +105,9 @@ class ChannelMetadataWorkspace(QWidget):
       self._table.setRowCount(0)
       return
     self._sample_label.setText(f"Sample: {sample.name} ({sample.id})")
-    self._status_label.setText(f"Channel status: {sample.status}")
+    self._status_label.setText(
+      f"Channel status: {getattr(sample, 'status', 'match')}"
+    )
     self._file_label.setText(f"File: {sample.path or '-'}")
     self._populate(sample.info)
 
