@@ -119,6 +119,14 @@ while `reject_conflict` fails before mutation. `CloneSyncResult` stores before/a
 state so the same command supports apply and undo. GUI code may dispatch this command
 and render its result, but may not implement a second conflict or geometry policy.
 
+Across B5, each fitted algorithm has an explicit primary/reference method, persisted
+version, diagnostics, input provenance, deterministic behavior, failure policy, and
+manual-override policy. Clone is intentionally not a numeric fit: its synchronization
+result is the persisted before/after audit record and its conflict policy is explicit.
+All numeric fits consume complete core event arrays; no density or display-downsampled
+array is accepted. Synthetic distributions and edge cases cover each fit and clone
+conflict/undo behavior.
+
 ### B5-Magnetic: `largest_gap_range.v1`
 
 This is a Flowdesk-defined magnetic-bead heuristic. It sorts all finite values of

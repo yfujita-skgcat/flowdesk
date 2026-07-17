@@ -368,13 +368,13 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] leader_winsとreject_conflict、apply/undoのsynthetic testを追加する。
 - [x] clone同期をGUI-independent core commandとして実装し、GUIは結果表示に限定する。
 
-- [ ] 各algorithmについてprimary/reference method、parameters、fit failure、determinismをimplementation guideへ記載する。
-- [ ] template definitionとsample-specific fitted geometryを分離する。
-- [ ] fitted resultへinput hash、algorithm version、diagnosticsを保存する。
-- [ ] manual override後の再fit policyを定義する。
-- [ ] clone gateの同期group、leader/conflict、Undo behaviorを定義する。
-- [ ] density downsamplingではなくfull Populationをfitへ使用する。
-- [ ] synthetic distributionsとedge casesでnumeric testする。
+- [x] 各numeric algorithmについてprimary/reference method、parameters、fit failure、determinismをimplementation guideへ記載する。cloneはnumeric fitではなく同期commandとして定義する。
+- [x] template definitionとsample-specific fitted geometryまたは同期結果を分離する。
+- [x] fitted resultまたは同期結果へinput/provenance、algorithm version、diagnostics、before/after stateを保存する。
+- [x] manual override後の再fit policyをnumeric templateへ、cloneの競合policyを同期groupへ定義する。
+- [x] clone gateの同期group、leader/conflict、Undo behaviorを定義する。
+- [x] numeric fitはdensity downsamplingではなくfull Populationを使用する。
+- [x] synthetic distributions、edge cases、clone conflict/undoでnumeric/core testする。
 
 ### Phase B6: Graph Window plot types [S09]
 
