@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from flowdesk_core.display_data import prepare_display_data
-from flowdesk_core.models import PlotViewSpec
+from flowdesk_core.models import PlotViewRegistry, PlotViewSpec
 
 
 def test_density_uses_finite_full_population_and_resolution_is_display_only() -> None:
@@ -26,3 +26,12 @@ def test_invalid_population_membership_is_explicit() -> None:
   view = PlotViewSpec(id="v", population_id="p", x_parameter="X", y_parameter="Y")
   with pytest.raises(ValueError, match="membership is missing"):
     prepare_display_data(view, np.zeros((2, 2)), ["X", "Y"], sample_id="s1")
+
+
+def test_plot_view_registry_duplicates_and_links_sample_navigation() -> None:
+  view = PlotViewSpec(id="v", x_parameter="X", y_parameter="Y")
+  registry = PlotViewRegistry((view,))
+  duplicate = registry.duplicate("v", "v-copy")
+  assert [item.id for item in duplicate.views] == ["v", "v-copy"]
+  assert duplicate.active_view_id == "v-copy"
+  assert duplicate.linked_sample_navigation is True

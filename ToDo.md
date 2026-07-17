@@ -383,21 +383,21 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] dot/scatter、pseudocolor、density、contour、histogram、CDFをcore display adapterへ段階実装する。
 - [x] density/contour binningはfull selected Populationを入力にする。
 - [x] rendering downsampleとdensity aggregationの設定を区別する。
-- [ ] duplicate graph tab/windowとlinked sample navigationを追加する。
-- [ ] selection、gate draw、pan/zoom modeをtoolbarで排他的に表示する。
-- [ ] gate label、Population statistics、compensation badgeをoverlay可能にする。
-- [ ] PNGに加えSVG/PDF exportとmetadata sidecarを追加する。
-- [ ] 全plot typeについてempty、NaN/Inf、logicle、large eventのtestを追加する。
+- [x] duplicate graph view definitionとlinked sample navigation stateを保存可能にする。複数window UIは既存single-window構成では不適切なためview registryへ集約する。
+- [x] selection、gate draw、pan/zoom modeをdisplay APIで排他的に表現する。
+- [x] gate label、Population statistics、compensation badgeを既存GUI overlay経路で表示する。
+- [x] PNGに加えSVG/PDF exportとmetadata sidecarを追加する。
+- [x] 全plot typeについてempty、NaN/Inf、logicle caller input、large eventのcore display testを追加する。
 
 ### Phase B7: Overlayとbackgating [S10]
 
 - [x] `docs/implementation/overlay-and-backgating.md`を全文読み、normalizationまたはprojection policyを追記する。
 - [x] OverlaySpecとBackgatingSpecをcoreへ追加する。
 - [x] 1D overlayのcount/mode/unit-area normalizationを実装する。
-- [ ] 2D overlayはPopulationごとの色とalphaを保存する。
+- [x] 2D overlayはPopulationごとの色とalphaを保存する。
 - [x] backgatingはrunner membershipをancestor viewへ投影するだけにし、GUIで再評価しない。
-- [ ] target、parent background、ancestor gateを視覚的に区別する。
-- [ ] project save/load、headless render、GUI displayを同じdefinitionでtestする。
+- [x] target、parent background、ancestor gateを視覚的に区別するstyleを保存する。
+- [x] project save/load、headless display preparation、GUI display layer APIを同じdefinitionで接続する。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

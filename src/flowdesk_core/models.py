@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -21,6 +21,7 @@ MagneticGateAlgorithm = Literal["largest_gap_range"]
 TetheredGateAlgorithm = Literal["translated_rectangle"]
 CloneConflictPolicy = Literal["leader_wins", "reject_conflict"]
 PlotType = Literal["dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"]
+InteractionMode = Literal["pan", "select", "gate"]
 OverlayNormalization = Literal["count", "mode", "unit_area"]
 FitStatus = Literal["success", "failed"]
 ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
@@ -672,6 +673,24 @@ class PlotViewSpec:
       and not self.y_parameter
     ):
       raise ValueError(f"plot type {self.plot_type!r} requires y_parameter")
+
+
+@dataclass(frozen=True)
+class PlotViewRegistry:
+  """Duplicateable persisted views with explicit linked-sample navigation."""
+
+  views: tuple[PlotViewSpec, ...] = ()
+  active_view_id: str | None = None
+  linked_sample_navigation: bool = True
+
+  def duplicate(self, view_id: str, duplicate_id: str) -> PlotViewRegistry:
+    source = next((view for view in self.views if view.id == view_id), None)
+    if source is None:
+      raise ValueError(f"plot view is missing: {view_id!r}")
+    if any(view.id == duplicate_id for view in self.views):
+      raise ValueError(f"duplicate plot view ID: {duplicate_id!r}")
+    duplicate = PlotViewSpec(**{**asdict(source), "id": duplicate_id})
+    return PlotViewRegistry(self.views + (duplicate,), duplicate_id, self.linked_sample_navigation)
 
 
 @dataclass(frozen=True)

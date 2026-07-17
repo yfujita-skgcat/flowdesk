@@ -29,6 +29,10 @@ filtering. `prepare_backgating` reuses target and ancestor masks and verifies su
 relationships; it never re-evaluates gate geometry. Empty populations remain explicit
 diagnostic layers.
 
+Overlay and backgating definitions are included in the MainWindow project manifest;
+the display layer API consumes those definitions and the same report memberships used
+by headless execution.
+
 ## Increments
 
 1. Add models/schema and reference validation.

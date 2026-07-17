@@ -35,6 +35,8 @@ class PlotToolbar(QToolBar):
             "reset_robust": [],
             "reset_full": [],
             "export_png": [],
+            "export_svg": [],
+            "export_pdf": [],
             "marginal_toggled": [],
             "add_statistic": [],
         }
@@ -67,6 +69,12 @@ class PlotToolbar(QToolBar):
         """Register callback for PNG export request."""
         self._callbacks["export_png"].append(callback)
 
+    def on_export_svg(self, callback: Callable[[], None]) -> None:
+        self._callbacks["export_svg"].append(callback)
+
+    def on_export_pdf(self, callback: Callable[[], None]) -> None:
+        self._callbacks["export_pdf"].append(callback)
+
     def on_marginal_toggled(self, callback: Callable[[bool], None]) -> None:
         """Register callback for marginal histogram toggle."""
         self._callbacks["marginal_toggled"].append(callback)
@@ -87,6 +95,12 @@ class PlotToolbar(QToolBar):
 
     def _on_export_clicked(self) -> None:
         self._emit("export_png")
+
+    def _on_export_svg_clicked(self) -> None:
+        self._emit("export_svg")
+
+    def _on_export_pdf_clicked(self) -> None:
+        self._emit("export_pdf")
 
     def _on_add_statistic_clicked(self) -> None:
         self._emit("add_statistic")
@@ -118,6 +132,18 @@ class PlotToolbar(QToolBar):
         btn_export.setToolTip("Export current plot view to PNG")
         btn_export.clicked.connect(self._on_export_clicked)
         self.addWidget(btn_export)
+
+        btn_svg = QToolButton()
+        btn_svg.setObjectName("exportSvgButton")
+        btn_svg.setText("Export SVG")
+        btn_svg.clicked.connect(self._on_export_svg_clicked)
+        self.addWidget(btn_svg)
+
+        btn_pdf = QToolButton()
+        btn_pdf.setObjectName("exportPdfButton")
+        btn_pdf.setText("Export PDF")
+        btn_pdf.clicked.connect(self._on_export_pdf_clicked)
+        self.addWidget(btn_pdf)
 
         btn_statistic = QToolButton()
         btn_statistic.setObjectName("addStatisticFromGraphButton")

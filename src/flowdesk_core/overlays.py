@@ -28,6 +28,14 @@ class BackgatingLayer:
   style: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class Overlay2DLayer:
+  population_id: str
+  x: NDArray[np.float64]
+  y: NDArray[np.float64]
+  style: dict[str, Any]
+
+
 def prepare_overlay_1d(
   spec: OverlaySpec,
   events: NDArray[np.float64],
@@ -76,6 +84,29 @@ def prepare_backgating(
     if np.any(target & ~ancestor):
       raise ValueError(f"target population is not a subset of ancestor {population_id!r}")
     layers.append(BackgatingLayer(population_id, ancestor, dict(spec.ancestor_style)))
+  return tuple(layers)
+
+
+def prepare_overlay_2d(
+  population_ids: tuple[str, ...],
+  events: NDArray[np.float64],
+  x_index: int,
+  y_index: int,
+  report: ExecutionReport,
+  sample_id: str,
+  styles: dict[str, dict[str, Any]] | None = None,
+) -> tuple[Overlay2DLayer, ...]:
+  """Prepare deterministic 2D layers with persisted per-population styles."""
+  style_map = styles or {}
+  layers: list[Overlay2DLayer] = []
+  for population_id in population_ids:
+    mask = _membership(report, sample_id, population_id, len(events))
+    x, y = events[mask, x_index], events[mask, y_index]
+    finite = np.isfinite(x) & np.isfinite(y)
+    layers.append(Overlay2DLayer(
+      population_id, np.asarray(x[finite]), np.asarray(y[finite]),
+      dict(style_map.get(population_id, {})),
+    ))
   return tuple(layers)
 
 

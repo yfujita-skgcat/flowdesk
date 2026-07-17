@@ -3,7 +3,7 @@ import pytest
 
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import BackgatingSpec, OverlaySpec, PopulationMembership
-from flowdesk_core.overlays import prepare_backgating, prepare_overlay_1d
+from flowdesk_core.overlays import prepare_backgating, prepare_overlay_1d, prepare_overlay_2d
 
 
 def _report() -> ExecutionReport:
@@ -44,3 +44,13 @@ def test_backgating_rejects_non_subset_target() -> None:
   )
   with pytest.raises(ValueError, match="not a subset"):
     prepare_backgating(BackgatingSpec("b", "target", ("ancestor",)), report, "s1")
+
+
+def test_overlay_2d_keeps_population_style_order() -> None:
+  events = np.arange(8.0).reshape(4, 2)
+  layers = prepare_overlay_2d(
+    ("ancestor", "target"), events, 0, 1, _report(), "s1",
+    {"ancestor": {"color": "blue", "alpha": 0.2}, "target": {"color": "red", "alpha": 1.0}},
+  )
+  assert [layer.population_id for layer in layers] == ["ancestor", "target"]
+  assert layers[1].style["color"] == "red"

@@ -225,6 +225,9 @@ class MainWindow(QMainWindow):
         self._compensation_calculations: list[dict[str, Any]] = []
         self._transforms: list[dict[str, Any]] = []
         self._statistics: list[dict[str, Any]] = []
+        self._plot_views: list[dict[str, Any]] = []
+        self._overlays: list[dict[str, Any]] = []
+        self._backgating_specs: list[dict[str, Any]] = []
         self._auto_gate_templates: list[dict[str, Any]] = []
         self._auto_gate_fits: list[dict[str, Any]] = []
         self._magnetic_gate_templates: list[dict[str, Any]] = []
@@ -773,6 +776,8 @@ class MainWindow(QMainWindow):
         self._plot_toolbar.on_reset_robust(self._on_reset_robust)
         self._plot_toolbar.on_reset_full(self._on_reset_full)
         self._plot_toolbar.on_export_png(self._on_export_png)
+        self._plot_toolbar.on_export_svg(self._on_export_svg)
+        self._plot_toolbar.on_export_pdf(self._on_export_pdf)
         self._plot_toolbar.on_add_statistic(self._on_add_statistic_from_graph)
         self._plot_toolbar.on_marginal_toggled(self._on_marginal_toggled)
         self._group_panel.groups_changed.connect(self._on_groups_changed)
@@ -1299,6 +1304,9 @@ class MainWindow(QMainWindow):
                 self._compensation_calculations
             ),
             "statistics": deepcopy(self._statistics),
+            "plot_views": deepcopy(self._plot_views),
+            "overlays": deepcopy(self._overlays),
+            "backgating_specs": deepcopy(self._backgating_specs),
             "auto_gate_templates": deepcopy(self._auto_gate_templates),
             "auto_gate_fits": deepcopy(self._auto_gate_fits),
             "magnetic_gate_templates": deepcopy(self._magnetic_gate_templates),
@@ -1532,6 +1540,9 @@ class MainWindow(QMainWindow):
             manifest.get("compensation_calculations", [])
         )
         self._statistics = deepcopy(manifest.get("statistics", []))
+        self._plot_views = deepcopy(manifest.get("plot_views", []))
+        self._overlays = deepcopy(manifest.get("overlays", []))
+        self._backgating_specs = deepcopy(manifest.get("backgating_specs", []))
         self._auto_gate_templates = deepcopy(manifest.get("auto_gate_templates", []))
         self._auto_gate_fits = deepcopy(manifest.get("auto_gate_fits", []))
         self._magnetic_gate_templates = deepcopy(manifest.get("magnetic_gate_templates", []))
@@ -2113,6 +2124,28 @@ class MainWindow(QMainWindow):
             self._update_status(f"Plot exported to {path_str}")
         except Exception as exc:
             logger.error("PNG export failed: %s", exc)
+            QMessageBox.critical(self, "Export Error", str(exc))
+
+    def _on_export_svg(self) -> None:
+        path = QFileDialog.getSaveFileName(self, "Export Plot as SVG", "", "SVG files (*.svg)")[0]
+        if not path:
+            return
+        try:
+            self._plot_widget.export_vector(path, "SVG")
+            self._update_status(f"Plot exported to {path}")
+        except Exception as exc:
+            logger.error("SVG export failed: %s", exc)
+            QMessageBox.critical(self, "Export Error", str(exc))
+
+    def _on_export_pdf(self) -> None:
+        path = QFileDialog.getSaveFileName(self, "Export Plot as PDF", "", "PDF files (*.pdf)")[0]
+        if not path:
+            return
+        try:
+            self._plot_widget.export_vector(path, "PDF")
+            self._update_status(f"Plot exported to {path}")
+        except Exception as exc:
+            logger.error("PDF export failed: %s", exc)
             QMessageBox.critical(self, "Export Error", str(exc))
 
     def _on_export_population_results(self) -> None:

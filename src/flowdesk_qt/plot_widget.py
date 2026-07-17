@@ -18,6 +18,7 @@ membership or any analytical result.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -27,7 +28,8 @@ from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QColor, QImage
+from PySide6.QtGui import QColor, QImage, QPageSize, QPainter, QPdfWriter
+from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from flowdesk_core.models import GateSpec, TransformSpec
@@ -43,6 +45,7 @@ from flowdesk_qt.plot_style import PlotStyleSettings
 
 AxisTransform = Literal["linear", "log10", "asinh"]
 InteractiveGateType = Literal["rectangle", "polygon"]
+InteractionMode = Literal["pan", "select", "gate"]
 RangeMode = Literal["robust_auto", "full_auto", "manual"]
 
 # ---------------------------------------------------------------------------
@@ -85,9 +88,11 @@ class PlotWidget(QWidget):
         self._manual_view_range: tuple[tuple[float, float], tuple[float, float]] | None = None
         self._setting_view_range = False
         self._polygon_preview_vertices: list[tuple[float, float]] = []
+        self._interaction_mode: InteractionMode = "pan"
         # Histogram mode state (display-only).
         self._is_histogram_mode: bool = False
         self._histogram_item: Any | None = None
+        self._overlay_scatter_items: list[Any] = []
         self._histogram_bins: int = 60
         self._excluded_event_count: int = 0
         # Marginal histogram state (display-only).
@@ -112,6 +117,15 @@ class PlotWidget(QWidget):
         if factor < 1:
             factor = 1
         self._downsample_factor = factor
+
+    def set_interaction_mode(self, mode: InteractionMode) -> None:
+        """Set mutually exclusive display interaction mode."""
+        if mode not in {"pan", "select", "gate"}:
+            raise ValueError(f"unsupported interaction mode: {mode!r}")
+        self._interaction_mode = mode
+
+    def interaction_mode(self) -> InteractionMode:
+        return self._interaction_mode
 
     # -- style / appearance API (display-only) --------------------------------
 
@@ -404,6 +418,7 @@ class PlotWidget(QWidget):
         self._clear_histogram()
         self._clear_marginal_histograms()
         self._clear_gates()
+        self.clear_overlay_layers()
         self._clear_preview()
         self._x_label = ""
         self._y_label = ""
@@ -413,6 +428,27 @@ class PlotWidget(QWidget):
         self._cached_marginal_y = None
         self._is_histogram_mode = False
         self._update_labels()
+
+    def plot_overlay_layers(self, layers: list[Any] | tuple[Any, ...]) -> None:
+        """Display prepared core overlay layers with persisted styles."""
+        self.clear_overlay_layers()
+        for layer in layers:
+            style = dict(getattr(layer, "style", {}))
+            item = self._plot_item.plot(
+                layer.x, layer.y, pen=None, symbol="o", symbolSize=self._style.dot_size,
+                pxMode=True,
+                brush=self._make_brush(
+                    style.get("color", self._style.dot_color),
+                    float(style.get("alpha", self._style.dot_opacity)),
+                ),
+            )
+            self._overlay_scatter_items.append(item)
+
+    def clear_overlay_layers(self) -> None:
+        """Remove display-only overlay layers without changing analysis state."""
+        for item in self._overlay_scatter_items:
+            self._plot_item.removeItem(item)
+        self._overlay_scatter_items.clear()
 
     def add_gate_overlay(self, gate: GateSpec, gate_index: int | None = None) -> None:
         """Add a gate geometry overlay in data coordinates."""
@@ -496,6 +532,33 @@ class PlotWidget(QWidget):
         finally:
             if resized:
                 self.resize(original_size)
+
+    def export_vector(self, path: str | Path, format_name: Literal["SVG", "PDF"]) -> None:
+        """Export the display-only scene as SVG/PDF and write a metadata sidecar."""
+        out_path = Path(path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        if format_name == "SVG":
+            device = QSvgGenerator()
+            device.setFileName(str(out_path))
+            device.setSize(self.size())
+        else:
+            device = QPdfWriter(str(out_path))
+            device.setResolution(96)
+            device.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        painter = QPainter(device)
+        try:
+            self.render(painter)
+        finally:
+            painter.end()
+        metadata = {
+            "format": format_name,
+            "display_state": self.display_state(),
+            "scientific_note": "display export; does not contain analytical statistics",
+        }
+        out_path.with_suffix(out_path.suffix + ".json").write_text(
+            json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
     def screen_to_data(self, screen_x: float, screen_y: float) -> tuple[float, float]:
         """Convert screen coordinates to data coordinates.

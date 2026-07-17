@@ -31,6 +31,11 @@ The core `PlotViewSpec` and `prepare_display_data` adapter implement this contra
 edges without smoothing. `rendering_downsample` is display metadata and is never
 applied to density aggregation or pipeline membership.
 
+The existing `PlotWidget` remains display-only: gate labels, population/statistic
+context, and the compensation status badge are supplied by `MainWindow`. PNG, SVG,
+and PDF exports emit a JSON sidecar containing display state and an explicit
+non-statistical export note.
+
 ## Increments
 
 1. Add PlotViewSpec serialization and restore existing scatter/histogram state.
