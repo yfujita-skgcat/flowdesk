@@ -56,6 +56,7 @@ from flowdesk_qt.group_panel import GroupPanel
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
+from flowdesk_qt.results_workspace import ResultsWorkspace
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
 from flowdesk_qt.workspace_tree import WorkspaceTree
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
@@ -565,6 +566,7 @@ class MainWindow(QMainWindow):
         self._group_panel = GroupPanel()
         self._group_panel.setVisible(False)
         self._population_tree = PopulationTree()
+        self._results_workspace = ResultsWorkspace()
         self._workspace_tree = WorkspaceTree()
         self._diagnostics_panel = DiagnosticsPanel()
         self._workspace_navigation = self._create_workspace_navigation()
@@ -617,6 +619,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._group_panel)
         layout.addWidget(self._workspace_tree)
         layout.addWidget(self._population_tree)
+        layout.addWidget(self._results_workspace)
         layout.addWidget(self._diagnostics_panel)
         layout.setStretch(0, 1)
         layout.setStretch(1, 0)
@@ -825,6 +828,9 @@ class MainWindow(QMainWindow):
         self._population_tree.on_add_statistic_requested(
             self._on_add_statistic_from_population_tree
         )
+        self._results_workspace.on_selection_changed(
+            self._on_results_workspace_selected
+        )
         self._workspace_tree.on_selection_changed(self._on_workspace_tree_selected)
 
         # Connect plot mouse events to gate creation
@@ -844,6 +850,12 @@ class MainWindow(QMainWindow):
         )
         self._workspace_tree.set_samples(
             [(item.id, item.name) for item in self._sample_browser.samples()]
+        )
+        self._results_workspace.set_samples(
+            [(item.id, item.name) for item in self._sample_browser.samples()]
+        )
+        self._results_workspace.set_population_hierarchy(
+            self._population_parent_map(), self._population_name_map()
         )
         self._workspace_tree.select("sample", sample.id)
         self._update_workspace_navigation()
@@ -917,6 +929,9 @@ class MainWindow(QMainWindow):
         """
         self._population_tree.set_population_parents(self._population_parent_map())
         self._workspace_tree.set_population_hierarchy(
+            self._population_parent_map(), self._population_name_map()
+        )
+        self._results_workspace.set_population_hierarchy(
             self._population_parent_map(), self._population_name_map()
         )
         self._mark_results_stale("Gates changed")
@@ -996,6 +1011,17 @@ class MainWindow(QMainWindow):
         if kind == "sample":
             self._sample_browser.select_sample(stable_id)
         elif kind == "population":
+            self._on_population_selected(stable_id, sample_id)
+
+    def _on_results_workspace_selected(
+        self, kind: str, stable_id: str, sample_id: str
+    ) -> None:
+        """Apply Results navigation without changing the gate editing target."""
+        if kind == "sample":
+            if sample_id != self._current_sample_id:
+                self._sample_browser.select_sample(sample_id)
+            return
+        if kind == "population":
             self._on_population_selected(stable_id, sample_id)
 
     def _replot(self) -> None:
@@ -1410,6 +1436,7 @@ class MainWindow(QMainWindow):
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
             self._workspace_tree.set_report(report)
+            self._results_workspace.set_report(report)
             self._refresh_override_statuses()
             self._diagnostics_panel.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
@@ -2327,6 +2354,7 @@ class MainWindow(QMainWindow):
         self._results_stale = True
         self._population_tree.clear()
         self._population_tree.mark_results_stale()
+        self._results_workspace.mark_results_stale()
         self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
         self._display_population_id = "all_events"
