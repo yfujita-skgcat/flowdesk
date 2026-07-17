@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass, field
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -828,7 +829,7 @@ class PlotViewRegistry:
       raise ValueError(f"plot view is missing: {view_id!r}")
     if any(view.id == duplicate_id for view in self.views):
       raise ValueError(f"duplicate plot view ID: {duplicate_id!r}")
-    duplicate = PlotViewSpec(**{**asdict(source), "id": duplicate_id})
+    duplicate = replace(deepcopy(source), id=duplicate_id)
     return PlotViewRegistry(self.views + (duplicate,), duplicate_id, self.linked_sample_navigation)
 
 

@@ -34,6 +34,7 @@ from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from flowdesk_core.models import GateSpec, TransformSpec
+from flowdesk_core.plot_presentation import resolve_presentation_layers
 from flowdesk_core.transforms import (
     TransformError,
     TransformTick,
@@ -85,6 +86,7 @@ class PlotWidget(QWidget):
         self._y_ticks: tuple[TransformTick, ...] = ()
         # Display style settings (display-only, never affects analysis).
         self._style: PlotStyleSettings = PlotStyleSettings()
+        self._export_metadata: dict[str, Any] | None = None
         # Cached raw data for range reset operations.
         self._cached_x: NDArray[np.float64] | None = None
         self._cached_y: NDArray[np.float64] | None = None
@@ -152,7 +154,12 @@ class PlotWidget(QWidget):
         This method consumes persisted presentation state only.  It never
         changes event data, memberships, gates, or pipeline results.
         """
-        value = dict(presentation or {})
+        value = {
+            key: value
+            for key, value in resolve_presentation_layers(
+                presentation or {}, source_ids=()
+            ).presentation.__dict__.items()
+        }
         title = str(value.get("title", ""))
         self._plot_item.setTitle(title)
         self._plot_item.setLabel(
@@ -167,6 +174,10 @@ class PlotWidget(QWidget):
                 style_updates[key] = value[key]
         if style_updates:
             self.set_style(replace(self._style, **style_updates))
+
+    def set_export_metadata(self, metadata: dict[str, Any] | None) -> None:
+        """Attach prepared core export metadata to subsequent display exports."""
+        self._export_metadata = None if metadata is None else dict(metadata)
 
     # -- range reset API (display-only) ---------------------------------------
 
@@ -565,6 +576,18 @@ class PlotWidget(QWidget):
             out_path.parent.mkdir(parents=True, exist_ok=True)
             if not image.save(str(out_path), "PNG"):
                 raise OSError(f"failed to write PNG plot: {out_path}")
+            metadata = dict(self._export_metadata or {})
+            metadata.update({
+                "format": "PNG",
+                "display_state": self.display_state(),
+                "scientific_note": (
+                    "display export; does not contain analytical statistics"
+                ),
+            })
+            out_path.with_suffix(out_path.suffix + ".json").write_text(
+                json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
         finally:
             if resized:
                 self.resize(original_size)
@@ -586,11 +609,12 @@ class PlotWidget(QWidget):
             self.render(painter, QPoint(0, 0))
         finally:
             painter.end()
-        metadata = {
-            "format": format_name,
-            "display_state": self.display_state(),
-            "scientific_note": "display export; does not contain analytical statistics",
-        }
+        metadata = dict(self._export_metadata or {})
+        metadata.update({
+          "format": format_name,
+          "display_state": self.display_state(),
+          "scientific_note": "display export; does not contain analytical statistics",
+        })
         out_path.with_suffix(out_path.suffix + ".json").write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",

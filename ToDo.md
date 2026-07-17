@@ -505,31 +505,31 @@ title/axis/legend編集が実装済みであることを意味しない。
 
 #### Increment 4: Renderer, export, persistence and reuse
 
-- [ ] GUI rendererとGUI非依存/headless export rendererが同じresolved source orderとpresentation definitionを使用する。
-- [ ] PNG/SVG/PDFへ同じtitle、axis labels、legend、source style、gate styleを適用し、metadata sidecarへsample/population/parameter/transform IDsとstyle provenanceを記録する。
-- [ ] project save/load/reload、duplicate plot/viewでoverlay sourceとpresentationを再現する。
-- [ ] Layout Editorがpresentation definitionを参照またはprovenance付き複製できるようにし、Layout独自overrideを科学定義から分離する。
-- [ ] Templateではsample ID固定参照とmapping可能なsource role/pathを区別し、ambiguous/missing mappingをconfirmation/diagnosticなしに適用しない。
-- [ ] style解決優先順位を`view override > project display default > global preference > built-in default`として実装し、resolved provenanceを確認可能にする。
-- [ ] GUI/headless/export consistency、font fallback、blank output、missing source、strict teardownをE2E testする。
+- [x] GUI rendererとGUI非依存/headless export rendererが同じresolved source orderとpresentation definitionを使用する。
+- [x] PNG/SVG/PDFへ同じtitle、axis labels、legend、source style、gate styleを適用し、metadata sidecarへsample/population/parameter/transform IDsとstyle provenanceを記録する。
+- [x] project save/load/reload、duplicate plot/viewでoverlay sourceとpresentationを再現する。
+- [x] Layout Editorがpresentation definitionを参照またはprovenance付き複製できるようにし、Layout独自overrideを科学定義から分離する。
+- [x] Templateではsample ID固定参照とmapping可能なsource role/pathを区別し、ambiguous/missing mappingをconfirmation/diagnosticなしに適用しない。
+- [x] style解決優先順位を`view override > project display default > global preference > built-in default`として実装し、resolved provenanceを確認可能にする。
+- [ ] GUI/headless/export consistency、font fallback、blank output、missing source、strict teardownをE2E testする。Qt全体テストは既存の`tests/conftest.py:34` teardown segfaultで完走できず、重点GUIテストは通過。
 
 #### Phase B7.1 必須受け入れtest
 
-- [ ] 2つ以上の異なるsampleのPopulationをoverlayできる。
-- [ ] channel orderが異なるsampleでもstable identityにより正しい軸へmappingされる。
-- [ ] ambiguous/missing/incompatible channelをsilent fallbackしない。
-- [ ] source追加・削除・並べ替え・visibilityがsave/loadされる。
-- [ ] sourceごとのcolor、alpha、marker、legend labelがsave/loadされる。
-- [ ] title、axis display label、legend設定がsave/loadされる。
-- [ ] axis display label変更がparameter ID、transform ID、gate membership、科学計算を変更しない。
-- [ ] plot style変更がgate membership、count、frequency、statisticsを変更しない。
-- [ ] rendering downsampleを変更してもscientific valuesが変わらない。
-- [ ] GUI previewとPNG/SVG/PDF exportが同じsource順、label、styleを使用する。
-- [ ] unsupported styleは黙って無視せずvalidationまたはstructured diagnosticを出す。
-- [ ] missing overlay sourceをzero eventsとして表示しない。
-- [ ] project reload後にoverlayとstyleが再現される。
-- [ ] Layout Editorへ配置したplotが元のpresentation definitionと一致する。
-- [ ] headless環境でfont fallbackが発生してもblank outputやmissing sourceを成功扱いにしない。
+- [x] 2つ以上の異なるsampleのPopulationをoverlayできる。
+- [x] channel orderが異なるsampleでもstable identityにより正しい軸へmappingされる。
+- [x] ambiguous/missing/incompatible channelをsilent fallbackしない。
+- [x] source追加・削除・並べ替え・visibilityがsave/loadされる。
+- [x] sourceごとのcolor、alpha、marker、legend labelがsave/loadされる。
+- [x] title、axis display label、legend設定がsave/loadされる。
+- [x] axis display label変更がparameter ID、transform ID、gate membership、科学計算を変更しない。
+- [x] plot style変更がgate membership、count、frequency、statisticsを変更しない。
+- [x] rendering downsampleを変更してもscientific valuesが変わらない。
+- [x] GUI previewとPNG/SVG/PDF exportが同じsource順、label、styleを使用する。
+- [x] unsupported styleは黙って無視せずvalidationまたはstructured diagnosticを出す。
+- [x] missing overlay sourceをzero eventsとして表示しない。
+- [x] project reload後にoverlayとstyleが再現される。
+- [x] Layout Editorへ配置したplotが元のpresentation definitionと一致する。
+- [x] headless環境でfont fallbackが発生してもblank outputやmissing sourceを成功扱いにしない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

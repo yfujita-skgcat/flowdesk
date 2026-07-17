@@ -48,8 +48,9 @@ from flowdesk_core.overrides import (
 )
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_presentation import (
-    SamplePresentationContext,
-    resolve_overlay_sources,
+  SamplePresentationContext,
+  resolve_overlay_sources,
+  resolve_presentation_layers,
 )
 from flowdesk_core.preview import (
     PreviewReport,
@@ -2592,6 +2593,7 @@ class MainWindow(QMainWindow):
         if not path_str:
             return
         try:
+            self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
             self._plot_widget.export_png(path_str)
             self._update_status(f"Plot exported to {path_str}")
         except Exception as exc:
@@ -2603,6 +2605,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
+            self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
             self._plot_widget.export_vector(path, "SVG")
             self._update_status(f"Plot exported to {path}")
         except Exception as exc:
@@ -2614,11 +2617,77 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
+            self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
             self._plot_widget.export_vector(path, "PDF")
             self._update_status(f"Plot exported to {path}")
         except Exception as exc:
             logger.error("PDF export failed: %s", exc)
             QMessageBox.critical(self, "Export Error", str(exc))
+
+    def _current_plot_export_metadata(self) -> dict[str, Any]:
+        """Prepare display-only export metadata from the persisted view.
+
+        The widget remains a renderer: source identity, ordering, compatibility
+        diagnostics, and presentation precedence are resolved here through the
+        GUI-independent core contracts.
+        """
+        view = next(
+            (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+            None,
+        )
+        if view is None:
+            return {}
+        sources = sorted(
+            view.get("overlay_sources", []),
+            key=lambda item: (int(item.get("order", 0)), str(item.get("source_id", ""))),
+        )
+        statuses = self._overlay_status_resolver(
+            tuple(source.get("source_id", "") for source in sources)
+        )
+        visible = [source for source in sources if source.get("visible", True)]
+        invalid = [
+            source.get("source_id", "") for source in visible
+            if statuses.get(source.get("source_id", ""), ("missing", ()))[0]
+            != "compatible"
+        ]
+        if invalid:
+            raise ValueError(
+                "cannot export with incompatible visible overlay source(s): "
+                + ", ".join(str(source_id) for source_id in invalid)
+            )
+        source_ids = tuple(str(source.get("source_id", "")) for source in visible)
+        resolved = resolve_presentation_layers(
+            view.get("presentation", {}), source_ids=source_ids
+        )
+        return {
+            "plot_id": view.get("id"),
+            "definition_version": 1,
+            "plot_type": view.get("plot_type", "scatter"),
+            "ordered_source_ids": list(source_ids),
+            "sources": [
+                {
+                    "source_id": source.get("source_id"),
+                    "sample_id": source.get("sample_id"),
+                    "population_id": source.get("population_id"),
+                    "x_parameter_id": source.get("x_parameter_id"),
+                    "y_parameter_id": source.get("y_parameter_id"),
+                    "x_transform_id": source.get("x_transform_id"),
+                    "y_transform_id": source.get("y_transform_id"),
+                    "visible": bool(source.get("visible", True)),
+                }
+                for source in visible
+            ],
+            "presentation": asdict(resolved.presentation),
+            "style_provenance": dict(resolved.provenance),
+            "diagnostics": [
+                {"source_id": source_id, "messages": messages}
+                for source_id, (_, messages) in statuses.items()
+                if messages
+            ],
+            "scientific_note": (
+                "Presentation settings and display sampling do not alter scientific results."
+            ),
+        }
 
     def _on_export_population_results(self) -> None:
         """Export population statistics from the latest non-stale report."""

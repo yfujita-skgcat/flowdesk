@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import asdict, dataclass
 from typing import Literal
 
 from flowdesk_core.channels import AmbiguousChannelReferenceError, resolve_channel_index
 from flowdesk_core.models import (
   ChannelSpec,
+  FontSpec,
   OverlaySourceSpec,
   PlotPresentationSpec,
   PlotType,
@@ -51,6 +54,15 @@ class OverlaySourceResolution:
   status: CompatibilityStatus
   x_index: int | None = None
   y_index: int | None = None
+  diagnostics: tuple[PresentationDiagnostic, ...] = ()
+
+
+@dataclass(frozen=True)
+class ResolvedPresentation:
+  """One immutable presentation consumed by preview, export, and reuse."""
+
+  presentation: PlotPresentationSpec
+  provenance: dict[str, str]
   diagnostics: tuple[PresentationDiagnostic, ...] = ()
 
 
@@ -122,9 +134,122 @@ def validate_presentation(
         f"style fields {fields} are unsupported for plot type {plot_type!r}"
       )
   if presentation.colormap is not None and "colormap" not in supported:
-    raise PresentationValidationError(
-      f"style field colormap is unsupported for plot type {plot_type!r}"
+      raise PresentationValidationError(
+        f"style field colormap is unsupported for plot type {plot_type!r}"
+      )
+
+
+def _presentation_fields() -> tuple[str, ...]:
+  return (
+    "title", "subtitle", "x_axis_display_label", "y_axis_display_label",
+    "background_color", "legend_visible", "legend_position", "legend_source_ids",
+    "title_font", "axis_label_font", "tick_font", "legend_font",
+    "gate_outline_color", "gate_outline_width", "gate_outline_style", "colormap",
+    "automatic_style_policy",
+  )
+
+
+def _typed_presentation(value: Mapping[str, object]) -> PlotPresentationSpec:
+  """Convert JSON presentation data to the validated core type."""
+  fonts = {
+    key: FontSpec(**dict(value.get(key, {})))
+    for key in ("title_font", "axis_label_font", "tick_font", "legend_font")
+  }
+  source_styles: list[SourceStyleSpec] = []
+  for raw in value.get("source_styles", []):
+    if not isinstance(raw, Mapping):
+      raise PresentationValidationError("source_styles entries must be objects")
+    source_styles.append(SourceStyleSpec(
+      **{
+        **dict(raw),
+        "manual_fields": tuple(raw.get("manual_fields", ())),
+        "provenance": dict(raw.get("provenance", {})),
+      }
+    ))
+  return PlotPresentationSpec(
+    **{
+      **{field: value[field] for field in _presentation_fields() if field in value},
+      **fonts,
+      "legend_source_ids": tuple(value.get("legend_source_ids", ())),
+      "source_styles": tuple(source_styles),
+    }
+  )
+
+
+def resolve_presentation_layers(
+  view_override: Mapping[str, object] | None = None,
+  project_default: Mapping[str, object] | None = None,
+  global_preference: Mapping[str, object] | None = None,
+  *,
+  source_ids: tuple[str, ...] = (),
+  builtin_default: Mapping[str, object] | None = None,
+) -> ResolvedPresentation:
+  """Resolve presentation precedence and retain field-level provenance.
+
+  The four layers are applied in increasing priority: built-in, global,
+  project, and view.  Source styles are merged field-by-field so resetting a
+  higher layer reveals the lower value instead of copying it into the view.
+  """
+  builtin = deepcopy(dict(builtin_default or asdict(PlotPresentationSpec())))
+  layers = (
+    ("builtin_default", builtin),
+    ("global_preference", dict(global_preference or {})),
+    ("project_display_default", dict(project_default or {})),
+    ("view_override", dict(view_override or {})),
+  )
+  merged: dict[str, object] = builtin
+  provenance: dict[str, str] = {
+    field: "builtin_default" for field in _presentation_fields()
+  }
+  source_values: dict[str, dict[str, object]] = {}
+  source_provenance: dict[str, dict[str, str]] = {}
+  for source in builtin.get("source_styles", []):
+    if isinstance(source, Mapping) and source.get("source_id"):
+      source_values[str(source["source_id"])] = dict(source)
+  for layer_name, layer in layers[1:]:
+    for field in _presentation_fields():
+      if field in layer:
+        merged[field] = deepcopy(layer[field])
+        provenance[field] = layer_name
+    raw_styles = layer.get("source_styles", [])
+    if isinstance(raw_styles, (list, tuple)):
+      for raw in raw_styles:
+        if not isinstance(raw, Mapping) or not raw.get("source_id"):
+          continue
+        source_id = str(raw["source_id"])
+        target = source_values.setdefault(source_id, {"source_id": source_id})
+        target_provenance = source_provenance.setdefault(source_id, {})
+        for field, field_value in raw.items():
+          if field in {"source_id", "manual_fields", "provenance"}:
+            continue
+          target[field] = deepcopy(field_value)
+          target_provenance[field] = layer_name
+        if raw.get("manual_fields"):
+          target["manual_fields"] = list(raw["manual_fields"])
+          for field in raw["manual_fields"]:
+            target_provenance[str(field)] = layer_name
+  if source_ids:
+    merged["legend_source_ids"] = tuple(
+      source_id for source_id in merged.get("legend_source_ids", source_ids)
+      if source_id in source_ids
     )
+    merged["legend_source_ids"] += tuple(
+      source_id for source_id in source_ids
+      if source_id not in merged["legend_source_ids"]
+    )
+  merged["source_styles"] = [
+    {
+      **source_values[source_id],
+      "provenance": source_provenance.get(source_id, {}),
+    }
+    for source_id in source_ids
+    if source_id in source_values
+  ]
+  for source_id, fields in source_provenance.items():
+    for field, layer_name in fields.items():
+      provenance[f"source:{source_id}:{field}"] = layer_name
+  presentation = _typed_presentation(merged)
+  return ResolvedPresentation(presentation, provenance)
 
 
 def _diagnostic(
