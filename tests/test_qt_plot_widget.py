@@ -252,13 +252,49 @@ def test_population_color_brushes_are_reused_across_replots() -> None:
     first_count = calls
     cached_brushes = plot._event_brush_cache
     plot.plot_events(x, y, event_colors=colors)
-    assert first_count == 101  # one default brush plus one per event
+    assert first_count == 3  # one default brush plus two unique event colors
     assert calls == first_count + 1  # only the single default brush is new
     assert plot._event_brush_cache is cached_brushes
   finally:
     plot.close()
     plot.deleteLater()
     QApplication.processEvents()
+
+
+def test_population_event_colors_preserve_full_hex_values() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    window._gate_editor._population_display_colors = {"positive": "#800080"}
+    class Membership:
+      sample_id = "s1"
+      population_id = "positive"
+      mask = np.array([True, False, True])
+
+    class Report:
+      population_membership = (Membership(),)
+
+    window._last_result_report = Report()
+    colors = window._population_event_colors("s1", 3, None)
+    assert colors is not None
+    assert colors.tolist() == ["#800080", "#b8c7ff", "#800080"]
+    window._plot_widget.plot_events(
+      np.arange(3.0), np.arange(3.0), event_colors=colors
+    )
+    rendered = window._plot_widget._scatter.scatter.data["brush"]
+    assert [brush.color().name() for brush in rendered] == [
+      "#800080", "#b8c7ff", "#800080",
+    ]
+    window._plot_widget.set_presentation({})
+    assert window._plot_widget._scatter.xData.tolist() == [0.0, 1.0, 2.0]
+    rendered_after_presentation = window._plot_widget._scatter.scatter.data["brush"]
+    assert [brush.color().name() for brush in rendered_after_presentation] == [
+      "#800080", "#b8c7ff", "#800080",
+    ]
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
 
 
 def test_default_drag_delegates_mouse_drag_to_viewbox() -> None:
@@ -1443,6 +1479,9 @@ def test_gate_geometry_change_marks_population_results_stale() -> None:
       x_parameter="FSC-A",
       y_parameter="SSC-A",
       thresholds={"x_min": 1.0, "x_max": 2.0, "y_min": 1.0, "y_max": 2.0},
+    )
+    window._replot = lambda: pytest.fail(
+      "finished ROI edits must wait for the preview instead of replotting twice"
     )
     window._on_gate_geometry_changed(0, updated)
 

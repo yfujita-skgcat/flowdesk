@@ -61,6 +61,23 @@ def test_scheduler_coalesces_repeated_edits_to_latest_pending_revision(qapp) -> 
     scheduler.deleteLater()
 
 
+def test_scheduler_can_start_finished_interaction_without_debounce(qapp) -> None:
+  received: list[int] = []
+
+  def execute(_project, request):
+    return SimpleNamespace(revision=request.revision)
+
+  scheduler = PreviewScheduler(debounce_ms=10_000, executor=execute)
+  scheduler.preview_ready.connect(lambda report: received.append(report.revision))
+  try:
+    scheduler.schedule({"revision": 1}, _request(1))
+    scheduler.start_pending_now()
+    _wait_until(qapp, lambda: received == [1])
+  finally:
+    scheduler.shutdown()
+    scheduler.deleteLater()
+
+
 def test_scheduler_discards_out_of_order_obsolete_completion(qapp) -> None:
   first_started = threading.Event()
   release_first = threading.Event()

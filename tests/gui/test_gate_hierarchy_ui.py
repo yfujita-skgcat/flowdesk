@@ -129,6 +129,22 @@ def test_population_color_dialog_starts_with_visible_default(qapp, monkeypatch) 
     qapp.processEvents()
 
 
+def test_selected_population_swatch_keeps_its_actual_color(qapp) -> None:
+  editor = GateEditor()
+  try:
+    editor.set_gates(_three_level_gates(), notify=False)
+    editor._population_display_colors["positive"] = "#800080"
+    editor._refresh_hierarchy_tree("positive")
+    item = editor._tree_items["positive"]
+    editor._tree_widget.setCurrentItem(item)
+    icon_image = item.icon(4).pixmap(12, 12).toImage()
+    assert icon_image.pixelColor(6, 6).name() == "#800080"
+  finally:
+    editor.close()
+    editor.deleteLater()
+    qapp.processEvents()
+
+
 def test_numeric_ellipse_gate_uses_command_stack_for_deletion(qapp, monkeypatch) -> None:
     editor = GateEditor()
 

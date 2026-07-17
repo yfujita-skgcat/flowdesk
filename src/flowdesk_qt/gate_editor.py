@@ -16,7 +16,7 @@ from dataclasses import asdict, replace
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QColorDialog,
@@ -1184,11 +1184,16 @@ class GateEditor(QWidget):
 
     def _set_population_swatch(self, item: QTreeWidgetItem, population_id: str) -> None:
         color = self._population_display_colors.get(population_id)
-        item.setText(4, "■" if color else "")
+        item.setText(4, "")
         if color:
-            item.setForeground(4, QColor(color))
+            # Selection palettes override item foreground/background roles.
+            # An icon preserves the actual swatch color on selected rows.
+            pixmap = QPixmap(12, 12)
+            pixmap.fill(QColor(color))
+            item.setIcon(4, QIcon(pixmap))
             item.setToolTip(4, f"Population color {color}")
         else:
+            item.setIcon(4, QIcon())
             item.setToolTip(4, "No population display color; using plot default")
 
     def _show_population_context_menu(self, position) -> None:

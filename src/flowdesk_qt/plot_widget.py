@@ -760,10 +760,14 @@ class PlotWidget(QWidget):
             and np.array_equal(self._event_brush_cache_colors, colors)
         ):
             return self._event_brush_cache
-        brushes = [
-            self._make_brush(str(color), opacity)
-            for color in colors
-        ]
+        # A population-colored plot usually contains only a handful of unique
+        # colors but tens of thousands of events. Build one immutable QBrush
+        # per color and share it across matching points.
+        palette = {
+            str(color): self._make_brush(str(color), opacity)
+            for color in np.unique(colors)
+        }
+        brushes = [palette[str(color)] for color in colors]
         self._event_brush_cache_colors = colors.copy()
         self._event_brush_cache_opacity = opacity
         self._event_brush_cache = brushes
@@ -790,13 +794,16 @@ class PlotWidget(QWidget):
 
         # Re-apply scatter brush/size if scatter exists
         if self._scatter is not None:
+            self._scatter.setSymbolSize(s.dot_size)
             brush: Any = self._make_brush(s.dot_color, s.dot_opacity)
             if self._event_colors is not None:
                 brush = self._event_brushes(self._event_colors, s.dot_opacity)
-                self._scatter.setData(symbolBrush=brush)
+                # PlotDataItem.setData() without X/Y clears the plotted data.
+                # Update the owned ScatterPlotItem directly so a display-only
+                # style change never removes event coordinates.
+                self._scatter.scatter.setBrush(brush)
             else:
                 self._scatter.setSymbolBrush(brush)
-            self._scatter.setSymbolSize(s.dot_size)
 
         # Re-apply gate overlay colors
         self._refresh_gate_colors()

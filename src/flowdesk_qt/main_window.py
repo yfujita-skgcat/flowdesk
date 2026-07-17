@@ -1470,7 +1470,10 @@ class MainWindow(QMainWindow):
             or self._population_tree.last_report()
         )
         memberships = getattr(report, "population_membership", ()) if report is not None else ()
-        colors = np.full(event_count, self._plot_widget.style().dot_color, dtype=str)
+        # ``dtype=str`` creates a one-character NumPy string array (``<U1``),
+        # truncating ``#RRGGBB`` values to ``#`` and making all points
+        # effectively invisible. Reserve the full display-color width.
+        colors = np.full(event_count, self._plot_widget.style().dot_color, dtype="<U7")
         parents = self._population_parent_map()
         hierarchy_order = {
             population_id: index
@@ -2790,7 +2793,17 @@ class MainWindow(QMainWindow):
 
     def _on_gate_geometry_changed(self, gate_index: int, gate) -> None:
         """Persist interactive ROI edits back into the gate editor and invalidate results."""
-        self._gate_editor.update_gate(gate_index, gate, notify=True)
+        # The ROI item is already at the final geometry. Avoid the generic
+        # gates-changed handler, which immediately destroys and rebuilds the
+        # entire scatter/gate display before the new membership exists. The
+        # core preview will trigger the one necessary replot when ready.
+        self._gate_editor.update_gate(gate_index, gate, notify=False)
+        self._mark_results_stale("Gate geometry changed", {gate.id})
+        # sigRegionChangeFinished means interaction has ended, so the normal
+        # debounce delay adds latency without coalescing any more drag events.
+        self._preview_scheduler.start_pending_now()
+        self._project_dirty = True
+        self._update_undo_actions()
 
     def _queue_gate_geometry_changed(self, gate_index: int, gate) -> None:
         """Persist an ROI edit after its Qt signal finishes dispatching."""

@@ -96,6 +96,13 @@ class PreviewScheduler(QObject):
     self._timer.stop()
     self._pending = None
 
+  def start_pending_now(self) -> None:
+    """Start the latest pending preview without waiting for debounce."""
+    if self._closed:
+      return
+    self._timer.stop()
+    self._start_pending()
+
   def suspend(self) -> None:
     """Pause new preview work while an authoritative batch is running."""
     self._paused = True
