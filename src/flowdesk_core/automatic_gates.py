@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import asdict
 from typing import Any
 
 import numpy as np
@@ -17,6 +18,65 @@ AUTO_GATE_ALGORITHM_VERSION = "quantile_rectangle.v1"
 
 class AutoGateFitError(ValueError):
   """Raised for invalid template configuration before fitting begins."""
+
+
+def auto_gate_template_from_mapping(value: Mapping[str, Any]) -> AutoGateTemplateSpec:
+  """Parse a persisted automatic gate template through the typed contract."""
+  try:
+    return AutoGateTemplateSpec(
+      id=str(value["id"]),
+      name=str(value.get("name", value["id"])),
+      algorithm=value["algorithm"],
+      x_parameter=str(value["x_parameter"]),
+      y_parameter=str(value["y_parameter"]),
+      parent_population_id=str(value.get("parent_population_id", "all_events")),
+      parameters=dict(value.get("parameters", {})),
+      algorithm_version=str(value.get("algorithm_version", AUTO_GATE_ALGORITHM_VERSION)),
+      manual_override_policy=value.get("manual_override_policy", "preserve_until_reset"),
+      notes=str(value.get("notes", "")),
+    )
+  except (KeyError, TypeError, ValueError) as exc:
+    raise AutoGateFitError(f"invalid automatic gate template: {exc}") from exc
+
+
+def auto_gate_fit_to_mapping(result: AutoGateFitResult) -> dict[str, Any]:
+  """Serialize a fitted result including its optional gate geometry."""
+  return asdict(result)
+
+
+def auto_gate_fit_from_mapping(value: Mapping[str, Any]) -> AutoGateFitResult:
+  """Parse a persisted fitted result without evaluating it."""
+  gate_value = value.get("gate")
+  gate = None
+  if isinstance(gate_value, Mapping):
+    gate = GateSpec(
+      id=str(gate_value["id"]),
+      name=str(gate_value.get("name", gate_value["id"])),
+      gate_type=gate_value["gate_type"],
+      parent_population_id=gate_value.get("parent_population_id"),
+      x_parameter=gate_value.get("x_parameter"),
+      y_parameter=gate_value.get("y_parameter"),
+      x_scale=gate_value.get("x_scale", "linear"),
+      y_scale=gate_value.get("y_scale", "linear"),
+      x_transform_id=gate_value.get("x_transform_id"),
+      y_transform_id=gate_value.get("y_transform_id"),
+      transform_id=gate_value.get("transform_id"),
+      compensation_id=gate_value.get("compensation_id"),
+      coordinates=tuple(tuple(point) for point in gate_value.get("coordinates", ())),
+      thresholds=dict(gate_value.get("thresholds", {})),
+      notes=str(gate_value.get("notes", "")),
+    )
+  return AutoGateFitResult(
+    template_id=str(value["template_id"]),
+    sample_id=str(value["sample_id"]),
+    input_hash=str(value["input_hash"]),
+    algorithm_version=str(value["algorithm_version"]),
+    status=value["status"],
+    gate=gate,
+    diagnostics=tuple(dict(item) for item in value.get("diagnostics", ())),
+    failure_reason=value.get("failure_reason"),
+    manual_override=bool(value.get("manual_override", False)),
+  )
 
 
 def _input_hash(

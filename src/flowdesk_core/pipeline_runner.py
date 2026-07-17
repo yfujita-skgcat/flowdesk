@@ -18,6 +18,12 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from flowdesk_core.automatic_gates import (
+  AutoGateFitError,
+  auto_gate_fit_to_mapping,
+  auto_gate_template_from_mapping,
+  fit_auto_gate,
+)
 from flowdesk_core.compensation import (
   CompensationBindingResolution,
   CompensationError,
@@ -422,6 +428,7 @@ class PipelineRunner:
     all_population_results: list[PopulationResult] = []
     all_population_membership: list[PopulationMembership] = []
     all_statistic_results: list[StatisticResult] = []
+    all_auto_gate_fits: list[dict[str, Any]] = []
     input_files: list[dict[str, Any]] = []
     diagnostics: list[ExecutionDiagnostic] = []
     failed_sample_count = 0
@@ -513,8 +520,19 @@ class PipelineRunner:
       sample_gating_strategy_id = sample_strategy_ids.get(sid, gating_strategy_id)
       if sample_gating_strategy_id is not None:
         try:
-          pop_results, pop_membership, population_parent_ids = self._step_gating(
+          (
+            pop_results,
+            pop_membership,
+            population_parent_ids,
+            auto_gate_fits,
+          ) = self._step_gating(
             sample_gating_strategy_id, transformed, sid
+          )
+          diagnostics.extend(
+            diagnostic for fit in auto_gate_fits for diagnostic in fit["diagnostics"]
+          )
+          all_auto_gate_fits.extend(
+            auto_gate_fit_to_mapping(fit["result"]) for fit in auto_gate_fits
           )
         except GatingStrategyError as exc:
           raise PipelineError(
@@ -581,6 +599,7 @@ class PipelineRunner:
       input_files=tuple(input_files),
       messages=tuple(messages),
       diagnostics=tuple(diagnostics),
+      auto_gate_fits=tuple(all_auto_gate_fits),
     )
 
   def _group_override_qc_diagnostics(
@@ -1006,7 +1025,7 @@ class PipelineRunner:
         continue
       try:
         transformed = self._step_transforms(_AnalysisData(sample.events, sample.channels))
-        _, membership, _ = self._step_gating(
+        _, membership, _, _ = self._step_gating(
           gating_strategy_id, transformed, sample_id
         )
       except GatingStrategyError as exc:
@@ -1270,6 +1289,7 @@ class PipelineRunner:
     list[PopulationResult],
     list[PopulationMembership],
     dict[str, str | None],
+    tuple[dict[str, Any], ...],
   ]:
     """Evaluate the gating strategy on transformed data.
 
@@ -1287,10 +1307,69 @@ class PipelineRunner:
           self._fallback_root_population(sample_id, int(data.events.shape[0])),
           self._fallback_root_membership(sample_id, int(data.events.shape[0])),
           {"all_events": None},
+          (),
         )
 
     if isinstance(strat, Mapping):
       strat = self._strategy_from_mapping(strat)
+
+    auto_fit_records: list[dict[str, Any]] = []
+    auto_gates = list(strat.gates)
+    existing_gate_ids = {gate.id for gate in auto_gates}
+    for value in self._project.get("auto_gate_templates", []):
+      if not isinstance(value, Mapping):
+        continue
+      try:
+        template = auto_gate_template_from_mapping(value)
+        fit = fit_auto_gate(
+          template,
+          data.events,
+          data.channel_ids,
+          sample_id,
+        )
+      except AutoGateFitError as exc:
+        raise PipelineError(
+          f"auto_gate_fit_invalid: {exc}",
+          code="auto_gate_fit_invalid",
+          details={"template_id": value.get("id"), "sample_id": sample_id},
+        ) from exc
+      fit_diagnostics = tuple(
+        ExecutionDiagnostic(
+          code=str(item.get("code", "auto_gate_diagnostic")),
+          message=str(item.get("reason", item.get("code", "automatic gate fit"))),
+          severity=str(item.get("severity", "info")),
+          stage="auto_gate_fit",
+          sample_id=sample_id,
+          parameter_id=template.id,
+          details=dict(item),
+        )
+        for item in fit.diagnostics
+      )
+      if fit.status == "failed" or fit.gate is None:
+        raise PipelineError(
+          f"auto_gate_fit_failed: {fit.failure_reason}",
+          code="auto_gate_fit_failed",
+          details={
+            "template_id": template.id,
+            "sample_id": sample_id,
+            "input_hash": fit.input_hash,
+            "diagnostics": list(fit.diagnostics),
+          },
+        )
+      if fit.gate.id in existing_gate_ids:
+        raise PipelineError(
+          f"auto_gate_id_conflict: {fit.gate.id!r}",
+          code="auto_gate_id_conflict",
+          details={"template_id": template.id, "sample_id": sample_id},
+        )
+      auto_gates.append(fit.gate)
+      existing_gate_ids.add(fit.gate.id)
+      auto_fit_records.append({"result": fit, "diagnostics": fit_diagnostics})
+    if auto_gates != list(strat.gates):
+      strat = GatingStrategySpec(**{
+        **asdict(strat),
+        "gates": tuple(auto_gates),
+      })
 
     try:
       overrides = tuple(
@@ -1341,7 +1420,7 @@ class PipelineRunner:
       gate.id: gate.parent_population_id or strat.root_population_id
       for gate in strat.gates
     })
-    return tagged_results, tagged_membership, population_parent_ids
+    return tagged_results, tagged_membership, population_parent_ids, tuple(auto_fit_records)
 
   def _step_statistics(
     self,

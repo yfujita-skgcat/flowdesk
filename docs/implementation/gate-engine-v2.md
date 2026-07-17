@@ -96,6 +96,12 @@ override state separately. The default manual override policy is
 `preserve_until_reset`: a manual geometry edit is retained until an explicit reset
 or refit command; automatic refitting must never infer intent from a displayed ROI.
 
+The headless `PipelineRunner` consumes persisted `auto_gate_templates`, appends each
+successful fitted gate to the selected strategy, and exposes serialized
+`auto_gate_fits` in `ExecutionReport`. Qt persists both collections and displays the
+fitted gate through the normal population/result and diagnostics views; it does not
+implement a second fitting path.
+
 ## Required tests
 
 - Rotated ellipse inside/outside/on-boundary cases.

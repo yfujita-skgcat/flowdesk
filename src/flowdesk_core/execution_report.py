@@ -57,6 +57,7 @@ class ExecutionReport:
   input_files: tuple[dict[str, Any], ...] = field(default_factory=tuple)
   messages: tuple[str, ...] = field(default_factory=tuple)
   diagnostics: tuple[ExecutionDiagnostic, ...] = field(default_factory=tuple)
+  auto_gate_fits: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
   @property
   def summary(self) -> str:

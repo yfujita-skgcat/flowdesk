@@ -213,6 +213,8 @@ class MainWindow(QMainWindow):
         self._compensation_calculations: list[dict[str, Any]] = []
         self._transforms: list[dict[str, Any]] = []
         self._statistics: list[dict[str, Any]] = []
+        self._auto_gate_templates: list[dict[str, Any]] = []
+        self._auto_gate_fits: list[dict[str, Any]] = []
         self._default_compensation_matrix_id: str | None = None
         self._migration_diagnostics: list[dict[str, Any]] = []
         self._advanced_groups_enabled = False
@@ -1281,6 +1283,8 @@ class MainWindow(QMainWindow):
                 self._compensation_calculations
             ),
             "statistics": deepcopy(self._statistics),
+            "auto_gate_templates": deepcopy(self._auto_gate_templates),
+            "auto_gate_fits": deepcopy(self._auto_gate_fits),
             "default_compensation_matrix_id": self._default_compensation_matrix_id,
             "migration_diagnostics": deepcopy(self._migration_diagnostics),
             "sample_path_resolution_policy": "relative_to_project_or_absolute",
@@ -1312,6 +1316,7 @@ class MainWindow(QMainWindow):
 
         report = worker._report
         if report is not None:
+            self._auto_gate_fits = deepcopy(report.auto_gate_fits)
             self._population_tree.set_population_names(self._population_name_map())
             self._population_tree.set_report(report)
             self._workspace_tree.set_report(report)
@@ -1458,6 +1463,8 @@ class MainWindow(QMainWindow):
             manifest.get("compensation_calculations", [])
         )
         self._statistics = deepcopy(manifest.get("statistics", []))
+        self._auto_gate_templates = deepcopy(manifest.get("auto_gate_templates", []))
+        self._auto_gate_fits = deepcopy(manifest.get("auto_gate_fits", []))
         self._sample_groups = deepcopy(manifest.get("sample_groups", []))
         self._group_strategy_bindings = deepcopy(
             manifest.get("group_strategy_bindings", [])

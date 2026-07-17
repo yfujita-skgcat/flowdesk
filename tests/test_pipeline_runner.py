@@ -38,6 +38,7 @@ def _make_project(
   statistics: list[dict] | None = None,
   gate_overrides: list[dict] | None = None,
   sample_groups: list[dict] | None = None,
+  auto_gate_templates: list[dict] | None = None,
 ) -> dict:
   return {
     "project_id": project_id,
@@ -57,6 +58,7 @@ def _make_project(
     "default_compensation_matrix_id": default_compensation_matrix_id,
     "gate_overrides": gate_overrides or [],
     "sample_groups": sample_groups or [],
+    "auto_gate_templates": auto_gate_templates or [],
   }
 
 
@@ -945,7 +947,9 @@ def test_pipeline_reports_stale_sample_override() -> None:
   project = _make_project(
     samples=[{"id": "s1"}],
     execution_profiles=[{"id": "default", "name": "Default", "gating_strategy_id": "strategy"}],
-    gating_strategies_data={"strategy": GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,))},
+    gating_strategies_data={
+      "strategy": GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,)),
+    },
     gate_overrides=[{
       "id": "stale", "sample_id": "s1", "base_gate_id": "gate",
       "base_version_hash": "not-current", "geometry_mode": "full",
@@ -968,7 +972,9 @@ def test_group_override_qc_diagnostics_are_reported_separately() -> None:
     samples=[{"id": "s1"}],
     sample_groups=[{"id": "g", "name": "G", "sample_ids": ["s1"], "role": "user"}],
     execution_profiles=[{"id": "default", "name": "Default", "gating_strategy_id": "strategy"}],
-    gating_strategies_data={"strategy": GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,))},
+    gating_strategies_data={
+      "strategy": GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,)),
+    },
     gate_overrides=[{
       "id": "critical", "sample_id": "s1", "base_gate_id": "gate",
       "base_version_hash": gate_version_hash(gate), "geometry_mode": "full",
@@ -982,6 +988,36 @@ def test_group_override_qc_diagnostics_are_reported_separately() -> None:
   )
   codes = {diagnostic.code for diagnostic in report.diagnostics}
   assert {"override_applied", "comparison_critical_override", "gate_boundary_clipping"} <= codes
+
+
+def test_pipeline_fits_auto_gate_from_full_events_and_reports_provenance() -> None:
+  sample = SampleData(
+    "s1",
+    np.column_stack((np.arange(100.0), np.arange(100.0) * 2.0)),
+    (ChannelSpec(id="X", name="X"), ChannelSpec(id="Y", name="Y")),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    execution_profiles=[{"id": "default", "gating_strategy_id": "strategy"}],
+    gating_strategies_data={"strategy": {"id": "strategy", "name": "Strategy", "gates": []}},
+    auto_gate_templates=[{
+      "id": "auto-template", "name": "Auto", "algorithm": "quantile_rectangle",
+      "x_parameter": "X", "y_parameter": "Y",
+      "parameters": {"q_low": 0.1, "q_high": 0.9, "minimum_events": 20},
+    }],
+  )
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+  result = next(
+    value for value in report.population_results
+    if value.population_id == "auto-template:s1"
+  )
+  assert result.event_count == 80
+  assert len(report.auto_gate_fits) == 1
+  fit = report.auto_gate_fits[0]
+  assert fit["template_id"] == "auto-template"
+  assert fit["sample_id"] == "s1"
+  assert fit["algorithm_version"] == "quantile_rectangle.v1"
+  assert any(diagnostic.stage == "auto_gate_fit" for diagnostic in report.diagnostics)
 
 
 # ---------------------------------------------------------------------------
