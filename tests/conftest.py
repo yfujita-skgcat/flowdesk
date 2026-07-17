@@ -17,7 +17,6 @@ def cleanup_gui_qt_objects(request: pytest.FixtureRequest) -> Iterator[None]:
     yield
     return
 
-  from PySide6.QtCore import QCoreApplication, QEvent
   from PySide6.QtWidgets import QApplication
 
   global _QT_APP
@@ -31,6 +30,7 @@ def cleanup_gui_qt_objects(request: pytest.FixtureRequest) -> Iterator[None]:
     except RuntimeError:
       # The C++ object may already have been deleted by the test.
       continue
-  QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
   _QT_APP.processEvents()
-  QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+  # A global DeferredDelete flush can invoke pyqtgraph C++ destructors while
+  # their parent widgets are still unwinding. Keep teardown bounded and safe.
+  _QT_APP.processEvents()

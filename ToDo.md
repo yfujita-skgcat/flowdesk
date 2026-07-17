@@ -511,7 +511,7 @@ title/axis/legend編集が実装済みであることを意味しない。
 - [x] Layout Editorがpresentation definitionを参照またはprovenance付き複製できるようにし、Layout独自overrideを科学定義から分離する。
 - [x] Templateではsample ID固定参照とmapping可能なsource role/pathを区別し、ambiguous/missing mappingをconfirmation/diagnosticなしに適用しない。
 - [x] style解決優先順位を`view override > project display default > global preference > built-in default`として実装し、resolved provenanceを確認可能にする。
-- [ ] GUI/headless/export consistency、font fallback、blank output、missing source、strict teardownをE2E testする。Qt全体テストは既存の`tests/conftest.py:34` teardown segfaultで完走できず、重点GUIテストは通過。
+- [x] GUI/headless/export consistency、font fallback、blank output、missing source、strict teardownをE2E testする。全体`pytest -q`で870件が通過し、Qt teardownのDeferredDelete flushも安全なevent処理へ修正した。
 
 #### Phase B7.1 必須受け入れtest
 
