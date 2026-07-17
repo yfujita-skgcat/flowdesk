@@ -12,9 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QCheckBox,
+    QColorDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -22,6 +25,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -81,6 +85,9 @@ class SampleBrowser(QWidget):
         self._samples: list[_SampleInfo] = []
         self._selected_index: int = -1
         self._known_paths: set[Path] = set()
+        self._manual_overlay_sample_ids: set[str] = set()
+        self._manual_overlay_colors: dict[str, str] = {}
+        self._overlay_roles: dict[str, str] = {}
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -138,6 +145,36 @@ class SampleBrowser(QWidget):
         self._known_paths.clear()
         self._selected_index = -1
         self._list_widget.clear()
+
+    def overlay_state(self) -> dict[str, object]:
+        """Return display-only manual overlay state for the current plot view."""
+        return {
+            "manual_overlay_sample_ids": sorted(self._manual_overlay_sample_ids),
+            "manual_overlay_colors": dict(self._manual_overlay_colors),
+            "overlay_roles": dict(self._overlay_roles),
+        }
+
+    def set_overlay_state(
+        self,
+        sample_ids: list[str] | tuple[str, ...],
+        colors: dict[str, str] | None = None,
+        roles: dict[str, str] | None = None,
+    ) -> None:
+        """Restore manual overlay state without changing active sample selection."""
+        known = {sample.id for sample in self._samples}
+        self._manual_overlay_sample_ids = set(sample_ids) & known
+        self._manual_overlay_colors = {
+            sample_id: color
+            for sample_id, color in (colors or {}).items()
+            if sample_id in self._manual_overlay_sample_ids
+        }
+        self._overlay_roles = {
+            sample_id: role for sample_id, role in (roles or {}).items() if sample_id in known
+        }
+        self._rebuild_sample_list()
+
+    def on_overlay_changed(self, callback: Any) -> None:
+        self._overlay_callbacks.append(callback)
 
     def select_sample(self, sample_id: str) -> bool:
         """Select a sample by stable id and emit the normal selection callback."""
@@ -355,6 +392,7 @@ class SampleBrowser(QWidget):
         sample = self._samples[self._selected_index]
         for cb in self._selection_callbacks:
             invoke_callback(cb, sample)
+        self._update_overlay_row_states()
 
     def _refresh_channel_statuses(self) -> None:
         reference = next(
@@ -391,10 +429,131 @@ class SampleBrowser(QWidget):
             item.setData(Qt.UserRole, sample.id)
             item.setToolTip(sample.path)
             self._list_widget.addItem(item)
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(2, 1, 2, 1)
+            overlay = QCheckBox()
+            overlay.setObjectName(f"overlayCheck_{sample.id}")
+            overlay.setAccessibleName(f"Overlay {sample.name}")
+            overlay.setToolTip("Add this sample as a manual overlay")
+            overlay.setChecked(sample.id in self._manual_overlay_sample_ids)
+            active = self.selected_sample()
+            if active is not None and active.id == sample.id:
+                overlay.setChecked(False)
+                overlay.setEnabled(False)
+                overlay.setToolTip("Active sample is not drawn as its own overlay")
+            overlay.toggled.connect(
+                lambda checked, sample_id=sample.id: self._set_manual_overlay(sample_id, checked)
+            )
+            swatch = QPushButton()
+            swatch.setObjectName(f"overlayColor_{sample.id}")
+            swatch.setAccessibleName(f"Overlay color {sample.name}")
+            swatch.setToolTip("Choose overlay source color")
+            swatch.setFixedWidth(24)
+            self._set_swatch_style(swatch, self._manual_overlay_colors.get(sample.id, "#4c78a8"))
+            swatch.clicked.connect(lambda _checked=False, sample_id=sample.id: self._choose_overlay_color(sample_id))
+            relation = QLabel(self._overlay_roles.get(sample.id, "manual"))
+            relation.setObjectName(f"overlayRelation_{sample.id}")
+            name = QLabel(
+                f"[{labels.get(sample.status, '!')}] {sample.name} "
+                f"({sample.info.event_count} events) — {sample.status}"
+            )
+            name.setObjectName(f"sampleName_{sample.id}")
+            row_layout.addWidget(overlay)
+            row_layout.addWidget(swatch)
+            row_layout.addWidget(relation)
+            row_layout.addWidget(name, 1)
+            self._list_widget.setItemWidget(item, row)
         self._list_widget.blockSignals(False)
         self._apply_filter(self._filter_edit.text())
         if selected_id is not None:
             self.select_sample(selected_id)
+        self._update_overlay_row_states()
+
+    def _set_swatch_style(self, button: QPushButton, color: str) -> None:
+        button.setStyleSheet(
+            f"QPushButton {{ background-color: {color}; border: 1px solid #555; }}"
+        )
+
+    def _update_overlay_row_states(self) -> None:
+        active = self.selected_sample()
+        for index, sample in enumerate(self._samples):
+            row = self._list_widget.itemWidget(self._list_widget.item(index))
+            if row is None:
+                continue
+            checkbox = row.findChild(QCheckBox)
+            if checkbox is None:
+                continue
+            checkbox.blockSignals(True)
+            is_active = active is not None and active.id == sample.id
+            checkbox.setEnabled(not is_active)
+            checkbox.setChecked(
+                False if is_active else sample.id in self._manual_overlay_sample_ids
+            )
+            checkbox.setToolTip(
+                "Active sample is not drawn as its own overlay"
+                if is_active else "Add this sample as a manual overlay"
+            )
+            checkbox.blockSignals(False)
+
+    def _set_manual_overlay(self, sample_id: str, enabled: bool) -> None:
+        active = self.selected_sample()
+        if active is not None and active.id == sample_id:
+            enabled = False
+        if enabled:
+            self._manual_overlay_sample_ids.add(sample_id)
+        else:
+            self._manual_overlay_sample_ids.discard(sample_id)
+        for callback in self._overlay_callbacks:
+            invoke_callback(callback, self.overlay_state())
+
+    def _show_sample_context_menu(self, position) -> None:
+        item = self._list_widget.itemAt(position)
+        if item is None:
+            return
+        sample_id = str(item.data(Qt.UserRole) or "")
+        if not sample_id:
+            return
+        menu = QMenu(self)
+        persistent = menu.addAction("Use as Persistent Overlay")
+        persistent.setObjectName("persistentOverlayAction")
+        persistent.triggered.connect(
+            lambda: self._set_manual_overlay(sample_id, True)
+        )
+        role_menu = menu.addMenu("Set Overlay Role")
+        for role in ("Positive control", "Negative control", "Reference"):
+            role_action = role_menu.addAction(role)
+            role_action.setObjectName("overlayRole" + role.replace(" ", ""))
+            role_action.triggered.connect(
+                lambda _checked=False, value=role.lower().replace(" ", "_"):
+                self._set_overlay_role(sample_id, value)
+            )
+        clear_role = menu.addAction("Clear Overlay Role")
+        clear_role.setObjectName("clearOverlayRoleAction")
+        clear_role.triggered.connect(lambda: self._set_overlay_role(sample_id, None))
+        menu.exec(self._list_widget.viewport().mapToGlobal(position))
+
+    def _set_overlay_role(self, sample_id: str, role: str | None) -> None:
+        if role is None:
+            self._overlay_roles.pop(sample_id, None)
+        else:
+            self._overlay_roles[sample_id] = role
+        self._rebuild_sample_list()
+        for callback in self._overlay_callbacks:
+            invoke_callback(callback, self.overlay_state())
+
+    def _choose_overlay_color(self, sample_id: str) -> None:
+        color = QColorDialog.getColor(
+            QColor(self._manual_overlay_colors.get(sample_id, "#4c78a8")),
+            self,
+            "Overlay Color",
+        )
+        if not color.isValid():
+            return
+        self._manual_overlay_colors[sample_id] = color.name().lower()
+        self._rebuild_sample_list()
+        for callback in self._overlay_callbacks:
+            invoke_callback(callback, self.overlay_state())
 
     def _apply_filter(self, text: str) -> None:
         needle = text.casefold().strip()
@@ -419,12 +578,17 @@ class SampleBrowser(QWidget):
         self._selection_callbacks: list[Any] = []
         self._removed_callbacks: list[Any] = []
         self._reconnected_callbacks: list[Any] = []
+        self._overlay_callbacks: list[Any] = []
         self.setObjectName("sampleBrowser")
 
         self._list_widget = QListWidget()
         self._list_widget.setObjectName("sampleList")
         self._list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
         self._list_widget.currentRowChanged.connect(self._on_list_selection_changed)
+        self._list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list_widget.customContextMenuRequested.connect(
+            self._show_sample_context_menu
+        )
 
         self._filter_edit = QLineEdit()
         self._filter_edit.setObjectName("sampleFilterEdit")

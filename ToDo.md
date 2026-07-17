@@ -574,11 +574,11 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 
 #### Increment 4: Samples manual overlay controls
 
-- [ ] Samples paneを少なくとも`Ov | Color | Relation | Name`相当の専用列を持つmodel/viewへ更新し、行選択はactive sample、`Ov` checkboxはmanual overlayだけを変更する。
-- [ ] `Color` swatchからQColorDialogを開き、Cancelではstateを変更しない。active sample行はcheckboxをdisabledにするか、二重描画されない理由をtooltipで示す。
-- [ ] checked sampleについて現在の`display_population_id`と同じstable population ID/path/mapping role、現在のstable X/Y parameter IDs、transforms、plot typeをB7.1 resolverで解決する。
-- [ ] missing population、ambiguous path、missing channel、incompatible unit/transform、unresolved sampleをwarning iconとtext/tooltipで示し、zero eventsやsilent omissionへ変換しない。
-- [ ] active sample navigation中もmanual overlay checkbox/colorをplot viewに維持し、persistent positive/negative/reference controlを常時表示できるようにする。role変更はGroup bindingや科学解析を変更しない。
+- [x] Samples paneを少なくとも`Ov | Color | Relation | Name`相当の専用列を持つmodel/viewへ更新し、行選択はactive sample、`Ov` checkboxはmanual overlayだけを変更する。
+- [x] `Color` swatchからQColorDialogを開き、Cancelではstateを変更しない。active sample行はcheckboxをdisabledにするか、二重描画されない理由をtooltipで示す。
+- [x] checked sampleについて現在の`display_population_id`と同じstable population ID/path/mapping role、現在のstable X/Y parameter IDs、transforms、plot typeをB7.1 resolverで解決する。
+- [x] missing population、ambiguous path、missing channel、incompatible unit/transform、unresolved sampleをwarning iconとtext/tooltipで示し、zero eventsやsilent omissionへ変換しない。
+- [x] active sample navigation中もmanual overlay checkbox/colorをplot viewに維持し、persistent positive/negative/reference controlを常時表示できるようにする。role変更はGroup bindingや科学解析を変更しない。
 - [ ] simple controlsとadvanced `Overlay Sources...` dialogを同じsource/view stateへ同期し、異なるpopulation/axis/transformの高度設定はdialog側へ残す。
 - [ ] resolved layersを既存rendererへ接続し、active sample二重描画防止、色優先、fallback provenance、navigation維持をGUI E2E testする。
 

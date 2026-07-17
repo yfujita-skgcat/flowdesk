@@ -20,7 +20,7 @@ pytestmark = pytest.mark.gui
 
 from PySide6.QtCore import QCoreApplication, QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QCheckBox  # noqa: E402
 
 from flowdesk_cli.run_project import run_project_command  # noqa: E402
 from flowdesk_core.execution_context import ExecutionContext  # noqa: E402
@@ -1139,6 +1139,35 @@ def test_sample_browser_metadata_columns_filter_and_mismatch_badges(
     browser.deleteLater()
     metadata.close()
     metadata.deleteLater()
+    app.processEvents()
+
+
+def test_sample_browser_manual_overlay_column_is_separate_from_active_selection(
+  tmp_path: Path,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  try:
+    first = tmp_path / "active.fcs"
+    second = tmp_path / "overlay.fcs"
+    write_fcs_file(first, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
+    write_fcs_file(second, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
+    assert browser.add_samples_from_paths([str(first), str(second)]) == 2
+    browser.select_sample(browser.samples()[0].id)
+    row = browser._list_widget.itemWidget(browser._list_widget.item(1))
+    assert row is not None
+    checkbox = row.findChild(QCheckBox)
+    assert checkbox is not None
+    checkbox.setChecked(True)
+    assert browser.overlay_state()["manual_overlay_sample_ids"] == [browser.samples()[1].id]
+    browser.select_sample(browser.samples()[1].id)
+    active_row = browser._list_widget.itemWidget(browser._list_widget.item(1))
+    active_checkbox = active_row.findChild(QCheckBox)
+    assert active_checkbox is not None and not active_checkbox.isEnabled()
+    assert browser.overlay_state()["manual_overlay_sample_ids"] == [browser.samples()[1].id]
+  finally:
+    browser.close()
+    browser.deleteLater()
     app.processEvents()
 
 

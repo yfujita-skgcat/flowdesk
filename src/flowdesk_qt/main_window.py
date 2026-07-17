@@ -39,6 +39,7 @@ from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.models import CompensationMatrixSpec, OverlaySourceSpec, TransformSpec
+from flowdesk_core.overlays import Overlay2DLayer
 from flowdesk_core.overrides import (
     GateOverrideError,
     gate_version_hash,
@@ -893,6 +894,7 @@ class MainWindow(QMainWindow):
         # When a sample is removed, clean up its associated state
         self._sample_browser.on_sample_removed(self._on_sample_removed)
         self._sample_browser.on_sample_reconnected(self._on_sample_reconnected)
+        self._sample_browser.on_overlay_changed(self._on_manual_overlay_changed)
 
         # When channel selection changes, replot
         self._channel_selector.on_channel_changed(self._on_channel_changed)
@@ -986,6 +988,11 @@ class MainWindow(QMainWindow):
         # Replot with current channel selection
         self._replot()
         self._update_compensation_status()
+
+    def _on_manual_overlay_changed(self, state: dict[str, object]) -> None:
+        """Refresh display layers without changing active sample or pipeline state."""
+        self._project_dirty = True
+        self._replot()
 
     def _on_sample_removed(self, sample: _SampleInfo) -> None:
         """Called when a sample is removed from the browser."""
@@ -1221,6 +1228,7 @@ class MainWindow(QMainWindow):
 
             # No 2D gate overlays in histogram mode.
             self._plot_widget.clear_gates()
+            self._plot_widget.clear_overlay_layers()
         else:
             # 2D scatter plot.
             y_idx = self._get_channel_index(y_id)
@@ -1249,6 +1257,7 @@ class MainWindow(QMainWindow):
                 marginal_x_data=marginal_x,
                 marginal_y_data=marginal_y,
             )
+            self._render_manual_overlays(x_id, y_id)
 
             # Refresh gate overlays
             self._plot_widget.clear_gates()
@@ -1286,6 +1295,75 @@ class MainWindow(QMainWindow):
             return self._channel_names.index(channel_id)
         except (ValueError, AttributeError):
             return -1
+
+    def _render_manual_overlays(self, x_parameter_id: str, y_parameter_id: str) -> None:
+        """Render checked samples using existing membership results only."""
+        self._plot_widget.clear_overlay_layers()
+        state = self._sample_browser.overlay_state()
+        selected = set(state.get("manual_overlay_sample_ids", []))
+        selected.discard(self._current_sample_id)
+        if not selected:
+            return
+        report = self._preview_report or self._last_result_report or self._population_tree.last_report()
+        memberships = getattr(report, "population_membership", ()) if report is not None else ()
+        layers: list[Overlay2DLayer] = []
+        diagnostics: list[str] = []
+        for sample_id in sorted(selected):
+            events = self._event_data.get(sample_id)
+            if events is None:
+                diagnostics.append(f"{sample_id}: unresolved sample")
+                continue
+            sample_data = self._sample_data.get(sample_id)
+            if sample_data is None:
+                diagnostics.append(f"{sample_id}: missing channel metadata")
+                continue
+            try:
+                x_index = sample_data.channel_index(x_parameter_id)
+                y_index = sample_data.channel_index(y_parameter_id)
+            except (KeyError, ValueError):
+                diagnostics.append(f"{sample_id}: missing channel")
+                continue
+            mask = None
+            if self._display_population_id != "all_events":
+                mask = next(
+                    (
+                        membership.mask
+                        for membership in memberships
+                        if membership.sample_id == sample_id
+                        and membership.population_id == self._display_population_id
+                    ),
+                    None,
+                )
+                if mask is None:
+                    diagnostics.append(
+                        f"{sample_id}: missing population {self._display_population_id}"
+                    )
+                    continue
+            x_values = events[:, x_index]
+            y_values = events[:, y_index]
+            if mask is not None:
+                x_values = x_values[mask]
+                y_values = y_values[mask]
+            x_values = self._plot_widget._apply_axis_transform(x_values, "x")
+            y_values = self._plot_widget._apply_axis_transform(y_values, "y")
+            layers.append(
+                Overlay2DLayer(
+                    self._display_population_id,
+                    x_values,
+                    y_values,
+                    {
+                        "color": (
+                            state.get("manual_overlay_colors", {}).get(sample_id)
+                            or self._plot_widget.style().dot_color
+                        ),
+                        "alpha": 0.65,
+                        "label": sample_id,
+                    },
+                )
+            )
+        self._plot_widget.plot_overlay_layers(layers)
+        if diagnostics:
+            self._plot_widget.set_status_banner("Overlay warning: " + "; ".join(diagnostics))
 
     def _get_population_mask(self) -> NDArray[np.bool_] | None:
         """Return the membership boolean mask for the current sample and selected population.
