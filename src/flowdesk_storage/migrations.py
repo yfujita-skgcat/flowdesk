@@ -557,6 +557,19 @@ def _add_default_sample_group(
     )
   strategy_id = migrated.get("default_gating_strategy_id")
   if not isinstance(strategy_id, str) or not strategy_id:
+    profiles = migrated.get("execution_profiles", [])
+    if isinstance(profiles, list):
+      profile = next(
+        (
+          value for value in profiles
+          if isinstance(value, dict)
+          and value.get("gating_strategy_id")
+        ),
+        None,
+      )
+      if isinstance(profile, dict):
+        strategy_id = profile.get("gating_strategy_id")
+  if not isinstance(strategy_id, str) or not strategy_id:
     strategy_id = "default_strategy"
   if strategy_id not in strategies:
     strategies[strategy_id] = {
