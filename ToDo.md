@@ -328,7 +328,8 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 - [x] 済み: `docs/implementation/gating-and-results-workspaces.md`を全文読み、increment 1（state separation）を実装する。
 - [x] 済み: MainWindowの表示状態を`active_sample_id`、`display_population_id`、`selected_gate_id`へ分離する。gate selectionとpopulation membership filteringを同一stateとして扱わない。
-- [ ] 右paneを`Gating`と`Results`のtabまたは排他的modeへ変更し、3つのtableを同時に縦積み表示しない。
+- [x] 済み: increment 4（right-pane tabs and duplicate removal）を実装する。
+- [x] 済み: 右paneを`Gating`と`Results`のtabへ変更し、3つのtableを同時に縦積み表示しない。
 - [x] 済み: increment 2（Gating semantics）を実装し、Gate definitionのroot・表示操作を定義する。
 - [x] 済み: Gate hierarchyの先頭列を`Gate definition`へ変更し、Pipeline実行前・失敗時・results stale時も定義編集を維持する。
 - [x] 済み: Gate hierarchy選択は`selected_gate_id`とoutline highlightだけを変更する。暗黙にchild populationへplotを絞り込まず、軸・scaleも変更しない。
@@ -336,7 +337,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: increment 3（Results hierarchy model/widget）を実装し、`ExecutionReport`を唯一の結果データソースとするtree-tableを追加する。
 - [x] 済み: `ResultsWorkspace`へ`Sample -> All Events -> Population`のtree-tableを追加し、`Events`、`% Parent`、`% Total`、`Status`をExecutionReportだけから表示する。
 - [x] 済み: sample rowと`All Events` rowを分ける。sample row選択はactive sampleだけを変更し、`All Events` row選択は`display_population_id = "all_events"`として全event表示を復元する。
-- [ ] statistic resultはpopulation childまたはdetail paneの一方だけに表示し、現在のWorkspaceとCustom Statistics間の重複表示をなくす。
+- [x] 済み: statistic resultはResults workspaceのpopulation childだけに表示し、現在のWorkspaceとCustom Statistics間の表示重複をなくす。
 - [ ] 同じResults modelから`Hierarchy`と`Flat table`を切替可能にする。Flat tableは`Sample | Population | Parent | Events | % Parent | % Total | Status`を持ち、population名へindentを埋め込まない。
 - [ ] stale、missing、zero events、undefined/error statisticを区別する。stale membershipでplotをfilterせず、gate definition自体は有効なまま保持する。
 - [ ] Gate selectionがplot filterを変更しないtest、Show Gateが親populationを表示するtest、明示All Eventsで全eventへ戻るtest、Results選択がgate編集対象を変えないtestを追加する。

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QTabWidget,
     QToolBar,
     QWidget,
 )
@@ -614,17 +615,34 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._workspace_navigation)
-        layout.addWidget(self._gate_editor)
-        layout.addWidget(self._group_panel)
-        layout.addWidget(self._workspace_tree)
-        layout.addWidget(self._population_tree)
-        layout.addWidget(self._results_workspace)
-        layout.addWidget(self._diagnostics_panel)
-        layout.setStretch(0, 1)
-        layout.setStretch(1, 0)
-        layout.setStretch(2, 1)
-        layout.setStretch(3, 1)
+
+        tabs = QTabWidget()
+        tabs.setObjectName("gatingResultsTabs")
+
+        gating_tab = QWidget()
+        gating_layout = QVBoxLayout(gating_tab)
+        gating_layout.setContentsMargins(0, 0, 0, 0)
+        gating_layout.addWidget(self._gate_editor)
+        gating_layout.addWidget(self._group_panel)
+        gating_layout.setStretch(0, 1)
+        tabs.addTab(gating_tab, "Gating")
+
+        results_tab = QWidget()
+        results_layout = QVBoxLayout(results_tab)
+        results_layout.setContentsMargins(0, 0, 0, 0)
+        results_layout.addWidget(self._workspace_navigation)
+        results_layout.addWidget(self._results_workspace)
+        results_layout.addWidget(self._diagnostics_panel)
+        results_layout.setStretch(0, 0)
+        results_layout.setStretch(1, 1)
+        results_layout.setStretch(2, 1)
+        tabs.addTab(results_tab, "Results")
+
+        # Transitional adapters remain available to existing callers/tests,
+        # but duplicate result tables are no longer visible in the GUI.
+        self._workspace_tree.setVisible(False)
+        self._population_tree.setVisible(False)
+        layout.addWidget(tabs)
         return widget
 
     def _create_workspace_navigation(self) -> QWidget:

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QTabWidget
 
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import PopulationResult
 from flowdesk_qt.results_workspace import ResultsWorkspace
+from flowdesk_qt.main_window import MainWindow
 
 pytestmark = pytest.mark.gui
 
@@ -73,4 +75,22 @@ def test_results_workspace_selection_distinguishes_sample_and_population(qapp) -
   finally:
     workspace.close()
     workspace.deleteLater()
+    qapp.processEvents()
+
+
+def test_main_window_exposes_exclusive_gating_and_results_tabs(qapp) -> None:
+  window = MainWindow()
+  try:
+    right = window.centralWidget().widget(1)
+    tab_widget = right.findChild(QTabWidget, "gatingResultsTabs")
+    assert tab_widget is not None
+    assert [tab_widget.tabText(index) for index in range(tab_widget.count())] == [
+      "Gating",
+      "Results",
+    ]
+    assert not window._workspace_tree.isVisible()
+    assert not window._population_tree.isVisible()
+  finally:
+    window.close()
+    window.deleteLater()
     qapp.processEvents()
