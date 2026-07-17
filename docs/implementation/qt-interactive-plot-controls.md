@@ -330,10 +330,15 @@ Once a gate is finished or edited, convert it to `GateSpec`.
 
 - Reuse the rectangle and polygon preview item while an interaction is active. Do not
   allocate a new ROI for every mouse-move event.
+- Native pyqtgraph log mode returns mouse positions in ViewBox log coordinates. Polygon
+  preview items must opt out of `PlotDataItem` log mapping, otherwise preview vertices are
+  transformed twice while the final `PolyLineROI` is transformed once.
 - Before replacing a gate ROI, disconnect its stored signal callback, remove it from the
   plot, and call `deleteLater()` so the C++ object is destroyed after event dispatch.
 - Do not synchronously destroy or replace the ROI that is currently emitting an edit
   signal. Queue persistence and redraw until the signal handler has returned.
+- Flush completed queued ROI edits before building a project manifest. Pipeline execution,
+  save, autosave, and export must never observe the pre-edit gate geometry.
 
 ## Implementation Order
 

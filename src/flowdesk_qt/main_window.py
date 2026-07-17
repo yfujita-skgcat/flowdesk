@@ -249,6 +249,7 @@ class MainWindow(QMainWindow):
         self._override_undo_stack = UndoStack({"gate_overrides": []})
         self._display_population_id: str = "all_events"
         self._selected_gate_id: str | None = None
+        self._pending_gate_geometry_updates: dict[str, Any] = {}
 
         self._compensation_status_indicator = _CompensationStatusIndicator()
         self._build_menu()
@@ -1334,6 +1335,10 @@ class MainWindow(QMainWindow):
         This constructs a minimal project dictionary that the PipelineRunner
         can consume.  Gate definitions from the gate editor are included.
         """
+        # ROI callbacks are queued to avoid mutating/deleting Qt objects while
+        # pyqtgraph is dispatching its region-change signal.  Any consumer of
+        # project state must first commit those already-finished edits.
+        self._flush_pending_gate_geometry_updates()
         samples = []
         sample_lookup = {sample.id: sample for sample in self._sample_browser.samples()}
         sample_ids = list(sample_lookup)
@@ -2167,12 +2172,31 @@ class MainWindow(QMainWindow):
 
     def _queue_gate_geometry_changed(self, gate_index: int, gate) -> None:
         """Persist an ROI edit after its Qt signal finishes dispatching."""
+        del gate_index  # Resolve the current index by stable gate ID at apply time.
+        self._pending_gate_geometry_updates[gate.id] = gate
         QTimer.singleShot(
             0,
-            lambda gate_index=gate_index, gate=gate: self._on_gate_geometry_changed(
-                gate_index, gate
-            ),
+            lambda gate_id=gate.id: self._apply_pending_gate_geometry_update(gate_id),
         )
+
+    def _apply_pending_gate_geometry_update(self, gate_id: str) -> None:
+        gate = self._pending_gate_geometry_updates.pop(gate_id, None)
+        if gate is None:
+            return
+        gate_index = next(
+            (
+                index for index, current in enumerate(self._gate_editor.gates())
+                if current.id == gate_id
+            ),
+            -1,
+        )
+        if gate_index >= 0:
+            self._on_gate_geometry_changed(gate_index, gate)
+
+    def _flush_pending_gate_geometry_updates(self) -> None:
+        """Commit finished ROI edits before save/export/pipeline state reads."""
+        for gate_id in tuple(self._pending_gate_geometry_updates):
+            self._apply_pending_gate_geometry_update(gate_id)
 
     # -- plot toolbar handlers -----------------------------------------------
 

@@ -1050,6 +1050,10 @@ class PlotWidget(QWidget):
         x_vals = [p[0] for p in self._polygon_preview_vertices]
         y_vals = [p[1] for p in self._polygon_preview_vertices]
         if isinstance(self._preview_item, PlotDataItem):
+            # Polygon clicks are already ViewBox coordinates.  In native log
+            # mode those coordinates are log10 values, so allowing PlotItem to
+            # propagate log mode here would transform the preview a second time.
+            self._preview_item.setLogMode(False, False)
             self._preview_item.setData(x_vals, y_vals)
             return
         item = PlotDataItem(
@@ -1061,6 +1065,9 @@ class PlotWidget(QWidget):
             symbolBrush=QColor("#ffffff"),
         )
         self._set_preview_item(item)
+        # PlotItem propagates its current log mode when a PlotDataItem is
+        # inserted.  Gate preview vertices must remain in ViewBox coordinates.
+        item.setLogMode(False, False)
 
     def _update_labels(self) -> None:
         # setLabel lives on PlotItem, not on ViewBox.

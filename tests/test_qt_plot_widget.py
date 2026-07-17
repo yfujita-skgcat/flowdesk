@@ -505,6 +505,30 @@ def test_asinh_polygon_click_keeps_asinh_gate_coordinates() -> None:
     app.processEvents()
 
 
+def test_log10_polygon_preview_uses_view_coordinates_once() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    widget.set_axis_transforms("log10", "log10")
+    widget.plot_events(
+      np.array([1.0, 10.0, 100.0]),
+      np.array([1.0, 10.0, 100.0]),
+    )
+    widget.begin_gate_creation("polygon")
+    widget.add_polygon_preview_vertex(1.0, 1.5)
+    widget.add_polygon_preview_vertex(2.0, 2.5)
+
+    preview = widget._preview_item
+    assert preview is not None
+    assert preview.opts["logMode"] == [False, False]
+    np.testing.assert_allclose(preview._datasetMapped.x, [1.0, 2.0])
+    np.testing.assert_allclose(preview._datasetMapped.y, [1.5, 2.5])
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
 def test_log10_rectangle_overlay_edit_keeps_log_coordinates() -> None:
   app = _app()
   widget = PlotWidget()
@@ -1184,6 +1208,41 @@ def test_gate_geometry_change_marks_population_results_stale() -> None:
     assert window._gate_editor.gates()[0].thresholds["x_min"] == 1.0
     assert window._results_stale is True
     assert window._population_tree.last_report() is None
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_project_manifest_flushes_pending_polygon_roi_edit() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    gate = GateSpec(
+      id="polygon-1",
+      name="polygon",
+      gate_type="polygon",
+      x_parameter="X",
+      y_parameter="Y",
+      coordinates=((1.0, 1.0), (5.0, 1.0), (3.0, 4.0)),
+    )
+    updated = GateSpec(
+      id="polygon-1",
+      name="polygon",
+      gate_type="polygon",
+      x_parameter="X",
+      y_parameter="Y",
+      coordinates=((2.0, 2.0), (6.0, 2.0), (4.0, 5.0)),
+    )
+    window._gate_editor.set_gates([gate], notify=False)
+
+    window._queue_gate_geometry_changed(0, updated)
+    manifest = window._build_project_manifest()
+
+    saved_gate = manifest["gating_strategies_data"]["default_strategy"]["gates"][0]
+    assert saved_gate["coordinates"] == updated.coordinates
+    assert window._gate_editor.gates()[0].coordinates == updated.coordinates
+    assert window._pending_gate_geometry_updates == {}
   finally:
     window.close()
     window.deleteLater()
