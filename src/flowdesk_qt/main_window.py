@@ -47,6 +47,7 @@ from flowdesk_core.overrides import (
   resolve_gate_overrides,
 )
 from flowdesk_core.pipeline_runner import PipelineRunner
+from flowdesk_core.preview import PreviewRevisionState
 from flowdesk_core.project_commands import CreateGateOverrideCommand, UndoStack
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_selector import ChannelSelector
@@ -250,6 +251,7 @@ class MainWindow(QMainWindow):
         self._display_population_id: str = "all_events"
         self._selected_gate_id: str | None = None
         self._pending_gate_geometry_updates: dict[str, Any] = {}
+        self._preview_revision = PreviewRevisionState()
 
         self._compensation_status_indicator = _CompensationStatusIndicator()
         self._build_menu()
@@ -291,6 +293,22 @@ class MainWindow(QMainWindow):
     @property
     def selected_gate_id(self) -> str | None:
         return self._selected_gate_id
+
+    @property
+    def analysis_revision(self) -> int:
+        return self._preview_revision.analysis_revision
+
+    @property
+    def authoritative_result_revision(self) -> int | None:
+        return self._preview_revision.authoritative_result_revision
+
+    @property
+    def preview_result_revision(self) -> int | None:
+        return self._preview_revision.preview_result_revision
+
+    @property
+    def preview_status(self) -> str:
+        return self._preview_revision.preview_status
 
     def load_samples_from_directory(self, directory: str | Path) -> int:
         """Load FCS samples from a directory."""
@@ -346,6 +364,10 @@ class MainWindow(QMainWindow):
             "pipeline": {
                 "worker_present": worker is not None,
                 "running": worker is not None and worker.isRunning(),
+                "analysis_revision": self.analysis_revision,
+                "authoritative_result_revision": self.authoritative_result_revision,
+                "preview_result_revision": self.preview_result_revision,
+                "preview_status": self.preview_status,
                 "error_type": None if worker_error is None else type(worker_error).__name__,
                 "error_message": None if worker_error is None else str(worker_error),
             },
@@ -983,7 +1005,13 @@ class MainWindow(QMainWindow):
         """
         if sample_id and sample_id != self._current_sample_id:
             self._sample_browser.select_sample(sample_id)
-        self._display_population_id = population_id
+        # A definition change clears the authoritative report.  Do not retain
+        # the requested descendant ID while its old membership could be
+        # mistaken for a current filter; All Events is the safe fallback until
+        # a current-revision result is accepted.
+        self._display_population_id = (
+            "all_events" if self._results_stale else population_id
+        )
         self._update_workspace_navigation()
         self._replot()
 
@@ -1291,7 +1319,6 @@ class MainWindow(QMainWindow):
         self._gate_editor.cancel_polygon()
         self._gate_editor.clear_gates()
         self._plot_widget.clear_gates()
-        self._mark_results_stale("Gates cleared")
 
     # -- pipeline execution --------------------------------------------------
 
@@ -1464,6 +1491,9 @@ class MainWindow(QMainWindow):
             self._diagnostics_panel.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
+            self._preview_revision.accept_authoritative(
+                self._preview_revision.analysis_revision
+            )
             self._compensation_status_indicator.clear_stale()
             self._validate_population_selection(report)
             self._update_status(f"Pipeline complete: {report.summary}")
@@ -2168,7 +2198,6 @@ class MainWindow(QMainWindow):
     def _on_gate_geometry_changed(self, gate_index: int, gate) -> None:
         """Persist interactive ROI edits back into the gate editor and invalidate results."""
         self._gate_editor.update_gate(gate_index, gate, notify=True)
-        self._mark_results_stale(f"Gate updated: {gate.name}")
 
     def _queue_gate_geometry_changed(self, gate_index: int, gate) -> None:
         """Persist an ROI edit after its Qt signal finishes dispatching."""
@@ -2392,7 +2421,35 @@ class MainWindow(QMainWindow):
 
         write_statistic_results(list(report.statistic_results), path, delimiter=delimiter)
 
-    def _mark_results_stale(self, reason: str) -> None:
+    def _population_ids_for_gates(
+        self,
+        gate_ids: set[str] | frozenset[str] | None,
+    ) -> set[str]:
+        """Return changed gates plus all descendants in the current hierarchy."""
+        gates = self._gate_editor.gates()
+        children: dict[str, set[str]] = {}
+        for gate in gates:
+            parent = gate.parent_population_id or "all_events"
+            children.setdefault(parent, set()).add(gate.id)
+        roots = set(gate_ids) if gate_ids is not None else {gate.id for gate in gates}
+        affected: set[str] = set()
+        pending = list(roots)
+        while pending:
+            population_id = pending.pop()
+            if population_id in affected:
+                continue
+            affected.add(population_id)
+            pending.extend(children.get(population_id, ()))
+        return affected
+
+    def _mark_results_stale(
+        self,
+        reason: str,
+        affected_gate_ids: set[str] | frozenset[str] | None = None,
+    ) -> None:
+        self._preview_revision.invalidate(
+            self._population_ids_for_gates(affected_gate_ids)
+        )
         self._results_stale = True
         self._population_tree.clear()
         self._population_tree.mark_results_stale()

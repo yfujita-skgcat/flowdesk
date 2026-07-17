@@ -263,6 +263,8 @@ def test_gate_edit_invalidates_population_filter(
         # Results are stale, filter resets to all_events
         assert window._results_stale
         assert window._selected_population_id == "all_events"
+        window._on_population_selected("pos", sample.id)
+        assert window._selected_population_id == "all_events"
         # All 4 points visible (stale flag prevents old membership from being used)
         assert len(window._plot_widget._scatter.xData) == 4
     finally:

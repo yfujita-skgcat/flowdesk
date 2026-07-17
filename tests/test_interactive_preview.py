@@ -10,7 +10,7 @@ import pytest
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.models import ChannelSpec, GateSpec, GatingStrategySpec
 from flowdesk_core.pipeline_runner import PipelineError, PipelineRunner
-from flowdesk_core.preview import PreviewRequest
+from flowdesk_core.preview import PreviewRequest, PreviewRevisionState
 from flowdesk_core.sample import SampleData
 
 
@@ -201,3 +201,38 @@ def test_preview_rejects_mismatched_strategy_or_population() -> None:
       sample=sample,
       required_population_id="missing-population",
     ))
+
+
+def test_revision_state_invalidates_descendants_and_falls_back_to_ancestor() -> None:
+  state = PreviewRevisionState()
+  assert state.accept_authoritative(0)
+  state.invalidate({"A", "B", "C"})
+
+  parents = {"A": "all_events", "B": "A", "C": "B"}
+  available = {"all_events", "A", "B", "C"}
+  assert state.analysis_revision == 1
+  assert state.preview_status == "stale"
+  assert not state.result_is_current("B", 0)
+  assert state.nearest_valid_population(
+    "C", parents, available, result_revision=1
+  ) is None
+
+  # The root result is still valid for the new revision and is the safe
+  # fallback while descendants are recalculated.
+  state.accept_preview(1, {"all_events"})
+  assert state.nearest_valid_population(
+    "C", parents, available, result_revision=1
+  ) == "all_events"
+
+  state.accept_preview(1, {"A", "B", "C"})
+  assert state.nearest_valid_population(
+    "C", parents, available, result_revision=1
+  ) == "C"
+
+
+def test_revision_state_rejects_obsolete_results() -> None:
+  state = PreviewRevisionState()
+  state.invalidate({"gate"})
+  assert not state.accept_preview(0, {"gate"})
+  assert state.preview_result_revision is None
+  assert state.preview_status == "stale"

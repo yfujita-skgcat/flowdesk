@@ -353,8 +353,8 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 
 - [x] 済み: `docs/implementation/interactive-current-sample-preview.md`を全文読み、番号付きincrementを一つだけ実装する。
 - [x] 済み: increment 1としてimmutableな`PreviewRequest`/`PreviewReport`とGUI非依存`PipelineRunner.preview_sample()`を追加する。full-resolution active sampleへcanonical processing orderを適用し、同一snapshotのbatch実行とmembership、count、frequency、statisticを一致させる。
-- [ ] increment 2: `analysis_revision`、`authoritative_result_revision`、`preview_result_revision`、`preview_status`を分離する。上流定義変更時はrevisionを増加し、変更gateと全descendantをworker開始前にstale化する。
-- [ ] increment 2: stale descendant membershipをplot filterへ使用しない。対象populationのcurrent-revision結果がなければ、currentなnearest ancestor、`All Events`、または明示的なempty/recalculating表示へfallbackする。
+- [x] 済み: increment 2として`analysis_revision`、`authoritative_result_revision`、`preview_result_revision`、`preview_status`を分離する。上流定義変更時はrevisionを増加し、変更gateと全descendantをworker開始前にstale化する。
+- [x] 済み: increment 2としてstale descendant membershipをplot filterへ使用しない。対象populationのcurrent-revision結果がなければ`All Events`へfallbackするrevision stateとGUI回帰を追加する。
 - [ ] increment 3: mouse releaseまたは有効なnumeric edit確定後に200–400 ms debounceするlatest-wins schedulerを追加する。pending jobをrevisionごとにFIFO実行せず、未実行jobを最新revisionへcoalesceする。
 - [ ] increment 3: workerへimmutable project/sample snapshotを渡し、最大worker数をまず1とする。実行中jobの強制terminateはせず、古いrevisionの完了結果をGUI適用前に破棄する。
 - [ ] increment 4: workerがローカルで完全なpreview resultを構築し、GUI threadでrevision照合後にcacheと表示をatomic交換する。workerからQt widget、pyqtgraph item、共有membership辞書を逐次更新しない。

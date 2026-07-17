@@ -252,10 +252,12 @@ Tests:
 
 Implement one increment at a time.
 
-Current status: increment 1 is implemented. `PreviewRequest`, `PreviewReport`, and the
-synchronous GUI-independent `PipelineRunner.preview_sample()` contract execute one
-full-resolution sample through the canonical runner and are covered by batch-identity
-tests. Revision invalidation and asynchronous Qt scheduling begin with increment 2.
+Current status: increments 1 and 2 are implemented. `PreviewRequest`, `PreviewReport`,
+and the synchronous GUI-independent `PipelineRunner.preview_sample()` contract execute
+one full-resolution sample through the canonical runner. `PreviewRevisionState` now
+tracks analysis, authoritative, and preview revisions, invalidates changed gate
+descendants, and forces stale navigation to `All Events`. Asynchronous Qt scheduling
+begins with increment 3.
 
 1. **Synchronous core preview contract**
    - Add immutable request/result types and `PipelineRunner.preview_sample()`.
