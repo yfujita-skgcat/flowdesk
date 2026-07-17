@@ -181,6 +181,12 @@ class SampleBrowser(QWidget):
         self._overlay_mode = overlay_mode if overlay_mode in {
             "manual_only", "manual_plus_comparison", "comparison_only"
         } else "manual_only"
+        if hasattr(self, "_overlay_mode_combo"):
+            index = self._overlay_mode_combo.findData(self._overlay_mode)
+            if index >= 0:
+                self._overlay_mode_combo.blockSignals(True)
+                self._overlay_mode_combo.setCurrentIndex(index)
+                self._overlay_mode_combo.blockSignals(False)
         self._rebuild_sample_list()
 
     def comparison_overlay_sample_ids(self, active_sample_id: str | None) -> set[str]:

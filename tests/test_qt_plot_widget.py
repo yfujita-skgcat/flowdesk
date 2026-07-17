@@ -1199,6 +1199,42 @@ def test_sample_browser_comparison_set_and_overlay_mode_union(
     app.processEvents()
 
 
+def test_sample_browser_overlay_state_round_trips_without_active_selection_change(
+  tmp_path: Path,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  restored = SampleBrowser()
+  try:
+    paths = [tmp_path / f"roundtrip-{index}.fcs" for index in range(2)]
+    for path in paths:
+      write_fcs_file(path, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
+    assert browser.add_samples_from_paths([str(path) for path in paths]) == 2
+    ids = [sample.id for sample in browser.samples()]
+    browser.set_overlay_state(
+      [ids[1]], {ids[1]: "#123456"}, {ids[1]: "positive_control"},
+      [{"id": "pair", "members": [{"sample_id": ids[0]}, {"sample_id": ids[1]}]}],
+      "manual_plus_comparison",
+    )
+    browser.select_sample(ids[0])
+    state = browser.overlay_state()
+    assert browser.selected_sample().id == ids[0]
+    assert state["manual_overlay_colors"] == {ids[1]: "#123456"}
+    assert state["overlay_mode"] == "manual_plus_comparison"
+    assert restored.add_samples_from_paths([str(path) for path in paths]) == 2
+    restored.set_overlay_state(
+      state["manual_overlay_sample_ids"], state["manual_overlay_colors"],
+      state["overlay_roles"], state["comparison_sets"], state["overlay_mode"],
+    )
+    assert restored.overlay_state() == state
+  finally:
+    browser.close()
+    restored.close()
+    browser.deleteLater()
+    restored.deleteLater()
+    app.processEvents()
+
+
 def test_sample_browser_reconnect_requires_confirmation_on_hash_mismatch(
   tmp_path: Path,
 ) -> None:

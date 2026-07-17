@@ -473,3 +473,16 @@ git diff --check
 
 Report source-resolution diagnostics, remaining renderer/accessibility limitations, and
 the next single increment. Never weaken scientific assertions for display convenience.
+
+## B7.2 implementation status
+
+The B7.2 increments are implemented in order. Increment 1 provides the Qt-independent
+state, comparison-set contract, deterministic source deduplication, and style
+provenance. Increment 2 adds the plot-area context menu and routes it to the existing
+presentation command. Increment 3 adds display-only population swatches and color
+actions. Increment 4 adds dedicated Samples-pane overlay controls and renderer wiring,
+and Increment 5 adds comparison-set navigation and overlay modes. Increment 6 persists
+the integrated display state in `plot_display_settings` and includes it in export
+metadata. The advanced Overlay Sources and Plot Presentation dialogs remain the full
+editors; they are not removed. The final user-guide and screenshot refresh remains
+documentation follow-up work.

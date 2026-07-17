@@ -579,8 +579,8 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 - [x] checked sampleについて現在の`display_population_id`と同じstable population ID/path/mapping role、現在のstable X/Y parameter IDs、transforms、plot typeをB7.1 resolverで解決する。
 - [x] missing population、ambiguous path、missing channel、incompatible unit/transform、unresolved sampleをwarning iconとtext/tooltipで示し、zero eventsやsilent omissionへ変換しない。
 - [x] active sample navigation中もmanual overlay checkbox/colorをplot viewに維持し、persistent positive/negative/reference controlを常時表示できるようにする。role変更はGroup bindingや科学解析を変更しない。
-- [ ] simple controlsとadvanced `Overlay Sources...` dialogを同じsource/view stateへ同期し、異なるpopulation/axis/transformの高度設定はdialog側へ残す。
-- [ ] resolved layersを既存rendererへ接続し、active sample二重描画防止、色優先、fallback provenance、navigation維持をGUI E2E testする。
+- [x] simple controlsとadvanced `Overlay Sources...` dialogを同じsource/view stateへ同期し、異なるpopulation/axis/transformの高度設定はdialog側へ残す。
+- [x] resolved layersを既存rendererへ接続し、active sample二重描画防止、色優先、fallback provenance、navigation維持をGUI E2E testする。
 
 #### Increment 5: Comparison sets and automatic paired overlays
 
@@ -588,52 +588,52 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 - [x] sample multi-selection context menuへ`Create Comparison Set...`、`Pair Selected Samples...`、`Add to Comparison Set...`、`Edit Comparison Relation...`、`Remove from Comparison Set`を追加する。
 - [x] Samples paneへ通常は`Manual only`と`Manual + comparison set`を示すoverlay mode selectorを追加し、必要性がtestで示された場合だけ`Comparison set only`を追加する。
 - [x] `Manual + comparison set`でmanual checked samplesとactive sample所属setのother membersの和集合を解決し、active sample変更時にcomparison membersを再解決する。
-- [ ] 同一sampleがmanual、persistent control、comparison経路で重複しても一度だけ描画し、source override、role color、automatic style、labelを決定的に解決する。
-- [ ] pair双方向、1対多round-trip、manual+automatic同時使用、missing member diagnostic、Group/strategy非変更をtestする。
+- [x] 同一sampleがmanual、persistent control、comparison経路で重複しても一度だけ描画し、source override、role color、automatic style、labelを決定的に解決する。
+- [x] pair双方向、1対多round-trip、manual+automatic同時使用、missing member diagnostic、Group/strategy非変更をtestする。
 
 #### Increment 6: Persistence, export, migration and final UX cleanup
 
-- [ ] project reload後にmanual overlay、persistent control role、comparison set、source/role/population colors、plot appearance、overlay modeを復元する。
-- [ ] GUI、PNG、SVG、PDFで同じresolved source order/styleを使用し、metadata sidecarへdeduplication、fallback、resolved style provenance、diagnosticを記録する。
-- [ ] B7.1 projectをactive sampleとmanual overlayを混同せずmigrationし、schema version変更が必要な場合はこのincrementで別途明示する。
-- [ ] advanced dialogsとの責任分界を最終確認し、同じcommandへ到達する重複menu actionだけを整理する。advanced dialog自体は削除しない。
-- [ ] strict Qt teardown、keyboard navigation、accessible name/tooltip、non-color-only statusを含むGUI E2Eを追加する。
+- [x] project reload後にmanual overlay、persistent control role、comparison set、source/role/population colors、plot appearance、overlay modeを復元する。
+- [x] GUI、PNG、SVG、PDFで同じresolved source order/styleを使用し、metadata sidecarへdeduplication、fallback、resolved style provenance、diagnosticを記録する。
+- [x] B7.1 projectをactive sampleとmanual overlayを混同せずmigrationし、schema version変更が必要な場合はこのincrementで別途明示する。
+- [x] advanced dialogsとの責任分界を最終確認し、同じcommandへ到達する重複menu actionだけを整理する。advanced dialog自体は削除しない。
+- [x] strict Qt teardown、keyboard navigation、accessible name/tooltip、non-color-only statusを含むGUI E2Eを追加する。
 - [ ] user guideとscreenshotsを最終UIへ更新する。
 
 #### Phase B7.2 必須受け入れtest
 
 Plot appearance:
 
-- [ ] plot areaの右クリックからappearance editorを開き、background、title、axis labels、font、legendを変更できる。
-- [ ] appearance変更でpipelineが実行されず、parameter ID、gate membership、statisticsが変わらない。
-- [ ] project reloadとPNG/SVG/PDFでappearanceが再現される。
+- [x] plot areaの右クリックからappearance editorを開き、background、title、axis labels、font、legendを変更できる。
+- [x] appearance変更でpipelineが実行されず、parameter ID、gate membership、statisticsが変わらない。
+- [x] project reloadとPNG/SVG/PDFでappearanceが再現される。
 
 Population color:
 
-- [ ] Gate hierarchyからpopulation colorを選択でき、nested populationではdeepest descendantが優先される。
-- [ ] sibling overlapの解決がdeterministicで、selected gate highlightとpopulation colorが混同されない。
-- [ ] population color変更で科学値とpipeline revisionが変化しない。
+- [x] Gate hierarchyからpopulation colorを選択でき、nested populationではdeepest descendantが優先される。
+- [x] sibling overlapの解決がdeterministicで、selected gate highlightとpopulation colorが混同されない。
+- [x] population color変更で科学値とpipeline revisionが変化しない。
 
 Manual/control overlay:
 
-- [ ] Samples listの専用`Ov` checkboxで別sampleを重ね、隣接swatchから色を変更できる。
-- [ ] active sampleは二重描画されず、active sample変更後もmanual overlayとpositive/negative control overlayが維持される。
-- [ ] explicit overlay colorがpopulation colorより優先し、未指定時だけfallbackとprovenanceを使用する。
-- [ ] checked sampleのsame population pathとstable axes/transformsが解決され、missing/incompatible sourceをzero eventsやsilent omissionにしない。
-- [ ] control role設定がGroup binding、gate strategy、scientific analysisを変更しない。
+- [x] Samples listの専用`Ov` checkboxで別sampleを重ね、隣接swatchから色を変更できる。
+- [x] active sampleは二重描画されず、active sample変更後もmanual overlayとpositive/negative control overlayが維持される。
+- [x] explicit overlay colorがpopulation colorより優先し、未指定時だけfallbackとprovenanceを使用する。
+- [x] checked sampleのsame population pathとstable axes/transformsが解決され、missing/incompatible sourceをzero eventsやsilent omissionにしない。
+- [x] control role設定がGroup binding、gate strategy、scientific analysisを変更しない。
 
 Comparison sets:
 
-- [ ] 2 sampleからpairを作り、どちらをactiveにしてもpartnerが自動overlayされる。
-- [ ] 1対多comparison setを保存・復元し、manual overlayとautomatic comparison overlayを同時使用できる。
-- [ ] 複数経路の同一sourceを一度だけ描画し、role color/source overrideの優先順位がdeterministicである。
-- [ ] missing comparison memberをsilentに無視しない。
+- [x] 2 sampleからpairを作り、どちらをactiveにしてもpartnerが自動overlayされる。
+- [x] 1対多comparison setを保存・復元し、manual overlayとautomatic comparison overlayを同時使用できる。
+- [x] 複数経路の同一sourceを一度だけ描画し、role color/source overrideの優先順位がdeterministicである。
+- [x] missing comparison memberをsilentに無視しない。
 
 Accessibility:
 
-- [ ] overlay、active、comparison、error状態を色だけで示さない。
-- [ ] checkbox、color swatch、relation iconにaccessible nameとtooltipがあり、keyboardだけで主要操作へ到達できる。
-- [ ] color dialogをCancelした場合はstateを変更しない。
+- [x] overlay、active、comparison、error状態を色だけで示さない。
+- [x] checkbox、color swatch、relation iconにaccessible nameとtooltipがあり、keyboardだけで主要操作へ到達できる。
+- [x] color dialogをCancelした場合はstateを変更しない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

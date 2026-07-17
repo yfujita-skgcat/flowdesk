@@ -991,6 +991,18 @@ class MainWindow(QMainWindow):
 
     def _on_manual_overlay_changed(self, state: dict[str, object]) -> None:
         """Refresh display layers without changing active sample or pipeline state."""
+        view = next(
+            (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+            None,
+        )
+        if view is not None:
+            view["manual_overlay_sample_ids"] = list(
+                state.get("manual_overlay_sample_ids", [])
+            )
+            view["manual_overlay_colors"] = dict(
+                state.get("manual_overlay_colors", {})
+            )
+            view["overlay_mode"] = state.get("overlay_mode", "manual_only")
         self._project_dirty = True
         self._replot()
 
@@ -1667,6 +1679,10 @@ class MainWindow(QMainWindow):
                 "x_scale": self._channel_selector.x_transform(),
                 "y_scale": self._channel_selector.y_transform(),
                 "marginal_enabled": self._plot_widget.is_marginal_enabled(),
+                "integrated_overlay": self._sample_browser.overlay_state(),
+                "population_display_colors": (
+                    self._gate_editor.population_display_definitions()
+                ),
             },
         }
 
@@ -1942,11 +1958,32 @@ class MainWindow(QMainWindow):
         )
 
         resolved_samples = resolve_sample_paths(manifest, project_path)
+        display = manifest.get("plot_display_settings", {})
         self._sample_browser.add_project_samples(resolved_samples)
+        integrated_overlay = display.get("integrated_overlay", {})
+        if not integrated_overlay:
+            view = next(
+                (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+                {},
+            )
+            integrated_overlay = {
+                "manual_overlay_sample_ids": view.get("manual_overlay_sample_ids", []),
+                "manual_overlay_colors": view.get("manual_overlay_colors", {}),
+                "overlay_mode": view.get("overlay_mode", "manual_only"),
+            }
+        self._sample_browser.set_overlay_state(
+            integrated_overlay.get("manual_overlay_sample_ids", []),
+            integrated_overlay.get("manual_overlay_colors", {}),
+            integrated_overlay.get("overlay_roles", {}),
+            integrated_overlay.get("comparison_sets", []),
+            integrated_overlay.get("overlay_mode", "manual_only"),
+        )
+        self._gate_editor.set_population_display_definitions(
+            display.get("population_display_colors", {})
+        )
         self._group_panel.set_sample_ids(
             [item.id for item in self._sample_browser.samples()]
         )
-        display = manifest.get("plot_display_settings", {})
         self._channel_selector.set_x_transform(display.get("x_scale", "linear"))
         self._channel_selector.set_y_transform(display.get("y_scale", "linear"))
         marginal = bool(display.get("marginal_enabled", False))
@@ -2788,6 +2825,10 @@ class MainWindow(QMainWindow):
             ],
             "presentation": asdict(resolved.presentation),
             "style_provenance": dict(resolved.provenance),
+            "integrated_overlay": self._sample_browser.overlay_state(),
+            "population_display_colors": (
+                self._gate_editor.population_display_definitions()
+            ),
             "diagnostics": [
                 {"source_id": source_id, "messages": messages}
                 for source_id, (_, messages) in statuses.items()
