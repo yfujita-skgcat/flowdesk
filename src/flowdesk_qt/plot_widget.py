@@ -1622,6 +1622,9 @@ class PlotWidget(QWidget):
 
     def _on_mouse_drag(self, event: Any) -> None:
         """Handle mouse drag for rectangle gate creation."""
+        if self._is_range_drag(event):
+            self._on_range_drag(event)
+            return
         if self._active_gate_creation != "rectangle":
             self._default_mouse_drag_event(event)
             return
@@ -1657,6 +1660,33 @@ class PlotWidget(QWidget):
                     cb, data_pos[0], data_pos[1], False, dragging=True
                 )
 
+        event.accept()
+
+    @staticmethod
+    def _is_range_drag(event: Any) -> bool:
+        try:
+            button = event.button()
+            modifiers = event.modifiers()
+        except Exception:
+            return False
+        return button == Qt.LeftButton and bool(modifiers & Qt.ControlModifier)
+
+    def _on_range_drag(self, event: Any) -> None:
+        """Zoom to a data-coordinate rectangle using Ctrl+left drag."""
+        data_pos = self._get_data_position(event)
+        if data_pos is None:
+            event.accept()
+            return
+        if event.isStart():
+            self._range_drag_start = data_pos
+        elif event.isFinish():
+            start = self._range_drag_start
+            self._range_drag_start = None
+            if start is not None:
+                x_range = tuple(sorted((start[0], data_pos[0])))
+                y_range = tuple(sorted((start[1], data_pos[1])))
+                if x_range[1] > x_range[0] and y_range[1] > y_range[0]:
+                    self.set_manual_view_range(x_range, y_range)
         event.accept()
 
     # -- marginal histograms (private) ---------------------------------------
@@ -1840,6 +1870,7 @@ class PlotWidget(QWidget):
         # Callback storage for mouse events.
         self._click_callbacks: list[Any] = []
         self._drag_start: tuple[float, float] | None = None
+        self._range_drag_start: tuple[float, float] | None = None
         self._active_gate_creation: InteractiveGateType | None = None
 
         # Wire up mouse events via the ViewBox.

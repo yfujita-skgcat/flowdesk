@@ -400,6 +400,59 @@ def test_default_drag_delegates_mouse_drag_to_viewbox() -> None:
     app.processEvents()
 
 
+def test_ctrl_left_drag_sets_manual_plot_range() -> None:
+  app = _app()
+  widget = PlotWidget()
+  original_drag = widget._default_mouse_drag_event
+  original_get_data_position = widget._get_data_position
+  try:
+    class FakeDragEvent:
+      def __init__(self, data_pos: tuple[float, float], start: bool, finish: bool) -> None:
+        self.data_pos = data_pos
+        self._start = start
+        self._finish = finish
+        self.accepted = False
+
+      def button(self) -> Qt.MouseButton:
+        return Qt.LeftButton
+
+      def modifiers(self) -> Qt.KeyboardModifier:
+        return Qt.ControlModifier
+
+      def isStart(self) -> bool:
+        return self._start
+
+      def isFinish(self) -> bool:
+        return self._finish
+
+      def accept(self) -> None:
+        self.accepted = True
+
+    calls: list[object] = []
+    widget._default_mouse_drag_event = calls.append
+    widget._get_data_position = lambda event: event.data_pos
+    widget._on_mouse_drag(FakeDragEvent((8.0, 6.0), True, False))
+    finish = FakeDragEvent((2.0, 1.0), False, True)
+    widget._on_mouse_drag(finish)
+    assert calls == []
+    assert finish.accepted is True
+    view_range = widget.view_range()
+    assert view_range is not None
+    assert view_range[0] == pytest.approx((2.0, 8.0))
+    assert view_range[1] == pytest.approx((1.0, 6.0))
+    assert widget._range_mode == "manual"
+  finally:
+    widget._get_data_position = original_get_data_position
+    vb = widget._view_box()
+    if vb is not None:
+      vb.mouseClickEvent = widget._default_mouse_click_event
+      vb.mouseDragEvent = original_drag
+    widget._default_mouse_drag_event = original_drag
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
 def test_rectangle_gate_creation_captures_drag_until_finish() -> None:
   app = _app()
   widget = PlotWidget()
