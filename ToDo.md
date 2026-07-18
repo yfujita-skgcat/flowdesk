@@ -611,7 +611,7 @@ Plot appearanceの設定項目が増えたときも小さいモニタで操作�
 - [x] 目盛りの指数表記を文字列の`e+06`ではなく、仮数部と指数部を分離した右上付き文字として描画する。linear/log/asinh/analysis transformのtick値とラベル、負指数・負値・0、SVG/PDF/PNG出力で位置・読みやすさ・コピー時のfallbackを確認する。tick表示はcoreのtick座標・event value定義と一致させる。
 - [x] plot areaで`Ctrl + 左ボタンのドラッグ`を範囲変更（X/Y box zoomまたは範囲選択）に割り当てる。通常の左ドラッグ、Pan、gate rectangle/polygon/ROI編集、右クリックcontext menuと競合させず、開始・移動・終了・Esc/キャンセル・plot外終了を定義する。既存の右ドラッグ由来の範囲操作を置き換え、固定画面座標ではなくViewBoxのdata coordinatesを使う。
 - [x] Qtテストで、compact dialogのminimum size/複数ページ遷移/Cancel、axis widthとtick fontのstyle適用、指数superscriptのlabel/export、Ctrl+左ドラッグのrange変更と他のmouse gesture非干渉をstable objectNameとsynthetic eventで検証する。GUI/headlessの科学的結果不変、project save/load、PNG/SVG/PDF再現を受け入れ条件にする。
-- [ ] 実装後に`./tools/run-gui-tests.sh -q`、plot presentation/plot widget関連core test、ruff、`git diff --check`を実行し、小さいモニタ・高DPI・offscreen Qtで残る制限を記録する。
+- [x] 実装後に`./tools/run-gui-tests.sh -q`、plot presentation/plot widget関連core test、ruff、`git diff --check`を実行し、小さいモニタ・高DPI・offscreen Qtで残る制限を記録する。GUI 170件、core全902件、対象ruff、diff checkを完了。高DPI実機での目視確認は次のUX検証へ残す。
 
 #### Phase B7.2 必須受け入れtest
 
