@@ -15,6 +15,7 @@ import uuid
 from dataclasses import asdict, replace
 from typing import Any
 
+import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
@@ -74,6 +75,8 @@ class _GateDialog(QDialog):
         population_parents: dict[str, str | None] | None = None,
         parent: QWidget | None = None,
         initial_gate: GateSpec | None = None,
+        x_scale: str = "linear",
+        y_scale: str = "linear",
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Create Gate")
@@ -83,6 +86,8 @@ class _GateDialog(QDialog):
         self._available_populations = available_populations or []
         self._population_parents = population_parents or {}
         self._initial_gate = initial_gate
+        self._x_scale = x_scale
+        self._y_scale = y_scale
         self._name: str = ""
         self._thresholds: dict[str, Any] = {}
         self._coordinates: list[tuple[float, float]] = []
@@ -96,6 +101,64 @@ class _GateDialog(QDialog):
 
     def coordinates(self) -> list[tuple[float, float]]:
         return self._coordinates
+
+    @staticmethod
+    def _to_display(value: float, scale: str) -> float:
+        if scale == "asinh":
+            return float(np.sinh(value))
+        if scale == "log10":
+            return float(10.0 ** value)
+        return value
+
+    @staticmethod
+    def _to_gate(value: float, scale: str) -> float:
+        if scale == "asinh":
+            return float(np.arcsinh(value))
+        if scale == "log10":
+            if value <= 0:
+                return float("nan")
+            return float(np.log10(value))
+        return value
+
+    @classmethod
+    def _ellipse_to_display(
+        cls, values: dict[str, Any], x_scale: str, y_scale: str
+    ) -> dict[str, float]:
+        center_x = float(values.get("center_x", 0.0))
+        center_y = float(values.get("center_y", 0.0))
+        radius_x = abs(float(values.get("radius_x", 10000.0)))
+        radius_y = abs(float(values.get("radius_y", 10000.0)))
+        x0 = cls._to_display(center_x - radius_x, x_scale)
+        x1 = cls._to_display(center_x + radius_x, x_scale)
+        y0 = cls._to_display(center_y - radius_y, y_scale)
+        y1 = cls._to_display(center_y + radius_y, y_scale)
+        return {
+            "center_x": cls._to_display(center_x, x_scale),
+            "center_y": cls._to_display(center_y, y_scale),
+            "radius_x": abs(x1 - x0) / 2.0,
+            "radius_y": abs(y1 - y0) / 2.0,
+            "rotation": float(values.get("rotation", 0.0)),
+        }
+
+    @classmethod
+    def _ellipse_to_gate(
+        cls, values: dict[str, Any], x_scale: str, y_scale: str
+    ) -> dict[str, float]:
+        center_x = float(values.get("center_x", 0.0))
+        center_y = float(values.get("center_y", 0.0))
+        radius_x = abs(float(values.get("radius_x", 10000.0)))
+        radius_y = abs(float(values.get("radius_y", 10000.0)))
+        x0 = cls._to_gate(center_x - radius_x, x_scale)
+        x1 = cls._to_gate(center_x + radius_x, x_scale)
+        y0 = cls._to_gate(center_y - radius_y, y_scale)
+        y1 = cls._to_gate(center_y + radius_y, y_scale)
+        return {
+            "center_x": cls._to_gate(center_x, x_scale),
+            "center_y": cls._to_gate(center_y, y_scale),
+            "radius_x": abs(x1 - x0) / 2.0,
+            "radius_y": abs(y1 - y0) / 2.0,
+            "rotation": float(values.get("rotation", 0.0)),
+        }
 
     def _build_ui(self) -> None:
         layout = QFormLayout(self)
@@ -189,6 +252,10 @@ class _GateDialog(QDialog):
             self._radius_y.setValue(10000.0)
             if self._initial_gate is not None:
                 values = self._initial_gate.thresholds
+                if self._gate_type == "ellipse":
+                    values = self._ellipse_to_display(
+                        values, self._x_scale, self._y_scale
+                    )
                 self._center_x.setValue(float(values.get("center_x", 0.0)))
                 self._center_y.setValue(float(values.get("center_y", 0.0)))
                 self._radius_x.setValue(float(values.get("radius_x", 10000.0)))
@@ -282,15 +349,17 @@ class _GateDialog(QDialog):
             self._thresholds["max"] = self._r_max.value()
 
         elif self._gate_type == "ellipse":
-            self._thresholds.update(
+            self._thresholds.update(self._ellipse_to_gate(
                 {
                     "center_x": self._center_x.value(),
                     "center_y": self._center_y.value(),
                     "radius_x": self._radius_x.value(),
                     "radius_y": self._radius_y.value(),
                     "rotation": self._rotation.value(),
-                }
-            )
+                },
+                self._x_scale,
+                self._y_scale,
+            ))
 
         elif self._gate_type == "polygon":
             self._coordinates = []
@@ -946,6 +1015,8 @@ class GateEditor(QWidget):
             self._available_populations(),
             {gate.id: gate.parent_population_id for gate in self._gates},
             self,
+            x_scale=self._x_scale,
+            y_scale=self._y_scale,
         )
         if dlg.exec() != QDialog.Accepted:
             self.cancel_child_gate_mode()
@@ -1018,6 +1089,8 @@ class GateEditor(QWidget):
             gate.y_parameter or self._y_channel,
             initial_gate=gate,
             parent=self,
+            x_scale=gate.x_scale,
+            y_scale=gate.y_scale,
         )
         dialog.setWindowTitle("Edit Gate Geometry")
         dialog._name_edit.setText(gate.name)

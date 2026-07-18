@@ -1065,11 +1065,14 @@ class PlotWidget(QWidget):
             ellipse = EllipseROI(
                 [center_x - radius_x, center_y - radius_y],
                 [2.0 * radius_x, 2.0 * radius_y],
-                angle=np.degrees(rotation),
                 pen=pen,
                 movable=True,
                 removable=False,
             )
+            # EllipseROI rotates around its local origin by default.  Keep the
+            # data-space center fixed so the displayed ellipse and the core
+            # gate (which uses pos + size / 2 as its center) remain identical.
+            ellipse.setAngle(np.degrees(rotation), center=(0.5, 0.5))
             self._connect_gate_item_changed(ellipse, gate, gate_index)
             return ellipse
 
@@ -1190,17 +1193,17 @@ class PlotWidget(QWidget):
 
         if gate.gate_type == "ellipse":
             state = item.saveState()
-            pos = state.get("pos", (0.0, 0.0))
             size = state.get("size", (0.0, 0.0))
             width = abs(float(size[0]))
             height = abs(float(size[1]))
             if width <= 0.0 or height <= 0.0:
                 return None
+            center = item.mapToParent(width / 2.0, height / 2.0)
             return replace(
                 gate,
                 thresholds={
-                    "center_x": float(pos[0]) + width / 2.0,
-                    "center_y": float(pos[1]) + height / 2.0,
+                    "center_x": float(center.x()),
+                    "center_y": float(center.y()),
                     "radius_x": width / 2.0,
                     "radius_y": height / 2.0,
                     "rotation": float(state.get("angle", 0.0)) * np.pi / 180.0,

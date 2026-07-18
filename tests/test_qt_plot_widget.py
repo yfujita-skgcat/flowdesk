@@ -764,9 +764,10 @@ def test_ellipse_gate_overlay_round_trips_data_coordinates() -> None:
     assert len(widget._gate_items) == 1
     item = widget._gate_items[0]
     state = item.saveState()
-    assert tuple(state["pos"]) == pytest.approx((8.5, 12.0))
     assert tuple(state["size"]) == pytest.approx((8.0, 16.0))
     assert state["angle"] == pytest.approx(np.degrees(0.25))
+    center = item.mapToParent(item.state["size"][0] / 2, item.state["size"][1] / 2)
+    assert (center.x(), center.y()) == pytest.approx((12.5, 20.0))
     assert widget._gate_from_item(gate, item).thresholds == pytest.approx(
       gate.thresholds
     )
@@ -1214,6 +1215,28 @@ def test_boolean_expression_json_editor_round_trips_nested_tree() -> None:
     dialog._collect_ok_values()
     assert dialog._expression_error
   finally:
+    dialog.deleteLater()
+    app.processEvents()
+
+
+def test_numeric_ellipse_editor_stores_display_values_in_asinh_gate_coordinates() -> None:
+  app = _app()
+  dialog = _GateDialog(
+    "ellipse", "FSC-A", "SSC-A", x_scale="asinh", y_scale="asinh"
+  )
+  try:
+    dialog._center_x.setValue(100.0)
+    dialog._center_y.setValue(200.0)
+    dialog._radius_x.setValue(20.0)
+    dialog._radius_y.setValue(30.0)
+    dialog._collect_ok_values()
+    values = dialog.thresholds()
+    assert values["center_x"] == pytest.approx(np.arcsinh(100.0), rel=1e-6)
+    assert values["center_y"] == pytest.approx(np.arcsinh(200.0), rel=1e-6)
+    assert values["radius_x"] > 0
+    assert values["radius_x"] < np.arcsinh(20.0)
+  finally:
+    dialog.close()
     dialog.deleteLater()
     app.processEvents()
 
