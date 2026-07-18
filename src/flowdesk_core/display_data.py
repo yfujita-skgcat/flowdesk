@@ -77,6 +77,18 @@ def prepare_display_data(
   pair = np.isfinite(selected_x) & np.isfinite(selected_y)
   x_values, y_values = selected_x[pair], selected_y[pair]
   if view.plot_type in {"scatter", "dot"}:
+    max_points = int(view.rendering_downsample.get("max_points", 20_000))
+    if max_points > 0 and len(x_values) > max_points:
+      indices = np.linspace(0, len(x_values) - 1, max_points, dtype=np.int64)
+      x_values = x_values[indices]
+      y_values = y_values[indices]
+      diagnostics.append({
+        "code": "display_points_sampled",
+        "source_event_count": int(np.count_nonzero(pair)),
+        "displayed_event_count": int(len(x_values)),
+        "max_points": max_points,
+        "method": "deterministic_even_spacing.v1",
+      })
     return DisplayData(
       view.plot_type, x_values, y_values, np.empty(0), np.empty(0), np.empty(0),
       tuple(diagnostics),

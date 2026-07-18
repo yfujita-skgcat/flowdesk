@@ -38,6 +38,22 @@ Changing compensation invalidates all downstream stages; derived changes invalid
 derived onward; transform changes invalidate transform onward; gate changes invalidate the
 affected gate descendants/statistics/reports.
 
+## Scatter rendering contract
+
+- `PlotViewSpec.rendering_downsample.max_points` is the persisted display-only
+  scatter limit. The default is `20_000`; `0` disables display sampling.
+- The Plot Parameters control edits this view definition and never changes the
+  analysis revision, gate membership, counts, frequencies, or statistics.
+- Sampling is deterministic. When resolved population colors are available, the GUI
+  allocates points by final display color so a non-empty rare color receives at least
+  one point whenever the configured limit can represent every color.
+- Population-colored events render as disjoint uniform-color scatter layers. Do not
+  pass a brush array with one entry per event to pyqtgraph.
+- Presentation updates compare the previous style and do not reapply scatter brushes
+  when only labels, background, or gate appearance changed.
+- Histograms, density/contour aggregation, gates, and statistics continue to consume
+  full selected events.
+
 ## Increments
 
 1. Add deterministic generator and correctness-only profile tests.

@@ -987,7 +987,9 @@ class PlotViewSpec:
   viewport: dict[str, Any] = field(default_factory=dict)
   style: dict[str, Any] = field(default_factory=dict)
   aggregation: dict[str, Any] = field(default_factory=lambda: {"bins": 64})
-  rendering_downsample: dict[str, Any] = field(default_factory=dict)
+  rendering_downsample: dict[str, Any] = field(
+    default_factory=lambda: {"max_points": 20_000}
+  )
   overlay_sources: tuple[OverlaySourceSpec, ...] = ()
   presentation: PlotPresentationSpec | None = None
   manual_overlay_sample_ids: tuple[str, ...] = ()
@@ -1017,6 +1019,9 @@ class PlotViewSpec:
       "manual_only", "manual_plus_comparison", "comparison_only"
     }:
       raise ValueError(f"invalid overlay mode: {self.overlay_mode!r}")
+    max_points = self.rendering_downsample.get("max_points", 20_000)
+    if isinstance(max_points, bool) or not isinstance(max_points, int) or max_points < 0:
+      raise ValueError("rendering downsample max_points must be a non-negative integer")
     if len(set(self.manual_overlay_sample_ids)) != len(self.manual_overlay_sample_ids):
       raise ValueError("plot view manual overlay sample IDs must be unique")
     for sample_id, color in self.manual_overlay_colors.items():

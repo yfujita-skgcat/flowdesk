@@ -70,10 +70,8 @@ class PlotWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("plotWidget")
         self._scatter: ScatterPlotItem | None = None
+        self._population_scatter_items: list[tuple[Any, str]] = []
         self._event_colors: NDArray[np.str_] | None = None
-        self._event_brush_cache_colors: NDArray[np.str_] | None = None
-        self._event_brush_cache_opacity: float | None = None
-        self._event_brush_cache: list[Any] | None = None
         self._gate_items: list[Any] = []
         self._gate_item_callbacks: dict[int, Any] = {}
         self._hidden_gate_reasons: list[str] = []
@@ -81,7 +79,12 @@ class PlotWidget(QWidget):
         self._gate_geometry_callbacks: list[Any] = []
         self._x_label: str = ""
         self._y_label: str = ""
-        self._downsample_factor: int = 1
+        self._max_display_points: int = 20_000
+        self._displayed_event_count: int = 0
+        self._input_event_count: int = 0
+        self._display_sampling_active: bool = False
+        self._rendered_x: NDArray[np.float64] | None = None
+        self._rendered_y: NDArray[np.float64] | None = None
         self._mouse_callbacks: list[Any] = []
         # Axis transform state (display-only, defaults to linear).
         self._x_transform: AxisTransform = "linear"
@@ -121,14 +124,26 @@ class PlotWidget(QWidget):
     # -- public API ----------------------------------------------------------
 
     def set_downsample(self, factor: int) -> None:
-        """Set the display downsample factor (>= 1).
+        """Set the legacy display downsample mode.
 
-        Downsampled data is used ONLY for rendering.  Gate coordinates are
-        always in full-resolution data space.
+        ``1`` disables sampling; values greater than one retain the historical
+        10,000-point display cap. New callers should use
+        :meth:`set_max_display_points`.
         """
-        if factor < 1:
-            factor = 1
-        self._downsample_factor = factor
+        self.set_max_display_points(0 if factor <= 1 else 10_000)
+
+    def set_max_display_points(self, max_points: int) -> None:
+        """Set the display-only scatter limit; zero draws every finite event."""
+        if (
+            isinstance(max_points, bool)
+            or not isinstance(max_points, int)
+            or max_points < 0
+        ):
+            raise ValueError("display max points must be a non-negative integer")
+        self._max_display_points = max_points
+
+    def max_display_points(self) -> int:
+        return self._max_display_points
 
     def set_interaction_mode(self, mode: InteractionMode) -> None:
         """Set mutually exclusive display interaction mode."""
@@ -147,8 +162,11 @@ class PlotWidget(QWidget):
         This changes only visual appearance (colors, sizes, background, grid).
         It does NOT reload data, recompute gates, or change analytical results.
         """
+        if style == self._style:
+            return
+        previous = self._style
         self._style = style
-        self._apply_style()
+        self._apply_style(previous)
 
     def style(self) -> PlotStyleSettings:
         """Return the current display style settings."""
@@ -306,6 +324,10 @@ class PlotWidget(QWidget):
                 self._marginal_enabled and not self._is_histogram_mode
             ),
             "hidden_gate_reasons": list(self._hidden_gate_reasons),
+            "input_event_count": self._input_event_count,
+            "displayed_event_count": self._displayed_event_count,
+            "display_max_points": self._max_display_points,
+            "display_sampling_active": self._display_sampling_active,
         }
 
     def plot_events(
@@ -346,15 +368,8 @@ class PlotWidget(QWidget):
         if colors_plot is not None and colors_plot.shape[0] != x_plot.shape[0]:
             raise ValueError("event_colors must have one color per event")
 
-        # Apply display downsample.
-        if self._downsample_factor > 1 and len(x_plot) > 10_000:
-            step = max(1, len(x_plot) // 10_000)
-            x_plot = x_plot[::step]
-            y_plot = y_plot[::step]
-            if colors_plot is not None:
-                colors_plot = colors_plot[::step]
-
         # Remove NaN/Inf for plotting safety (does not affect analysis data).
+        self._input_event_count = len(x_plot)
         valid = np.isfinite(x_plot) & np.isfinite(y_plot)
         if self._x_transform_spec is None and self._x_transform == "log10":
             valid &= x_plot > 0
@@ -365,24 +380,39 @@ class PlotWidget(QWidget):
         y_plot = y_plot[valid]
         if colors_plot is not None:
             colors_plot = colors_plot[valid]
+        sample_indices = self._display_sample_indices(
+            len(x_plot), self._max_display_points, colors_plot
+        )
+        self._display_sampling_active = sample_indices is not None
+        if sample_indices is not None:
+            x_plot = x_plot[sample_indices]
+            y_plot = y_plot[sample_indices]
+            if colors_plot is not None:
+                colors_plot = colors_plot[sample_indices]
+        self._displayed_event_count = len(x_plot)
+        self._rendered_x = x_plot
+        self._rendered_y = y_plot
         self._event_colors = colors_plot
 
         self._is_histogram_mode = False
         self._clear_histogram()
         self._clear_scatter()
-        brush: Any = self._make_brush(self._style.dot_color, self._style.dot_opacity)
-        if colors_plot is not None:
-            brush = self._event_brushes(colors_plot, self._style.dot_opacity)
-        self._scatter = self._plot_item.plot(
-            x_plot,
-            y_plot,
-            pen=None,
-            symbolPen=None,
-            symbol="o",
-            symbolSize=self._style.dot_size,
-            pxMode=True,
-            symbolBrush=brush,
-        )
+        if colors_plot is None:
+            self._scatter = self._plot_uniform_scatter(
+                x_plot, y_plot, self._style.dot_color, self._style.dot_opacity
+            )
+        else:
+            for color in np.unique(colors_plot):
+                color_mask = colors_plot == color
+                item = self._plot_uniform_scatter(
+                    x_plot[color_mask], y_plot[color_mask], str(color),
+                    self._style.dot_opacity,
+                )
+                self._population_scatter_items.append((item, str(color)))
+            self._scatter = (
+                self._population_scatter_items[0][0]
+                if self._population_scatter_items else None
+            )
 
         self._update_labels()
         self._update_log_mode()
@@ -482,6 +512,12 @@ class PlotWidget(QWidget):
         self._cached_y = None
         self._cached_marginal_x = None
         self._cached_marginal_y = None
+        self._rendered_x = None
+        self._rendered_y = None
+        self._input_event_count = 0
+        self._displayed_event_count = 0
+        self._display_sampling_active = False
+        self._event_colors = None
         self._is_histogram_mode = False
         self._update_labels()
 
@@ -500,9 +536,17 @@ class PlotWidget(QWidget):
         self.clear_overlay_layers()
         for layer in layers:
             style = dict(getattr(layer, "style", {}))
+            x_values = np.asarray(layer.x)
+            y_values = np.asarray(layer.y)
+            sample_indices = self._display_sample_indices(
+                len(x_values), self._max_display_points
+            )
+            if sample_indices is not None:
+                x_values = x_values[sample_indices]
+                y_values = y_values[sample_indices]
             item = self._plot_item.plot(
-                layer.x,
-                layer.y,
+                x_values,
+                y_values,
                 pen=None,
                 symbolPen=None,
                 symbol="o",
@@ -744,36 +788,75 @@ class PlotWidget(QWidget):
         except Exception:
             return QColor(color)
 
-    def _event_brushes(
-        self, colors: NDArray[np.str_], opacity: float
-    ) -> list[Any]:
-        """Return cached per-event brushes for a display color array.
+    def _plot_uniform_scatter(
+        self,
+        x_values: NDArray[np.float64],
+        y_values: NDArray[np.float64],
+        color: str,
+        opacity: float,
+    ) -> Any:
+        """Draw one uniform-color layer without pyqtgraph per-point styles."""
+        return self._plot_item.plot(
+            x_values,
+            y_values,
+            pen=None,
+            symbolPen=None,
+            symbol="o",
+            symbolSize=self._style.dot_size,
+            pxMode=True,
+            symbolBrush=self._make_brush(color, opacity),
+        )
 
-        Population colors are display-only, but a normal replot can happen for
-        unrelated navigation or axis changes. Reusing the immutable brush list
-        avoids constructing one QBrush per event on every such replot.
-        """
-        if (
-            self._event_brush_cache is not None
-            and self._event_brush_cache_colors is not None
-            and self._event_brush_cache_opacity == opacity
-            and np.array_equal(self._event_brush_cache_colors, colors)
-        ):
-            return self._event_brush_cache
-        # A population-colored plot usually contains only a handful of unique
-        # colors but tens of thousands of events. Build one immutable QBrush
-        # per color and share it across matching points.
-        palette = {
-            str(color): self._make_brush(str(color), opacity)
-            for color in np.unique(colors)
-        }
-        brushes = [palette[str(color)] for color in colors]
-        self._event_brush_cache_colors = colors.copy()
-        self._event_brush_cache_opacity = opacity
-        self._event_brush_cache = brushes
-        return brushes
+    @staticmethod
+    def _display_sample_indices(
+        event_count: int,
+        max_points: int,
+        colors: NDArray[np.str_] | None = None,
+    ) -> NDArray[np.int64] | None:
+        """Select deterministic display indices, stratified by resolved color."""
+        if max_points <= 0 or event_count <= max_points:
+            return None
+        if colors is None:
+            return np.linspace(0, event_count - 1, max_points, dtype=np.int64)
 
-    def _apply_style(self) -> None:
+        unique_colors, inverse, counts = np.unique(
+            colors, return_inverse=True, return_counts=True
+        )
+        group_count = len(unique_colors)
+        ideal = counts.astype(np.float64) * (max_points / event_count)
+        quotas = np.floor(ideal).astype(np.int64)
+        minimum = 1 if max_points >= group_count else 0
+        if minimum:
+            quotas = np.maximum(quotas, minimum)
+        quotas = np.minimum(quotas, counts)
+
+        while int(quotas.sum()) > max_points:
+            candidates = np.flatnonzero(quotas > minimum)
+            if len(candidates) == 0:
+                break
+            excess = quotas[candidates] - ideal[candidates]
+            quotas[candidates[int(np.argmax(excess))]] -= 1
+        while int(quotas.sum()) < max_points:
+            candidates = np.flatnonzero(quotas < counts)
+            if len(candidates) == 0:
+                break
+            deficit = ideal[candidates] - quotas[candidates]
+            quotas[candidates[int(np.argmax(deficit))]] += 1
+
+        selected: list[NDArray[np.int64]] = []
+        for group_index, quota in enumerate(quotas):
+            if quota <= 0:
+                continue
+            group_indices = np.flatnonzero(inverse == group_index)
+            positions = np.linspace(
+                0, len(group_indices) - 1, int(quota), dtype=np.int64
+            )
+            selected.append(group_indices[positions])
+        if not selected:
+            return np.empty(0, dtype=np.int64)
+        return np.sort(np.concatenate(selected)).astype(np.int64, copy=False)
+
+    def _apply_style(self, previous: PlotStyleSettings | None = None) -> None:
         """Apply current style settings to the plot display.
 
         This updates background, grid, scatter appearance, and gate colors
@@ -783,30 +866,43 @@ class PlotWidget(QWidget):
 
         # Background (set on ViewBox, not PlotItem)
         vb = self._view_box()
-        if vb is not None:
+        if vb is not None and (
+            previous is None or previous.background_color != s.background_color
+        ):
             vb.setBackgroundColor(s.background_color)
 
         # Grid
-        if s.show_grid:
-            self._plot_item.showGrid(True, True, alpha=0.3)
-        else:
-            self._plot_item.showGrid(False, False)
+        if previous is None or previous.show_grid != s.show_grid:
+            if s.show_grid:
+                self._plot_item.showGrid(True, True, alpha=0.3)
+            else:
+                self._plot_item.showGrid(False, False)
 
         # Re-apply scatter brush/size if scatter exists
-        if self._scatter is not None:
-            self._scatter.setSymbolSize(s.dot_size)
-            brush: Any = self._make_brush(s.dot_color, s.dot_opacity)
-            if self._event_colors is not None:
-                brush = self._event_brushes(self._event_colors, s.dot_opacity)
-                # PlotDataItem.setData() without X/Y clears the plotted data.
-                # Update the owned ScatterPlotItem directly so a display-only
-                # style change never removes event coordinates.
-                self._scatter.scatter.setBrush(brush)
+        scatter_style_changed = previous is None or (
+            previous.dot_size != s.dot_size
+            or previous.dot_color != s.dot_color
+            or previous.dot_opacity != s.dot_opacity
+        )
+        if self._scatter is not None and scatter_style_changed:
+            if self._population_scatter_items:
+                for item, color in self._population_scatter_items:
+                    item.setSymbolSize(s.dot_size)
+                    item.setSymbolBrush(self._make_brush(color, s.dot_opacity))
             else:
-                self._scatter.setSymbolBrush(brush)
+                self._scatter.setSymbolSize(s.dot_size)
+                self._scatter.setSymbolBrush(
+                    self._make_brush(s.dot_color, s.dot_opacity)
+                )
 
         # Re-apply gate overlay colors
-        self._refresh_gate_colors()
+        gate_style_changed = previous is None or (
+            previous.gate_outline_color != s.gate_outline_color
+            or previous.gate_fill_color != s.gate_fill_color
+            or previous.gate_fill_opacity != s.gate_fill_opacity
+        )
+        if gate_style_changed:
+            self._refresh_gate_colors()
 
     def _refresh_gate_colors(self) -> None:
         """Update gate overlay outline and fill colors without removing items."""
@@ -1114,7 +1210,15 @@ class PlotWidget(QWidget):
         return None
 
     def _clear_scatter(self) -> None:
-        if self._scatter is not None:
+        if self._population_scatter_items:
+            for item, _color in self._population_scatter_items:
+                try:
+                    self._plot_item.removeItem(item)
+                except Exception:
+                    pass
+            self._population_scatter_items.clear()
+            self._scatter = None
+        elif self._scatter is not None:
             try:
                 self._plot_item.removeItem(self._scatter)
             except Exception:
@@ -1308,14 +1412,9 @@ class PlotWidget(QWidget):
         if vb is None:
             return
 
-        # Use the last plotted data stored in the scatter item.
-        x_data, y_data = None, None
-        if self._scatter is not None:
-            try:
-                x_data = np.asarray(self._scatter.xData, dtype=np.float64)
-                y_data = np.asarray(self._scatter.yData, dtype=np.float64)
-            except Exception:
-                pass
+        # Use all rendered layers, not only the first population-color layer.
+        x_data = self._rendered_x
+        y_data = self._rendered_y
 
         if x_data is not None and y_data is not None:
             x_arr = np.asarray(x_data, dtype=np.float64)

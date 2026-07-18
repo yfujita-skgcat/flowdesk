@@ -202,6 +202,55 @@ class EditPlotPresentationCommand(ProjectCommand):
     return candidate
 
 
+class EditPlotRenderingDownsampleCommand(ProjectCommand):
+  """Replace one plot's display-only rendering sampling definition."""
+
+  type = "plot.rendering_downsample.edit"
+  invalidation_reason = "Plot rendering sampling changed"
+
+  def __init__(self, view_id: str, max_points: int) -> None:
+    if not view_id:
+      raise ProjectCommandError("rendering view ID must be non-empty")
+    if isinstance(max_points, bool) or not isinstance(max_points, int) or max_points < 0:
+      raise ProjectCommandError("display max points must be a non-negative integer")
+    self.view_id = view_id
+    self.max_points = max_points
+    self._before: dict[str, Any] | None = None
+    self._created_view = False
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    candidate = deepcopy(state)
+    views = candidate.setdefault("plot_views", [])
+    if not isinstance(views, list):
+      raise ProjectCommandError("plot_views must be a list")
+    view = next((item for item in views if item.get("id") == self.view_id), None)
+    self._created_view = view is None
+    if view is None:
+      view = {"id": self.view_id}
+      views.append(view)
+    self._before = None if self._created_view else deepcopy(
+      view.get("rendering_downsample")
+    )
+    view["rendering_downsample"] = {"max_points": self.max_points}
+    return candidate
+
+  def undo(self, state: ProjectState) -> ProjectState:
+    candidate = deepcopy(state)
+    views = candidate.get("plot_views", [])
+    if self._created_view:
+      candidate["plot_views"] = [
+        item for item in views if item.get("id") != self.view_id
+      ]
+      return candidate
+    view = next((item for item in views if item.get("id") == self.view_id), None)
+    if view is None:
+      raise ProjectCommandError(f"plot view not found: {self.view_id!r}")
+    if self._before is None:
+      view.pop("rendering_downsample", None)
+    else:
+      view["rendering_downsample"] = deepcopy(self._before)
+    return candidate
+
 class _GateListCommand(ProjectCommand):
   strategy_id: str
 

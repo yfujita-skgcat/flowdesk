@@ -63,11 +63,12 @@ from flowdesk_core.project_commands import (
     CreateGateOverrideCommand,
     EditOverlaySourcesCommand,
     EditPlotPresentationCommand,
+    EditPlotRenderingDownsampleCommand,
     UndoStack,
 )
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.channel_metadata import ChannelMetadataWorkspace
-from flowdesk_qt.channel_selector import ChannelSelector
+from flowdesk_qt.channel_selector import DEFAULT_DISPLAY_MAX_POINTS, ChannelSelector
 from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
 from flowdesk_qt.gate_override_editor import GateOverrideDialog
@@ -629,7 +630,9 @@ class MainWindow(QMainWindow):
         # --- Center pane: channel selector + plot ---
         self._channel_selector = ChannelSelector()
         self._plot_widget = PlotWidget()
-        self._plot_widget.set_downsample(1)
+        self._plot_widget.set_max_display_points(
+            self._channel_selector.display_max_points()
+        )
         self._plot_widget.appearance_requested.connect(
             self._on_plot_appearance_requested
         )
@@ -899,6 +902,9 @@ class MainWindow(QMainWindow):
 
         # When channel selection changes, replot
         self._channel_selector.on_channel_changed(self._on_channel_changed)
+        self._channel_selector.on_display_max_points_changed(
+            self._on_display_max_points_changed
+        )
 
         # When a gate is selected, update highlight
         self._gate_editor.on_gate_selected(self._on_gate_selected)
@@ -1097,6 +1103,19 @@ class MainWindow(QMainWindow):
         """Called when X or Y channel selection changes."""
         self._replot()
 
+    def _on_display_max_points_changed(self, max_points: int) -> None:
+        """Persist and redraw a display-only scatter sampling change."""
+        try:
+            self._overlay_undo_stack.execute(
+                EditPlotRenderingDownsampleCommand(
+                    self._overlay_view_id(), int(max_points)
+                )
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Plot Parameters", str(exc))
+            return
+        self._replot()
+
     def _preview_fallback_population(self, target_population_id: str) -> str:
         """Return a current preview ancestor or All Events during recalculation."""
         report = self._preview_report
@@ -1195,9 +1214,6 @@ class MainWindow(QMainWindow):
         view = next(
             (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
             None,
-        )
-        self._plot_widget.set_presentation(
-            {} if view is None else view.get("presentation", {})
         )
         if self._current_sample_id is None:
             return
@@ -1751,6 +1767,18 @@ class MainWindow(QMainWindow):
             "notes": "",
         }
 
+        plot_views = deepcopy(self._plot_views)
+        view_id = self._overlay_view_id()
+        current_view = next(
+            (item for item in plot_views if item.get("id") == view_id), None
+        )
+        if current_view is None:
+            current_view = {"id": view_id}
+            plot_views.append(current_view)
+        current_view["rendering_downsample"] = {
+            "max_points": self._channel_selector.display_max_points()
+        }
+
         project: dict[str, Any] = {
             "project_id": self._project_id,
             "project_version": CURRENT_PROJECT_VERSION,
@@ -1804,7 +1832,7 @@ class MainWindow(QMainWindow):
                 self._compensation_calculations
             ),
             "statistics": deepcopy(self._statistics),
-            "plot_views": deepcopy(self._plot_views),
+            "plot_views": plot_views,
             "overlays": deepcopy(self._overlays),
             "backgating_specs": deepcopy(self._backgating_specs),
             "auto_gate_templates": deepcopy(self._auto_gate_templates),
@@ -1823,6 +1851,9 @@ class MainWindow(QMainWindow):
                 "x_scale": self._channel_selector.x_transform(),
                 "y_scale": self._channel_selector.y_transform(),
                 "marginal_enabled": self._plot_widget.is_marginal_enabled(),
+                "display_max_points": (
+                    self._channel_selector.display_max_points()
+                ),
                 "integrated_overlay": self._sample_browser.overlay_state(),
                 "population_display_colors": (
                     self._gate_editor.population_display_definitions()
@@ -2136,6 +2167,17 @@ class MainWindow(QMainWindow):
         )
         self._channel_selector.set_x_transform(display.get("x_scale", "linear"))
         self._channel_selector.set_y_transform(display.get("y_scale", "linear"))
+        view = next(
+            (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+            {},
+        )
+        rendering_downsample = view.get("rendering_downsample", {})
+        max_points = rendering_downsample.get(
+            "max_points",
+            display.get("display_max_points", DEFAULT_DISPLAY_MAX_POINTS),
+        )
+        self._channel_selector.set_display_max_points(int(max_points))
+        self._plot_widget.set_max_display_points(int(max_points))
         marginal = bool(display.get("marginal_enabled", False))
         self._plot_widget.set_marginal_enabled(marginal)
         self._plot_toolbar.set_marginal_enabled(marginal)
@@ -2214,6 +2256,19 @@ class MainWindow(QMainWindow):
         if self._plot_views and self._plot_views[0].get("id"):
             return str(self._plot_views[0]["id"])
         return "main-view"
+
+    def _sync_display_max_points_from_view(self) -> None:
+        """Apply the persisted current-view sampling definition to the GUI."""
+        view = next(
+            (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+            {},
+        )
+        value = view.get("rendering_downsample", {}).get(
+            "max_points", DEFAULT_DISPLAY_MAX_POINTS
+        )
+        max_points = max(0, int(value))
+        self._channel_selector.set_display_max_points(max_points)
+        self._plot_widget.set_max_display_points(max_points)
 
     def _overlay_samples_for_editor(self) -> list[dict[str, Any]]:
         return [
@@ -2365,6 +2420,7 @@ class MainWindow(QMainWindow):
 
     def _on_overlay_state_changed(self, state: dict[str, Any], reason: str) -> None:
         self._plot_views = deepcopy(state.get("plot_views", []))
+        self._sync_display_max_points_from_view()
         self._project_dirty = True
         self._update_undo_actions()
         self._update_status(reason)

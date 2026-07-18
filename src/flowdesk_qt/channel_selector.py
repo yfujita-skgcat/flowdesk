@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QGroupBox,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -29,6 +30,7 @@ _TRANSFORM_OPTIONS: list[AxisTransform] = ["linear", "log10", "asinh"]
 # FCS channel name (which are user-provided and typically short).
 COUNT_CHANNEL = "__count__"
 COUNT_DISPLAY = "Count"
+DEFAULT_DISPLAY_MAX_POINTS = 20_000
 
 
 class ChannelSelector(QWidget):
@@ -193,6 +195,15 @@ class ChannelSelector(QWidget):
         self._x_transform_combo.setEnabled(not x_bound)
         self._y_transform_combo.setEnabled(not y_bound and not self.is_count_mode())
 
+    def display_max_points(self) -> int:
+        """Return the display-only scatter sampling limit; zero disables it."""
+        return int(self._display_max_points_spin.value())
+
+    def set_display_max_points(self, value: int) -> None:
+        """Restore a non-negative display-only scatter sampling limit."""
+        with QSignalBlocker(self._display_max_points_spin):
+            self._display_max_points_spin.setValue(max(0, int(value)))
+
     # -- signals (callback-based) --------------------------------------------
 
     def on_channel_changed(self, callback) -> None:
@@ -201,6 +212,10 @@ class ChannelSelector(QWidget):
         The callback receives ``(x_name: str, y_name: str)``.
         """
         self._change_callbacks.append(callback)
+
+    def on_display_max_points_changed(self, callback) -> None:
+        """Register a callback receiving the display-only maximum point count."""
+        self._display_max_points_callbacks.append(callback)
 
     # -- private ------------------------------------------------------------
 
@@ -213,10 +228,15 @@ class ChannelSelector(QWidget):
         for cb in self._change_callbacks:
             invoke_callback(cb, x, y)
 
+    def _on_display_max_points_changed(self, value: int) -> None:
+        for callback in self._display_max_points_callbacks:
+            invoke_callback(callback, int(value))
+
     # -- UI construction -----------------------------------------------------
 
     def _build_ui(self) -> None:
         self._change_callbacks = []
+        self._display_max_points_callbacks = []
         self.setObjectName("channelSelector")
 
         self._x_combo = QComboBox()
@@ -231,17 +251,33 @@ class ChannelSelector(QWidget):
         self._y_transform_combo.setObjectName("yTransformCombo")
         self._y_transform_combo.addItems(_TRANSFORM_OPTIONS)
 
+        self._display_max_points_spin = QSpinBox()
+        self._display_max_points_spin.setObjectName("displayMaxPointsSpinBox")
+        self._display_max_points_spin.setRange(0, 10_000_000)
+        self._display_max_points_spin.setSingleStep(5_000)
+        self._display_max_points_spin.setValue(DEFAULT_DISPLAY_MAX_POINTS)
+        self._display_max_points_spin.setSpecialValueText("0 (all events)")
+        self._display_max_points_spin.setToolTip(
+            "Maximum scatter points drawn per layer. Set to 0 to draw all events. "
+            "Sampling can omit rare uncolored events; population colors are sampled "
+            "separately. Gates and statistics always use all events."
+        )
+
         # Connect all change sources to the same callback.
         self._x_combo.currentTextChanged.connect(self._on_any_changed)
         self._y_combo.currentTextChanged.connect(self._on_any_changed)
         self._x_transform_combo.currentTextChanged.connect(self._on_any_changed)
         self._y_transform_combo.currentTextChanged.connect(self._on_any_changed)
+        self._display_max_points_spin.valueChanged.connect(
+            self._on_display_max_points_changed
+        )
 
         form = QFormLayout()
         form.addRow("X axis:", self._x_combo)
         form.addRow("Y axis:", self._y_combo)
         form.addRow("X scale:", self._x_transform_combo)
         form.addRow("Y scale:", self._y_transform_combo)
+        form.addRow("Display max points:", self._display_max_points_spin)
 
         box = QGroupBox("Plot Parameters")
         box.setLayout(form)

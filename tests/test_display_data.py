@@ -60,3 +60,32 @@ def test_large_density_uses_all_finite_events() -> None:
                       aggregation={"bins": (100, 100)})
   result = prepare_display_data(view, events, ["X", "Y"])
   assert int(result.values.sum()) == len(events)
+
+
+def test_scatter_downsampling_is_deterministic_and_zero_disables_it() -> None:
+  events = np.column_stack((
+    np.arange(25_000, dtype=float), np.arange(25_000, dtype=float)
+  ))
+  view = PlotViewSpec(id="sampled", x_parameter="X", y_parameter="Y")
+  sampled = prepare_display_data(view, events, ["X", "Y"])
+  assert len(sampled.x) == 20_000
+  assert sampled.diagnostics[-1]["code"] == "display_points_sampled"
+  assert np.array_equal(
+    sampled.x, prepare_display_data(view, events, ["X", "Y"]).x
+  )
+
+  full = prepare_display_data(
+    PlotViewSpec(
+      id="full", x_parameter="X", y_parameter="Y",
+      rendering_downsample={"max_points": 0},
+    ),
+    events,
+    ["X", "Y"],
+  )
+  assert len(full.x) == len(events)
+
+  with pytest.raises(ValueError, match="max_points"):
+    PlotViewSpec(
+      id="invalid", x_parameter="X", y_parameter="Y",
+      rendering_downsample={"max_points": -1},
+    )

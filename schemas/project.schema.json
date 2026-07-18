@@ -144,6 +144,13 @@
           "items": { "$ref": "#/$defs/overlaySource" }
         },
         "presentation": { "type": ["object", "null"] },
+        "rendering_downsample": {
+          "type": "object",
+          "properties": {
+            "max_points": { "type": "integer", "minimum": 0, "default": 20000 }
+          },
+          "additionalProperties": true
+        },
         "manual_overlay_sample_ids": {
           "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true
         },
@@ -370,7 +377,8 @@
         "y_channel": { "type": "string" },
         "x_scale": { "enum": ["linear", "log10", "asinh"] },
         "y_scale": { "enum": ["linear", "log10", "asinh"] },
-        "marginal_enabled": { "type": "boolean" }
+        "marginal_enabled": { "type": "boolean" },
+        "display_max_points": { "type": "integer", "minimum": 0, "default": 20000 }
       },
       "additionalProperties": true
     },

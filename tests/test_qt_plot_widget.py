@@ -232,7 +232,7 @@ def test_plot_events_accepts_population_display_colors_without_changing_data() -
     QApplication.processEvents()
 
 
-def test_population_color_brushes_are_reused_across_replots() -> None:
+def test_population_colors_render_as_uniform_layers_without_per_event_brushes() -> None:
   _app()
   plot = PlotWidget()
   x = np.arange(100.0)
@@ -250,11 +250,17 @@ def test_population_color_brushes_are_reused_across_replots() -> None:
     plot._make_brush = counting_make_brush
     plot.plot_events(x, y, event_colors=colors)
     first_count = calls
-    cached_brushes = plot._event_brush_cache
+    assert first_count == 2
+    assert len(plot._population_scatter_items) == 2
+    assert sum(len(item.xData) for item, _color in plot._population_scatter_items) == 100
+    assert {
+      item.scatter.opts["brush"].color().name()
+      for item, _color in plot._population_scatter_items
+    } == {"#0000ff", "#ff0000"}
+    plot.set_presentation({})
+    assert calls == first_count
     plot.plot_events(x, y, event_colors=colors)
-    assert first_count == 3  # one default brush plus two unique event colors
-    assert calls == first_count + 1  # only the single default brush is new
-    assert plot._event_brush_cache is cached_brushes
+    assert calls == first_count + 2
   finally:
     plot.close()
     plot.deleteLater()
@@ -281,16 +287,82 @@ def test_population_event_colors_preserve_full_hex_values() -> None:
     window._plot_widget.plot_events(
       np.arange(3.0), np.arange(3.0), event_colors=colors
     )
-    rendered = window._plot_widget._scatter.scatter.data["brush"]
-    assert [brush.color().name() for brush in rendered] == [
-      "#800080", "#b8c7ff", "#800080",
-    ]
+    rendered = {
+      color: item.xData.tolist()
+      for item, color in window._plot_widget._population_scatter_items
+    }
+    assert rendered == {"#800080": [0.0, 2.0], "#b8c7ff": [1.0]}
     window._plot_widget.set_presentation({})
-    assert window._plot_widget._scatter.xData.tolist() == [0.0, 1.0, 2.0]
-    rendered_after_presentation = window._plot_widget._scatter.scatter.data["brush"]
-    assert [brush.color().name() for brush in rendered_after_presentation] == [
-      "#800080", "#b8c7ff", "#800080",
-    ]
+    rendered_after_presentation = {
+      color: item.xData.tolist()
+      for item, color in window._plot_widget._population_scatter_items
+    }
+    assert rendered_after_presentation == rendered
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_display_sampling_defaults_to_20000_and_zero_disables_it() -> None:
+  _app()
+  plot = PlotWidget()
+  values = np.arange(25_000, dtype=np.float64)
+  try:
+    plot.plot_events(values, values)
+    assert plot.max_display_points() == 20_000
+    assert len(plot._scatter.xData) == 20_000
+    assert plot.display_state()["display_sampling_active"] is True
+
+    plot.set_max_display_points(0)
+    plot.plot_events(values, values)
+    assert len(plot._scatter.xData) == 25_000
+    assert plot.display_state()["display_sampling_active"] is False
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
+def test_population_color_sampling_keeps_rare_color_and_is_deterministic() -> None:
+  _app()
+  plot = PlotWidget()
+  values = np.arange(100, dtype=np.float64)
+  colors = np.full(100, "#0000ff", dtype="<U7")
+  colors[-1] = "#ff0000"
+  try:
+    plot.set_max_display_points(10)
+    plot.plot_events(values, values, event_colors=colors)
+    first = {
+      color: item.xData.copy()
+      for item, color in plot._population_scatter_items
+    }
+    assert sum(len(points) for points in first.values()) == 10
+    assert first["#ff0000"].tolist() == [99.0]
+
+    plot.plot_events(values, values, event_colors=colors)
+    second = {
+      color: item.xData.copy()
+      for item, color in plot._population_scatter_items
+    }
+    assert all(np.array_equal(first[color], second[color]) for color in first)
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
+def test_plot_parameters_expose_persisted_display_max_points() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    assert window._channel_selector.display_max_points() == 20_000
+    window._channel_selector._display_max_points_spin.setValue(12_345)
+    assert window._plot_widget.max_display_points() == 12_345
+    manifest = window._build_project_manifest()
+    view = next(item for item in manifest["plot_views"] if item["id"] == "main-view")
+    assert view["rendering_downsample"] == {"max_points": 12_345}
+    assert manifest["plot_display_settings"]["display_max_points"] == 12_345
   finally:
     window.close()
     window.deleteLater()
@@ -1676,6 +1748,7 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
       "value": "treated",
       "source": "workspace",
     }]
+    window._channel_selector._display_max_points_spin.setValue(12_345)
     assert not window.action_advanced_groups.isChecked()
     assert window._group_panel.isHidden()
     window.action_advanced_groups.setChecked(True)
@@ -1698,11 +1771,17 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     assert saved["sample_groups"][0]["id"] == "all-samples"
     assert saved["annotations"][0]["value"] == "treated"
     assert saved["plot_display_settings"]["x_scale"] == "asinh"
+    assert saved["plot_display_settings"]["display_max_points"] == 12_345
+    assert saved["plot_views"][0]["rendering_downsample"] == {
+      "max_points": 12_345
+    }
     assert isinstance(
       saved["gating_strategies_data"]["default_strategy"]["gates"][0], dict
     )
 
     reloaded_window._load_project_from_path(project_path)
+    assert reloaded_window._channel_selector.display_max_points() == 12_345
+    assert reloaded_window._plot_widget.max_display_points() == 12_345
     assert reloaded_window.action_advanced_groups.isChecked()
     assert not reloaded_window._group_panel.isHidden()
     reloaded_window.action_advanced_groups.setChecked(False)

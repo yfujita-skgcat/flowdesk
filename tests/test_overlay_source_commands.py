@@ -3,6 +3,7 @@ from __future__ import annotations
 from flowdesk_core.project_commands import (
   EditOverlaySourcesCommand,
   EditPlotPresentationCommand,
+  EditPlotRenderingDownsampleCommand,
   UndoStack,
 )
 
@@ -48,3 +49,15 @@ def test_plot_presentation_command_is_definition_only_and_reversible() -> None:
   assert updated["plot_views"][0]["presentation"] == {"title": "new"}
   assert stack.undo()["plot_views"][0]["presentation"] == {"title": "old"}
   assert stack.redo()["plot_views"][0]["presentation"] == {"title": "new"}
+
+
+def test_plot_rendering_downsample_command_is_reversible() -> None:
+  stack = UndoStack({"plot_views": [{"id": "view"}]})
+  updated = stack.execute(EditPlotRenderingDownsampleCommand("view", 20_000))
+  assert updated["plot_views"][0]["rendering_downsample"] == {
+    "max_points": 20_000
+  }
+  assert "rendering_downsample" not in stack.undo()["plot_views"][0]
+  assert stack.redo()["plot_views"][0]["rendering_downsample"] == {
+    "max_points": 20_000
+  }

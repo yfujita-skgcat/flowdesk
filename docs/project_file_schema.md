@@ -25,3 +25,9 @@ implementation version. Version
 `1.2.0` transform definitions
 named `logicle_like` migrate to `legacy_logicle_approximation` with a persisted
 warning and unchanged numeric settings.
+
+Plot views store the display-only scatter limit as
+`rendering_downsample.max_points`. The default is `20000`; `0` disables scatter
+sampling. The current main-plot value is also mirrored in
+`plot_display_settings.display_max_points` for GUI restoration. Neither field may be
+used by the pipeline runner for gates, population counts, frequencies, or statistics.
