@@ -1912,10 +1912,6 @@ class PlotWidget(QWidget):
             return action
 
         add_action("Plot Appearance...", "plotAppearance")
-        add_action("Background Color...", "plotBackgroundColor")
-        add_action("Edit Title...", "plotTitle")
-        add_action("Axis Labels...", "plotAxisLabels")
-        add_action("Fonts...", "plotFonts")
 
         legend_menu = menu.addMenu("Legend")
         legend_menu.setObjectName("plotLegendMenu")
@@ -1936,6 +1932,5 @@ class PlotWidget(QWidget):
                 self.appearance_requested.emit(f"plotLegendPosition:{value}")
             )
 
-        add_action("Default Event Style...", "plotDefaultEventStyle")
         add_action("Reset View Appearance", "plotResetAppearance")
         return menu

@@ -20,7 +20,14 @@ pytestmark = pytest.mark.gui
 
 from PySide6.QtCore import QCoreApplication, QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
-from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QPushButton, QSplitter  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+  QApplication,
+  QCheckBox,
+  QLabel,
+  QMenu,
+  QPushButton,
+  QSplitter,
+)
 
 from flowdesk_cli.run_project import run_project_command  # noqa: E402
 from flowdesk_core.execution_context import ExecutionContext  # noqa: E402
@@ -110,7 +117,8 @@ def test_plot_context_menu_exposes_display_only_appearance_actions() -> None:
       for action in menu.actions()
       if not action.menu()
     }
-    assert {"plotAppearance", "plotBackgroundColor", "plotTitle"}.issubset(action_ids)
+    assert {"plotAppearance", "plotResetAppearance"} == action_ids
+    assert menu.findChild(QMenu, "plotLegendMenu") is not None
     assert plot._glw.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
     plot.set_interaction_mode("gate")
     assert plot._interaction_mode == "gate"
