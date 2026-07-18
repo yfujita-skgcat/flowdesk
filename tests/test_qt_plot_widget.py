@@ -18,7 +18,7 @@ pytest.importorskip("pyqtgraph")
 shiboken6 = pytest.importorskip("shiboken6")
 pytestmark = pytest.mark.gui
 
-from PySide6.QtCore import QCoreApplication, QEvent, Qt  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QPointF, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
   QApplication,
@@ -408,15 +408,13 @@ def test_default_drag_delegates_mouse_drag_to_viewbox() -> None:
     app.processEvents()
 
 
-def test_ctrl_left_drag_sets_manual_plot_range() -> None:
+def test_ctrl_left_drag_matches_historical_right_drag_zoom() -> None:
   app = _app()
   widget = PlotWidget()
   original_drag = widget._default_mouse_drag_event
-  original_get_data_position = widget._get_data_position
   try:
     class FakeDragEvent:
-      def __init__(self, data_pos: tuple[float, float], start: bool, finish: bool) -> None:
-        self.data_pos = data_pos
+      def __init__(self, start: bool, finish: bool) -> None:
         self._start = start
         self._finish = finish
         self.accepted = False
@@ -426,6 +424,15 @@ def test_ctrl_left_drag_sets_manual_plot_range() -> None:
 
       def modifiers(self) -> Qt.KeyboardModifier:
         return Qt.ControlModifier
+
+      def screenPos(self) -> QPointF:
+        return QPointF(20.0, 20.0)
+
+      def lastScreenPos(self) -> QPointF:
+        return QPointF(10.0, 20.0)
+
+      def buttonDownPos(self, _button: Qt.MouseButton) -> QPointF:
+        return QPointF(5.0, 5.0)
 
       def isStart(self) -> bool:
         return self._start
@@ -438,19 +445,17 @@ def test_ctrl_left_drag_sets_manual_plot_range() -> None:
 
     calls: list[object] = []
     widget._default_mouse_drag_event = calls.append
-    widget._get_data_position = lambda event: event.data_pos
-    widget._on_mouse_drag(FakeDragEvent((8.0, 6.0), True, False))
-    finish = FakeDragEvent((2.0, 1.0), False, True)
+    widget.set_manual_view_range((0.0, 10.0), (0.0, 10.0))
+    before = widget.view_range()
+    finish = FakeDragEvent(False, True)
     widget._on_mouse_drag(finish)
+    after = widget.view_range()
     assert calls == []
     assert finish.accepted is True
-    view_range = widget.view_range()
-    assert view_range is not None
-    assert view_range[0] == pytest.approx((2.0, 8.0))
-    assert view_range[1] == pytest.approx((1.0, 6.0))
+    assert before is not None and after is not None
+    assert after != before
     assert widget._range_mode == "manual"
   finally:
-    widget._get_data_position = original_get_data_position
     vb = widget._view_box()
     if vb is not None:
       vb.mouseClickEvent = widget._default_mouse_click_event

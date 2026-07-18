@@ -1672,21 +1672,31 @@ class PlotWidget(QWidget):
         return button == Qt.LeftButton and bool(modifiers & Qt.ControlModifier)
 
     def _on_range_drag(self, event: Any) -> None:
-        """Zoom to a data-coordinate rectangle using Ctrl+left drag."""
-        data_pos = self._get_data_position(event)
-        if data_pos is None:
+        """Match the historical ViewBox right-drag zoom gesture.
+
+        PyQtGraph scales continuously around the button-down position.  This
+        intentionally does not implement box zoom: Ctrl+left is a replacement
+        for the old right-drag interaction, including its direction and anchor.
+        """
+        vb = self._view_box()
+        if vb is None:
             event.accept()
             return
-        if event.isStart():
-            self._range_drag_start = data_pos
-        elif event.isFinish():
-            start = self._range_drag_start
-            self._range_drag_start = None
-            if start is not None:
-                x_range = tuple(sorted((start[0], data_pos[0])))
-                y_range = tuple(sorted((start[1], data_pos[1])))
-                if x_range[1] > x_range[0] and y_range[1] > y_range[0]:
-                    self.set_manual_view_range(x_range, y_range)
+        try:
+            screen_delta = event.screenPos() - event.lastScreenPos()
+            dx = -float(screen_delta.x())
+            dy = float(screen_delta.y())
+            mouse_enabled = np.asarray(vb.state["mouseEnabled"], dtype=np.float64)
+            mask = mouse_enabled.copy()
+            if vb.state["aspectLocked"] is not False:
+                mask[0] = 0.0
+            scale = ((mask * 0.02) + 1.0) ** np.array([dx, dy])
+            button_down = event.buttonDownPos(Qt.LeftButton)
+            center = vb.mapSceneToView(button_down)
+            vb.scaleBy(x=scale[0], y=scale[1], center=(center.x(), center.y()))
+            vb.sigRangeChangedManually.emit(vb.state["mouseEnabled"])
+        except Exception:
+            logger.exception("Ctrl+left range zoom failed")
         event.accept()
 
     # -- marginal histograms (private) ---------------------------------------

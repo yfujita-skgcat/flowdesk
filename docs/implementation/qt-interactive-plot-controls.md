@@ -82,6 +82,10 @@ The plot should support:
 - pan
 - zoom in/out
 - box zoom
+- `Ctrl` + left-drag must preserve the historical pyqtgraph right-drag gesture:
+  continuous X/Y scaling around the mouse-down data coordinate. It is not a
+  rectangle-selection jump; the existing left-drag pan and gate-drawing modes
+  remain unchanged.
 - reset to robust auto-range
 - reset to full data range
 - preserve view range when changing cosmetic settings
