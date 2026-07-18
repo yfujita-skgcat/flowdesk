@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QTableWidget, QTabWidget, QWidget
+from PySide6.QtWidgets import QSplitter, QTableWidget, QTabWidget, QWidget
 
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.fcs_io import write_fcs_file
@@ -196,6 +196,31 @@ def test_main_window_exposes_exclusive_gating_and_results_tabs(qapp) -> None:
     assert channels_tab.findChild(QTableWidget, "channelMetadataTable") is not None
     assert not window._workspace_tree.isVisible()
     assert not window._population_tree.isVisible()
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_right_workspace_pane_stays_visible_when_narrowed(qapp) -> None:
+  window = MainWindow()
+  try:
+    window.resize(1200, 800)
+    window.show()
+    qapp.processEvents()
+    outer = window.centralWidget()
+    assert isinstance(outer, QSplitter)
+    right = outer.widget(1)
+    tabs = right.findChild(QTabWidget, "gatingResultsTabs")
+    assert tabs is not None
+    assert outer.isCollapsible(1) is False
+    assert right.minimumWidth() == 280
+    assert tabs.minimumWidth() == 280
+
+    outer.setSizes([max(1, outer.width() - 280), 280])
+    qapp.processEvents()
+    assert right.width() >= 280
+    assert tabs.isVisible() or not window.isVisible()
   finally:
     window.close()
     window.deleteLater()

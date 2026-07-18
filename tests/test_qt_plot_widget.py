@@ -20,7 +20,7 @@ pytestmark = pytest.mark.gui
 
 from PySide6.QtCore import QCoreApplication, QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
-from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QPushButton  # noqa: E402
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QPushButton, QSplitter  # noqa: E402
 
 from flowdesk_cli.run_project import run_project_command  # noqa: E402
 from flowdesk_core.execution_context import ExecutionContext  # noqa: E402
@@ -1341,6 +1341,33 @@ def test_sample_browser_manual_overlay_column_is_separate_from_active_selection(
   finally:
     browser.close()
     browser.deleteLater()
+    app.processEvents()
+
+
+def test_sample_browser_stays_visible_when_narrowed_and_keeps_details_in_tooltip(
+  tmp_path: Path,
+) -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    browser = window._sample_browser
+    splitter = window.findChild(QSplitter, "mainContentSplitter")
+    assert splitter is not None
+    assert browser.minimumWidth() == window.LEFT_PANE_MIN_WIDTH
+    assert not splitter.isCollapsible(0)
+    sample_path = tmp_path / "compact.fcs"
+    write_fcs_file(sample_path, np.ones((2, 2), dtype=np.float64), ["X", "Y"])
+    assert browser.add_samples_from_paths([str(sample_path)]) == 1
+    splitter.setSizes([window.LEFT_PANE_MIN_WIDTH, 900])
+    app.processEvents()
+    assert splitter.sizes()[0] >= window.LEFT_PANE_MIN_WIDTH
+
+    item = browser._list_widget.item(0)
+    assert item is not None and "events" in item.toolTip()
+    assert "compact" in item.toolTip()
+  finally:
+    window.close()
+    window.deleteLater()
     app.processEvents()
 
 

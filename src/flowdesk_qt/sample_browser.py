@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -498,13 +499,15 @@ class SampleBrowser(QWidget):
                 lambda _checked=False, sample_id=sample.id:
                 self._choose_overlay_color(sample_id)
             )
-            name = QLabel(
-                f"[{labels.get(sample.status, '!')}] {sample.name} "
-                f"({sample.info.event_count} events) — {sample.status}"
-            )
+            # Keep the row compact enough for the navigational pane.  The
+            # event count, path, and full status remain available in the
+            # item's tooltip (and are intentionally not part of analysis
+            # state).
+            name = QLabel(f"[{labels.get(sample.status, '!')}] {sample.name}")
             name.setObjectName(f"sampleName_{sample.id}")
             name.setToolTip(item.toolTip())
             name.setWordWrap(False)
+            name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             relation = QLabel(self._overlay_roles.get(sample.id, "manual"))
             relation.setObjectName(f"overlayRelation_{sample.id}")
             relation.setFixedWidth(68)
@@ -735,6 +738,7 @@ class SampleBrowser(QWidget):
 
         self._list_widget = QListWidget()
         self._list_widget.setObjectName("sampleList")
+        self._list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list_widget.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._list_widget.currentRowChanged.connect(self._on_list_selection_changed)
         self._list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -794,6 +798,10 @@ class SampleBrowser(QWidget):
         self._overlay_mode_combo.addItem("Manual only", "manual_only")
         self._overlay_mode_combo.addItem(
             "Manual + comparison set", "manual_plus_comparison"
+        )
+        self._overlay_mode_combo.setMinimumWidth(0)
+        self._overlay_mode_combo.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
         )
         self._overlay_mode_combo.currentIndexChanged.connect(self._set_overlay_mode)
         controls = QHBoxLayout()

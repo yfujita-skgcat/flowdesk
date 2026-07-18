@@ -31,6 +31,15 @@ Implement Qt UI components that edit project state and call core APIs without em
   and FCS metadata in the right-pane `Channels` tab alongside `Gating` and `Results`.
 - Updating the selected sample must refresh the Channels tab without changing channel
   identity, mismatch, reconnect, or pipeline behavior.
+- The right-pane `Gating`/`Results`/`Channels` tab group must remain visible when the
+  outer splitter is narrowed. Its minimum width is an explicit layout constraint and
+  the right splitter child is non-collapsible; narrowing may reduce table content
+  width but must not hide the tab group.
+- The left `SampleBrowser` is a navigation pane with an explicit minimum width;
+  its first splitter child is non-collapsible so it can be narrowed without
+  disappearing. Sample rows keep the status marker and sample name visible;
+  event count, path, and full identity status are available in the row tooltip
+  to avoid forcing a wide pane.
 - Let user select plot parameters.
 - Let user create/edit gate definitions as project data.
 - Trigger pipeline execution through core runner and display `ExecutionReport`.

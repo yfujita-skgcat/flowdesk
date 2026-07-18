@@ -88,6 +88,8 @@ from flowdesk_storage.serialization import now_iso
 
 logger = logging.getLogger(__name__)
 
+RIGHT_PANE_MIN_WIDTH = 280
+
 
 # ---------------------------------------------------------------------------
 # Compensation status indicator
@@ -216,6 +218,8 @@ class MainWindow(QMainWindow):
       - Center: PlotWidget with ChannelSelector above
       - Right: GateEditor above PopulationTree
     """
+
+    LEFT_PANE_MIN_WIDTH = 220
 
     def __init__(self) -> None:
         super().__init__()
@@ -657,6 +661,8 @@ class MainWindow(QMainWindow):
         splitter1.setObjectName("mainContentSplitter")
         splitter1.addWidget(self._sample_browser)
         splitter1.addWidget(center_widget)
+        self._sample_browser.setMinimumWidth(self.LEFT_PANE_MIN_WIDTH)
+        splitter1.setCollapsible(0, False)
         splitter1.setStretchFactor(0, 1)
         splitter1.setStretchFactor(1, 3)
 
@@ -666,6 +672,7 @@ class MainWindow(QMainWindow):
         splitter2.addWidget(right_widget)
         splitter2.setStretchFactor(0, 4)
         splitter2.setStretchFactor(1, 2)
+        splitter2.setCollapsible(1, False)
 
         self.setCentralWidget(splitter2)
         self.statusBar().setObjectName("mainStatusBar")
@@ -691,11 +698,13 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QVBoxLayout, QWidget
 
         widget = QWidget()
+        widget.setMinimumWidth(RIGHT_PANE_MIN_WIDTH)
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
         tabs = QTabWidget()
         tabs.setObjectName("gatingResultsTabs")
+        tabs.setMinimumWidth(RIGHT_PANE_MIN_WIDTH)
 
         gating_tab = QWidget()
         gating_layout = QVBoxLayout(gating_tab)
