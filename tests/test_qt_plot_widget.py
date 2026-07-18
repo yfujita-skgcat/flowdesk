@@ -988,6 +988,26 @@ def test_plot_widget_uses_core_logicle_coordinates_ticks_and_gate_ids() -> None:
     app.processEvents()
 
 
+def test_plot_widget_formats_exponent_ticks_and_applies_readable_tick_style() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    assert widget._format_tick_label("1e+06") == "1 × 10<sup>6</sup>"
+    assert widget._format_tick_label("-2.5e-03") == "-2.5 × 10<sup>-3</sup>"
+    assert widget._format_tick_label("0") == "0"
+    widget.set_presentation({
+      "tick_font": {"family": "DejaVu Sans", "size": 16, "weight": "bold"},
+      "axis_line_width": 3.0,
+    })
+    assert widget.style().tick_font_size == 16
+    assert widget.style().tick_font_weight == "bold"
+    assert widget.style().axis_line_width == 3.0
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
 def test_gui_created_logicle_rectangle_binds_ids_and_matches_headless() -> None:
   app = _app()
   window = MainWindow()

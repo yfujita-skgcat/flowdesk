@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -29,7 +30,7 @@ from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
 from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QImage, QPageSize, QPainter, QPdfWriter
+from PySide6.QtGui import QAction, QColor, QFont, QImage, QPageSize, QPainter, QPdfWriter
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import QLabel, QMenu, QVBoxLayout, QWidget
 
@@ -196,6 +197,21 @@ class PlotWidget(QWidget):
         for key in ("background_color", "gate_outline_color"):
             if isinstance(value.get(key), str) and value[key]:
                 style_updates[key] = value[key]
+        tick_font = value.get("tick_font", {})
+        if isinstance(tick_font, dict):
+            style_updates.update({
+                "tick_font_family": str(tick_font.get("family", "DejaVu Sans")),
+                "tick_font_size": float(tick_font.get("size", 12.0)),
+                "tick_font_weight": str(tick_font.get("weight", "bold")),
+            })
+        elif tick_font is not None:
+            style_updates.update({
+                "tick_font_family": str(getattr(tick_font, "family", "DejaVu Sans")),
+                "tick_font_size": float(getattr(tick_font, "size", 12.0)),
+                "tick_font_weight": str(getattr(tick_font, "weight", "bold")),
+            })
+        if value.get("axis_line_width") is not None:
+            style_updates["axis_line_width"] = float(value["axis_line_width"])
         if style_updates:
             self.set_style(replace(self._style, **style_updates))
 
@@ -864,6 +880,16 @@ class PlotWidget(QWidget):
         """
         s = self._style
 
+        from pyqtgraph import mkPen  # type: ignore[attr-defined]
+        axis_pen = mkPen(color="#b8c7ff", width=s.axis_line_width)
+        tick_font = QFont(s.tick_font_family, round(s.tick_font_size))
+        tick_font.setBold(s.tick_font_weight == "bold")
+        for axis_name in ("bottom", "left"):
+            axis = self._plot_item.getAxis(axis_name)
+            axis.setPen(axis_pen)
+            axis.setTextPen(axis_pen)
+            axis.setStyle(tickFont=tick_font)
+
         # Background (set on ViewBox, not PlotItem)
         vb = self._view_box()
         if vb is not None and (
@@ -1113,7 +1139,10 @@ class PlotWidget(QWidget):
         for axis_name, ticks in (("bottom", self._x_ticks), ("left", self._y_ticks)):
             axis = self._plot_item.getAxis(axis_name)
             if ticks:
-                axis.setTicks([[(tick.coordinate, tick.label) for tick in ticks]])
+                axis.setTicks([[
+                    (tick.coordinate, self._format_tick_label(tick.label))
+                    for tick in ticks
+                ]])
             else:
                 axis.setTicks(None)
 
@@ -1132,6 +1161,19 @@ class PlotWidget(QWidget):
             float(finite.min()),
             float(finite.max()),
         )
+
+    @staticmethod
+    def _format_tick_label(label: str) -> str:
+        """Render scientific exponents as superscript HTML in Qt axes."""
+        match = re.fullmatch(
+            r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))e([+-]?\d+)",
+            label.strip(),
+            re.I,
+        )
+        if match is None:
+            return label
+        mantissa, exponent = match.groups()
+        return f"{mantissa} × 10<sup>{int(exponent)}</sup>"
 
     def _connect_gate_item_changed(
         self,

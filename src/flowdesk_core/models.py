@@ -918,6 +918,7 @@ class PlotPresentationSpec:
   gate_outline_color: str = "#555555"
   gate_outline_width: float = 1.5
   gate_outline_style: LineStyle = "solid"
+  axis_line_width: float = 2.0
   colormap: str | None = None
   automatic_style_policy: str = "palette.v1"
   source_styles: tuple[SourceStyleSpec, ...] = ()
@@ -927,6 +928,8 @@ class PlotPresentationSpec:
       raise ValueError(f"invalid legend position: {self.legend_position!r}")
     if not math.isfinite(self.gate_outline_width) or not 0.1 <= self.gate_outline_width <= 100:
       raise ValueError("gate_outline_width must be finite and between 0.1 and 100")
+    if not math.isfinite(self.axis_line_width) or not 0.5 <= self.axis_line_width <= 20:
+      raise ValueError("axis_line_width must be finite and between 0.5 and 20")
     if self.gate_outline_style not in {"solid", "dashed", "dotted", "dashdot"}:
       raise ValueError(f"invalid gate outline style: {self.gate_outline_style!r}")
     source_ids = [style.source_id for style in self.source_styles]

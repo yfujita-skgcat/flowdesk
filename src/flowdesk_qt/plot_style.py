@@ -31,6 +31,12 @@ class PlotStyleSettings:
     gate_fill_color: str = "#ffff00"
     gate_fill_opacity: float = 0.0
 
+    # Axis and tick readability
+    axis_line_width: float = 2.0
+    tick_font_family: str = "DejaVu Sans"
+    tick_font_size: float = 12.0
+    tick_font_weight: str = "bold"
+
     # Optional features
     show_grid: bool = False
 
@@ -49,6 +55,10 @@ class PlotStyleSettings:
                 self.gate_outline_color,
                 self.gate_fill_color,
                 self.gate_fill_opacity,
+                self.axis_line_width,
+                self.tick_font_family,
+                self.tick_font_size,
+                self.tick_font_weight,
                 self.show_grid,
                 self.use_robust_range,
             )
