@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from PySide6.QtWidgets import QTabWidget
 
 from flowdesk_qt.plot_style_editor import PlotStyleEditorDialog
 
@@ -101,6 +102,23 @@ def test_style_editor_distinguishes_project_and_global_default_resolution(qapp) 
     global_style = dialog.presentation()["source_styles"][0]
     assert global_style["color"] == "#445566"
     assert global_style["provenance"]["style"] == "global_default"
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_style_editor_uses_compact_pages_for_small_monitors(qapp) -> None:
+  dialog = PlotStyleEditorDialog("scatter", {}, ())
+  try:
+    pages = dialog.findChild(QTabWidget, "plotAppearancePages")
+    assert dialog.width() <= 560
+    assert dialog.height() <= 520
+    assert pages is not None
+    assert pages.count() == 3
+    assert [pages.tabText(i) for i in range(pages.count())] == [
+      "General", "Sources", "Fonts"
+    ]
   finally:
     dialog.close()
     dialog.deleteLater()

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
   QListWidget,
   QListWidgetItem,
   QPushButton,
+  QTabWidget,
   QVBoxLayout,
   QWidget,
 )
@@ -53,7 +54,8 @@ class PlotStyleEditorDialog(QDialog):
     super().__init__(parent)
     self.setObjectName("plotStyleEditorDialog")
     self.setWindowTitle("Plot Presentation")
-    self.resize(820, 760)
+    self.resize(560, 520)
+    self.setMinimumSize(420, 360)
     self._plot_type = plot_type
     self._presentation = deepcopy(presentation or {})
     self._source_ids = tuple(source_ids)
@@ -121,6 +123,8 @@ class PlotStyleEditorDialog(QDialog):
 
   def _build_ui(self) -> None:
     root = QVBoxLayout(self)
+    pages = QTabWidget()
+    pages.setObjectName("plotAppearancePages")
     form_widget = QWidget()
     form = QFormLayout(form_widget)
     self._title_edit = QLineEdit()
@@ -177,7 +181,7 @@ class PlotStyleEditorDialog(QDialog):
     self._colormap_edit.setObjectName("plotColormapEdit")
     self._colormap_edit.setPlaceholderText("e.g. viridis")
     form.addRow("Colormap:", self._colormap_edit)
-    root.addWidget(form_widget)
+    pages.addTab(form_widget, "General")
 
     source_form = QWidget()
     source_layout = QFormLayout(source_form)
@@ -236,7 +240,7 @@ class PlotStyleEditorDialog(QDialog):
     reset_layout.addWidget(self._reset_project_button)
     reset_layout.addWidget(self._reset_global_button)
     source_layout.addRow("Resolve default:", reset_defaults)
-    root.addWidget(source_form)
+    pages.addTab(source_form, "Sources")
 
     font_form = QWidget()
     fonts = QFormLayout(font_form)
@@ -260,7 +264,8 @@ class PlotStyleEditorDialog(QDialog):
       row_layout.addWidget(weight, 1)
       fonts.addRow(label, row)
       self._font_controls[field_name] = (family, size, weight)
-    root.addWidget(font_form)
+    pages.addTab(font_form, "Fonts")
+    root.addWidget(pages, 1)
 
     self._status_label = QLabel("Status: ready")
     self._status_label.setObjectName("plotStyleValidationLabel")
