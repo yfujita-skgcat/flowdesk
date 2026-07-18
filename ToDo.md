@@ -600,6 +600,19 @@ resolver、renderer/export、保存、Undo可能な汎用editorを維持する�
 - [x] strict Qt teardown、keyboard navigation、accessible name/tooltip、non-color-only statusを含むGUI E2Eを追加する。
 - [x] user guideとscreenshotsを最終UIへ更新する。READMEへ統合操作の利用導線を追記し、GUI回帰テストをスクリーンショット検証の入口とする。
 
+#### Increment 7: Plot appearance compact editor, axes, ticks and range gesture
+
+Plot appearanceの設定項目が増えたときも小さいモニタで操作できるようにし、軸・目盛りの視認性と範囲操作を改善する。既存の`PlotPresentationSpec`、表示専用設定、PNG/SVG/PDF出力、gate編集の座標・解析結果は変更しない。
+
+- [ ] `docs/implementation/integrated-overlay-controls-and-plot-appearance.md`へ、compact appearance editor、axis/tick style、superscript tick formatter、Ctrl+左ドラッグ範囲操作のUI/keyboard contractを追記する。production codeより先に画面サイズ、minimum size、focus/escape/cancel、保存範囲を確定する。
+- [ ] `Plot Appearance...`を一枚の大きなdialogから、`Background`、`Title/Labels`、`Fonts`、`Axes/Ticks`、`Legend/Event Style`など項目単位のcompact dialogまたはstacked pagesへ分割する。各画面はモニタ内に収まり、共通のtyped presentation command/modelを使い、Cancelで変更を破棄し、既存設定のproject/view/global provenanceを維持する。
+- [ ] plot areaのX/Y軸線（axis spine）と必要な枠線の太さを視認性のよい既定値へ変更し、設定可能な`axis_line_width`（または同等のdisplay-only field）を追加する。背景・軸色とのコントラスト、PNG/SVG/PDF、Reset、save/loadを確認し、gate outlineやdata strokeとは別設定にする。
+- [ ] 目盛りラベルのフォントを既定で現在より大きく太字にし、`tick_font_size`と`tick_font_weight`（またはtyped FontSpec）を設定可能にする。title/axis label/legend fontと独立させ、表示設定変更でpipeline、membership、count、frequency、statisticsを変更しない。
+- [ ] 目盛りの指数表記を文字列の`e+06`ではなく、仮数部と指数部を分離した右上付き文字として描画する。linear/log/asinh/analysis transformのtick値とラベル、負指数・負値・0、SVG/PDF/PNG出力で位置・読みやすさ・コピー時のfallbackを確認する。tick表示はcoreのtick座標・event value定義と一致させる。
+- [ ] plot areaで`Ctrl + 左ボタンのドラッグ`を範囲変更（X/Y box zoomまたは範囲選択）に割り当てる。通常の左ドラッグ、Pan、gate rectangle/polygon/ROI編集、右クリックcontext menuと競合させず、開始・移動・終了・Esc/キャンセル・plot外終了を定義する。既存の右ドラッグ由来の範囲操作を置き換え、固定画面座標ではなくViewBoxのdata coordinatesを使う。
+- [ ] Qtテストで、compact dialogのminimum size/複数ページ遷移/Cancel、axis widthとtick fontのstyle適用、指数superscriptのlabel/export、Ctrl+左ドラッグのrange変更と他のmouse gesture非干渉をstable objectNameとsynthetic eventで検証する。GUI/headlessの科学的結果不変、project save/load、PNG/SVG/PDF再現を受け入れ条件にする。
+- [ ] 実装後に`./tools/run-gui-tests.sh -q`、plot presentation/plot widget関連core test、ruff、`git diff --check`を実行し、小さいモニタ・高DPI・offscreen Qtで残る制限を記録する。
+
 #### Phase B7.2 必須受け入れtest
 
 Plot appearance:
