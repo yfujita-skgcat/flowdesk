@@ -889,6 +889,22 @@ class PlotWidget(QWidget):
             axis.setPen(axis_pen)
             axis.setTextPen(axis_pen)
             axis.setStyle(tickFont=tick_font)
+            if not hasattr(axis, "_flowdesk_original_tick_strings"):
+                original_tick_strings = axis.tickStrings
+                axis._flowdesk_original_tick_strings = original_tick_strings
+
+                def formatted_tick_strings(
+                    values: list[float],
+                    scale: float,
+                    spacing: float,
+                    original=original_tick_strings,
+                ) -> list[str]:
+                    return [
+                        self._format_tick_label(label)
+                        for label in original(values, scale, spacing)
+                    ]
+
+                axis.tickStrings = formatted_tick_strings
 
         # Background (set on ViewBox, not PlotItem)
         vb = self._view_box()
