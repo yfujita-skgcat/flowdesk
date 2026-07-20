@@ -30,7 +30,16 @@ from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
 from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QImage, QPageSize, QPainter, QPdfWriter
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QImage,
+    QPageSize,
+    QPainter,
+    QPdfWriter,
+)
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import QLabel, QMenu, QVBoxLayout, QWidget
 
@@ -898,11 +907,16 @@ class PlotWidget(QWidget):
                     scale: float,
                     spacing: float,
                     original=original_tick_strings,
+                    current_axis_name=axis_name,
+                    current_axis=axis,
                 ) -> list[str]:
-                    return [
+                    labels = [
                         self._format_tick_label(label)
                         for label in original(values, scale, spacing)
                     ]
+                    return self._fit_tick_labels(
+                        current_axis_name, values, labels, current_axis
+                    )
 
                 axis.tickStrings = formatted_tick_strings
 
@@ -1155,9 +1169,12 @@ class PlotWidget(QWidget):
         for axis_name, ticks in (("bottom", self._x_ticks), ("left", self._y_ticks)):
             axis = self._plot_item.getAxis(axis_name)
             if ticks:
+                coordinates = [tick.coordinate for tick in ticks]
+                labels = [self._format_tick_label(tick.label) for tick in ticks]
+                labels = self._fit_tick_labels(axis_name, coordinates, labels, axis)
                 axis.setTicks([[
-                    (tick.coordinate, self._format_tick_label(tick.label))
-                    for tick in ticks
+                    (coordinate, label)
+                    for coordinate, label in zip(coordinates, labels, strict=True)
                 ]])
             else:
                 axis.setTicks(None)
@@ -1180,7 +1197,7 @@ class PlotWidget(QWidget):
 
     @staticmethod
     def _format_tick_label(label: str) -> str:
-        """Render scientific exponents as superscript HTML in Qt axes."""
+        """Render scientific exponents as Unicode superscripts in Qt axes."""
         match = re.fullmatch(
             r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))e([+-]?\d+)",
             label.strip(),
@@ -1189,7 +1206,46 @@ class PlotWidget(QWidget):
         if match is None:
             return label
         mantissa, exponent = match.groups()
-        return f"{mantissa} × 10<sup>{int(exponent)}</sup>"
+        superscript = str(int(exponent)).translate(str.maketrans(
+            "0123456789-+", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺"
+        ))
+        return f"{mantissa} × 10{superscript}"
+
+    def _fit_tick_labels(
+        self,
+        axis_name: str,
+        coordinates: list[float],
+        labels: list[str],
+        axis: Any,
+    ) -> list[str]:
+        """Hide labels that cannot fit without changing tick coordinates."""
+        if len(labels) < 2:
+            return labels
+        dimension = axis.width() if axis_name == "bottom" else axis.height()
+        if dimension <= 0:
+            return labels
+        try:
+            view_range = self._view_box().viewRange()[0 if axis_name == "bottom" else 1]
+            low, high = float(view_range[0]), float(view_range[1])
+            span = abs(high - low)
+            if span <= 0:
+                return labels
+            font = axis.style.get("tickFont", QFont())
+            metrics = QFontMetrics(font)
+            widths = [metrics.horizontalAdvance(label) for label in labels]
+            positions = [abs(float(value) - low) / span * dimension for value in coordinates]
+        except Exception:
+            return labels
+
+        result = ["" for _ in labels]
+        previous_index = 0
+        result[0] = labels[0]
+        for index in range(1, len(labels)):
+            required = (widths[previous_index] + widths[index]) / 2.0 + 6.0
+            if abs(positions[index] - positions[previous_index]) >= required:
+                result[index] = labels[index]
+                previous_index = index
+        return result
 
     def _connect_gate_item_changed(
         self,
