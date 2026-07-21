@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -14,7 +15,7 @@ from flowdesk_core.batch_plot_export import (
 )
 from flowdesk_core.display_data import prepare_display_data
 from flowdesk_core.fcs_io import read_fcs_sample
-from flowdesk_core.models import PlotViewSpec
+from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec
 from flowdesk_core.pipeline_runner import run_project_pipeline
 from flowdesk_core.plot_export import (
   prepare_plot_export,
@@ -40,7 +41,7 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       read_fcs_sample(sample["path"], str(sample["id"]))[1]
       for sample in samples
     )
-    report = run_project_pipeline(
+    execution_report = run_project_pipeline(
       project, output_dir=None, execution_profile_id="default", samples=typed_samples,
     )
     view = next(
@@ -49,7 +50,9 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       {"id": spec.plot_view_id, "plot_type": "scatter"},
     )
 
-    def render(sample: dict[str, Any], path: Path, _spec) -> None:
+    def render(
+      sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
+    ) -> None:
       info, sample_data = read_fcs_sample(sample["path"], str(sample["id"]))
       names = [channel.id for channel in info.channels]
       if len(names) < 2:
@@ -61,11 +64,11 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         population_id=str(view.get("population_id", "all_events")),
         x_parameter=x_id,
         y_parameter=y_id,
-        plot_type=str(view.get("plot_type", "scatter")),
-        rendering_downsample=dict(view.get("rendering_downsample", {})),
+        plot_type=cast(PlotType, str(view.get("plot_type", "scatter"))),
+        rendering_downsample=cast(dict[str, Any], view.get("rendering_downsample", {})),
       )
       display = prepare_display_data(
-        view_spec, sample_data.events, names, report, sample_id=str(sample["id"])
+        view_spec, sample_data.events, names, execution_report, sample_id=str(sample["id"])
       )
       x_values, y_values = _normalize(display.x), _normalize(display.y)
       sample_id = str(sample["id"])
@@ -76,9 +79,9 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         "x_parameter_id": x_id, "y_parameter_id": y_id, "visible": True,
       }
       prepared = prepare_plot_export(
-        spec.plot_view_id, str(view.get("plot_type", "scatter")),
+        spec.plot_view_id, cast(PlotType, str(view.get("plot_type", "scatter"))),
         (source,), (OverlaySourceResolution(sample_id, "compatible"),),
-        view_presentation=view.get("presentation"),
+        view_presentation=cast(dict[str, Any] | None, view.get("presentation")),
       )
       layers = {sample_id: (tuple(x_values), tuple(y_values))}
       if path.suffix.lower() == ".png":
@@ -90,11 +93,11 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       else:
         raise ValueError(f"CLI renderer does not support {path.suffix!r}")
 
-    report = run_batch_plot_export(
+    batch_report = run_batch_plot_export(
       spec, samples, output_dir, render, annotations=annotations,
     )
-    print(f"Batch plot export {report.status}: {len(report.items)} samples")
-    return 0 if report.status == "success" else 1
+    print(f"Batch plot export {batch_report.status}: {len(batch_report.items)} samples")
+    return 0 if batch_report.status == "success" else 1
   except (BatchPlotExportError, FileNotFoundError, KeyError, ValueError) as exc:
     print(f"Error: batch plot export failed: {exc}")
     return 1
