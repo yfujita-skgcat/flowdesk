@@ -154,3 +154,18 @@ def test_graph_entry_opens_dialog_with_graph_context(qapp, monkeypatch) -> None:
   finally:
     window.close()
     window.deleteLater()
+
+
+def test_results_add_statistic_entrypoint_uses_shared_editor(qapp, monkeypatch) -> None:
+  window = MainWindow()
+  captured: list[str] = []
+  monkeypatch.setattr(
+    window, "_open_statistics_editor",
+    lambda **kwargs: captured.append(str(kwargs["population_id"])),
+  )
+  try:
+    window._results_workspace._on_add_statistic()
+    assert captured == ["all_events"]
+  finally:
+    window.close()
+    window.deleteLater()

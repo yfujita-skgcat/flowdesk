@@ -676,8 +676,8 @@ Accessibility:
 
 - [x] Results workspaceから`Add Statistic...`、edit、duplicate、remove、選択metric/parameter/population/percentile/source-stageを提供し、既存`StatisticSpec` editorと同一のGUI-independent command/validationを使う。mean、median、SD、CV、MAD、percentile等のmetricはcore定義に列挙されたものだけを選択可能にする。
 - [x] Resultsにpopulation rowとは独立した統計detail/tableを追加し、値、unit、status、undefined reason、analysis revisionを表示する。empty/NaN/Inf/geometric-mean policyをQtで再計算・丸め判定しない。
-- [ ] statistic definitionの追加・変更・削除で結果をstale化し、`Run Pipeline`または既存current-sample preview経路でのみ更新する。統計の追加操作がgate/transform/compensation定義を変更しないことを保証する。
-- [ ] known-value core test、save/load/migration、GUI editor entrypoint、stale/current state、CLI/statistics exportとResults表示の一致を追加する。
+- [x] statistic definitionの追加・変更・削除で結果をstale化し、`Run Pipeline`または既存current-sample preview経路でのみ更新する。統計の追加操作がgate/transform/compensation定義を変更しないことを保証する。
+- [x] known-value core test、save/load/migration、GUI editor entrypoint、stale/current state、CLI/statistics exportとResults表示の一致を追加する。
 
 #### Phase B7.3 必須受け入れtest
 
@@ -686,7 +686,7 @@ Accessibility:
 - [ ] 同じ`BatchPlotExportSpec`によるGUI起点とCLI起点の出力が、sample順、タイトル、plot definition、style provenance、analysis revisionにおいて一致する。
 - [ ] 全対象sampleのPNGが出力され、collision、missing/incompatible source、renderer error、partial failureがstructured reportとsidecarに残る。
 - [ ] バッチ画像exportの有無・表示downsample・style変更がraw events、membership、count、frequency、statisticsを変更しない。
-- [ ] Resultsからmean/medianなどのStatisticSpecを追加・編集でき、known values、undefined status、unit、revisionがheadless report/CLI exportと一致する。
+- [x] Resultsからmean/medianなどのStatisticSpecを追加・編集でき、known values、undefined status、unit、revisionがheadless report/CLI exportと一致する。
 - [ ] GUIに科学計算または独自plot export定義を複製せず、core/headless runnerをGUIなしで実行できる。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
