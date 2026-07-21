@@ -7,7 +7,7 @@ import io
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from flowdesk_core.models import AnnotationSpec, AnnotationValue
+from flowdesk_core.models import AnnotationSource, AnnotationSpec, AnnotationValue
 
 SAMPLE_TITLE_KEYWORD = "sample_title"
 
@@ -109,7 +109,7 @@ def replace_annotation_values(
   old_value: AnnotationValue,
   new_value: AnnotationValue,
   *,
-  source: str = "workspace",
+  source: AnnotationSource = "workspace",
 ) -> tuple[AnnotationSpec, ...]:
   """Replace matching values by adding a workspace-level annotation."""
   result = list(annotations)
@@ -125,7 +125,7 @@ def fill_annotation_series(
   start: int | float,
   step: int | float = 1,
   *,
-  source: str = "workspace",
+  source: AnnotationSource = "workspace",
 ) -> tuple[AnnotationSpec, ...]:
   """Create a deterministic numeric series in the supplied sample order."""
   return tuple(
@@ -138,7 +138,7 @@ def parse_annotation_csv(
   text: str,
   *,
   sample_id_column: str = "sample_id",
-  source: str = "imported",
+  source: AnnotationSource = "imported",
 ) -> tuple[AnnotationSpec, ...]:
   """Parse CSV annotation columns without touching source FCS metadata."""
   reader = csv.DictReader(io.StringIO(text))
