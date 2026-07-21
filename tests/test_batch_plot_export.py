@@ -47,6 +47,7 @@ def test_batch_plan_rejects_unknown_explicit_sample(tmp_path) -> None:
 
 def test_batch_run_writes_outputs_sidecars_and_manifest(tmp_path) -> None:
   spec = BatchPlotExportSpec(id="export", name="Export", formats=("svg",))
+  original_samples = [dict(sample) for sample in _samples()]
 
   def render(sample, path, _spec):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,6 +60,7 @@ def test_batch_run_writes_outputs_sidecars_and_manifest(tmp_path) -> None:
   assert manifest["status"] == "success"
   sidecar = tmp_path / "Control_s1_main-view.svg.json"
   assert json.loads(sidecar.read_text(encoding="utf-8"))["sample_id"] == "s1"
+  assert _samples() == original_samples
 
 
 def test_batch_run_reports_renderer_failure(tmp_path) -> None:

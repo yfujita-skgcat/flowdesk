@@ -179,3 +179,24 @@ def test_main_window_exposes_sample_sheet_and_batch_plot_actions(qapp) -> None:
   finally:
     window.close()
     window.deleteLater()
+
+
+def test_gui_batch_plot_action_delegates_to_cli_core_runner(qapp, monkeypatch, tmp_path) -> None:
+  window = MainWindow()
+  calls: list[tuple[str, str, str]] = []
+  window._project_path = tmp_path / "project.flowdesk"
+  window._batch_plot_exports = [{"id": "export"}]
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.QFileDialog.getExistingDirectory",
+    lambda *_args: str(tmp_path / "plots"),
+  )
+  monkeypatch.setattr(
+    "flowdesk_cli.batch_plot.batch_plot_command",
+    lambda project, export_id, output: calls.append((project, export_id, output)) or 0,
+  )
+  try:
+    window._on_batch_plot_export()
+    assert calls == [(str(window._project_path), "export", str(tmp_path / "plots"))]
+  finally:
+    window.close()
+    window.deleteLater()

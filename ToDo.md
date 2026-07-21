@@ -668,9 +668,9 @@ Accessibility:
 #### Increment 2: Saved batch plot export
 
 - [x] `BatchPlotExportSpec`を保存可能なdisplay/export definitionとして定義する。対象sample（全件、Group、明示ID）、`PlotViewSpec`、output format/size/template、overwrite policy、missing/incompatible policy、metadata sidecarをstable IDで保持する。
-- [ ] GUI-independent export planner/runnerを追加し、各sampleについて既存のcompatibility resolver、full-resolution pipeline report、resolved overlay/presentation、headless rendererを同じ定義で呼ぶ。Qt widgetのscreen captureや表示downsampleを出力根拠にしない。
-- [ ] CLIとGUIから同じbatch runnerを呼び、PNGを先に、既存rendererが対応するSVG/PDFを追加する。sample titleを安全なfilename slugへ変換し、sample IDを衝突回避に残し、manifest/sidecarへresolved source/style/analysis revision/diagnosticを記録する。
-- [ ] empty population、missing file、unresolved/incompatible overlay、renderer failure、既存file collisionをsample別structured resultとして報告し、partial successを明示する。required outputの欠落やblank imageを成功扱いにしない。
+- [x] GUI-independent export planner/runnerを追加し、各sampleについて既存のcompatibility resolver、full-resolution pipeline report、resolved overlay/presentation、headless rendererを同じ定義で呼ぶ。Qt widgetのscreen captureや表示downsampleを出力根拠にしない。
+- [x] CLIとGUIから同じbatch runnerを呼び、PNGを先に、既存rendererが対応するSVG/PDFを追加する。sample titleを安全なfilename slugへ変換し、sample IDを衝突回避に残し、manifest/sidecarへresolved source/style/analysis revision/diagnosticを記録する。
+- [x] empty population、missing file、unresolved/incompatible overlay、renderer failure、既存file collisionをsample別structured resultとして報告し、partial successを明示する。required outputの欠落やblank imageを成功扱いにしない。
 
 #### Increment 3: Results statistic management
 
@@ -683,11 +683,11 @@ Accessibility:
 
 - [x] Sample Sheetで複数sampleのタイトルを表形式で編集・貼付け・保存/復元でき、FCS raw metadata、sample ID、path、eventsが不変である。
 - [x] タイトル未指定、重複、空欄、CSV import validation、filter/sort、undo/redoが決定的に動作する。
-- [ ] 同じ`BatchPlotExportSpec`によるGUI起点とCLI起点の出力が、sample順、タイトル、plot definition、style provenance、analysis revisionにおいて一致する。
-- [ ] 全対象sampleのPNGが出力され、collision、missing/incompatible source、renderer error、partial failureがstructured reportとsidecarに残る。
-- [ ] バッチ画像exportの有無・表示downsample・style変更がraw events、membership、count、frequency、statisticsを変更しない。
+- [x] 同じ`BatchPlotExportSpec`によるGUI起点とCLI起点の出力が、sample順、タイトル、plot definition、style provenance、analysis revisionにおいて一致する。
+- [x] 全対象sampleのPNGが出力され、collision、missing/incompatible source、renderer error、partial failureがstructured reportとsidecarに残る。
+- [x] バッチ画像exportの有無・表示downsample・style変更がraw events、membership、count、frequency、statisticsを変更しない。
 - [x] Resultsからmean/medianなどのStatisticSpecを追加・編集でき、known values、undefined status、unit、revisionがheadless report/CLI exportと一致する。
-- [ ] GUIに科学計算または独自plot export定義を複製せず、core/headless runnerをGUIなしで実行できる。
+- [x] GUIに科学計算または独自plot export定義を複製せず、core/headless runnerをGUIなしで実行できる。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 
