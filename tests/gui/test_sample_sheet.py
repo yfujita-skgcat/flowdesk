@@ -70,3 +70,17 @@ def test_sample_sheet_csv_preview_validates_sample_ids(qapp) -> None:
   with pytest.raises(ValueError, match="unknown samples"):
     dialog.import_csv_text("sample_id,Condition\ns2,bad\n")
   dialog.reject()
+
+
+def test_sample_sheet_filter_is_case_insensitive_and_non_destructive(qapp) -> None:
+  dialog = SampleSheetDialog(
+    [
+      {"id": "s1", "name": "Control", "path": "/tmp/control.fcs"},
+      {"id": "s2", "name": "Treated", "path": "/tmp/treated.fcs"},
+    ], [],
+  )
+  dialog._filter_edit.setText("treated")
+  assert dialog._proxy.rowCount() == 1
+  assert dialog._proxy.data(dialog._proxy.index(0, 0)) == "s2"
+  assert len(dialog.annotations()) == 0
+  dialog.reject()

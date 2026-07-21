@@ -84,6 +84,7 @@ class SampleBrowser(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._samples: list[_SampleInfo] = []
+        self._display_names: dict[str, str] = {}
         self._selected_index: int = -1
         self._known_paths: set[Path] = set()
         self._manual_overlay_sample_ids: set[str] = set()
@@ -147,6 +148,14 @@ class SampleBrowser(QWidget):
     def samples(self) -> list[_SampleInfo]:
         """Return all samples currently included in the session."""
         return list(self._samples)
+
+    def set_display_names(self, names: dict[str, str]) -> None:
+        """Apply display-only sample titles while retaining immutable sample names."""
+        normalized = dict(names)
+        if normalized == self._display_names:
+            return
+        self._display_names = normalized
+        self._rebuild_sample_list()
 
     def clear_samples(self) -> None:
         """Remove all samples without emitting per-sample removal callbacks."""
@@ -463,8 +472,9 @@ class SampleBrowser(QWidget):
         for sample in self._samples:
             item = QListWidgetItem()
             item.setData(Qt.UserRole, sample.id)
+            display_name = self._display_names.get(sample.id, sample.name)
             item.setToolTip(
-                f"{sample.name}\n{sample.path}\n"
+                f"{display_name} ({sample.name})\n{sample.path}\n"
                 f"{sample.info.event_count} events — {sample.status}"
             )
             self._list_widget.addItem(item)
@@ -503,7 +513,7 @@ class SampleBrowser(QWidget):
             # event count, path, and full status remain available in the
             # item's tooltip (and are intentionally not part of analysis
             # state).
-            name = QLabel(f"[{labels.get(sample.status, '!')}] {sample.name}")
+            name = QLabel(f"[{labels.get(sample.status, '!')}] {display_name}")
             name.setObjectName(f"sampleName_{sample.id}")
             name.setToolTip(item.toolTip())
             name.setWordWrap(False)

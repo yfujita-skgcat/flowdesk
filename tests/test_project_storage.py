@@ -2249,3 +2249,19 @@ class TestNewerSchemaRejection:
     backup_path = bundle / "backups" / "manifest.pre-migration-1.4.0.json"
     assert json.loads(backup_path.read_text(encoding="utf-8")) == legacy
     assert load_project(bundle)["project_version"] == CURRENT_PROJECT_VERSION
+
+
+def test_sample_title_annotation_round_trip_is_non_destructive(tmp_path: Path) -> None:
+  bundle = tmp_path / "titles.flowdesk"
+  manifest = {
+    **MINIMAL_MANIFEST,
+    "samples": [{"id": "s1", "name": "Original", "path": "sample.fcs"}],
+    "annotations": [{
+      "sample_id": "s1", "keyword": "sample_title",
+      "value": "Treatment A", "source": "workspace",
+    }],
+  }
+  save_project(bundle, manifest)
+  loaded = load_project(bundle)
+  assert loaded["annotations"][0]["value"] == "Treatment A"
+  assert loaded["samples"][0]["name"] == "Original"

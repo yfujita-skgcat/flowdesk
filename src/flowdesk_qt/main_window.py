@@ -2314,6 +2314,7 @@ class MainWindow(QMainWindow):
             (item.id, resolve_sample_title(item.id, item.name, item.path, annotations))
             for item in self._sample_browser.samples()
         ]
+        self._sample_browser.set_display_names(dict(rows))
         self._workspace_tree.set_samples(rows)
         self._results_workspace.set_samples(rows)
 

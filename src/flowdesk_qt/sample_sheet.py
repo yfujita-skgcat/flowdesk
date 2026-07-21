@@ -7,8 +7,19 @@ import io
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QTableView, QVBoxLayout
+from PySide6.QtCore import (
+  QAbstractTableModel,
+  QModelIndex,
+  QSortFilterProxyModel,
+  Qt,
+)
+from PySide6.QtWidgets import (
+  QDialog,
+  QDialogButtonBox,
+  QLineEdit,
+  QTableView,
+  QVBoxLayout,
+)
 
 from flowdesk_core.annotations import (
   parse_annotation_csv,
@@ -211,9 +222,16 @@ class SampleSheetDialog(QDialog):
     self.setWindowTitle("Sample Sheet")
     self.resize(900, 480)
     self._model = SampleSheetModel(samples, annotations, self)
+    self._filter_edit = QLineEdit()
+    self._filter_edit.setObjectName("sampleSheetFilterEdit")
+    self._filter_edit.setPlaceholderText("Filter samples...")
     self._table = QTableView()
     self._table.setObjectName("sampleSheetTable")
-    self._table.setModel(self._model)
+    self._proxy = QSortFilterProxyModel(self)
+    self._proxy.setSourceModel(self._model)
+    self._proxy.setFilterKeyColumn(-1)
+    self._proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+    self._table.setModel(self._proxy)
     self._table.setAlternatingRowColors(True)
     self._table.setSortingEnabled(True)
     self._table.horizontalHeader().setSortIndicatorShown(True)
@@ -224,8 +242,10 @@ class SampleSheetDialog(QDialog):
     buttons.accepted.connect(self.accept)
     buttons.rejected.connect(self.reject)
     layout = QVBoxLayout(self)
+    layout.addWidget(self._filter_edit)
     layout.addWidget(self._table)
     layout.addWidget(buttons)
+    self._filter_edit.textChanged.connect(self._proxy.setFilterFixedString)
 
   def annotations(self) -> list[dict[str, Any]]:
     return self._model.annotations()
