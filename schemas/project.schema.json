@@ -55,6 +55,10 @@
     "default_gating_strategy_id": { "type": "string" },
     "default_compensation_matrix_id": { "type": ["string", "null"] },
     "export_settings": { "type": "array", "items": { "type": "object" } },
+    "batch_plot_exports": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/batchPlotExport" }
+    },
     "execution_profiles": { "type": "array", "items": { "type": "object" } },
     "last_execution_report_path": { "type": ["string", "null"] },
     "sample_path_resolution_policy": { "type": "string" },
@@ -107,6 +111,27 @@
     }
   },
   "$defs": {
+    "batchPlotExport": {
+      "type": "object",
+      "required": ["id", "name", "target", "plot_view_id", "formats"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "target": { "enum": ["all", "explicit", "group"] },
+        "sample_ids": { "type": "array", "items": { "type": "string" } },
+        "group_id": { "type": ["string", "null"] },
+        "plot_view_id": { "type": "string", "minLength": 1 },
+        "formats": {
+          "type": "array", "items": { "enum": ["svg", "png", "pdf"] }, "minItems": 1
+        },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "filename_template": { "type": "string", "minLength": 1 },
+        "collision_policy": { "enum": ["fail", "replace", "suffix"] },
+        "strict": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "overlaySource": {
       "type": "object",
       "required": ["source_id", "display_name", "x_parameter_id", "order"],

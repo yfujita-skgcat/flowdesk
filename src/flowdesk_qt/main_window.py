@@ -265,6 +265,7 @@ class MainWindow(QMainWindow):
         self._compensation_calculations: list[dict[str, Any]] = []
         self._transforms: list[dict[str, Any]] = []
         self._statistics: list[dict[str, Any]] = []
+        self._batch_plot_exports: list[dict[str, Any]] = []
         self._plot_views: list[dict[str, Any]] = []
         self._overlays: list[dict[str, Any]] = []
         self._overlay_undo_stack = UndoStack(
@@ -1858,6 +1859,7 @@ class MainWindow(QMainWindow):
                 self._compensation_calculations
             ),
             "statistics": deepcopy(self._statistics),
+            "batch_plot_exports": deepcopy(self._batch_plot_exports),
             "plot_views": plot_views,
             "overlays": deepcopy(self._overlays),
             "backgating_specs": deepcopy(self._backgating_specs),
@@ -2135,6 +2137,7 @@ class MainWindow(QMainWindow):
             manifest.get("compensation_calculations", [])
         )
         self._statistics = deepcopy(manifest.get("statistics", []))
+        self._batch_plot_exports = deepcopy(manifest.get("batch_plot_exports", []))
         self._plot_views = deepcopy(manifest.get("plot_views", []))
         self._overlays = deepcopy(manifest.get("overlays", []))
         self._overlay_undo_stack = UndoStack(

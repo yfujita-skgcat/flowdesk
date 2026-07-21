@@ -22,6 +22,9 @@ MagneticGateAlgorithm = Literal["largest_gap_range"]
 TetheredGateAlgorithm = Literal["translated_rectangle"]
 CloneConflictPolicy = Literal["leader_wins", "reject_conflict"]
 PlotType = Literal["dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"]
+BatchPlotTarget = Literal["all", "explicit", "group"]
+BatchPlotFormat = Literal["svg", "png", "pdf"]
+BatchPlotCollisionPolicy = Literal["fail", "replace", "suffix"]
 InteractionMode = Literal["pan", "select", "gate"]
 OverlayMode = Literal["manual_only", "manual_plus_comparison", "comparison_only"]
 ComparisonRole = Literal[
@@ -94,6 +97,40 @@ class SampleSpec:
   path: str
   group_id: str | None = None
   metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BatchPlotExportSpec:
+  """Persisted, deterministic selection and naming contract for plot batches."""
+
+  id: str
+  name: str
+  target: BatchPlotTarget = "all"
+  sample_ids: tuple[str, ...] = field(default_factory=tuple)
+  group_id: str | None = None
+  plot_view_id: str = "main-view"
+  formats: tuple[BatchPlotFormat, ...] = ("svg",)
+  width: int = 800
+  height: int = 600
+  filename_template: str = "{sample_title}_{sample_id}_{plot_id}"
+  collision_policy: BatchPlotCollisionPolicy = "fail"
+  strict: bool = True
+
+  def __post_init__(self) -> None:
+    if not self.id or not self.name or not self.plot_view_id:
+      raise ValueError("batch plot export id, name, and plot_view_id are required")
+    if self.target not in {"all", "explicit", "group"}:
+      raise ValueError(f"invalid batch plot target {self.target!r}")
+    if self.target == "explicit" and not self.sample_ids:
+      raise ValueError("explicit batch plot target requires sample_ids")
+    if self.target == "group" and not self.group_id:
+      raise ValueError("group batch plot target requires group_id")
+    if not self.formats or any(value not in {"svg", "png", "pdf"} for value in self.formats):
+      raise ValueError("batch plot formats must contain svg, png, or pdf")
+    if self.width <= 0 or self.height <= 0:
+      raise ValueError("batch plot dimensions must be positive")
+    if self.collision_policy not in {"fail", "replace", "suffix"}:
+      raise ValueError(f"invalid collision policy {self.collision_policy!r}")
 
 
 AnnotationValue = str | int | float | bool | None

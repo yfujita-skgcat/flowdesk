@@ -667,7 +667,7 @@ Accessibility:
 
 #### Increment 2: Saved batch plot export
 
-- [ ] `BatchPlotExportSpec`を保存可能なdisplay/export definitionとして定義する。対象sample（全件、Group、明示ID）、`PlotViewSpec`、output format/size/template、overwrite policy、missing/incompatible policy、metadata sidecarをstable IDで保持する。
+- [x] `BatchPlotExportSpec`を保存可能なdisplay/export definitionとして定義する。対象sample（全件、Group、明示ID）、`PlotViewSpec`、output format/size/template、overwrite policy、missing/incompatible policy、metadata sidecarをstable IDで保持する。
 - [ ] GUI-independent export planner/runnerを追加し、各sampleについて既存のcompatibility resolver、full-resolution pipeline report、resolved overlay/presentation、headless rendererを同じ定義で呼ぶ。Qt widgetのscreen captureや表示downsampleを出力根拠にしない。
 - [ ] CLIとGUIから同じbatch runnerを呼び、PNGを先に、既存rendererが対応するSVG/PDFを追加する。sample titleを安全なfilename slugへ変換し、sample IDを衝突回避に残し、manifest/sidecarへresolved source/style/analysis revision/diagnosticを記録する。
 - [ ] empty population、missing file、unresolved/incompatible overlay、renderer failure、既存file collisionをsample別structured resultとして報告し、partial successを明示する。required outputの欠落やblank imageを成功扱いにしない。
