@@ -40,3 +40,22 @@ def test_sample_sheet_dialog_cancel_keeps_original_annotations(qapp) -> None:
   dialog._model.setData(dialog._model.index(0, 3), "After")
   assert original[0]["value"] == "Before"
   dialog.reject()
+
+
+def test_sample_sheet_paste_fill_sort_and_undo(qapp) -> None:
+  model = SampleSheetModel(
+    [
+      {"id": "s1", "name": "B", "path": "/tmp/b.fcs"},
+      {"id": "s2", "name": "A", "path": "/tmp/a.fcs"},
+    ], [],
+  )
+  model.paste_tsv("Sample ID\tTitle\ns1\tOne\ns2\tTwo\n")
+  assert model.data(model.index(0, 3), Qt.ItemDataRole.DisplayRole) == "One"
+  model.fill_title_series("Rep ", 1)
+  assert model.data(model.index(1, 3), Qt.ItemDataRole.DisplayRole) == "Rep 2"
+  assert model.undo()
+  assert model.data(model.index(1, 3), Qt.ItemDataRole.DisplayRole) == "Two"
+  model.sort(2, Qt.SortOrder.AscendingOrder)
+  assert model.data(model.index(0, 0), Qt.ItemDataRole.DisplayRole) == "s2"
+  with pytest.raises(ValueError, match="unknown sample"):
+    model.paste_tsv("s3\tBad\n")

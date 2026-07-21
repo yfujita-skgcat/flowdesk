@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -29,6 +31,8 @@ class SampleSheetModel(QAbstractTableModel):
     super().__init__(parent)
     self._samples = tuple(dict(sample) for sample in samples)
     self._annotations = _to_specs(annotations)
+    self._undo: list[tuple[AnnotationSpec, ...]] = []
+    self._redo: list[tuple[AnnotationSpec, ...]] = []
 
   def rowCount(self, parent: QModelIndex | None = None) -> int:
     return 0 if parent is not None and parent.isValid() else len(self._samples)
@@ -79,11 +83,95 @@ class SampleSheetModel(QAbstractTableModel):
     ):
       return False
     sample_id = str(self._samples[index.row()].get("id", ""))
+    self._remember()
     self._annotations = set_sample_title(
       self._annotations, sample_id, str(value) if value is not None else ""
     )
     self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole])
     return True
+
+  def paste_tsv(self, text: str, start_row: int = 0) -> None:
+    """Paste a two-column Excel/TSV selection into the title column.
+
+    The first column must be a known stable sample ID and the second column is
+    the title.  Rows are validated before any mutation so a malformed paste
+    cannot shift or partially overwrite later rows.
+    """
+    rows = list(csv.reader(io.StringIO(text), delimiter="\t"))
+    if not rows:
+      return
+    if len(rows[0]) >= 2 and rows[0][0].strip().lower() in {"sample id", "sample_id"}:
+      rows = rows[1:]
+    known = {str(sample.get("id", "")): index for index, sample in enumerate(self._samples)}
+    updates: list[tuple[str, str]] = []
+    for row_index, row in enumerate(rows, start=1):
+      if len(row) < 2 or not row[0].strip():
+        raise ValueError(f"paste row {row_index} must contain sample ID and title")
+      sample_id = row[0].strip()
+      if sample_id not in known:
+        raise ValueError(f"paste row {row_index} references unknown sample {sample_id!r}")
+      updates.append((sample_id, row[1]))
+    if len({sample_id for sample_id, _title in updates}) != len(updates):
+      raise ValueError("paste contains duplicate sample IDs")
+    self._remember()
+    for sample_id, title in updates:
+      self._annotations = set_sample_title(self._annotations, sample_id, title)
+    self.layoutChanged.emit()
+
+  def fill_title_series(self, prefix: str, start: int, step: int = 1) -> None:
+    """Set deterministic titles such as ``prefix 1``, ``prefix 2``."""
+    self._remember()
+    for index, sample in enumerate(self._samples):
+      self._annotations = set_sample_title(
+        self._annotations,
+        str(sample.get("id", "")),
+        f"{prefix}{start + index * step}",
+      )
+    self.layoutChanged.emit()
+
+  def sort(self, column: int, order=Qt.SortOrder.AscendingOrder) -> None:
+    """Sort rows by display value while retaining stable IDs and annotations."""
+    if column < 0 or column >= len(self.HEADERS):
+      return
+    reverse = order == Qt.SortOrder.DescendingOrder
+    self.layoutAboutToBeChanged.emit()
+    self._samples = tuple(sorted(
+      self._samples,
+      key=lambda sample: str(self.data_for_sample(sample, column)).casefold(),
+      reverse=reverse,
+    ))
+    self.layoutChanged.emit()
+
+  def undo(self) -> bool:
+    if not self._undo:
+      return False
+    self._redo.append(self._annotations)
+    self._annotations = self._undo.pop()
+    self.layoutChanged.emit()
+    return True
+
+  def redo(self) -> bool:
+    if not self._redo:
+      return False
+    self._undo.append(self._annotations)
+    self._annotations = self._redo.pop()
+    self.layoutChanged.emit()
+    return True
+
+  def data_for_sample(self, sample: dict[str, Any], column: int) -> str:
+    return (
+      str(sample.get("id", "")),
+      str(sample.get("path", "")),
+      str(sample.get("name", "")),
+      resolve_sample_title(
+        str(sample.get("id", "")), str(sample.get("name", "")),
+        str(sample.get("path", "")), self._annotations,
+      ),
+    )[column]
+
+  def _remember(self) -> None:
+    self._undo.append(self._annotations)
+    self._redo.clear()
 
   def annotations(self) -> list[dict[str, Any]]:
     return [
@@ -115,7 +203,8 @@ class SampleSheetDialog(QDialog):
     self._table.setObjectName("sampleSheetTable")
     self._table.setModel(self._model)
     self._table.setAlternatingRowColors(True)
-    self._table.setSortingEnabled(False)
+    self._table.setSortingEnabled(True)
+    self._table.horizontalHeader().setSortIndicatorShown(True)
     buttons = QDialogButtonBox(
       QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
     )
@@ -128,6 +217,18 @@ class SampleSheetDialog(QDialog):
 
   def annotations(self) -> list[dict[str, Any]]:
     return self._model.annotations()
+
+  def paste_clipboard_text(self, text: str) -> None:
+    self._model.paste_tsv(text)
+
+  def fill_title_series(self, prefix: str, start: int, step: int = 1) -> None:
+    self._model.fill_title_series(prefix, start, step)
+
+  def undo(self) -> bool:
+    return self._model.undo()
+
+  def redo(self) -> bool:
+    return self._model.redo()
 
 
 def _to_specs(
