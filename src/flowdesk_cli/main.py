@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from flowdesk_cli.batch_gate import batch_gate_command
+from flowdesk_cli.batch_plot import batch_plot_command
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
 
@@ -78,6 +79,13 @@ def main() -> int:
     help="Execution profile id to use (default: default).",
   )
 
+  plot_parser = subparsers.add_parser(
+    "batch-plot", help="Export plots for every sample from a saved definition."
+  )
+  plot_parser.add_argument("project", help="Path to the .flowdesk project bundle.")
+  plot_parser.add_argument("--export-id", required=True, help="Batch plot export definition ID.")
+  plot_parser.add_argument("--output-dir", required=True, help="Output directory.")
+
   args = parser.parse_args()
 
   if args.command == "run":
@@ -90,6 +98,8 @@ def main() -> int:
     return batch_gate_command(
       args.project, args.fcs_files, args.output, args.execution_profile
     )
+  if args.command == "batch-plot":
+    return batch_plot_command(args.project, args.export_id, args.output_dir)
 
   parser.print_help()
   return 0

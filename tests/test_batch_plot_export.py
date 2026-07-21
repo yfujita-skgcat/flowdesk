@@ -6,6 +6,7 @@ import pytest
 
 from flowdesk_core.batch_plot_export import (
   BatchPlotExportError,
+  batch_plot_export_spec_from_mapping,
   plan_batch_plot_export,
   run_batch_plot_export,
 )
@@ -88,3 +89,12 @@ def test_batch_definition_project_round_trip(tmp_path) -> None:
   path = tmp_path / "project.flowdesk"
   save_project(path, manifest)
   assert load_project(path)["batch_plot_exports"][0]["id"] == "export"
+
+
+def test_batch_spec_mapping_normalizes_json_lists() -> None:
+  spec = batch_plot_export_spec_from_mapping({
+    "id": "e", "name": "E", "formats": ["svg"], "sample_ids": ["s1"],
+    "target": "explicit",
+  })
+  assert spec.formats == ("svg",)
+  assert spec.sample_ids == ("s1",)
