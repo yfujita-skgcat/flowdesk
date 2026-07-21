@@ -8,6 +8,7 @@ from flowdesk_core.models import PlotPresentationSpec, PlotViewRegistry, PlotVie
 from flowdesk_core.plot_export import (
   PlotExportError,
   prepare_plot_export,
+  write_plot_pdf,
   write_plot_png,
   write_plot_svg,
 )
@@ -100,6 +101,20 @@ def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   path = tmp_path / "plot.png"
   write_plot_png(path, prepared, layers={"s1": ((0.2, 0.8), (0.2, 0.8))})
   assert path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+  assert path.stat().st_size > 100
+
+
+def test_pdf_export_is_nonblank_and_has_metadata(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  path = tmp_path / "plot.pdf"
+  write_plot_pdf(path, prepared, layers={"s1": ((0.2,), (0.8,))})
+  assert path.read_bytes().startswith(b"%PDF-1.4")
   assert path.stat().st_size > 100
 
 

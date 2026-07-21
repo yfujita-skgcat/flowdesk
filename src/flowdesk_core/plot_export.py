@@ -242,6 +242,71 @@ def write_plot_png(
   )
 
 
+def write_plot_pdf(
+  path: str | Path,
+  prepared: PreparedPlotExport,
+  presentation: PlotPresentationSpec | None = None,
+  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  *,
+  width: int = 800,
+  height: int = 600,
+) -> None:
+  """Write a minimal vector PDF using the same prepared layers and styles."""
+  if width < 1 or height < 1 or not prepared.source_order:
+    raise PlotExportError("PDF dimensions and visible sources are required")
+  selected = presentation or prepared.resolved_presentation.presentation
+  layers = layers or {}
+  if any(source_id not in layers for source_id in prepared.source_order):
+    raise PlotExportError("missing prepared layer data")
+  background = _rgb(selected.background_color)
+  commands = [
+    f"{background[0] / 255:g} {background[1] / 255:g} {background[2] / 255:g} rg",
+    f"0 0 {width} {height} re f",
+  ]
+  style_by_id = {style.source_id: style for style in selected.source_styles}
+  for source_id in prepared.source_order:
+    style = style_by_id.get(source_id)
+    color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
+    commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg")
+    for x_value, y_value in zip(*layers[source_id], strict=False):
+      x = float(x_value) * width
+      y = float(y_value) * height
+      commands.append(f"{x:g} {y:g} 2 2 re f")
+  stream = ("\n".join(commands) + "\n").encode("ascii")
+  objects = [
+    b"<< /Type /Catalog /Pages 2 0 R >>",
+    b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    (
+      f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] "
+      "/Resources << >> /Contents 4 0 R >>"
+    ).encode("ascii"),
+    b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n"
+    + stream + b"endstream",
+  ]
+  pdf = bytearray(b"%PDF-1.4\n")
+  offsets = [0]
+  for index, obj in enumerate(objects, start=1):
+    offsets.append(len(pdf))
+    pdf.extend(f"{index} 0 obj\n".encode("ascii"))
+    pdf.extend(obj)
+    pdf.extend(b"\nendobj\n")
+  xref = len(pdf)
+  pdf.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii"))
+  pdf.extend(b"".join(f"{offset:010d} 00000 n \n".encode("ascii") for offset in offsets[1:]))
+  pdf.extend(
+    (
+      f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+      f"startxref\n{xref}\n%%EOF\n"
+    ).encode("ascii")
+  )
+  out_path = Path(path)
+  out_path.parent.mkdir(parents=True, exist_ok=True)
+  out_path.write_bytes(bytes(pdf))
+  out_path.with_suffix(out_path.suffix + ".json").write_text(
+    json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+  )
+
+
 def _rgb(value: str) -> tuple[int, int, int]:
   if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
     raise PlotExportError(f"invalid RGB color {value!r}")
