@@ -11,6 +11,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QTableView, QVBoxLayout
 
 from flowdesk_core.annotations import (
+  parse_annotation_csv,
   resolve_sample_title,
   set_sample_title,
 )
@@ -129,6 +130,17 @@ class SampleSheetModel(QAbstractTableModel):
       )
     self.layoutChanged.emit()
 
+  def import_csv_text(self, text: str) -> None:
+    """Validate and merge CSV annotations before changing the table state."""
+    imported = parse_annotation_csv(text)
+    known = {str(sample.get("id", "")) for sample in self._samples}
+    unknown = sorted({item.sample_id for item in imported} - known)
+    if unknown:
+      raise ValueError(f"CSV references unknown samples: {unknown!r}")
+    self._remember()
+    self._annotations = self._annotations + tuple(imported)
+    self.layoutChanged.emit()
+
   def sort(self, column: int, order=Qt.SortOrder.AscendingOrder) -> None:
     """Sort rows by display value while retaining stable IDs and annotations."""
     if column < 0 or column >= len(self.HEADERS):
@@ -223,6 +235,9 @@ class SampleSheetDialog(QDialog):
 
   def fill_title_series(self, prefix: str, start: int, step: int = 1) -> None:
     self._model.fill_title_series(prefix, start, step)
+
+  def import_csv_text(self, text: str) -> None:
+    self._model.import_csv_text(text)
 
   def undo(self) -> bool:
     return self._model.undo()

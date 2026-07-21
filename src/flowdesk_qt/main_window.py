@@ -987,12 +987,7 @@ class MainWindow(QMainWindow):
         self._group_panel.set_sample_ids(
             [item.id for item in self._sample_browser.samples()]
         )
-        self._workspace_tree.set_samples(
-            [(item.id, item.name) for item in self._sample_browser.samples()]
-        )
-        self._results_workspace.set_samples(
-            [(item.id, item.name) for item in self._sample_browser.samples()]
-        )
+        self._refresh_sample_display_names()
         self._results_workspace.set_population_hierarchy(
             self._population_parent_map(), self._population_name_map()
         )

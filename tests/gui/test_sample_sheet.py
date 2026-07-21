@@ -59,3 +59,14 @@ def test_sample_sheet_paste_fill_sort_and_undo(qapp) -> None:
   assert model.data(model.index(0, 0), Qt.ItemDataRole.DisplayRole) == "s2"
   with pytest.raises(ValueError, match="unknown sample"):
     model.paste_tsv("s3\tBad\n")
+
+
+def test_sample_sheet_csv_preview_validates_sample_ids(qapp) -> None:
+  dialog = SampleSheetDialog(
+    [{"id": "s1", "name": "Sample", "path": "/tmp/sample.fcs"}], [],
+  )
+  dialog.import_csv_text("sample_id,Condition\ns1,treated\n")
+  assert any(item["keyword"] == "Condition" for item in dialog.annotations())
+  with pytest.raises(ValueError, match="unknown samples"):
+    dialog.import_csv_text("sample_id,Condition\ns2,bad\n")
+  dialog.reject()
