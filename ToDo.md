@@ -681,8 +681,8 @@ Accessibility:
 
 #### Phase B7.3 必須受け入れtest
 
-- [ ] Sample Sheetで複数sampleのタイトルを表形式で編集・貼付け・保存/復元でき、FCS raw metadata、sample ID、path、eventsが不変である。
-- [ ] タイトル未指定、重複、空欄、CSV import validation、filter/sort、undo/redoが決定的に動作する。
+- [x] Sample Sheetで複数sampleのタイトルを表形式で編集・貼付け・保存/復元でき、FCS raw metadata、sample ID、path、eventsが不変である。
+- [x] タイトル未指定、重複、空欄、CSV import validation、filter/sort、undo/redoが決定的に動作する。
 - [ ] 同じ`BatchPlotExportSpec`によるGUI起点とCLI起点の出力が、sample順、タイトル、plot definition、style provenance、analysis revisionにおいて一致する。
 - [ ] 全対象sampleのPNGが出力され、collision、missing/incompatible source、renderer error、partial failureがstructured reportとsidecarに残る。
 - [ ] バッチ画像exportの有無・表示downsample・style変更がraw events、membership、count、frequency、statisticsを変更しない。

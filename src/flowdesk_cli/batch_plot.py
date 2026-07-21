@@ -13,7 +13,7 @@ from flowdesk_core.batch_plot_export import (
   run_batch_plot_export,
 )
 from flowdesk_core.fcs_io import read_fcs_sample
-from flowdesk_core.plot_export import prepare_plot_export, write_plot_svg
+from flowdesk_core.plot_export import prepare_plot_export, write_plot_png, write_plot_svg
 from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_storage.project import load_project, resolve_sample_paths
 
@@ -57,10 +57,13 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         (source,), (OverlaySourceResolution(sample_id, "compatible"),),
         view_presentation=view.get("presentation"),
       )
-      write_plot_svg(
-        path, prepared,
-        layers={sample_id: (tuple(x_values), tuple(y_values))},
-      )
+      layers = {sample_id: (tuple(x_values), tuple(y_values))}
+      if path.suffix.lower() == ".png":
+        write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height)
+      elif path.suffix.lower() == ".svg":
+        write_plot_svg(path, prepared, layers=layers)
+      else:
+        raise ValueError(f"CLI renderer does not support {path.suffix!r}")
 
     report = run_batch_plot_export(
       spec, samples, output_dir, render, annotations=annotations,

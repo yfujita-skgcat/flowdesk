@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import struct
+import zlib
 from dataclasses import asdict, dataclass
 from html import escape
 from pathlib import Path
@@ -191,4 +193,66 @@ def write_plot_svg(
   out_path.with_suffix(out_path.suffix + ".json").write_text(
     json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
+  )
+
+
+def write_plot_png(
+  path: str | Path,
+  prepared: PreparedPlotExport,
+  presentation: PlotPresentationSpec | None = None,
+  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  *,
+  width: int = 800,
+  height: int = 600,
+) -> None:
+  """Write a dependency-free RGB PNG from the same prepared display layers."""
+  if width < 1 or height < 1:
+    raise PlotExportError("PNG dimensions must be positive")
+  selected = presentation or prepared.resolved_presentation.presentation
+  layers = layers or {}
+  if not prepared.source_order:
+    raise PlotExportError("cannot export a plot with no visible source")
+  if any(source_id not in layers for source_id in prepared.source_order):
+    raise PlotExportError("missing prepared layer data")
+  background = _rgb(selected.background_color)
+  pixels = bytearray(background * (width * height))
+  style_by_id = {style.source_id: style for style in selected.source_styles}
+  for source_id in prepared.source_order:
+    style = style_by_id.get(source_id)
+    color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
+    for x_value, y_value in zip(*layers[source_id], strict=False):
+      x = min(width - 1, max(0, int(float(x_value) * (width - 1))))
+      y = min(height - 1, max(0, int((1.0 - float(y_value)) * (height - 1))))
+      for dy in range(-2, 3):
+        for dx in range(-2, 3):
+          px, py = x + dx, y + dy
+          if 0 <= px < width and 0 <= py < height:
+            offset = (py * width + px) * 3
+            pixels[offset:offset + 3] = bytes(color)
+  raw = b"".join(b"\x00" + pixels[row * width * 3:(row + 1) * width * 3]
+                  for row in range(height))
+  png = _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+  png += _png_chunk(b"IDAT", zlib.compress(raw, 9))
+  png += _png_chunk(b"IEND", b"")
+  out_path = Path(path)
+  out_path.parent.mkdir(parents=True, exist_ok=True)
+  out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + png)
+  out_path.with_suffix(out_path.suffix + ".json").write_text(
+    json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+  )
+
+
+def _rgb(value: str) -> tuple[int, int, int]:
+  if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
+    raise PlotExportError(f"invalid RGB color {value!r}")
+  try:
+    return tuple(int(value[index:index + 2], 16) for index in (1, 3, 5))  # type: ignore[return-value]
+  except ValueError as exc:
+    raise PlotExportError(f"invalid RGB color {value!r}") from exc
+
+
+def _png_chunk(kind: bytes, payload: bytes) -> bytes:
+  return (
+    struct.pack(">I", len(payload)) + kind + payload
+    + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
   )
