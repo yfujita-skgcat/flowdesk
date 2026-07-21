@@ -49,6 +49,7 @@ from flowdesk_core.transforms import (
     TransformError,
     TransformTick,
     apply_transform,
+    generate_log_ticks,
     generate_transform_ticks,
     validate_transform,
 )
@@ -61,6 +62,7 @@ AxisTransform = Literal["linear", "log10", "asinh"]
 InteractiveGateType = Literal["rectangle", "polygon"]
 InteractionMode = Literal["pan", "select", "gate"]
 RangeMode = Literal["robust_auto", "full_auto", "manual"]
+TickPolicy = Literal["auto", "decades", "one_two_five", "legacy_auto"]
 
 # ---------------------------------------------------------------------------
 # PlotWidget
@@ -103,6 +105,7 @@ class PlotWidget(QWidget):
         self._y_transform_spec: TransformSpec | None = None
         self._x_ticks: tuple[TransformTick, ...] = ()
         self._y_ticks: tuple[TransformTick, ...] = ()
+        self._tick_policy: TickPolicy = "auto"
         # Display style settings (display-only, never affects analysis).
         self._style: PlotStyleSettings = PlotStyleSettings()
         self._export_metadata: dict[str, Any] | None = None
@@ -330,6 +333,22 @@ class PlotWidget(QWidget):
             return self._x_ticks
         return self._y_ticks
 
+    def tick_policy(self) -> TickPolicy:
+        return self._tick_policy
+
+    def set_tick_policy(self, policy: TickPolicy) -> None:
+        """Select readable log ticks or restore historical auto ticks."""
+        if policy not in {"auto", "decades", "one_two_five", "legacy_auto"}:
+            raise ValueError(f"unsupported tick policy: {policy!r}")
+        self._tick_policy = policy
+        if policy == "legacy_auto":
+            self._x_ticks = ()
+            self._y_ticks = ()
+            self._plot_item.getAxis("bottom").setTicks(None)
+            self._plot_item.getAxis("left").setTicks(None)
+        else:
+            self._refresh_ticks_for_current_view()
+
     def set_marginal_enabled(self, enabled: bool) -> None:
         """Enable or disable marginal histograms on X and Y axes."""
         self._marginal_enabled = enabled
@@ -448,6 +467,7 @@ class PlotWidget(QWidget):
             self._set_full_range_internal()
         else:
             self._auto_range()
+        self._refresh_ticks_for_current_view()
 
         # Update marginal histograms if enabled.
         self._update_marginal_histograms()
@@ -1164,36 +1184,66 @@ class PlotWidget(QWidget):
         display_x: NDArray[np.float64],
         display_y: NDArray[np.float64],
     ) -> None:
-        self._x_ticks = self._ticks_for_axis(self._x_transform_spec, display_x)
-        self._y_ticks = self._ticks_for_axis(self._y_transform_spec, display_y)
+        self._x_ticks = self._ticks_for_axis(self._x_transform_spec, display_x, "x")
+        self._y_ticks = self._ticks_for_axis(self._y_transform_spec, display_y, "y")
         for axis_name, ticks in (("bottom", self._x_ticks), ("left", self._y_ticks)):
             axis = self._plot_item.getAxis(axis_name)
             if ticks:
-                coordinates = [tick.coordinate for tick in ticks]
-                labels = [self._format_tick_label(tick.label) for tick in ticks]
-                labels = self._fit_tick_labels(axis_name, coordinates, labels, axis)
-                axis.setTicks([[
-                    (coordinate, label)
-                    for coordinate, label in zip(coordinates, labels, strict=True)
-                ]])
+                major = [tick for tick in ticks if tick.level == "major"]
+                minor = [tick for tick in ticks if tick.level == "minor"]
+                coordinates = [tick.coordinate for tick in major]
+                labels = self._fit_tick_labels(
+                    axis_name, coordinates,
+                    [self._format_tick_label(tick.label) for tick in major], axis,
+                )
+                levels = [[
+                    (tick.coordinate, label)
+                    for tick, label in zip(major, labels, strict=True)
+                ]]
+                if minor:
+                    levels.append([(tick.coordinate, "") for tick in minor])
+                axis.setTicks(levels)
             else:
                 axis.setTicks(None)
 
-    @staticmethod
     def _ticks_for_axis(
+        self,
         spec: TransformSpec | None,
         display_values: NDArray[np.float64],
+        axis_name: Literal["x", "y"],
     ) -> tuple[TransformTick, ...]:
-        if spec is None:
-            return ()
         finite = display_values[np.isfinite(display_values)]
         if len(finite) == 0:
             return ()
+        if self._tick_policy == "legacy_auto":
+            return ()
+        policy = "one_two_five" if self._tick_policy == "one_two_five" else self._tick_policy
+        if spec is None:
+            transform = self._x_transform if axis_name == "x" else self._y_transform
+            if transform != "log10":
+                return ()
+            return generate_log_ticks(float(finite.min()), float(finite.max()), policy)
         return generate_transform_ticks(
             spec,
             float(finite.min()),
             float(finite.max()),
+            policy,
         )
+
+    def _refresh_ticks_for_current_view(self) -> None:
+        if self._tick_policy == "legacy_auto":
+            return
+        view = self.view_range()
+        if view is None or self._cached_x is None or self._cached_y is None:
+            return
+        x_range, y_range = view
+        x_values = np.array(x_range, dtype=np.float64)
+        y_values = np.array(y_range, dtype=np.float64)
+        if self._x_transform_spec is None and self._x_transform == "log10":
+            x_values = np.power(10.0, x_values)
+        if self._y_transform_spec is None and self._y_transform == "log10":
+            y_values = np.power(10.0, y_values)
+        self._update_transform_ticks(x_values, y_values)
 
     @staticmethod
     def _format_tick_label(label: str) -> str:
@@ -1604,6 +1654,7 @@ class PlotWidget(QWidget):
             return
         self._range_mode = "manual"
         self._manual_view_range = current
+        self._refresh_ticks_for_current_view()
 
     def _full_range_for_axis(
         self,
@@ -1994,6 +2045,24 @@ class PlotWidget(QWidget):
             return action
 
         add_action("Plot Appearance...", "plotAppearance")
+
+        ticks_menu = menu.addMenu("Axis Ticks")
+        ticks_menu.setObjectName("plotAxisTicksMenu")
+        tick_choices = (
+            ("Auto (recommended)", "auto"),
+            ("Decades only", "decades"),
+            ("1–2–5 labels", "one_two_five"),
+            ("Legacy automatic", "legacy_auto"),
+        )
+        for label, policy in tick_choices:
+            action = ticks_menu.addAction(label)
+            action.setObjectName(f"plotAxisTicks{policy.title().replace('_', '')}")
+            action.setCheckable(True)
+            action.setChecked(self._tick_policy == policy)
+            action.triggered.connect(
+                lambda _checked=False, value=policy:
+                self.appearance_requested.emit(f"axisTicks:{value}")
+            )
 
         legend_menu = menu.addMenu("Legend")
         legend_menu.setObjectName("plotLegendMenu")

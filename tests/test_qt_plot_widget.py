@@ -1086,6 +1086,29 @@ def test_plot_widget_formats_exponent_ticks_and_applies_readable_tick_style() ->
     app.processEvents()
 
 
+def test_log_axis_tick_policy_can_switch_and_restore_legacy_auto() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    widget.set_axis_transforms("log10", "log10")
+    values = np.array([3e5, 5e5, 1e6, 2e6, 3e6], dtype=np.float64)
+    widget.plot_events(values, values, "FSC-A", "SSC-A")
+    assert widget.tick_policy() == "auto"
+    assert any(tick.event_value == 1e6 for tick in widget.axis_ticks("x"))
+    assert any(tick.level == "minor" for tick in widget.axis_ticks("x"))
+
+    widget.set_tick_policy("decades")
+    assert all(tick.level == "major" for tick in widget.axis_ticks("x"))
+    widget.set_tick_policy("legacy_auto")
+    assert widget.axis_ticks("x") == ()
+    menu = widget._build_context_menu()
+    assert menu.findChild(QMenu, "plotAxisTicksMenu") is not None
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
 def test_gui_created_logicle_rectangle_binds_ids_and_matches_headless() -> None:
   app = _app()
   window = MainWindow()

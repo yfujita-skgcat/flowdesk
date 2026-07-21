@@ -13,6 +13,7 @@ from flowdesk_core.transforms import (
   TransformError,
   apply_transform,
   apply_transform_to_column,
+  generate_log_ticks,
   generate_transform_ticks,
   inverse_transform,
   validate_transform,
@@ -666,6 +667,19 @@ def test_logicle_ticks_use_the_same_forward_and_inverse_definition() -> None:
   )
   assert by_value[0.0] == pytest.approx(expected[0], abs=1e-15)
   assert by_value[262144.0] == pytest.approx(expected[1], abs=1e-15)
+
+
+def test_log_ticks_prefer_decades_and_keep_minor_ticks_unlabelled() -> None:
+  ticks = generate_log_ticks(1e4, 1e7, "auto")
+  assert [tick.event_value for tick in ticks if tick.level == "major"] == [
+    1e4, 1e5, 1e6, 1e7,
+  ]
+  assert 2e5 in [tick.event_value for tick in ticks if tick.level == "minor"]
+
+  short = generate_log_ticks(3e5, 3e6, "auto")
+  assert [tick.event_value for tick in short if tick.level == "major"] == [
+    5e5, 1e6, 2e6,
+  ]
 
 
 # ---------------------------------------------------------------------------

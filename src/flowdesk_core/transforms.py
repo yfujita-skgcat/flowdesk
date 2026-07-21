@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,6 +33,7 @@ class TransformTick:
   coordinate: float
   event_value: float
   label: str
+  level: Literal["major", "minor"] = "major"
 
 
 LOGICLE_IMPLEMENTATION_VERSION = "logicle-gml2-moore-parks-2012-v1"
@@ -690,6 +691,7 @@ def generate_transform_ticks(
   spec: TransformSpec,
   minimum_coordinate: float,
   maximum_coordinate: float,
+  policy: Literal["decades", "one_two_five", "auto"] = "decades",
 ) -> tuple[TransformTick, ...]:
   """Generate signed-decade ticks using the same forward/inverse transform.
 
@@ -710,9 +712,11 @@ def generate_transform_ticks(
   )
   low_event = float(min(event_bounds))
   high_event = float(max(event_bounds))
-  candidates: set[float] = set()
+  if policy not in {"decades", "one_two_five", "auto"}:
+    raise ValueError(f"unsupported transform tick policy: {policy!r}")
+  candidates: dict[float, Literal["major", "minor"]] = {}
   if low_event <= 0 <= high_event:
-    candidates.add(0.0)
+    candidates[0.0] = "major"
 
   maximum_magnitude = max(abs(low_event), abs(high_event))
   if maximum_magnitude > 0 and math.isfinite(maximum_magnitude):
@@ -723,17 +727,33 @@ def generate_transform_ticks(
     )
     minimum_exponent = max(-15, math.floor(math.log10(minimum_nonzero)))
     minimum_exponent = min(minimum_exponent, 0)
+    use_one_two_five = policy == "one_two_five"
+    if policy == "auto":
+      positive_low = max(low_event, 1e-300)
+      positive_high = max(high_event, positive_low)
+      use_one_two_five = math.log10(positive_high / positive_low) < 2.0
     for exponent in range(minimum_exponent, maximum_exponent + 1):
-      magnitude = 10.0 ** exponent
-      if low_event <= magnitude <= high_event:
-        candidates.add(magnitude)
-      if low_event <= -magnitude <= high_event:
-        candidates.add(-magnitude)
+      for multiplier in ((1.0, 2.0, 5.0) if use_one_two_five else (1.0,)):
+        magnitude = multiplier * (10.0 ** exponent)
+        level: Literal["major", "minor"] = (
+          "major" if multiplier == 1.0 or use_one_two_five else "minor"
+        )
+        if low_event <= magnitude <= high_event:
+          candidates[magnitude] = level
+        if low_event <= -magnitude <= high_event:
+          candidates[-magnitude] = level
+      if policy == "auto":
+        for multiplier in range(2, 10):
+          magnitude = multiplier * (10.0 ** exponent)
+          if low_event <= magnitude <= high_event:
+            candidates.setdefault(magnitude, "minor")
+          if low_event <= -magnitude <= high_event:
+            candidates.setdefault(-magnitude, "minor")
 
   if spec.transform_type == "logicle":
     top = float(spec.settings["T"])
     if low_event <= top <= high_event:
-      candidates.add(top)
+      candidates[top] = "major"
 
   if not candidates:
     return ()
@@ -758,6 +778,7 @@ def generate_transform_ticks(
       coordinate=coordinate_value,
       event_value=event_value_float,
       label=_format_tick_label(event_value_float),
+      level=candidates[event_value_float],
     ))
   ticks.sort(key=lambda tick: tick.coordinate)
   return tuple(ticks)
@@ -772,6 +793,66 @@ def _format_tick_label(value: float) -> str:
     sign = "-" if value < 0 else ""
     return f"{sign}1e{exponent}"
   return f"{value:g}"
+
+
+def generate_log_ticks(
+  minimum_event: float,
+  maximum_event: float,
+  policy: Literal["decades", "one_two_five", "auto"] = "auto",
+) -> tuple[TransformTick, ...]:
+  """Generate display ticks for a native base-10 log axis.
+
+  ``coordinate`` is log10(event value), matching pyqtgraph's native log mode.
+  Major labels use decade values by default; short ranges use a 1-2-5 set and
+  retain 2-9 multiples as unlabeled minor ticks.
+  """
+  low = min(float(minimum_event), float(maximum_event))
+  high = max(float(minimum_event), float(maximum_event))
+  if not math.isfinite(low) or not math.isfinite(high) or high <= 0:
+    return ()
+  low = max(low, np.finfo(np.float64).tiny)
+  return tuple(
+    tick for tick in _generate_positive_log_ticks(low, high, policy)
+    if math.isfinite(tick.coordinate)
+  )
+
+
+def _generate_positive_log_ticks(
+  low: float,
+  high: float,
+  policy: Literal["decades", "one_two_five", "auto"],
+) -> tuple[TransformTick, ...]:
+  if policy not in {"decades", "one_two_five", "auto"}:
+    raise ValueError(f"unsupported log tick policy: {policy!r}")
+  use_one_two_five = policy == "one_two_five"
+  if policy == "auto":
+    use_one_two_five = math.log10(high / low) < 2.0
+  first = max(-308, math.floor(math.log10(low)))
+  last = min(308, math.ceil(math.log10(high)))
+  ticks: list[TransformTick] = []
+  for exponent in range(first, last + 1):
+    for multiplier in ((1.0, 2.0, 5.0) if use_one_two_five else (1.0,)):
+      value = multiplier * (10.0 ** exponent)
+      if low <= value <= high:
+        ticks.append(TransformTick(
+          coordinate=math.log10(value),
+          event_value=value,
+          label=_format_tick_label(value),
+          level="major",
+        ))
+    if policy == "auto":
+      for multiplier in range(2, 10):
+        if use_one_two_five and multiplier in {2, 5}:
+          continue
+        value = multiplier * (10.0 ** exponent)
+        if low <= value <= high:
+          ticks.append(TransformTick(
+            coordinate=math.log10(value),
+            event_value=value,
+            label=_format_tick_label(value),
+            level="minor",
+          ))
+  return tuple(sorted(ticks, key=lambda tick: tick.coordinate))
 
 
 def apply_transform_to_column(

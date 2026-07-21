@@ -1859,6 +1859,8 @@ class MainWindow(QMainWindow):
                 "y_channel": self._channel_selector.y_channel_id(),
                 "x_scale": self._channel_selector.x_transform(),
                 "y_scale": self._channel_selector.y_transform(),
+                "x_tick_policy": self._plot_widget.tick_policy(),
+                "y_tick_policy": self._plot_widget.tick_policy(),
                 "marginal_enabled": self._plot_widget.is_marginal_enabled(),
                 "display_max_points": (
                     self._channel_selector.display_max_points()
@@ -2176,6 +2178,9 @@ class MainWindow(QMainWindow):
         )
         self._channel_selector.set_x_transform(display.get("x_scale", "linear"))
         self._channel_selector.set_y_transform(display.get("y_scale", "linear"))
+        self._plot_widget.set_tick_policy(
+            str(display.get("x_tick_policy", display.get("tick_policy", "auto")))
+        )
         view = next(
             (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
             {},
@@ -2413,6 +2418,12 @@ class MainWindow(QMainWindow):
 
     def _on_plot_appearance_requested(self, action_id: str) -> None:
         """Route plot-area appearance actions through the existing editor command."""
+        if action_id.startswith("axisTicks:"):
+            policy = action_id.split(":", 1)[1]
+            self._plot_widget.set_tick_policy(policy)  # type: ignore[arg-type]
+            self._project_dirty = True
+            self._update_status(f"Axis tick policy: {policy}")
+            return
         if action_id == "plotResetAppearance":
             view_id = self._overlay_view_id()
             try:

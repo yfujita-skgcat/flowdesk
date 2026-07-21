@@ -132,6 +132,17 @@ Acceptance criteria:
 - Axis ticks match the selected scale.
 - Gate overlay geometry aligns with the plotted points for every supported scale.
 
+#### Log-axis tick policy
+
+Log-axis ticks are display state and must not affect transforms, gates, or
+pipeline results. The default `auto` policy uses decade values as labeled major
+ticks for broad ranges, adds 2 and 5 multiples when a short range needs more
+labels, and keeps the remaining 2–9 multiples as unlabeled minor ticks. The
+plot context menu also exposes `decades only`, `1–2–5 labels`, and
+`legacy automatic`; the latter restores pyqtgraph's previous pixel-density
+based behavior. The selected policy is saved with `plot_display_settings` so a
+project can reproduce its visual presentation.
+
 ### 3. Plot Appearance Controls
 
 The GUI should allow users to configure:
