@@ -63,6 +63,7 @@ release order below.
 | B7 | `overlay-and-backgating.md` | B3, B6 |
 | B7.1 | `multi-sample-overlay-and-plot-presentation.md` | B6-B7 |
 | B7.2 | `integrated-overlay-controls-and-plot-appearance.md` | B7.1 |
+| B7.3 | `sample-sheet-results-and-batch-plot-export.md` | B1, B3.3, B7.1, A6 |
 
 ## Release C: reports and interoperability
 

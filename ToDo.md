@@ -64,6 +64,7 @@ git status --short
 | B7 | `docs/implementation/overlay-and-backgating.md` |
 | B7.1 | `docs/implementation/multi-sample-overlay-and-plot-presentation.md` |
 | B7.2 | `docs/implementation/integrated-overlay-controls-and-plot-appearance.md` |
+| B7.3 | `docs/implementation/sample-sheet-results-and-batch-plot-export.md` |
 | C1 | `docs/implementation/table-editor.md` |
 | C2 | `docs/implementation/layout-editor.md` |
 | C3 | `docs/implementation/templates-and-mapping.md` |
@@ -647,6 +648,46 @@ Accessibility:
 - [x] overlay、active、comparison、error状態を色だけで示さない。
 - [x] checkbox、color swatch、relation iconにaccessible nameとtooltipがあり、keyboardだけで主要操作へ到達できる。
 - [x] color dialogをCancelした場合はstateを変更しない。
+
+### Phase B7.3: Sample sheet、Results statistics、batch plot export [S02/S09/S11/S14]
+
+サンプル名とは別に、利用者が指定する表示タイトルをExcel風の表で編集できるようにする。
+同じ保存済みplot definitionを使い、全FCS sampleの画像をheadless/CLIから一括出力する。
+また、Resultsからmean/medianを含む保存可能な統計定義を追加・選択・確認できるようにする。
+これらは表示・export操作を起点にしても、compensation、transform、gate membership、raw eventを変更しない。
+
+実装前に`docs/implementation/sample-sheet-results-and-batch-plot-export.md`を全文読む。
+一度のLLM/Codex実行では、同ガイドの番号付きincrementを一つだけ実装し、後続incrementへ着手しない。
+
+#### Increment 1: Sample title sheet
+
+- [ ] 既存`AnnotationSpec`を利用して、sample ID、読み取り専用のFCS file/name、編集可能な`sample_title`を一行ずつ表示するSample Sheet contractを定義する。`sample_title`はFCS keywordやraw metadataを変更せず、空欄時は明示されたdisplay-name fallbackを使う。
+- [ ] Qt model/viewベースの表を追加し、複数セル貼付け、fill series、undo/redo、型・重複・空値validation、filter/sort、Cancel時の非変更を実装する。セル座標やclipboard textを科学的IDとして扱わない。
+- [ ] titleのproject save/load、CSV import preview、headless annotation resolution、sample browser/overlay/Resultsでの一貫した表示名をtestする。stable sample ID、FCS path、runner inputはtitle編集で変化させない。
+
+#### Increment 2: Saved batch plot export
+
+- [ ] `BatchPlotExportSpec`を保存可能なdisplay/export definitionとして定義する。対象sample（全件、Group、明示ID）、`PlotViewSpec`、output format/size/template、overwrite policy、missing/incompatible policy、metadata sidecarをstable IDで保持する。
+- [ ] GUI-independent export planner/runnerを追加し、各sampleについて既存のcompatibility resolver、full-resolution pipeline report、resolved overlay/presentation、headless rendererを同じ定義で呼ぶ。Qt widgetのscreen captureや表示downsampleを出力根拠にしない。
+- [ ] CLIとGUIから同じbatch runnerを呼び、PNGを先に、既存rendererが対応するSVG/PDFを追加する。sample titleを安全なfilename slugへ変換し、sample IDを衝突回避に残し、manifest/sidecarへresolved source/style/analysis revision/diagnosticを記録する。
+- [ ] empty population、missing file、unresolved/incompatible overlay、renderer failure、既存file collisionをsample別structured resultとして報告し、partial successを明示する。required outputの欠落やblank imageを成功扱いにしない。
+
+#### Increment 3: Results statistic management
+
+- [ ] Results workspaceから`Add Statistic...`、edit、duplicate、remove、選択metric/parameter/population/percentile/source-stageを提供し、既存`StatisticSpec` editorと同一のGUI-independent command/validationを使う。mean、median、SD、CV、MAD、percentile等のmetricはcore定義に列挙されたものだけを選択可能にする。
+- [ ] Resultsにpopulation rowとは独立した統計detail/tableを追加し、値、unit、status、undefined reason、analysis revisionを表示する。empty/NaN/Inf/geometric-mean policyをQtで再計算・丸め判定しない。
+- [ ] statistic definitionの追加・変更・削除で結果をstale化し、`Run Pipeline`または既存current-sample preview経路でのみ更新する。統計の追加操作がgate/transform/compensation定義を変更しないことを保証する。
+- [ ] known-value core test、save/load/migration、GUI editor entrypoint、stale/current state、CLI/statistics exportとResults表示の一致を追加する。
+
+#### Phase B7.3 必須受け入れtest
+
+- [ ] Sample Sheetで複数sampleのタイトルを表形式で編集・貼付け・保存/復元でき、FCS raw metadata、sample ID、path、eventsが不変である。
+- [ ] タイトル未指定、重複、空欄、CSV import validation、filter/sort、undo/redoが決定的に動作する。
+- [ ] 同じ`BatchPlotExportSpec`によるGUI起点とCLI起点の出力が、sample順、タイトル、plot definition、style provenance、analysis revisionにおいて一致する。
+- [ ] 全対象sampleのPNGが出力され、collision、missing/incompatible source、renderer error、partial failureがstructured reportとsidecarに残る。
+- [ ] バッチ画像exportの有無・表示downsample・style変更がraw events、membership、count、frequency、statisticsを変更しない。
+- [ ] Resultsからmean/medianなどのStatisticSpecを追加・編集でき、known values、undefined status、unit、revisionがheadless report/CLI exportと一致する。
+- [ ] GUIに科学計算または独自plot export定義を複製せず、core/headless runnerをGUIなしで実行できる。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 
