@@ -576,6 +576,11 @@ class MainWindow(QMainWindow):
         self.action_sample_sheet.triggered.connect(self._on_edit_sample_sheet)
         analysis_menu.addAction(self.action_sample_sheet)
 
+        self.action_batch_plot_export = QAction("Batch Plot E&xport...", self)
+        self.action_batch_plot_export.setObjectName("actionBatchPlotExport")
+        self.action_batch_plot_export.triggered.connect(self._on_batch_plot_export)
+        analysis_menu.addAction(self.action_batch_plot_export)
+
         self.action_overlay_sources = QAction("Overlay &Sources...", self)
         self.action_overlay_sources.setObjectName("actionOverlaySources")
         self.action_overlay_sources.triggered.connect(self._on_edit_overlay_sources)
@@ -2317,6 +2322,35 @@ class MainWindow(QMainWindow):
         self._sample_browser.set_display_names(dict(rows))
         self._workspace_tree.set_samples(rows)
         self._results_workspace.set_samples(rows)
+
+    def _on_batch_plot_export(self) -> None:
+        """Run a persisted batch plot definition through the CLI/core adapter."""
+        if self._project_path is None:
+            QMessageBox.information(
+                self, "Save project first", "Save the project before batch export."
+            )
+            return
+        if not self._batch_plot_exports:
+            QMessageBox.information(
+                self, "No batch export", "No BatchPlotExportSpec is configured."
+            )
+            return
+        output_dir = QFileDialog.getExistingDirectory(self, "Batch Plot Output Directory")
+        if not output_dir:
+            return
+        export_id = str(self._batch_plot_exports[0].get("id", ""))
+        try:
+            from flowdesk_cli.batch_plot import batch_plot_command
+
+            status = batch_plot_command(str(self._project_path), export_id, output_dir)
+        except Exception as exc:
+            logger.error("Batch plot export failed: %s", exc)
+            QMessageBox.critical(self, "Batch Plot Export Error", str(exc))
+            return
+        if status != 0:
+            QMessageBox.warning(self, "Batch Plot Export", "Batch export completed with failures.")
+        else:
+            self._update_status(f"Batch plot export completed: {output_dir}")
 
     def _overlay_view_id(self) -> str:
         """Return the stable persisted view receiving source-list edits."""

@@ -169,3 +169,13 @@ def test_results_add_statistic_entrypoint_uses_shared_editor(qapp, monkeypatch) 
   finally:
     window.close()
     window.deleteLater()
+
+
+def test_main_window_exposes_sample_sheet_and_batch_plot_actions(qapp) -> None:
+  window = MainWindow()
+  try:
+    assert window.action_sample_sheet.objectName() == "actionSampleSheet"
+    assert window.action_batch_plot_export.objectName() == "actionBatchPlotExport"
+  finally:
+    window.close()
+    window.deleteLater()
