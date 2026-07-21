@@ -12,7 +12,10 @@ from flowdesk_core.batch_plot_export import (
   batch_plot_export_spec_from_mapping,
   run_batch_plot_export,
 )
+from flowdesk_core.display_data import prepare_display_data
 from flowdesk_core.fcs_io import read_fcs_sample
+from flowdesk_core.models import PlotViewSpec
+from flowdesk_core.pipeline_runner import run_project_pipeline
 from flowdesk_core.plot_export import prepare_plot_export, write_plot_png, write_plot_svg
 from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_storage.project import load_project, resolve_sample_paths
@@ -28,6 +31,13 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
     spec = batch_plot_export_spec_from_mapping(raw)
     samples = resolve_sample_paths(project, Path(project_path))
     annotations = project.get("annotations", [])
+    typed_samples = tuple(
+      read_fcs_sample(sample["path"], str(sample["id"]))[1]
+      for sample in samples
+    )
+    report = run_project_pipeline(
+      project, output_dir=None, execution_profile_id="default", samples=typed_samples,
+    )
     view = next(
       (item for item in project.get("plot_views", [])
        if str(item.get("id")) == spec.plot_view_id),
@@ -41,10 +51,18 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         raise ValueError("plot requires at least two channels")
       x_id = str(view.get("x_parameter") or names[0])
       y_id = str(view.get("y_parameter") or names[1])
-      x_index, y_index = names.index(x_id), names.index(y_id)
-      x, y = sample_data.events[:, x_index], sample_data.events[:, y_index]
-      finite = np.isfinite(x) & np.isfinite(y)
-      x_values, y_values = _normalize(x[finite]), _normalize(y[finite])
+      view_spec = PlotViewSpec(
+        id=spec.plot_view_id,
+        population_id=str(view.get("population_id", "all_events")),
+        x_parameter=x_id,
+        y_parameter=y_id,
+        plot_type=str(view.get("plot_type", "scatter")),
+        rendering_downsample=dict(view.get("rendering_downsample", {})),
+      )
+      display = prepare_display_data(
+        view_spec, sample_data.events, names, report, sample_id=str(sample["id"])
+      )
+      x_values, y_values = _normalize(display.x), _normalize(display.y)
       sample_id = str(sample["id"])
       source = {
         "source_id": sample_id, "sample_id": sample_id,

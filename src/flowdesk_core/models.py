@@ -109,7 +109,7 @@ class BatchPlotExportSpec:
   sample_ids: tuple[str, ...] = field(default_factory=tuple)
   group_id: str | None = None
   plot_view_id: str = "main-view"
-  formats: tuple[BatchPlotFormat, ...] = ("svg",)
+  formats: tuple[BatchPlotFormat, ...] = ("png",)
   width: int = 800
   height: int = 600
   filename_template: str = "{sample_title}_{sample_id}_{plot_id}"

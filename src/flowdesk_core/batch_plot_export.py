@@ -21,7 +21,7 @@ def batch_plot_export_spec_from_mapping(value: Mapping[str, Any]) -> BatchPlotEx
   """Parse persisted JSON while normalizing list fields to typed tuples."""
   data = dict(value)
   data["sample_ids"] = tuple(data.get("sample_ids", ()))
-  data["formats"] = tuple(data.get("formats", ("svg",)))
+  data["formats"] = tuple(data.get("formats", ("png",)))
   return BatchPlotExportSpec(**data)
 
 
