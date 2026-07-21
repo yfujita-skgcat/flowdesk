@@ -82,6 +82,25 @@ def test_results_workspace_selection_distinguishes_sample_and_population(qapp) -
     qapp.processEvents()
 
 
+def test_results_workspace_add_statistic_button_uses_selected_population(qapp) -> None:
+  workspace = ResultsWorkspace()
+  requested: list[str] = []
+  workspace.on_add_statistic_requested(requested.append)
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy(
+      {"all_events": None, "rect-1": "all_events"},
+      {"all_events": "All Events", "rect-1": "rect_1"},
+    )
+    workspace.tree().setCurrentItem(workspace.tree().topLevelItem(0).child(0).child(0))
+    workspace._add_statistic_button.click()
+    assert requested == ["rect-1"]
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
 def test_flat_table_uses_same_report_values_without_tree_indentation(qapp) -> None:
   workspace = ResultsWorkspace()
   try:

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
   QAbstractItemView,
   QComboBox,
   QHeaderView,
+  QToolButton,
   QTreeWidget,
   QTreeWidgetItem,
   QVBoxLayout,
@@ -63,6 +64,7 @@ class ResultsWorkspace(QWidget):
     self._force_all_stale = False
     self._mode = "Hierarchy"
     self._callbacks: list[Callable[[str, str, str], None]] = []
+    self._add_statistic_callbacks: list[Callable[[str], None]] = []
 
     self._tree = QTreeWidget()
     self._tree.setObjectName("resultsWorkspaceTree")
@@ -81,6 +83,11 @@ class ResultsWorkspace(QWidget):
     self._mode_selector.addItems(["Hierarchy", "Flat table"])
     self._mode_selector.currentTextChanged.connect(self.set_mode)
     layout.addWidget(self._mode_selector)
+    self._add_statistic_button = QToolButton()
+    self._add_statistic_button.setObjectName("resultsAddStatisticButton")
+    self._add_statistic_button.setText("Add Statistic...")
+    self._add_statistic_button.clicked.connect(self._on_add_statistic)
+    layout.addWidget(self._add_statistic_button)
     layout.addWidget(self._tree)
 
   def on_selection_changed(
@@ -88,6 +95,30 @@ class ResultsWorkspace(QWidget):
   ) -> None:
     """Register ``(kind, stable_id, sample_id)`` selection callbacks."""
     self._callbacks.append(callback)
+
+  def on_add_statistic_requested(self, callback: Callable[[str], None]) -> None:
+    """Register the Results entry point for persisted statistic definitions."""
+    self._add_statistic_callbacks.append(callback)
+
+  def _on_add_statistic(self) -> None:
+    item = self._tree.currentItem()
+    population_id = "all_events"
+    if item is not None and item.data(0, Qt.UserRole + 1) in {"population", "statistic"}:
+      population_id = str(item.data(0, Qt.UserRole))
+      if item.data(0, Qt.UserRole + 1) == "statistic":
+        population_id = self._statistic_population_id_from_item(item) or "all_events"
+    for callback in self._add_statistic_callbacks:
+      invoke_callback(callback, population_id)
+
+  def _statistic_population_id_from_item(self, item: QTreeWidgetItem) -> str | None:
+    sample_id = item.data(0, Qt.UserRole + 2)
+    statistic_id = item.data(0, Qt.UserRole)
+    if self._result_state is None:
+      return None
+    for row in self._result_state.rows():
+      if row.key.sample_id == sample_id and row.key.result_id == statistic_id:
+        return self._statistic_population_id(row)
+    return None
 
   def set_samples(self, samples: Sequence[tuple[str, str]]) -> None:
     self._samples = list(samples)
@@ -328,6 +359,13 @@ class ResultsWorkspace(QWidget):
           self._row_status(statistic_row, statistic_result),
           4,
         )
+        if statistic_result is not None:
+          statistic_item.setToolTip(
+            0,
+            "unit=" + str(statistic_result.unit or "")
+            + "; undefined_reason=" + str(statistic_result.undefined_reason or "")
+            + "; revision=" + str(statistic_row.revision),
+          )
         item.addChild(statistic_item)
       self._add_population_children(item, results, statistics, sample_id)
 

@@ -151,10 +151,13 @@ class StatisticsEditorDialog(QDialog):
         self._new_button.setObjectName("statisticNewButton")
         self._delete_button = QPushButton("Delete")
         self._delete_button.setObjectName("statisticDeleteButton")
+        self._duplicate_button = QPushButton("Duplicate")
+        self._duplicate_button.setObjectName("statisticDuplicateButton")
         self._clear_button = QPushButton("Clear All")
         self._clear_button.setObjectName("statisticClearButton")
         btn_row.addWidget(self._new_button)
         btn_row.addWidget(self._delete_button)
+        btn_row.addWidget(self._duplicate_button)
         btn_row.addWidget(self._clear_button)
         left_layout.addLayout(btn_row)
         left_layout.addStretch(1)
@@ -237,6 +240,7 @@ class StatisticsEditorDialog(QDialog):
         self._list.currentRowChanged.connect(self._on_row_changed)
         self._new_button.clicked.connect(self._add_statistic)
         self._delete_button.clicked.connect(self._delete_statistic)
+        self._duplicate_button.clicked.connect(self._duplicate_statistic)
         self._clear_button.clicked.connect(self._clear_all)
         self._metric_combo.currentTextChanged.connect(self._on_metric_changed)
         buttons.accepted.connect(self._accept_if_valid)
@@ -360,6 +364,17 @@ class StatisticsEditorDialog(QDialog):
         self._current_row = -1
         if self._statistics:
             self._refresh_list(max(0, row - 1))
+
+    def _duplicate_statistic(self) -> None:
+        row = self._list.currentRow()
+        if row < 0 or row >= len(self._statistics):
+            return
+        self._commit_current()
+        duplicate = deepcopy(self._statistics[row])
+        duplicate["id"] = f"{duplicate.get('id', 'statistic')}-copy"
+        duplicate["name"] = f"{duplicate.get('name', 'Statistic')} copy"
+        self._statistics.insert(row + 1, duplicate)
+        self._refresh_list(row + 1)
 
     def _clear_all(self) -> None:
         self._statistics.clear()

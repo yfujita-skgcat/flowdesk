@@ -674,8 +674,8 @@ Accessibility:
 
 #### Increment 3: Results statistic management
 
-- [ ] Results workspaceから`Add Statistic...`、edit、duplicate、remove、選択metric/parameter/population/percentile/source-stageを提供し、既存`StatisticSpec` editorと同一のGUI-independent command/validationを使う。mean、median、SD、CV、MAD、percentile等のmetricはcore定義に列挙されたものだけを選択可能にする。
-- [ ] Resultsにpopulation rowとは独立した統計detail/tableを追加し、値、unit、status、undefined reason、analysis revisionを表示する。empty/NaN/Inf/geometric-mean policyをQtで再計算・丸め判定しない。
+- [x] Results workspaceから`Add Statistic...`、edit、duplicate、remove、選択metric/parameter/population/percentile/source-stageを提供し、既存`StatisticSpec` editorと同一のGUI-independent command/validationを使う。mean、median、SD、CV、MAD、percentile等のmetricはcore定義に列挙されたものだけを選択可能にする。
+- [x] Resultsにpopulation rowとは独立した統計detail/tableを追加し、値、unit、status、undefined reason、analysis revisionを表示する。empty/NaN/Inf/geometric-mean policyをQtで再計算・丸め判定しない。
 - [ ] statistic definitionの追加・変更・削除で結果をstale化し、`Run Pipeline`または既存current-sample preview経路でのみ更新する。統計の追加操作がgate/transform/compensation定義を変更しないことを保証する。
 - [ ] known-value core test、save/load/migration、GUI editor entrypoint、stale/current state、CLI/statistics exportとResults表示の一致を追加する。
 

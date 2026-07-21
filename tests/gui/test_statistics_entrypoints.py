@@ -69,6 +69,21 @@ def test_dialog_new_statistic_defaults_are_persisted_state(qapp) -> None:
   assert definition["value_policy"] == "full_events"
 
 
+def test_statistics_editor_duplicate_creates_new_definition(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[{
+      "id": "mean", "name": "Mean", "population_id": "live",
+      "parameter_id": "FL1-A", "metric": "mean", "source_stage": "compensated",
+      "value_policy": "full_events", "settings": {}, "format": None, "notes": "",
+    }],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("live",),
+  )
+  dialog._duplicate_button.click()
+  assert len(dialog._statistics) == 2
+  assert dialog._statistics[1]["id"] == "mean-copy"
+
+
 def test_statistics_are_population_child_nodes_and_clear_when_stale(qapp) -> None:
   tree = PopulationTree()
   tree.set_population_names({"live": "Live cells"})

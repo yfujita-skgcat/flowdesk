@@ -967,6 +967,9 @@ class MainWindow(QMainWindow):
         self._results_workspace.on_selection_changed(
             self._on_results_workspace_selected
         )
+        self._results_workspace.on_add_statistic_requested(
+            self._on_add_statistic_from_results
+        )
         self._workspace_tree.on_selection_changed(self._on_workspace_tree_selected)
 
         # Connect plot mouse events to gate creation
@@ -2656,6 +2659,10 @@ class MainWindow(QMainWindow):
 
     def _on_add_statistic_from_population_tree(self, population_id: str) -> None:
         """Open a new statistic definition scoped to a tree population."""
+        self._open_statistics_editor(population_id=population_id)
+
+    def _on_add_statistic_from_results(self, population_id: str) -> None:
+        """Open the shared statistic editor from the Results workspace."""
         self._open_statistics_editor(population_id=population_id)
 
     def _on_add_statistic_from_graph(self) -> None:
