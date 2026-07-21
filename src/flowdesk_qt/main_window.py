@@ -42,7 +42,12 @@ from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.integrated_overlay import resolve_overlay_style
-from flowdesk_core.models import CompensationMatrixSpec, OverlaySourceSpec, TransformSpec
+from flowdesk_core.models import (
+  AnnotationSpec,
+  CompensationMatrixSpec,
+  OverlaySourceSpec,
+  TransformSpec,
+)
 from flowdesk_core.overlays import Overlay2DLayer
 from flowdesk_core.overrides import (
     GateOverrideError,
@@ -564,6 +569,11 @@ class MainWindow(QMainWindow):
         self.action_annotations.setObjectName("actionAnnotations")
         self.action_annotations.triggered.connect(self._on_edit_annotations)
         analysis_menu.addAction(self.action_annotations)
+
+        self.action_sample_sheet = QAction("Sample &Sheet...", self)
+        self.action_sample_sheet.setObjectName("actionSampleSheet")
+        self.action_sample_sheet.triggered.connect(self._on_edit_sample_sheet)
+        analysis_menu.addAction(self.action_sample_sheet)
 
         self.action_overlay_sources = QAction("Overlay &Sources...", self)
         self.action_overlay_sources.setObjectName("actionOverlaySources")
@@ -2271,6 +2281,40 @@ class MainWindow(QMainWindow):
             return
         self._annotations = dialog.annotations()
         self._mark_results_stale("Annotations changed")
+
+    def _on_edit_sample_sheet(self) -> None:
+        """Edit display-only sample titles without invalidating analysis results."""
+        from flowdesk_qt.sample_sheet import SampleSheetDialog
+
+        samples = [
+            {"id": item.id, "name": item.name, "path": item.path}
+            for item in self._sample_browser.samples()
+        ]
+        dialog = SampleSheetDialog(samples, self._annotations, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._annotations = dialog.annotations()
+        self._refresh_sample_display_names()
+
+    def _refresh_sample_display_names(self) -> None:
+        """Refresh non-scientific labels after a title edit."""
+        from flowdesk_core.annotations import resolve_sample_title
+
+        annotations = [
+            AnnotationSpec(
+                sample_id=str(value["sample_id"]),
+                keyword=str(value["keyword"]),
+                value=value.get("value"),
+                source=value["source"],
+            )
+            for value in self._annotations
+        ]
+        rows = [
+            (item.id, resolve_sample_title(item.id, item.name, item.path, annotations))
+            for item in self._sample_browser.samples()
+        ]
+        self._workspace_tree.set_samples(rows)
+        self._results_workspace.set_samples(rows)
 
     def _overlay_view_id(self) -> str:
         """Return the stable persisted view receiving source-list edits."""

@@ -5,8 +5,67 @@ from __future__ import annotations
 import csv
 import io
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 
 from flowdesk_core.models import AnnotationSpec, AnnotationValue
+
+SAMPLE_TITLE_KEYWORD = "sample_title"
+
+
+def resolve_sample_title(
+  sample_id: str,
+  sample_name: str | None = None,
+  path: str | None = None,
+  annotations: Iterable[AnnotationSpec] = (),
+) -> str:
+  """Resolve a display-only title without changing sample identity or metadata.
+
+  Workspace ``sample_title`` annotations take precedence.  Empty values are
+  intentionally treated as an unset title so generated fallbacks are not
+  persisted back into a project.
+  """
+  values: list[AnnotationValue] = []
+  for annotation in annotations:
+    if (
+      annotation.sample_id == sample_id
+      and annotation.keyword == SAMPLE_TITLE_KEYWORD
+      and annotation.source == "workspace"
+    ):
+      values.append(annotation.value)
+  if values:
+    value = values[-1]
+    if isinstance(value, str) and value.strip():
+      return value.strip()
+  for candidate in (sample_name, Path(path).stem if path else None, sample_id):
+    if candidate and str(candidate).strip():
+      return str(candidate).strip()
+  return sample_id
+
+
+def set_sample_title(
+  annotations: Sequence[AnnotationSpec],
+  sample_id: str,
+  title: str | None,
+) -> tuple[AnnotationSpec, ...]:
+  """Return annotations with one workspace title for ``sample_id``.
+
+  Clearing a title removes only the workspace title annotation and leaves FCS
+  and imported values untouched.
+  """
+  result = [
+    annotation for annotation in annotations
+    if not (
+      annotation.sample_id == sample_id
+      and annotation.keyword == SAMPLE_TITLE_KEYWORD
+      and annotation.source == "workspace"
+    )
+  ]
+  normalized = "" if title is None else title.strip()
+  if normalized:
+    result.append(
+      AnnotationSpec(sample_id, SAMPLE_TITLE_KEYWORD, normalized, "workspace")
+    )
+  return tuple(result)
 
 
 def annotation_columns(annotations: Iterable[AnnotationSpec]) -> tuple[str, ...]:

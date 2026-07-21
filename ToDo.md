@@ -661,7 +661,7 @@ Accessibility:
 
 #### Increment 1: Sample title sheet
 
-- [ ] 既存`AnnotationSpec`を利用して、sample ID、読み取り専用のFCS file/name、編集可能な`sample_title`を一行ずつ表示するSample Sheet contractを定義する。`sample_title`はFCS keywordやraw metadataを変更せず、空欄時は明示されたdisplay-name fallbackを使う。
+- [x] 既存`AnnotationSpec`を利用して、sample ID、読み取り専用のFCS file/name、編集可能な`sample_title`を一行ずつ表示するSample Sheet contractを定義する。`sample_title`はFCS keywordやraw metadataを変更せず、空欄時は明示されたdisplay-name fallbackを使う。
 - [ ] Qt model/viewベースの表を追加し、複数セル貼付け、fill series、undo/redo、型・重複・空値validation、filter/sort、Cancel時の非変更を実装する。セル座標やclipboard textを科学的IDとして扱わない。
 - [ ] titleのproject save/load、CSV import preview、headless annotation resolution、sample browser/overlay/Resultsでの一貫した表示名をtestする。stable sample ID、FCS path、runner inputはtitle編集で変化させない。
 

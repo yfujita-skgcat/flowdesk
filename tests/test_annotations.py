@@ -1,9 +1,12 @@
 from flowdesk_core.annotations import (
+  SAMPLE_TITLE_KEYWORD,
   annotation_columns,
   annotation_table,
   fill_annotation_series,
   parse_annotation_csv,
   replace_annotation_values,
+  resolve_sample_title,
+  set_sample_title,
 )
 from flowdesk_core.models import AnnotationSpec
 
@@ -38,3 +41,19 @@ def test_csv_annotation_import_types_values() -> None:
     ("s1", "Dose", 2),
     ("s2", "Condition", "control"),
   ]
+
+
+def test_sample_title_resolution_and_clear_are_non_destructive() -> None:
+  original = (
+    AnnotationSpec("s1", "sample_title", "from-fcs", "fcs"),
+    AnnotationSpec("s1", "sample_title", "User title", "workspace"),
+    AnnotationSpec("s1", "Condition", "treated", "fcs"),
+  )
+  assert resolve_sample_title("s1", "Original", "/tmp/data.fcs", original) == "User title"
+  cleared = set_sample_title(original, "s1", "")
+  assert resolve_sample_title("s1", "Original", "/tmp/data.fcs", cleared) == "Original"
+  assert any(item.keyword == "Condition" for item in cleared)
+  assert not any(
+    item.keyword == SAMPLE_TITLE_KEYWORD and item.source == "workspace"
+    for item in cleared
+  )
