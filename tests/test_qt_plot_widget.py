@@ -107,6 +107,29 @@ def test_plot_widget_exports_vector_formats_with_metadata(tmp_path: Path) -> Non
   plot.close()
 
 
+def test_plot_export_can_use_equal_aspect_without_changing_view(tmp_path: Path) -> None:
+  app = _app()
+  plot = PlotWidget()
+  try:
+    plot.resize(480, 360)
+    plot.show()
+    plot.plot_events(
+      np.array([0.0, 10.0]), np.array([0.0, 20.0]), "X", "Y"
+    )
+    plot.set_manual_view_range((0.0, 10.0), (0.0, 20.0))
+    app.processEvents()
+    before = plot.view_range()
+    out = tmp_path / "equal.png"
+    plot.export_png(out, width=320, height=240, aspect_1_to_1=True)
+    assert plot.view_range() == before
+    metadata = json.loads((tmp_path / "equal.png.json").read_text())
+    assert metadata["aspect_1_to_1"] is True
+  finally:
+    plot.close()
+    plot.deleteLater()
+    app.processEvents()
+
+
 def test_plot_context_menu_exposes_display_only_appearance_actions() -> None:
   _app()
   plot = PlotWidget()
@@ -119,6 +142,7 @@ def test_plot_context_menu_exposes_display_only_appearance_actions() -> None:
     }
     assert {"plotAppearance", "plotResetAppearance"} == action_ids
     assert menu.findChild(QMenu, "plotLegendMenu") is not None
+    assert menu.findChild(QMenu, "plotViewRangeMenu") is not None
     assert plot._glw.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
     plot.set_interaction_mode("gate")
     assert plot._interaction_mode == "gate"
@@ -1093,6 +1117,10 @@ def test_log_axis_tick_policy_can_switch_and_restore_legacy_auto() -> None:
     widget.set_axis_transforms("log10", "log10")
     values = np.array([3e5, 5e5, 1e6, 2e6, 3e6], dtype=np.float64)
     widget.plot_events(values, values, "FSC-A", "SSC-A")
+    widget.set_manual_view_range((4.0, 8.0), (4.0, 8.0))
+    assert {tick.event_value for tick in widget.axis_ticks("x")} >= {
+      1e4, 1e8,
+    }
     assert widget.tick_policy() == "auto"
     assert any(tick.event_value == 1e6 for tick in widget.axis_ticks("x"))
     assert any(tick.level == "minor" for tick in widget.axis_ticks("x"))

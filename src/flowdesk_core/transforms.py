@@ -811,6 +811,12 @@ def generate_log_ticks(
   if not math.isfinite(low) or not math.isfinite(high) or high <= 0:
     return ()
   low = max(low, np.finfo(np.float64).tiny)
+  # ViewBox -> event-space conversion can move an exact endpoint by a few
+  # floating-point ulps (e.g. 10**4 becomes 10000.000000000002). Include
+  # ticks that are mathematically on the boundary without adding visible
+  # margin to the user's viewport.
+  low *= 1.0 - 1e-12
+  high *= 1.0 + 1e-12
   return tuple(
     tick for tick in _generate_positive_log_ticks(low, high, policy)
     if math.isfinite(tick.coordinate)

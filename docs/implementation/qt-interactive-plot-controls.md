@@ -89,6 +89,7 @@ The plot should support:
 - reset to robust auto-range
 - reset to full data range
 - preserve view range when changing cosmetic settings
+- allow the current X/Y view range to be entered numerically in addition to mouse navigation
 - refresh view when changing sample, X/Y channel, axis scale, or population selection
 
 Implementation notes:
@@ -103,6 +104,7 @@ Acceptance criteria:
 - `data/1_A1.fcs` opens with the main population visible.
 - A user can return from zoomed/panned state to robust range and full range.
 - Changing color or dot size does not change the view range.
+- Numeric range entry produces the same manual ViewBox range used by mouse navigation.
 
 ### 2. Axis Scale Controls
 
@@ -286,6 +288,11 @@ Acceptance criteria:
   count.
 
 ### 7. Plot Export
+
+Plot export may optionally request equal X/Y display units (`aspect_1_to_1`).
+This is applied temporarily while rendering PNG, SVG, or PDF and must restore
+the interactive ViewBox state afterward. It is an export presentation option,
+not an analysis transform or gate setting.
 
 The GUI should support:
 

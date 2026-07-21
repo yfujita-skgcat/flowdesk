@@ -682,6 +682,11 @@ def test_log_ticks_prefer_decades_and_keep_minor_ticks_unlabelled() -> None:
   ]
 
 
+def test_log_ticks_include_exact_view_boundaries_after_float_conversion() -> None:
+  ticks = generate_log_ticks(10_000.000000000002, 100_000_000.0000001, "decades")
+  assert [tick.event_value for tick in ticks] == [1e4, 1e5, 1e6, 1e7, 1e8]
+
+
 # ---------------------------------------------------------------------------
 # Unknown transform type
 # ---------------------------------------------------------------------------

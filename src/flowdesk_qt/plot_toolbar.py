@@ -37,11 +37,13 @@ class PlotToolbar(QToolBar):
             "export_png": [],
             "export_svg": [],
             "export_pdf": [],
+            "export_aspect_toggled": [],
             "marginal_toggled": [],
             "add_statistic": [],
             "interaction_mode": [],
         }
         self._marginal_enabled: bool = False
+        self._export_aspect_1_to_1: bool = False
         self._build_toolbar()
 
     def is_marginal_enabled(self) -> bool:
@@ -76,6 +78,13 @@ class PlotToolbar(QToolBar):
     def on_export_pdf(self, callback: Callable[[], None]) -> None:
         self._callbacks["export_pdf"].append(callback)
 
+    def on_export_aspect_toggled(self, callback: Callable[[bool], None]) -> None:
+        """Register callback for the export-only equal-aspect option."""
+        self._callbacks["export_aspect_toggled"].append(callback)
+
+    def export_aspect_1_to_1(self) -> bool:
+        return self._export_aspect_1_to_1
+
     def on_marginal_toggled(self, callback: Callable[[bool], None]) -> None:
         """Register callback for marginal histogram toggle."""
         self._callbacks["marginal_toggled"].append(callback)
@@ -106,6 +115,10 @@ class PlotToolbar(QToolBar):
     def _on_export_pdf_clicked(self) -> None:
         self._emit("export_pdf")
 
+    def _on_export_aspect_toggled(self, checked: bool) -> None:
+        self._export_aspect_1_to_1 = checked
+        self._emit("export_aspect_toggled", checked)
+
     def _on_add_statistic_clicked(self) -> None:
         self._emit("add_statistic")
 
@@ -132,6 +145,14 @@ class PlotToolbar(QToolBar):
         self.addWidget(btn_full)
 
         self.addSeparator()
+
+        aspect_button = QToolButton()
+        aspect_button.setObjectName("exportAspect1To1Button")
+        aspect_button.setText("Export 1:1")
+        aspect_button.setToolTip("Use equal X/Y display units for plot exports")
+        aspect_button.setCheckable(True)
+        aspect_button.toggled.connect(self._on_export_aspect_toggled)
+        self.addWidget(aspect_button)
 
         btn_export = QToolButton()
         btn_export.setObjectName("exportPngButton")

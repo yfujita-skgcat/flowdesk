@@ -19,7 +19,10 @@ from PySide6.QtCore import QSettings, Qt, QThread, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -640,6 +643,9 @@ class MainWindow(QMainWindow):
         self._plot_widget.appearance_requested.connect(
             self._on_plot_appearance_requested
         )
+        self._plot_widget.view_range_requested.connect(
+            self._on_set_numeric_view_range
+        )
 
         center_widget = self._create_center_pane()
 
@@ -936,6 +942,7 @@ class MainWindow(QMainWindow):
         self._plot_toolbar.on_export_png(self._on_export_png)
         self._plot_toolbar.on_export_svg(self._on_export_svg)
         self._plot_toolbar.on_export_pdf(self._on_export_pdf)
+        self._plot_toolbar.on_export_aspect_toggled(self._on_export_aspect_toggled)
         self._plot_toolbar.on_add_statistic(self._on_add_statistic_from_graph)
         self._plot_toolbar.on_interaction_mode(self._on_interaction_mode)
         self._plot_toolbar.on_marginal_toggled(self._on_marginal_toggled)
@@ -2952,6 +2959,60 @@ class MainWindow(QMainWindow):
         self._plot_widget.set_full_range()
         self._update_status("Viewport reset to full range")
 
+    def _on_set_numeric_view_range(self) -> None:
+        """Set the display ViewBox range from explicit numeric values."""
+        current = self._plot_widget.view_range()
+        if current is None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Set View Range")
+        form = QFormLayout(dialog)
+        fields: dict[str, QDoubleSpinBox] = {}
+        for name, value in (
+            ("X minimum", current[0][0]),
+            ("X maximum", current[0][1]),
+            ("Y minimum", current[1][0]),
+            ("Y maximum", current[1][1]),
+        ):
+            field = QDoubleSpinBox(dialog)
+            field.setRange(-1e15, 1e15)
+            field.setDecimals(12)
+            field.setValue(value)
+            field.setObjectName("viewRange" + name.replace(" ", ""))
+            fields[name] = field
+            form.addRow(name, field)
+        x_hint = self._plot_widget.axis_range_input_hint("x")
+        y_hint = self._plot_widget.axis_range_input_hint("y")
+        note = QLabel(
+            f"X values: {x_hint}; Y values: {y_hint}.",
+            dialog,
+        )
+        form.addRow(note)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        x_range = (fields["X minimum"].value(), fields["X maximum"].value())
+        y_range = (fields["Y minimum"].value(), fields["Y maximum"].value())
+        if x_range[0] >= x_range[1] or y_range[0] >= y_range[1]:
+            QMessageBox.warning(
+                self, "Invalid View Range", "Minimum values must be smaller than maximum values."
+            )
+            return
+        self._plot_widget.set_manual_view_range(x_range, y_range)
+        self._update_status("Viewport set from numeric range")
+
+    def _on_export_aspect_toggled(self, enabled: bool) -> None:
+        self._update_status(
+            "Export aspect: 1:1" if enabled else "Export aspect: current view"
+        )
+
     def _on_marginal_toggled(self, enabled: bool) -> None:
         """Handle marginal histogram toggle."""
         self._plot_widget.set_marginal_enabled(enabled)
@@ -2976,7 +3037,10 @@ class MainWindow(QMainWindow):
             return
         try:
             self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
-            self._plot_widget.export_png(path_str)
+            self._plot_widget.export_png(
+                path_str,
+                aspect_1_to_1=self._plot_toolbar.export_aspect_1_to_1(),
+            )
             self._update_status(f"Plot exported to {path_str}")
         except Exception as exc:
             logger.error("PNG export failed: %s", exc)
@@ -2988,7 +3052,10 @@ class MainWindow(QMainWindow):
             return
         try:
             self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
-            self._plot_widget.export_vector(path, "SVG")
+            self._plot_widget.export_vector(
+                path, "SVG",
+                aspect_1_to_1=self._plot_toolbar.export_aspect_1_to_1(),
+            )
             self._update_status(f"Plot exported to {path}")
         except Exception as exc:
             logger.error("SVG export failed: %s", exc)
@@ -3000,7 +3067,10 @@ class MainWindow(QMainWindow):
             return
         try:
             self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
-            self._plot_widget.export_vector(path, "PDF")
+            self._plot_widget.export_vector(
+                path, "PDF",
+                aspect_1_to_1=self._plot_toolbar.export_aspect_1_to_1(),
+            )
             self._update_status(f"Plot exported to {path}")
         except Exception as exc:
             logger.error("PDF export failed: %s", exc)

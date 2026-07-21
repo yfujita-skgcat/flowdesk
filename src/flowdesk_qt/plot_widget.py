@@ -77,6 +77,7 @@ class PlotWidget(QWidget):
   """
 
     appearance_requested = Signal(str)
+    view_range_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -255,6 +256,7 @@ class PlotWidget(QWidget):
         self._range_mode = "manual"
         self._manual_view_range = (x_range, y_range)
         self._apply_manual_range()
+        self._refresh_ticks_for_current_view()
 
     def view_range(self) -> tuple[tuple[float, float], tuple[float, float]] | None:
         """Return the current ViewBox range as ``((x_min, x_max), (y_min, y_max))``."""
@@ -269,6 +271,14 @@ class PlotWidget(QWidget):
             )
         except Exception:
             return None
+
+    def axis_range_input_hint(self, axis: Literal["x", "y"]) -> str:
+        """Describe the numeric coordinate system used by range entry."""
+        transform = self._x_transform if axis == "x" else self._y_transform
+        if (self._x_transform_spec if axis == "x" else self._y_transform_spec) is None \
+            and transform == "log10":
+            return "log10 exponent (4 means 10⁴)"
+        return "display coordinate"
 
     def range_mode(self) -> RangeMode:
         """Return the current viewport range mode."""
@@ -670,6 +680,7 @@ class PlotWidget(QWidget):
         path: str | Path,
         width: int | None = None,
         height: int | None = None,
+        aspect_1_to_1: bool = False,
     ) -> None:
         """Render the current plot widget to a PNG file.
 
@@ -677,6 +688,7 @@ class PlotWidget(QWidget):
         change event data, or affect gate membership.
         """
         original_size = self.size()
+        original_aspect = self._begin_export_aspect(aspect_1_to_1)
         resized = width is not None or height is not None
         try:
             if resized:
@@ -697,6 +709,7 @@ class PlotWidget(QWidget):
             metadata = dict(self._export_metadata or {})
             metadata.update({
                 "format": "PNG",
+                "aspect_1_to_1": aspect_1_to_1,
                 "display_state": self.display_state(),
                 "scientific_note": (
                     "display export; does not contain analytical statistics"
@@ -707,36 +720,65 @@ class PlotWidget(QWidget):
                 encoding="utf-8",
             )
         finally:
+            self._end_export_aspect(original_aspect)
             if resized:
                 self.resize(original_size)
 
-    def export_vector(self, path: str | Path, format_name: Literal["SVG", "PDF"]) -> None:
+    def export_vector(
+        self,
+        path: str | Path,
+        format_name: Literal["SVG", "PDF"],
+        aspect_1_to_1: bool = False,
+    ) -> None:
         """Export the display-only scene as SVG/PDF and write a metadata sidecar."""
         out_path = Path(path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        if format_name == "SVG":
-            device = QSvgGenerator()
-            device.setFileName(str(out_path))
-            device.setSize(self.size())
-        else:
-            device = QPdfWriter(str(out_path))
-            device.setResolution(96)
-            device.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
-        painter = QPainter(device)
+        original_aspect = self._begin_export_aspect(aspect_1_to_1)
         try:
-            self.render(painter, QPoint(0, 0))
+            if format_name == "SVG":
+                device = QSvgGenerator()
+                device.setFileName(str(out_path))
+                device.setSize(self.size())
+            else:
+                device = QPdfWriter(str(out_path))
+                device.setResolution(96)
+                device.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+            painter = QPainter(device)
+            try:
+                self.render(painter, QPoint(0, 0))
+            finally:
+                painter.end()
+            metadata = dict(self._export_metadata or {})
+            metadata.update({
+              "format": format_name,
+              "aspect_1_to_1": aspect_1_to_1,
+              "display_state": self.display_state(),
+              "scientific_note": "display export; does not contain analytical statistics",
+            })
+            out_path.with_suffix(out_path.suffix + ".json").write_text(
+                json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
         finally:
-            painter.end()
-        metadata = dict(self._export_metadata or {})
-        metadata.update({
-          "format": format_name,
-          "display_state": self.display_state(),
-          "scientific_note": "display export; does not contain analytical statistics",
-        })
-        out_path.with_suffix(out_path.suffix + ".json").write_text(
-            json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+            self._end_export_aspect(original_aspect)
+
+    def _begin_export_aspect(self, enabled: bool) -> tuple[bool, float] | None:
+        if not enabled:
+            return None
+        vb = self._view_box()
+        if vb is None:
+            return None
+        state = vb.state
+        original = (bool(state.get("aspectLocked", False)), float(state.get("aspectRatio", 1.0)))
+        vb.setAspectLocked(True, ratio=1.0)
+        return original
+
+    def _end_export_aspect(self, original: tuple[bool, float] | None) -> None:
+        if original is None:
+            return
+        vb = self._view_box()
+        if vb is not None:
+            vb.setAspectLocked(original[0], ratio=original[1])
 
     def screen_to_data(self, screen_x: float, screen_y: float) -> tuple[float, float]:
         """Convert screen coordinates to data coordinates.
@@ -2045,6 +2087,14 @@ class PlotWidget(QWidget):
             return action
 
         add_action("Plot Appearance...", "plotAppearance")
+
+        range_menu = menu.addMenu("View Range")
+        range_menu.setObjectName("plotViewRangeMenu")
+        range_action = range_menu.addAction("Set numeric range...")
+        range_action.setObjectName("plotSetNumericRange")
+        range_action.triggered.connect(
+            lambda _checked=False: self.view_range_requested.emit()
+        )
 
         ticks_menu = menu.addMenu("Axis Ticks")
         ticks_menu.setObjectName("plotAxisTicksMenu")
