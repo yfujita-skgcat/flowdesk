@@ -1977,6 +1977,11 @@ class MainWindow(QMainWindow):
             )
         if gate.x_transform_id or gate.transform_id:
             self._channel_selector.set_x_transform("linear")
+            transform = self._transform_by_id(gate.x_transform_id or gate.transform_id)
+            if transform is not None:
+                self._channel_selector.set_analysis_transform_choice(
+                    "x", str(transform.transform_type)
+                )
         else:
             self._channel_selector.set_x_transform(gate.x_scale)
         if gate.y_transform_id:
@@ -1986,8 +1991,28 @@ class MainWindow(QMainWindow):
         self._replot()
         self._update_status(
             f"Showing gate: {gate.name} [{gate.id}] on "
-            f"{gate.x_transform_id or gate.x_scale}/"
-            f"{gate.y_transform_id or gate.y_scale}"
+            f"{self._gate_transform_status(gate, 'x')}/"
+            f"{self._gate_transform_status(gate, 'y')}"
+        )
+
+    @staticmethod
+    def _legacy_transform_status(scale: str) -> str:
+        """Make compatibility-only gate scales explicit in status text."""
+        labels = {"linear": "Linear", "log": "Legacy Log10", "asinh": "Legacy Asinh"}
+        return labels.get(str(scale), f"Legacy {scale}")
+
+    def _gate_transform_status(self, gate: Any, axis: str) -> str:
+        transform_id = (
+            gate.x_transform_id if axis == "x" else gate.y_transform_id
+        ) or (gate.transform_id if axis == "x" else None)
+        if transform_id:
+            transform = self._transform_by_id(transform_id)
+            return (
+                f"{transform_id} ({transform.transform_type})"
+                if transform is not None else str(transform_id)
+            )
+        return self._legacy_transform_status(
+            gate.x_scale if axis == "x" else gate.y_scale
         )
 
     def _on_show_population(self, gate) -> None:
@@ -2039,6 +2064,15 @@ class MainWindow(QMainWindow):
             logger.error("Ambiguous analysis transforms for parameter %s", parameter)
             return None
         return matches[0] if matches else None
+
+    def _transform_by_id(self, transform_id: str | None) -> TransformSpec | None:
+        if not transform_id:
+            return None
+        return next(
+            (transform for transform in self._transform_specs()
+             if transform.id == transform_id),
+            None,
+        )
 
     def _on_clear_gates(self) -> None:
         """Clear all gates."""

@@ -1482,6 +1482,69 @@ def test_run_samples_passes_derived_channel_identity_to_gating() -> None:
   np.testing.assert_array_equal(sample.events, source_before)
 
 
+def test_derived_parameter_drives_all_gate_shapes_and_statistic_export() -> None:
+  """One derived stable ID is usable by gates, statistics, and export."""
+  sample = SampleData(
+    "s1",
+    np.array([[2.0, 1.0], [4.0, 1.0], [6.0, 1.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),
+     ChannelSpec(id="reference", name="Reference")),
+  )
+  strategy = GatingStrategySpec(
+    id="derived_shapes",
+    name="Derived shapes",
+    gates=(
+      GateSpec(
+        id="ratio_rectangle", name="Ratio rectangle", gate_type="rectangle",
+        parent_population_id="all_events", x_parameter="ratio",
+        y_parameter="reference",
+        thresholds={"x_min": 1.5, "x_max": 4.5, "y_min": 0.0, "y_max": 2.0},
+      ),
+      GateSpec(
+        id="ratio_range", name="Ratio range", gate_type="range",
+        parent_population_id="all_events", x_parameter="ratio",
+        thresholds={"min": 3.5, "max": 6.5},
+      ),
+      GateSpec(
+        id="ratio_polygon", name="Ratio polygon", gate_type="polygon",
+        parent_population_id="all_events", x_parameter="ratio",
+        y_parameter="reference",
+        coordinates=[(1.0, 0.0), (5.0, 0.0), (3.0, 2.0)],
+      ),
+    ),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[{
+      "id": "ratio-definition", "output_channel_id": "ratio",
+      "name": "Signal ratio", "expression": "signal / reference",
+      "input_parameters": ["signal", "reference"], "source_stage": "raw",
+    }],
+    execution_profiles=[{"id": "default", "gating_strategy_id": strategy.id}],
+    gating_strategies_data={strategy.id: strategy},
+    statistics=[{
+      "id": "ratio_mean", "name": "Ratio mean",
+      "population_id": "all_events", "parameter_id": "ratio",
+      "metric": "mean", "source_stage": "compensated",
+    }],
+  )
+  report = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_profile_id="default"), (sample,)
+  )
+  counts = {
+    result.population_id: result.event_count
+    for result in report.population_results
+    if result.population_id in {"ratio_rectangle", "ratio_range", "ratio_polygon"}
+  }
+  assert counts == {"ratio_rectangle": 2, "ratio_range": 2, "ratio_polygon": 2}
+  ratio_stat = next(
+    result for result in report.statistic_results if result.statistic_id == "ratio_mean"
+  )
+  assert ratio_stat.value == pytest.approx(4.0)
+  exported = population_results_to_export_records(report.population_results)
+  assert any(record.population_id == "ratio_rectangle" for record in exported)
+
+
 def test_raw_and_compensated_derived_sources_use_explicit_stage_views() -> None:
   source_events = np.array([[15.0, 10.0]], dtype=np.float64)
   sample = SampleData(

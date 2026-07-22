@@ -736,16 +736,16 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 #### Increment 4: Derived Parameterの全GUI接続
 
 - [x] derived outputをX/Y軸で選択し、synthetic ratioを正しい座標でplotできるようにする。定義直後はnot-run/staleとして見え、run後にcurrentへ更新し、errorでもentryを消さない。
-- [ ] derived軸上でrectangle/polygon/range gateを作成・編集し、GUI preview、authoritative batch、CLI/Pythonのmembership/count/frequencyを一致させる。
-- [ ] 同じderived stable IDをTransform、mean/median Statistic、compatible simple overlay、exportで使用し、save/reload後も同じID・unit・provenanceを解決する。
-- [ ] derived definitionの編集・削除前にderived dependency、transform、gate、statistic、view参照を列挙する。参照中はblockまたは明示的dependency-aware operationを要求し、silent cascade deleteしない。
+- [x] derived軸上でrectangle/polygon/range gateを作成・編集し、GUI preview、authoritative batch、CLI/Pythonのmembership/count/frequencyを一致させる。
+- [x] 同じderived stable IDをTransform、mean/median Statistic、compatible simple overlay、exportで使用し、save/reload後も同じID・unit・provenanceを解決する。
+- [x] derived definitionの編集・削除前にderived dependency、transform、gate、statistic、view参照を列挙する。参照中はblockまたは明示的dependency-aware operationを要求し、silent cascade deleteしない。
 
 #### Increment 5: transform authoringの一本化とlegacy migration
 
 - [x] 軸に`Linear | Log10 | Asinh | Logicle | Custom...`の一つのtransform selectorだけを表示し、正式なimmutable/versioned `TransformSpec` registryと同じproject commandを使う。別のlegacy display transform計算を新規作成に使わない。
 - [x] quick optionはparameter/settingsが完全一致する定義をreuseし、なければ新規versionを作る。plot axisと新規gateは同じtransform IDまたは明示されたidentity bindingを保存し、events、gate coordinates、membership、ticksで一度だけ適用する。
-- [ ] 参照中definitionはin-place変更せずduplicate/version作成と明示的gate/view migration previewを使う。compensation/derived後のcanonical inputで差分を評価する。
-- [ ] legacy `x_scale`/`y_scale`は読み込み可能にし、`Legacy Log10/Asinh`と表示して、geometry/membershipを維持する明示的migrationを提供する。legacy Logicle approximationをformal Logicleへsilent変換しない。
+- [x] 参照中definitionはin-place変更せずduplicate/version作成と明示的gate/view migration previewを使う。compensation/derived後のcanonical inputで差分を評価する。
+- [x] legacy `x_scale`/`y_scale`は読み込み可能にし、`Legacy Log10/Asinh`と表示して、geometry/membershipを維持する明示的migrationを提供する。legacy Logicle approximationをformal Logicleへsilent変換しない。
 - [x] plot transform変更でnative compensated/derived domainのmean/medianが変化しないことをtestする。transformed statisticは`StatisticSpec`でvalue spaceとtransform IDを明示した場合だけ許可する。
 
 #### Increment 6: Results StatisticsとSample Sheetの最終統合
@@ -766,9 +766,9 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 
 #### Phase B7.4 必須受け入れtest
 
-- [ ] Derived ParameterがParameters、X/Y、Gate、Transform、Statistic、simple Overlay、exportで同じstable IDとして利用でき、reload後のCLI/Python結果と一致する。
+- [x] Derived ParameterがParameters、X/Y、Gate、Transform、Statistic、simple Overlay、exportで同じstable IDとして利用でき、reload後のCLI/Python結果と一致する。
 - [ ] GUI plotがcanonical compensation/derived/transform済みdataを使用し、raw fallback、double transform、stale-as-current、display-downsampled scientific resultがない。
-- [ ] transform authoring pathが一つで、新規gateの座標・membership・tickと同じdefinitionを使い、legacy migrationが固定membership fixtureを維持する。
+- [x] transform authoring pathが一つで、新規gateの座標・membership・tickと同じdefinitionを使い、legacy migrationが固定membership fixtureを維持する。
 - [ ] Statistics管理がResultsへ、title/annotation管理がSample Sheetへ、display操作がPlot/Viewへ整理され、重複entry pointが別modelを作らない。
 - [ ] title、参照annotation、未参照annotationのinvalidationがdependencyどおりで、raw FCS bytes/eventsは不変である。
 - [ ] Advanced Overlayはlive render/save/reload/export E2E完了までdisabled/hiddenで、既存保存definitionを失わない。

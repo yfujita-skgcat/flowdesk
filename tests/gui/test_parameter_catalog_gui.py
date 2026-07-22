@@ -139,6 +139,49 @@ def test_main_window_plots_derived_parameter_from_canonical_result(qapp, tmp_pat
     qapp.processEvents()
 
 
+def test_simple_overlay_uses_the_same_derived_parameter_id(qapp, tmp_path) -> None:
+  first = tmp_path / "ratio-active.fcs"
+  second = tmp_path / "ratio-overlay.fcs"
+  write_fcs_file(first, np.array([[2.0, 1.0], [8.0, 2.0]]), ["X", "Y"])
+  write_fcs_file(second, np.array([[3.0, 1.0], [9.0, 3.0]]), ["X", "Y"])
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(first), str(second)]) == 2
+    active, overlay = window._sample_browser.samples()
+    x_id, y_id = (channel.id for channel in active.info.channels)
+    window._derived_parameters = [{
+      "id": "ratio-definition", "name": "Ratio", "output_channel_id": "ratio",
+      "expression": f"{x_id} / {y_id}", "input_parameters": [x_id, y_id],
+      "source_stage": "raw",
+    }]
+    window._refresh_parameter_catalog()
+    assert window._sample_browser.select_sample(active.id)
+    assert window._current_sample_id == active.id
+    window._channel_selector.set_selected_channels("ratio", y_id)
+    source = [{
+      "source_id": f"manual:{overlay.id}", "sample_id": overlay.id,
+      "population_id": "all_events", "display_name": overlay.id,
+      "x_parameter_id": "ratio", "y_parameter_id": y_id,
+    }]
+    assert window._overlay_status_resolver(source)[f"manual:{overlay.id}"][0] == "compatible"
+    window._sample_browser._set_manual_overlay(overlay.id, True)
+    assert overlay.id in window._sample_browser.overlay_state()["manual_overlay_sample_ids"]
+    window._render_manual_overlays("ratio", y_id)
+    QTest.qWait(20)
+    banner = window._plot_widget.findChild(
+      type(window._plot_widget._status_banner), "plotStatusBanner"
+    )
+    assert banner.text() == ""
+    assert len(window._plot_widget._overlay_scatter_items) == 1
+    overlay_x, overlay_y = window._plot_widget._overlay_scatter_items[0].getData()
+    np.testing.assert_allclose(overlay_x, [3.0, 3.0])
+    np.testing.assert_allclose(overlay_y, [1.0, 3.0])
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 def test_axis_transform_selector_creates_one_persisted_log_definition(qapp, tmp_path) -> None:
   path = tmp_path / "transform.fcs"
   write_fcs_file(path, np.array([[1.0, 2.0], [10.0, 3.0]]), ["X", "Y"])
@@ -158,6 +201,28 @@ def test_axis_transform_selector_creates_one_persisted_log_definition(qapp, tmp_
     assert transform["settings"]["base"] == 10.0
     assert window._transform_for_parameter(parameter_id).id == transform["id"]
     assert window._gate_editor._x_transform_id == transform["id"]
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_derived_parameter_deletion_lists_all_persisted_references(qapp) -> None:
+  window = MainWindow()
+  try:
+    window._derived_parameters = [{
+      "id": "ratio-definition", "name": "Ratio", "output_channel_id": "ratio",
+      "input_parameters": ["X", "Y"],
+    }]
+    window._transforms = [{"id": "ratio-log", "name": "Ratio log", "parameter": "ratio"}]
+    window._statistics = [{"id": "ratio-mean", "name": "Ratio mean", "parameter_id": "ratio"}]
+    window._plot_views = [{"id": "ratio-view", "name": "Ratio view", "x_parameter": "ratio"}]
+    references = window._derived_parameter_references({"ratio"})
+    assert references == [
+      "transform Ratio log",
+      "statistic Ratio mean",
+      "plot view Ratio view",
+    ]
   finally:
     window.close()
     window.deleteLater()
