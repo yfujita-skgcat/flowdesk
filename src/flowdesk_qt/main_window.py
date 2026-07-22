@@ -1387,10 +1387,23 @@ class MainWindow(QMainWindow):
         key = self._processed_display_key(request)
         processed = self._processed_display_cache.get(key)
         if processed is None:
-            self._queue_processed_display(request)
-            self._plot_widget.clear_plot()
-            self._plot_widget.set_status_banner("Preparing canonical processed display…")
-            return
+            previous = self._previous_processed_display(request)
+            if (
+                previous is not None
+                and self._results_stale
+                and self._preview_revision.preview_status != "current"
+            ):
+                self._old_membership_banner = True
+                processed = previous
+            else:
+                self._queue_processed_display(request)
+                processed = self._processed_display_cache.get(key)
+                if processed is None:
+                    self._plot_widget.clear_plot()
+                    self._plot_widget.set_status_banner(
+                        "Preparing canonical processed display…"
+                    )
+                    return
         data = processed.events
 
         try:
@@ -1535,16 +1548,59 @@ class MainWindow(QMainWindow):
         )
 
     def _queue_processed_display(self, request: ProcessedDisplayRequest) -> None:
-        """Schedule a latest-wins core request; Qt never calculates display values."""
+        """Adopt a core display result without ever calculating values in Qt.
+
+        The existing preview scheduler remains responsible for debounced gate
+        recalculation.  Initial plot selection must still establish a complete
+        current display atomically, rather than exposing a blank raw fallback
+        while a separate worker is pending.
+        """
         try:
-            self._processed_display_scheduler.schedule(
-                self._build_project_manifest(), request
-            )
+            result = PipelineRunner(
+                self._build_project_manifest()
+            ).prepare_display_sample(request)
+            if result.revision != self._preview_revision.analysis_revision:
+                return
+            self._processed_display_cache[self._processed_display_key(result)] = result
+            self._replot()
         except Exception as exc:
+            self._plot_widget.clear_plot()
             self._plot_widget.set_status_banner(
                 f"Processed display unavailable: {exc}"
             )
             self._update_status(f"Processed display error: {exc}")
+
+    def _previous_processed_display(
+        self, request: ProcessedDisplayRequest
+    ) -> ProcessedDisplayResult | None:
+        """Find only an explicitly labeled prior-revision plot for transition UI."""
+        for result in reversed(tuple(self._processed_display_cache.values())):
+            if (
+                result.sample_id == request.sample_id
+                and result.x_parameter_id == request.x_parameter_id
+                and result.y_parameter_id == request.y_parameter_id
+                and result.x_transform_id == request.x_transform_id
+                and result.y_transform_id == request.y_transform_id
+                and result.plot_type == request.plot_type
+                and result.population_id == request.population_id
+            ):
+                return result
+        # A newly created population has no prior membership.  During the
+        # transition, All Events is the only honest fallback—not another
+        # population's old mask.
+        if request.population_id != "all_events":
+            for result in reversed(tuple(self._processed_display_cache.values())):
+                if (
+                    result.sample_id == request.sample_id
+                    and result.population_id == "all_events"
+                    and result.x_parameter_id == request.x_parameter_id
+                    and result.y_parameter_id == request.y_parameter_id
+                    and result.x_transform_id == request.x_transform_id
+                    and result.y_transform_id == request.y_transform_id
+                    and result.plot_type == request.plot_type
+                ):
+                    return result
+        return None
 
     def _on_processed_display_ready(self, result: ProcessedDisplayResult) -> None:
         """Adopt only the result matching the current plot definition atomically."""
@@ -2310,7 +2366,6 @@ class MainWindow(QMainWindow):
         self._sample_browser.clear_samples()
         self._event_data.clear()
         self._sample_data.clear()
-        self._processed_display_cache.clear()
         self._processed_display_scheduler.cancel_pending()
         self._current_sample_id = None
         self._channel_names = []
@@ -3805,9 +3860,8 @@ class MainWindow(QMainWindow):
                 revision=revision,
                 active_sample_id=self._current_sample_id,
                 affected_population_ids=tuple(affected_population_ids),
-            )
+        )
         self._preview_report = None
-        self._processed_display_cache.clear()
         self._processed_display_scheduler.cancel_pending()
         self._results_stale = True
         self._population_tree.clear()
