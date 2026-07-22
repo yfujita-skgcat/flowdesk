@@ -1355,6 +1355,30 @@ class PipelineRunner:
           row_count=stage_result.events.shape[0],
           allow_functions=True,
         )
+        invalid_mask = ~np.isfinite(result)
+        if np.any(invalid_mask):
+          diagnostics.append(ExecutionDiagnostic(
+            code="derived_parameter_nonfinite_values",
+            message=(
+              f"derived parameter {spec.id!r} produced "
+              f"{int(np.count_nonzero(invalid_mask))} non-finite event(s)"
+            ),
+            severity="warning",
+            stage="derived_parameters",
+            sample_id=sample_id,
+            parameter_id=spec.id,
+            affected_event_count=int(np.count_nonzero(invalid_mask)),
+            details={
+              "expression": spec.expression,
+              "output_channel_id": spec.output_id,
+              "non_finite_policy": spec.non_finite_policy,
+              "invalid_reason_counts": {
+                "nan": int(np.count_nonzero(np.isnan(result))),
+                "positive_inf": int(np.count_nonzero(np.isposinf(result))),
+                "negative_inf": int(np.count_nonzero(np.isneginf(result))),
+              },
+            },
+          ))
         next_stage_result = stage_result.append_channel(result, output_channel)
       except (
         DerivedParameterStageError,

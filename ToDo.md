@@ -784,6 +784,7 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 - [x] `DerivedParameterSpec`にも`non_finite_policy`を保存し、Derived Parameter Editor、schema、manifest validator、headless parserでstableにround-tripする（derived evaluation時のpolicy適用は未完了）。
 - [x] 極端なLog10 viewportの逆変換overflow warningを表示計算に限定して抑制し、解析値を変更しないfixtureを追加する。
 - [x] Display preparationとgeometric gate evaluationがNaN/+Inf/-Infを有限値へ変換せず、由来parameter・expression・stage・transform ID・理由別件数を診断情報へ保持するfixtureを追加する。
+- [x] Derived evaluation自体も非有限出力を`derived_parameter_nonfinite_values`として記録し、expression、output ID、policy、NaN/+Inf/-Inf別件数をpreview/Run Pipelineへ渡す。
 - [x] core fixtureで`log(x)`、`log(x+1)`、zero/negative domain、division-by-zero、raw immutabilityを確認する（GUI/CLI/export E2Eは未完了）。
 
 #### Phase B7.4 必須受け入れtest

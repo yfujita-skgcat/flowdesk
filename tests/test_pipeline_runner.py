@@ -636,7 +636,18 @@ def test_log_domain_and_log_plus_one_are_distinct_derived_definitions() -> None:
   assert np.isnan(log_preview.values[[0, 2]]).all()
   assert log1p_preview.values[0] == pytest.approx(0.0)
   assert np.isnan(log1p_preview.values[2])
-  assert log_preview.diagnostics == log1p_preview.diagnostics == ()
+  assert [d.code for d in log_preview.diagnostics] == [
+    "derived_parameter_nonfinite_values"
+  ]
+  assert [d.code for d in log1p_preview.diagnostics] == [
+    "derived_parameter_nonfinite_values"
+  ]
+  assert log_preview.diagnostics[0].details["invalid_reason_counts"] == {
+    "nan": 2, "positive_inf": 0, "negative_inf": 0,
+  }
+  assert log1p_preview.diagnostics[0].details["invalid_reason_counts"] == {
+    "nan": 1, "positive_inf": 0, "negative_inf": 0,
+  }
   assert np.array_equal(sample.events, original, equal_nan=True)
 
 

@@ -215,6 +215,12 @@ with gate ID, axis parameters/transforms, and the number excluded from that gate
 diagnostics are attached to the headless `ExecutionReport`, so GUI and CLI adapters can
 show the same QC rather than inferring it from a downsampled image.
 
+The derived stage also emits `derived_parameter_nonfinite_values` when an expression
+successfully evaluates but produces non-finite values. The diagnostic preserves the
+expression, output channel ID, selected non-finite policy, and reason-specific counts;
+an expression-domain failure remains a separate `derived_parameter_evaluation_failed`
+diagnostic governed by `invalid_value_policy`.
+
 `log(x + 1)` is not a generic error recovery. It is a separate persisted expression,
 appropriate only when `x` is a non-negative quantity and including zero has a documented
 scientific meaning. For compensation-corrected fluorescence, which can legitimately be
