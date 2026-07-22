@@ -208,6 +208,80 @@ def test_run_project_prints_persisted_derived_diagnostic_as_json(
   }
 
 
+def test_cli_and_core_export_match_for_nonfinite_derived_statistics(
+  tmp_path: Path,
+  monkeypatch,
+  capsys,
+) -> None:
+  """The CLI must preserve derived QC and statistic policy from the core run."""
+  from flowdesk_core.execution_context import ExecutionContext
+  from flowdesk_core.export import write_statistic_results
+  from flowdesk_core.pipeline_runner import PipelineRunner
+
+  project = {
+    "project_id": "nonfinite-e2e",
+    "project_version": CURRENT_PROJECT_VERSION,
+    "pipeline_version": "0.1",
+    "samples": [{
+      "id": "s1", "path": "sample.fcs",
+      "channels": [
+        {"id": "signal", "name": "Signal", "metadata": {}},
+        {"id": "reference", "name": "Reference", "metadata": {}},
+      ],
+    }],
+    "execution_profiles": [{"id": "default", "name": "Default"}],
+    "derived_parameters": [{
+      "id": "ratio_definition", "name": "Ratio", "output_channel_id": "ratio",
+      "expression": "signal / reference", "source_stage": "raw",
+      "input_parameters": ["signal", "reference"],
+      "invalid_value_policy": "emit_nan_with_warning",
+      "non_finite_policy": "strict",
+    }],
+    "statistics": [
+      {
+        "id": "ratio_strict", "name": "Ratio strict", "population_id": "all_events",
+        "parameter_id": "ratio", "metric": "mean", "source_stage": "compensated",
+        "non_finite_policy": "strict",
+      },
+      {
+        "id": "ratio_excluded", "name": "Ratio excluded", "population_id": "all_events",
+        "parameter_id": "ratio", "metric": "mean", "source_stage": "compensated",
+        "non_finite_policy": "exclude_invalid",
+      },
+    ],
+  }
+  project_path = tmp_path / "nonfinite-e2e.flowdesk"
+  save_project(project_path, project)
+  sample = SampleData(
+    "s1",
+    np.array([[2.0, 1.0], [4.0, 0.0], [6.0, 3.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"), ChannelSpec(id="reference", name="Reference")),
+  )
+  original = sample.events.copy()
+  monkeypatch.setattr(
+    "flowdesk_cli.run_project.read_fcs_sample", lambda *_args: (None, sample)
+  )
+
+  core_report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+  core_path = tmp_path / "core.tsv"
+  write_statistic_results(list(core_report.statistic_results), core_path)
+  cli_path = tmp_path / "cli.tsv"
+  assert run_project_command(str(project_path), statistics_output=str(cli_path)) == 0
+
+  import csv
+  with core_path.open(encoding="utf-8") as handle:
+    core_rows = list(csv.DictReader(handle, delimiter="\t"))
+  with cli_path.open(encoding="utf-8") as handle:
+    cli_rows = list(csv.DictReader(handle, delimiter="\t"))
+  assert core_rows == cli_rows
+  row_map = {row["statistic_id"]: row for row in cli_rows}
+  assert row_map["ratio_strict"]["status"] == "undefined"
+  assert row_map["ratio_strict"]["n_invalid"] == "1"
+  assert row_map["ratio_excluded"]["value"] == "2.0"
+  assert "derived_parameter_nonfinite_values" in capsys.readouterr().err
+  np.testing.assert_array_equal(sample.events, original)
+
+
 # ---------------------------------------------------------------------------
 # inspect_fcs_command tests
 # ---------------------------------------------------------------------------

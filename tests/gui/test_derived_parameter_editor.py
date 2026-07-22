@@ -20,6 +20,7 @@ from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import ChannelSpec, GateSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
+from flowdesk_core.sample import SampleData
 from flowdesk_qt.derived_parameter_editor import DerivedParameterEditorDialog
 from flowdesk_qt.main_window import MainWindow
 
@@ -186,6 +187,39 @@ def test_editor_preview_delegates_to_bounded_core_result(qapp) -> None:
     assert calls[0][0][0]["expression"] == "signal / reference"
     assert "2 / 500 events" in result.text()
     assert "NaN: 1" in result.text()
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_editor_preview_surfaces_core_nonfinite_diagnostic(qapp) -> None:
+  sample = SampleData(
+    "s1",
+    np.array([[0.0], [1.0], [-2.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+
+  def preview_callback(definitions: list[dict], output_id: str):
+    runner = PipelineRunner({"derived_parameters": definitions})
+    return runner.preview_derived_parameter(sample, output_id)
+
+  dialog = DerivedParameterEditorDialog(
+    [], (ChannelSpec(id="signal", name="Signal"),),
+    preview_callback=preview_callback,
+  )
+  try:
+    _line_edit(dialog, "derivedParameterDefinitionIdEdit").setText("log_def")
+    _line_edit(dialog, "derivedParameterNameEdit").setText("Log signal")
+    _line_edit(dialog, "derivedParameterOutputIdEdit").setText("log_signal")
+    expression = dialog.findChild(QPlainTextEdit, "derivedParameterExpressionEdit")
+    preview = dialog.findChild(QPushButton, "derivedParameterPreviewButton")
+    result = dialog.findChild(QLabel, "derivedParameterPreviewLabel")
+    assert expression is not None and preview is not None and result is not None
+    expression.setPlainText("log(signal)")
+    preview.click()
+    assert "NaN: 2" in result.text()
+    assert "derived_parameter_nonfinite_values" in result.text()
   finally:
     dialog.close()
     dialog.deleteLater()

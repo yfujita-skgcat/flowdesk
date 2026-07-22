@@ -234,6 +234,13 @@ overflow, all-invalid and mixed-valid populations, and raw-event immutability. E
 projects retain their historical behavior through an explicit compatibility mode or a
 confirmed migration; no silent change in NaN handling is allowed.
 
+The non-finite fixture acceptance path is cross-surface: the Qt Derived Parameter
+preview delegates to `PipelineRunner.preview_derived_parameter`, the normal Run Pipeline
+and Python API produce the authoritative `StatisticResult`, and the CLI TSV writer must
+match the core writer's parsed rows in values, status, QC columns, and policy. The test
+also verifies that a `log(signal)` domain error is not repaired by changing the expression
+to `log(signal + 1)` and that raw event arrays remain unchanged.
+
 The current-sample scheduling rules remain latest-wins and revision checked. Worker
 output is adopted atomically on the GUI thread, and window/project shutdown must leave no
 thread running.
