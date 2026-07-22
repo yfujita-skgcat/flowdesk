@@ -607,6 +607,39 @@ def test_derived_failure_policy_emit_nan_records_full_diagnostic(
   }
 
 
+def test_log_domain_and_log_plus_one_are_distinct_derived_definitions() -> None:
+  sample = SampleData(
+    "s1",
+    np.array([[0.0], [1.0], [-2.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  original = sample.events.copy()
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[
+      {
+        "id": "log_signal", "name": "log(signal)", "output_channel_id": "log_signal",
+        "expression": "log(signal)", "input_parameters": ["signal"],
+        "source_stage": "raw", "non_finite_policy": "strict",
+      },
+      {
+        "id": "log1p_signal", "name": "log(signal + 1)",
+        "output_channel_id": "log1p_signal", "expression": "log(signal + 1)",
+        "input_parameters": ["signal"], "source_stage": "raw",
+        "non_finite_policy": "strict",
+      },
+    ],
+  )
+  runner = PipelineRunner(project)
+  log_preview = runner.preview_derived_parameter(sample, "log_signal")
+  log1p_preview = runner.preview_derived_parameter(sample, "log1p_signal")
+  assert np.isnan(log_preview.values[[0, 2]]).all()
+  assert log1p_preview.values[0] == pytest.approx(0.0)
+  assert np.isnan(log1p_preview.values[2])
+  assert log_preview.diagnostics == log1p_preview.diagnostics == ()
+  assert np.array_equal(sample.events, original, equal_nan=True)
+
+
 def test_unknown_derived_input_is_rejected_before_failure_policy(
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:
