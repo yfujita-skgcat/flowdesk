@@ -2174,6 +2174,12 @@ class MainWindow(QMainWindow):
 
     def _on_run_pipeline(self) -> None:
         """Run the analysis pipeline on loaded samples."""
+        from flowdesk_qt.statistics_editor import repair_statistic_definitions
+
+        repaired_statistics = repair_statistic_definitions(self._statistics)
+        if repaired_statistics != self._statistics:
+            self._statistics = repaired_statistics
+            self._project_dirty = True
         for sample in self._sample_browser.samples():
             if (
                 getattr(sample, "status", "match")
@@ -3480,6 +3486,7 @@ class MainWindow(QMainWindow):
             != bool(value.get("compute_enabled", True))
         ]
         self._statistics = updated
+        self._sync_statistic_result_definitions()
         self._results_workspace.set_statistic_column_visibility(dialog.visibility())
         self._project_dirty = True
         if compute_changed:
@@ -4184,6 +4191,10 @@ class MainWindow(QMainWindow):
         reason: str,
         affected_gate_ids: set[str] | frozenset[str] | None = None,
     ) -> None:
+        # Keep newly added/edited definitions visible as missing or stale
+        # result columns immediately. Values are still produced only by the
+        # canonical pipeline/preview runner.
+        self._sync_statistic_result_definitions()
         self._results_stale_reason = reason
         affected_population_ids = self._population_ids_for_gates(affected_gate_ids)
         revision = self._preview_revision.invalidate(affected_population_ids)
@@ -4192,7 +4203,7 @@ class MainWindow(QMainWindow):
                 revision=revision,
                 active_sample_id=self._current_sample_id,
                 affected_population_ids=tuple(affected_population_ids),
-        )
+            )
         self._preview_report = None
         self._processed_display_scheduler.cancel_pending()
         self._results_stale = True
@@ -4207,6 +4218,25 @@ class MainWindow(QMainWindow):
         self._update_status(f"{reason} (results stale; rerun pipeline)")
         self._schedule_current_preview()
 
+    def _sync_statistic_result_definitions(self) -> None:
+        """Expose persisted statistic columns before their next calculation."""
+        self._result_state.update_definitions(
+            sample_ids=tuple(sample.id for sample in self._sample_browser.samples()),
+            population_ids=tuple(self._population_parent_map()),
+            statistic_definitions=tuple(
+                (
+                    str(value.get("id")),
+                    str(population_id),
+                    bool(value.get("compute_enabled", True)),
+                )
+                for value in self._statistics
+                if value.get("id")
+                for population_id in value.get(
+                    "population_ids",
+                    [value.get("population_id", "all_events")],
+                )
+            ),
+        )
     # -- help ----------------------------------------------------------------
 
     def _on_about(self) -> None:

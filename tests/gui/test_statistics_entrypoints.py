@@ -149,6 +149,39 @@ def test_statistics_editor_reports_removed_population_dependency(qapp) -> None:
     dialog.definitions()
 
 
+def test_statistics_editor_assigns_id_to_named_legacy_definition(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[{
+      "id": "",
+      "name": "FITC B525-H",
+      "population_id": "all_events",
+      "population_ids": ["all_events"],
+      "parameter_id": "FITC B525-H",
+      "metric": "mean",
+      "source_stage": "raw",
+    }],
+    available_channels=(ChannelSpec(id="FITC B525-H", name="FITC B525-H"),),
+    population_ids=("all_events",),
+  )
+
+  definitions = dialog.definitions()
+
+  assert definitions[0]["id"] == "stat_fitc_b525_h"
+
+
+def test_statistic_management_repairs_missing_id_and_drops_blank_rows(qapp) -> None:
+  dialog = StatisticManagementDialog(
+    statistics=[
+      {"id": "", "name": "FITC B525-H", "parameter_id": "FITC B525-H"},
+      {"id": "", "name": "", "parameter_id": None},
+    ],
+  )
+
+  definitions = dialog.definitions()
+
+  assert [value["id"] for value in definitions] == ["stat_fitc_b525_h"]
+
+
 def test_statistics_editor_blocks_delete_with_downstream_reference(qapp, monkeypatch) -> None:
   messages: list[str] = []
   monkeypatch.setattr(
@@ -181,6 +214,26 @@ def test_statistics_editor_rejects_empty_selected_scope(qapp) -> None:
   dialog._target_population_ids = ()
   with pytest.raises(ValueError, match="no population targets"):
     dialog.definitions()
+
+
+def test_statistics_editor_population_targets_dialog_uses_qt6_item_data(
+  qapp, monkeypatch,
+) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events", "live", "marker"),
+    population_parents={"live": "all_events", "marker": "live"},
+  )
+  dialog._new_button.click()
+  dialog._target_population_ids = ("all_events", "live")
+  monkeypatch.setattr(
+    QDialog, "exec", lambda _dialog: QDialog.DialogCode.Accepted,
+  )
+
+  dialog._select_population_targets()
+
+  assert dialog._target_population_ids == ("all_events", "live")
 
 
 def test_results_add_statistic_defaults_to_active_x_parameter(qapp, monkeypatch) -> None:

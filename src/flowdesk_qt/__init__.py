@@ -5,13 +5,36 @@ Qt modules must call core APIs instead of implementing scientific execution.
 
 from __future__ import annotations
 
+import signal
 import sys
 from pathlib import Path
+from typing import Any
 
+from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication
 
 from flowdesk_qt.diagnostics import configure_gui_logging, default_run_id, install_exception_hook
 from flowdesk_qt.main_window import MainWindow
+
+
+def _install_terminal_interrupt_handler(
+    app: QCoreApplication,
+    window: MainWindow,
+) -> Any:
+    """Make Ctrl-C close the GUI through the normal Qt cleanup path."""
+    previous_handler = signal.getsignal(signal.SIGINT)
+    shutting_down = False
+
+    def handle_interrupt(_signum: int, _frame: object) -> None:
+        nonlocal shutting_down
+        if shutting_down:
+            return
+        shutting_down = True
+        window.close()
+        app.quit()
+
+    signal.signal(signal.SIGINT, handle_interrupt)
+    return previous_handler
 
 
 def run_app(
@@ -42,13 +65,18 @@ def run_app(
 
     window = MainWindow()
     window.show()
+    previous_sigint_handler = _install_terminal_interrupt_handler(app, window)
 
-    if data_dir is not None:
-        count = window.load_samples_from_directory(data_dir)
-        if count > 0:
-            window.statusBar().showMessage(f"Loaded {count} samples from {data_dir}")
-
-    return app.exec()
+    try:
+        if data_dir is not None:
+            count = window.load_samples_from_directory(data_dir)
+            if count > 0:
+                window.statusBar().showMessage(
+                    f"Loaded {count} samples from {data_dir}"
+                )
+        return app.exec()
+    finally:
+        signal.signal(signal.SIGINT, previous_sigint_handler)
 
 
 def main() -> None:

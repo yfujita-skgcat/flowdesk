@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import signal
 from pathlib import Path
 
 import numpy as np
@@ -12,11 +13,41 @@ from flowdesk_core.models import GateSpec
 from flowdesk_core.overrides import gate_version_hash
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.project_commands import RebaseGateOverrideCommand
+from flowdesk_qt import _install_terminal_interrupt_handler
 from flowdesk_qt.main_window import MainWindow
 
 pytestmark = [pytest.mark.gui, pytest.mark.gui_e2e]
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+
+def test_terminal_interrupt_closes_window_and_quits_application(qapp, monkeypatch) -> None:
+  window = MainWindow()
+  close_calls: list[str] = []
+  quit_calls: list[str] = []
+  monkeypatch.setattr(window, "close", lambda: close_calls.append("close"))
+  monkeypatch.setattr(qapp, "quit", lambda: quit_calls.append("quit"))
+  installed: dict[str, object] = {}
+
+  def fake_signal(signum, handler):
+    installed["signum"] = signum
+    installed["handler"] = handler
+    return None
+
+  monkeypatch.setattr("flowdesk_qt.signal.signal", fake_signal)
+  monkeypatch.setattr("flowdesk_qt.signal.getsignal", lambda _signum: "previous")
+  previous = _install_terminal_interrupt_handler(qapp, window)
+
+  assert previous == "previous"
+  assert installed["signum"] == signal.SIGINT
+  handler = installed["handler"]
+  assert callable(handler)
+  handler(signal.SIGINT, None)
+  handler(signal.SIGINT, None)
+
+  assert close_calls == ["close"]
+  assert quit_calls == ["quit"]
+  window.deleteLater()
 
 
 def _wait_for_worker(window: MainWindow) -> None:

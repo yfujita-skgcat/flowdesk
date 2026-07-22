@@ -51,8 +51,8 @@ class ResultsWorkspace(QWidget):
     "Events",
     "% Parent",
     "% Total",
-    "Population Status",
   ]
+  _STATUS_HEADER = "Population Status"
 
   def __init__(self, parent: QWidget | None = None) -> None:
     super().__init__(parent)
@@ -275,8 +275,9 @@ class ResultsWorkspace(QWidget):
       self._apply_statistic_column_widths()
       for sample_id, sample_name in self._samples:
         sample_item = QTreeWidgetItem(
-          [sample_name, "-", "-", "-", "sample"]
-          + ["-" for _ in self._statistic_columns]
+          [sample_name, "-", "-", "-"]
+          + ["-" for _ in self._display_statistic_columns]
+          + ["sample"]
         )
         self._set_identity(sample_item, "sample", sample_id, sample_id)
         self._tree.addTopLevelItem(sample_item)
@@ -310,11 +311,12 @@ class ResultsWorkspace(QWidget):
       "Events",
       "% Parent",
       "% Total",
-      "Population Status",
-    ] + [self._statistic_headers[stat_id] for stat_id in self._statistic_columns]
+    ] + [self._statistic_headers[stat_id] for stat_id in self._display_statistic_columns] + [
+      self._STATUS_HEADER,
+    ]
     self._tree.setColumnCount(len(headers))
     self._tree.setHeaderLabels(headers)
-    self._set_header_tooltips(base_column=7)
+    self._set_header_tooltips(base_column=6)
     sample_names = dict(self._samples)
     result_by_sample = {
       sample_id: tuple(values) for sample_id, values in results.items()
@@ -349,10 +351,11 @@ class ResultsWorkspace(QWidget):
           else self._format_frequency(result.frequency_of_parent),
           "-" if not isinstance(result, PopulationResult)
           else self._format_frequency(result.frequency_of_total),
-          status,
-        ] + self._statistic_values(sample_id, population_id, values))
+        ] + self._statistic_values(sample_id, population_id, values) + [status])
         self._set_identity(item, "population", population_id, sample_id, value)
-        self._set_status_color(item, status, 6)
+        self._set_status_color(
+          item, status, len(self._display_statistic_columns) + 6
+        )
         self._apply_statistic_cell_state(item, sample_id, population_id)
         self._tree.addTopLevelItem(item)
     header = self._tree.header()
@@ -360,7 +363,7 @@ class ResultsWorkspace(QWidget):
     header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
     for column in range(2, len(headers)):
       header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-    self._apply_statistic_column_widths(base_column=7)
+    self._apply_statistic_column_widths(base_column=6)
 
   def _population_item(
     self,
@@ -382,11 +385,12 @@ class ResultsWorkspace(QWidget):
       else self._format_frequency(population_result.frequency_of_parent),
       "-" if population_result is None
       else self._format_frequency(population_result.frequency_of_total),
-      status,
-    ] + self._statistic_values(sample_id, population_id, results)
+    ] + self._statistic_values(sample_id, population_id, results) + [status]
     item = QTreeWidgetItem(values)
     self._set_identity(item, "population", population_id, sample_id, row)
-    self._set_status_color(item, status, 4)
+    self._set_status_color(
+      item, status, len(self._display_statistic_columns) + len(self._HEADERS)
+    )
     self._apply_statistic_cell_state(item, sample_id, population_id)
     return item
 
@@ -487,7 +491,7 @@ class ResultsWorkspace(QWidget):
     return self._HEADERS + [
       self._statistic_headers[statistic_id]
       for statistic_id in self._display_statistic_columns
-    ]
+    ] + [self._STATUS_HEADER]
 
   def _statistic_values(
     self,

@@ -82,9 +82,11 @@ def test_results_workspace_shows_statistic_under_all_events(qapp) -> None:
     all_events = workspace.tree().topLevelItem(0).child(0)
     assert all_events.childCount() == 0
     assert workspace.tree().columnCount() == 6
-    assert workspace.tree().headerItem().text(5) == "FSC-A mean"
+    assert workspace.tree().headerItem().text(4) == "FSC-A mean"
+    assert workspace.tree().headerItem().text(5) == "Population Status"
     assert all_events.text(3) == "1.0000"
-    assert all_events.text(5) == "123.5"
+    assert all_events.text(4) == "123.5"
+    assert all_events.text(5) == "current"
     assert all_events.data(0, Qt.UserRole + 1) == "population"
   finally:
     workspace.close()
@@ -125,11 +127,12 @@ def test_results_workspace_uses_one_statistic_column_for_multiple_populations(qa
 
     tree = workspace.tree()
     assert tree.columnCount() == 6
-    assert tree.headerItem().text(5) == "FSC-A mean"
+    assert tree.headerItem().text(4) == "FSC-A mean"
+    assert tree.headerItem().text(5) == "Population Status"
     all_events = tree.topLevelItem(0).child(0)
     rect = all_events.child(0)
-    assert all_events.text(5) == "123.5"
-    assert rect.text(5) == "45.5"
+    assert all_events.text(4) == "123.5"
+    assert rect.text(4) == "45.5"
   finally:
     workspace.close()
     workspace.deleteLater()
@@ -303,18 +306,17 @@ def test_results_status_distinguishes_missing_zero_stale_and_statistic_errors(qa
     all_events = workspace.tree().topLevelItem(0).child(0)
     zero = all_events.child(0)
     missing = all_events.child(1)
-    assert zero.text(4) == "zero events"
-    assert missing.text(4) == "missing"
+    assert zero.text(6) == "zero events"
+    assert missing.text(6) == "missing"
     assert zero.childCount() == 0
     assert zero.text(5) == "-"
-    assert zero.text(6) == "-"
-    assert "status=undefined" in zero.toolTip(5)
-    assert "status=error" in zero.toolTip(6)
+    assert "status=undefined" in zero.toolTip(4)
+    assert "status=error" in zero.toolTip(5)
 
     workspace.mark_results_stale()
     stale_item = workspace.tree().topLevelItem(0).child(0)
-    assert stale_item.text(4) == "stale"
-    assert stale_item.foreground(4).color().name() == "#c62828"
+    assert stale_item.text(6) == "stale"
+    assert stale_item.foreground(6).color().name() == "#c62828"
     stale_stat = stale_item
     assert stale_stat.text(5) == "-"
     assert stale_stat.foreground(5).color().name() == "#c62828"
@@ -346,8 +348,8 @@ def test_results_workspace_marks_disabled_statistic_without_fabricating_value(qa
     workspace.set_population_hierarchy({"all_events": None})
     workspace.set_result_state(state)
     item = workspace.tree().topLevelItem(0).child(0)
-    assert item.text(5) == "-"
-    assert "status=disabled" in item.toolTip(5)
+    assert item.text(4) == "-"
+    assert "status=disabled" in item.toolTip(4)
   finally:
     workspace.close()
     workspace.deleteLater()

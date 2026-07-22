@@ -8,6 +8,7 @@ This widget contains NO scientific execution logic.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
@@ -95,6 +96,48 @@ def _empty_statistic(
     return statistic
 
 
+def _is_blank_statistic(value: Mapping[str, Any]) -> bool:
+    """Return whether a definition is only an uncommitted editor placeholder."""
+    return not any(
+        str(value.get(key) or "").strip()
+        for key in ("id", "name", "parameter_id")
+    )
+
+
+def repair_statistic_definitions(
+    statistics: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Repair named legacy definitions and drop completely blank placeholders."""
+    repaired: list[dict[str, Any]] = []
+    used_ids = {
+        str(value.get("id"))
+        for value in statistics
+        if str(value.get("id") or "").strip()
+    }
+    for value in statistics:
+        if _is_blank_statistic(value):
+            continue
+        statistic_id = str(value.get("id") or "").strip()
+        if not statistic_id:
+            source = str(
+                value.get("name")
+                or value.get("parameter_id")
+                or value.get("metric")
+                or "statistic"
+            ).lower()
+            slug = re.sub(r"[^a-z0-9]+", "_", source).strip("_") or "statistic"
+            base_id = f"stat_{slug}"
+            statistic_id = base_id
+            suffix = 2
+            while statistic_id in used_ids:
+                statistic_id = f"{base_id}_{suffix}"
+                suffix += 1
+            value["id"] = statistic_id
+        used_ids.add(statistic_id)
+        repaired.append(value)
+    return repaired
+
+
 # ---------------------------------------------------------------------------
 # StatisticsEditorDialog
 # ---------------------------------------------------------------------------
@@ -155,6 +198,7 @@ class StatisticsEditorDialog(QDialog):
     def definitions(self) -> list[dict[str, Any]]:
         """Return validated statistic mappings without sharing mutable state."""
         self._commit_current()
+        self._statistics = repair_statistic_definitions(self._statistics)
         self._validate_all()
         return deepcopy(self._statistics)
 
@@ -638,13 +682,15 @@ class StatisticsEditorDialog(QDialog):
             parent_id = self._population_parents.get(population_id)
             parent_item = target_items.get(parent_id)
             item = QTreeWidgetItem(parent_item or targets, [population_id])
-            item.setData(Qt.ItemDataRole.UserRole, population_id)
+            item.setData(0, Qt.ItemDataRole.UserRole, population_id)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(
+                0,
                 Qt.CheckState.Checked
                 if population_id in self._target_population_ids
                 else Qt.CheckState.Unchecked
             )
+            target_items[population_id] = item
         layout.addWidget(targets)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -781,6 +827,7 @@ class StatisticManagementDialog(QDialog):
         layout.addWidget(buttons)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        self._statistics = repair_statistic_definitions(self._statistics)
         self._populate()
 
     def _populate(self) -> None:
@@ -819,6 +866,7 @@ class StatisticManagementDialog(QDialog):
 
     def definitions(self) -> list[dict[str, Any]]:
         result = deepcopy(self._statistics)
+        result = repair_statistic_definitions(result)
         for value in result:
             statistic_id = str(value.get("id", ""))
             value["compute_enabled"] = self._compute_checks[statistic_id].isChecked()
