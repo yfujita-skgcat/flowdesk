@@ -77,6 +77,7 @@ def _empty_statistic(
         "parameter_id": None,
         "metric": "count",
         "source_stage": "compensated",
+        "transform_id": None,
         "value_policy": "full_events",
         "settings": {},
         "format": None,
@@ -104,6 +105,7 @@ class StatisticsEditorDialog(QDialog):
         available_channels: Sequence[ChannelSpec | ParameterCatalogEntry],
         population_ids: Sequence[str],
         *,
+        transforms: Sequence[Mapping[str, Any]] = (),
         new_statistic_defaults: Mapping[str, Any] | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -115,6 +117,7 @@ class StatisticsEditorDialog(QDialog):
         self._statistics = deepcopy(list(statistics))
         self._channels = tuple(available_channels)
         self._population_ids = tuple(population_ids)
+        self._transforms = tuple(dict(value) for value in transforms)
         self._current_row = -1
         self._loading = False
 
@@ -214,6 +217,15 @@ class StatisticsEditorDialog(QDialog):
         self._source_combo.setObjectName("statisticSourceCombo")
         self._source_combo.addItems(_SOURCE_STAGES)
 
+        self._transform_combo = QComboBox()
+        self._transform_combo.setObjectName("statisticTransformCombo")
+        self._transform_combo.addItem("(native value space)", "")
+        for transform in self._transforms:
+            self._transform_combo.addItem(
+                f"{transform.get('name', transform.get('id'))} [{transform.get('id')}]",
+                transform.get("id"),
+            )
+
         self._percentile_q_edit = QLineEdit("50")
         self._percentile_q_edit.setObjectName("statisticPercentileQEdit")
         self._percentile_q_label = QLabel("Percentile q:")
@@ -230,6 +242,7 @@ class StatisticsEditorDialog(QDialog):
         form.addRow("Parameter:", self._parameter_combo)
         form.addRow("Metric:", self._metric_combo)
         form.addRow("Source Stage:", self._source_combo)
+        form.addRow("Transform:", self._transform_combo)
         form.addRow(self._percentile_q_label, self._percentile_q_edit)
         form.addRow("Format:", self._format_edit)
         form.addRow("Notes:", self._notes_edit)
@@ -262,11 +275,13 @@ class StatisticsEditorDialog(QDialog):
         self._duplicate_button.clicked.connect(self._duplicate_statistic)
         self._clear_button.clicked.connect(self._clear_all)
         self._metric_combo.currentTextChanged.connect(self._on_metric_changed)
+        self._source_combo.currentTextChanged.connect(self._on_source_changed)
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
 
         # Initial visibility of percentile q field
         self._on_metric_changed()
+        self._on_source_changed()
 
     # -- Row management ------------------------------------------------------
 
@@ -313,6 +328,8 @@ class StatisticsEditorDialog(QDialog):
 
             source = str(value.get("source_stage", "compensated"))
             self._source_combo.setCurrentText(source)
+            transform_index = self._transform_combo.findData(value.get("transform_id"))
+            self._transform_combo.setCurrentIndex(max(0, transform_index))
 
             settings = value.get("settings", {})
             self._percentile_q_edit.setText(
@@ -358,6 +375,7 @@ class StatisticsEditorDialog(QDialog):
             "parameter_id": param_id,
             "metric": metric,
             "source_stage": self._source_combo.currentText(),
+            "transform_id": str(self._transform_combo.currentData() or "") or None,
             "value_policy": "full_events",
             "settings": settings,
             "format": fmt_text,
@@ -416,6 +434,11 @@ class StatisticsEditorDialog(QDialog):
         self._parameter_combo.setEnabled(is_value_metric)
         if not is_value_metric:
             self._parameter_combo.setCurrentIndex(0)
+
+    def _on_source_changed(self) -> None:
+        self._transform_combo.setEnabled(
+            self._source_combo.currentText() == "transformed"
+        )
 
     # -- Validation ----------------------------------------------------------
 

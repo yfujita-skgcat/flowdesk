@@ -207,11 +207,20 @@ class TestRoundTrip:
       "parameter_id": "FL1-A",
       "metric": "mean",
       "source_stage": "transformed",
+      "transform_id": "linear-fl1",
       "value_policy": "full_events",
       "settings": {},
       "format": ".3f",
       "notes": "publication statistic",
     }
+    manifest["transforms"] = [{
+      "id": "linear-fl1",
+      "name": "Linear FL1",
+      "transform_type": "linear",
+      "parameter": "FL1-A",
+      "role": "analysis",
+      "settings": {"scale": 1.0, "offset": 0.0},
+    }]
     manifest["statistics"] = [statistic]
     bundle = tmp_path / "statistics.flowdesk"
 

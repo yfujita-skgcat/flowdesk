@@ -73,6 +73,7 @@ def _project(strategy: GatingStrategySpec) -> dict:
         "parameter_id": "x",
         "metric": "mean",
         "source_stage": "transformed",
+        "transform_id": "scale-x",
       },
     ],
     "population_results": [],

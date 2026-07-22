@@ -491,6 +491,7 @@ class TestStatisticSpec:
       parameter_id="FL1-A",
       metric="geometric_mean",
       source_stage="transformed",
+      transform_id="logicle-fl1",
       value_policy="full_events",
       settings={},
       format=".3e",
@@ -503,6 +504,7 @@ class TestStatisticSpec:
       "parameter_id": spec.parameter_id,
       "metric": spec.metric,
       "source_stage": spec.source_stage,
+      "transform_id": spec.transform_id,
       "value_policy": spec.value_policy,
       "settings": spec.settings,
       "format": spec.format,
@@ -515,6 +517,17 @@ class TestStatisticSpec:
     assert spec2.value_policy == spec.value_policy
     assert spec2.format == spec.format
     assert spec2.notes == spec.notes
+
+  def test_transformed_statistic_requires_explicit_transform_id(self) -> None:
+    with pytest.raises(ValueError, match="requires an explicit transform_id"):
+      StatisticSpec(
+        id="transformed",
+        name="Transformed",
+        population_id="all_events",
+        parameter_id="FL1-A",
+        metric="mean",
+        source_stage="transformed",
+      )
 
 
 class TestStatisticResult:

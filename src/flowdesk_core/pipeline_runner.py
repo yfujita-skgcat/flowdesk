@@ -753,7 +753,7 @@ class PipelineRunner:
       statistic_data_by_stage = {
         "raw": analysis_data,
         "compensated": _AnalysisData(enriched.events, enriched.channels),
-        "transformed": self._materialize_transformed_statistics_data(transformed),
+        "transformed": transformed,
       }
       stat_results = self._step_statistics(
         sample_id=sid,
@@ -1765,6 +1765,15 @@ class PipelineRunner:
       if spec.parameter_id is None:
         continue
       source_data = data_by_stage[spec.source_stage]
+      if spec.source_stage == "transformed":
+        try:
+          source_data = self._materialize_statistic_transform_data(
+            source_data, spec.transform_id, spec.parameter_id
+          )
+        except TransformError as exc:
+          raise PipelineError(
+            f"statistics_transform_failed: {spec.transform_id!r}: {exc}"
+          ) from exc
       column_index = {
         channel_id: index
         for index, channel_id in enumerate(source_data.channel_ids)
@@ -1800,26 +1809,30 @@ class PipelineRunner:
     return results
 
   @staticmethod
-  def _materialize_transformed_statistics_data(
+  def _materialize_statistic_transform_data(
     data: _AnalysisData,
+    transform_id: str | None,
+    parameter_id: str,
   ) -> _AnalysisData:
-    """Return the configured analysis-transform value space for statistics.
+    """Return one explicit analysis-transform value space for a statistic.
 
     Gating applies transforms lazily to preserve gate-coordinate semantics;
     numeric transformed statistics instead require a concrete full-event
     array.  This creates that derived view without mutating prior stages.
     """
+    transform = next(
+      (value for value in data.transforms if value.id == transform_id), None
+    )
+    if transform is None:
+      raise TransformError("unknown_transform", f"unknown transform {transform_id!r}")
+    if transform.parameter != parameter_id:
+      raise TransformError(
+        "transform_parameter_mismatch",
+        f"transform {transform_id!r} does not apply to {parameter_id!r}",
+      )
     events = np.array(data.events, dtype=np.float64, copy=True)
-    for transform in data.transforms:
-      column_index = data.channel_ids.index(transform.parameter)
-      try:
-        events[:, column_index] = apply_transform(
-          transform, events[:, column_index]
-        )
-      except TransformError as exc:
-        raise PipelineError(
-          f"statistics_transform_failed: {transform.id!r}: {exc}"
-        ) from exc
+    column_index = data.channel_ids.index(transform.parameter)
+    events[:, column_index] = apply_transform(transform, events[:, column_index])
     return _AnalysisData(events, data.channels)
 
   def _statistic_specs(self) -> tuple[StatisticSpec, ...]:
@@ -1841,6 +1854,7 @@ class PipelineRunner:
             parameter_id=definition.get("parameter_id"),
             metric=definition.get("metric", "count"),
             source_stage=definition.get("source_stage", "compensated"),
+            transform_id=definition.get("transform_id"),
             value_policy=definition.get("value_policy", "full_events"),
             settings=dict(definition.get("settings", {})),
             format=definition.get("format"),

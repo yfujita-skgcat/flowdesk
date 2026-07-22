@@ -652,6 +652,7 @@
         "source_stage": {
           "enum": ["raw", "compensated", "transformed"]
         },
+        "transform_id": { "type": ["string", "null"] },
         "settings": { "type": "object" },
         "format": { "type": ["string", "null"] },
         "notes": { "type": "string" }

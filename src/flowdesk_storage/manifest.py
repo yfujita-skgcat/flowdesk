@@ -82,7 +82,9 @@ def validate_manifest(data: dict[str, Any]) -> None:
       } | calculated_matrix_ids,
     )
     gate_ids = _collect_gate_ids(data.get("gating_strategies_data", {}))
-    _validate_current_statistics(data.get("statistics", []), gate_ids)
+    _validate_current_statistics(
+      data.get("statistics", []), gate_ids, transform_parameters
+    )
     _validate_current_gate_parent_references(
       data.get("gating_strategies_data", {}),
       gate_ids,
@@ -883,6 +885,7 @@ def _collect_gate_ids(strategy_data: Any) -> set[str]:
 def _validate_current_statistics(
   statistics: Any,
   gate_ids: set[str] | None = None,
+  transforms: Mapping[str, tuple[str, str]] | None = None,
 ) -> None:
   """Validate persisted statistic definitions in the current project format."""
 
@@ -943,6 +946,19 @@ def _validate_current_statistics(
       raise ManifestValidationError(
         f"statistic {stat_id!r} has invalid source_stage {source_stage!r}"
       )
+    transform_id = stat.get("transform_id")
+    if source_stage == "transformed" and (
+      not isinstance(transform_id, str) or not transform_id
+    ):
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} transformed source_stage requires transform_id"
+      )
+    if transform_id is not None and (
+      not isinstance(transform_id, str) or not transform_id
+    ):
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} transform_id must be a non-empty string or null"
+      )
     value_policy = stat.get("value_policy", "full_events")
     if value_policy not in valid_value_policies:
       raise ManifestValidationError(
@@ -959,6 +975,16 @@ def _validate_current_statistics(
       raise ManifestValidationError(
         f"statistic {stat_id!r} metric {metric!r} requires parameter_id"
       )
+    if transform_id is not None and transforms is not None:
+      if transform_id not in transforms:
+        raise ManifestValidationError(
+          f"statistic {stat_id!r} references unknown transform {transform_id!r}"
+        )
+      if parameter_id != transforms[transform_id][1]:
+        raise ManifestValidationError(
+          f"statistic {stat_id!r} parameter_id does not match transform "
+          f"{transform_id!r}"
+        )
     settings = stat.get("settings", {})
     if not isinstance(settings, dict):
       raise ManifestValidationError(

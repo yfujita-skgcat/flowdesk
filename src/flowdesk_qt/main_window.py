@@ -3217,6 +3217,7 @@ class MainWindow(QMainWindow):
             self._statistics,
             catalog,
             population_ids,
+            transforms=self._transforms,
             new_statistic_defaults=(
                 {
                     "population_id": population_id or "all_events",

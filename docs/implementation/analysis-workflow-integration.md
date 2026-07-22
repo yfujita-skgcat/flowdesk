@@ -250,6 +250,11 @@ stage (normally compensated values after derived evaluation, before display tran
 transformed statistic is allowed only when its `StatisticSpec` explicitly selects that
 value space and transform ID.
 
+`StatisticSpec.transform_id` is therefore required for `source_stage="transformed"`.
+The runner materializes only that definition's parameter column with that exact
+`TransformSpec`; it never applies every plot transform implicitly. Raw and compensated
+statistics retain their native source values when a user changes a plot axis.
+
 ## 5. Results-owned statistic workflow
 
 Remove the top-level `Analysis -> Population Statistics...` entry. Results is the

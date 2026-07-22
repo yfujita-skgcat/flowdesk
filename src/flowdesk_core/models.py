@@ -1200,6 +1200,7 @@ class StatisticSpec:
   parameter_id: str | None = None
   metric: StatisticMetric = "count"
   source_stage: StatisticSource = "compensated"
+  transform_id: str | None = None
   value_policy: StatisticValuePolicy = "full_events"
   settings: dict[str, Any] = field(default_factory=dict)
   format: str | None = None
@@ -1231,6 +1232,14 @@ class StatisticSpec:
       raise ValueError(
         f"invalid statistic source_stage {self.source_stage!r}"
       )
+    if self.source_stage == "transformed" and not self.transform_id:
+      raise ValueError(
+        "transformed statistic source_stage requires an explicit transform_id"
+      )
+    if self.transform_id is not None and (
+      not isinstance(self.transform_id, str) or not self.transform_id
+    ):
+      raise ValueError("statistic transform_id must be a non-empty string or null")
     if self.value_policy != "full_events":
       raise ValueError(
         f"invalid statistic value_policy {self.value_policy!r}"

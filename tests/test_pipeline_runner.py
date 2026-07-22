@@ -2299,7 +2299,8 @@ def test_pipeline_statistics_respect_persisted_source_stage() -> None:
         "population_id": "high",
         "parameter_id": "signal",
         "metric": "mean",
-        "source_stage": "transformed",
+            "source_stage": "transformed",
+            "transform_id": "scale-ten",
       },
     ],
   )
