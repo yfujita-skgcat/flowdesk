@@ -740,7 +740,7 @@ class StatisticManagementDialog(QDialog):
 
     _HEADERS = (
         "Compute", "Show", "Statistic", "Parameter", "Metric",
-        "Value domain", "Applies to", "Status",
+        "Value domain", "Applies to",
     )
 
     def __init__(
@@ -748,6 +748,8 @@ class StatisticManagementDialog(QDialog):
         statistics: Sequence[dict[str, Any]],
         visibility: Mapping[str, bool] | None = None,
         *,
+        parameter_labels: Mapping[str, str] | None = None,
+        population_labels: Mapping[str, str] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -756,6 +758,8 @@ class StatisticManagementDialog(QDialog):
         self.resize(900, 420)
         self._statistics = deepcopy(list(statistics))
         self._visibility = dict(visibility or {})
+        self._parameter_labels = dict(parameter_labels or {})
+        self._population_labels = dict(population_labels or {})
         self._compute_checks: dict[str, QCheckBox] = {}
         self._show_checks: dict[str, QCheckBox] = {}
 
@@ -794,19 +798,21 @@ class StatisticManagementDialog(QDialog):
             self._table.setCellWidget(row, 0, compute)
             self._table.setCellWidget(row, 1, show)
             self._set_item(row, 2, value.get("name") or statistic_id)
-            self._set_item(row, 3, value.get("parameter_id") or "(none)")
+            parameter_id = str(value.get("parameter_id") or "")
+            self._set_item(
+                row, 3,
+                self._parameter_labels.get(parameter_id, parameter_id) or "(none)",
+            )
             self._set_item(row, 4, value.get("metric", "count"))
             self._set_item(row, 5, value.get("transform_id") or value.get("source_stage", ""))
             targets = value.get("population_ids") or [value.get("population_id", "")]
-            self._set_item(row, 6, str(len([target for target in targets if target])))
-            self._set_item(
-                row, 7, "enabled" if compute.isChecked() else "disabled"
-            )
-            compute.toggled.connect(
-                lambda checked, row=row: self._set_item(
-                    row, 7, "enabled" if checked else "disabled"
-                )
-            )
+            target_labels = [
+                self._population_labels.get(str(target), str(target))
+                for target in targets if target
+            ]
+            applies_to = ", ".join(target_labels) or "(none)"
+            self._set_item(row, 6, applies_to)
+            self._table.item(row, 6).setToolTip(applies_to)
 
     def _set_item(self, row: int, column: int, value: object) -> None:
         self._table.setItem(row, column, QTableWidgetItem(str(value)))

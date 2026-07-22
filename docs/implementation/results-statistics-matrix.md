@@ -151,15 +151,21 @@ show missing/incompatible populations and reject an empty target selection. The 
 is the Results population from which the command was invoked; a graph shortcut may also
 prefill the active parameter ID.
 
-`Manage Statistics...` presents at least:
+`Manage Statistics...` presents:
 
 ```text
-Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to | Status
+Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to
 ```
 
 - `Compute` changes persisted analytical state and requires canonical recalculation.
 - `Show` changes Results view state only.
-- `Applies to` shows a count and opens the explicit population checklist.
+- `Parameter` shows the user-facing parameter name (for example `FSC-A`), not only
+  the stable internal parameter ID.
+- `Applies to` shows the user-facing names of the explicit target populations. A
+  statistic may target multiple populations through `Selected populations...`,
+  descendant scope, or all-current-populations scope; it is not limited to one.
+- Result-level status is shown in the Results table, not duplicated in this
+  Compute/Show management table.
 - Edit of a shared definition changes all its assigned population cells atomically.
 - Duplicate creates a new stable statistic ID and copies targets only after explicit user
   confirmation/default selection.

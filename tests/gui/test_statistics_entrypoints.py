@@ -344,6 +344,8 @@ def test_statistic_management_dialog_separates_compute_and_show(qapp) -> None:
       "compute_enabled": True,
     }],
     {"mean": True},
+    parameter_labels={"FL1-A": "FSC-A"},
+    population_labels={"all_events": "All Events", "live": "Live cells"},
   )
   compute = dialog.findChild(type(dialog._compute_checks["mean"]), "statisticComputeCheck_mean")
   show = dialog.findChild(type(dialog._show_checks["mean"]), "statisticShowCheck_mean")
@@ -352,10 +354,12 @@ def test_statistic_management_dialog_separates_compute_and_show(qapp) -> None:
   show.setChecked(False)
   assert dialog.definitions()[0]["compute_enabled"] is False
   assert dialog.visibility() == {"mean": False}
-  assert [dialog._table.horizontalHeaderItem(index).text() for index in range(8)] == [
+  assert [dialog._table.horizontalHeaderItem(index).text() for index in range(7)] == [
     "Compute", "Show", "Statistic", "Parameter", "Metric", "Value domain",
-    "Applies to", "Status",
+    "Applies to",
   ]
+  assert dialog._table.item(0, 3).text() == "FSC-A"
+  assert dialog._table.item(0, 6).text() == "All Events, Live cells"
 
 
 def test_main_window_exposes_sample_sheet_and_batch_plot_actions(qapp) -> None:

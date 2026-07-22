@@ -3464,6 +3464,11 @@ class MainWindow(QMainWindow):
         dialog = StatisticManagementDialog(
             self._statistics,
             self._results_workspace.statistic_column_visibility(),
+            parameter_labels={
+                entry.parameter_id: entry.display_name
+                for entry in self._parameter_catalog
+            },
+            population_labels=self._population_name_map(),
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
