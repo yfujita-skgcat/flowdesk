@@ -286,7 +286,9 @@ Required semantics:
   exact ID. Event display, gate coordinates, membership, inverse coordinate display, and
   ticks use the same implementation.
 - Referenced transform definitions are immutable. Editing means duplicate/new version,
-  followed by an explicit gate/view migration preview.
+  followed by an explicit gate/view migration preview. The quick axis selector may
+  replace an unreferenced definition by removing it and creating a new ID; it must
+  never mutate or remove a definition with downstream references.
 - No hidden legacy scale remains active underneath a formal transform.
 
 For legacy projects, continue reading `gate.x_scale`/`gate.y_scale`. Provide an explicit,

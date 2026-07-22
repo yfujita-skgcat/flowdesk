@@ -267,6 +267,7 @@ class MainWindow(QMainWindow):
         self._active_sample_id: str | None = None
         self._worker: _PipelineWorker | None = None
         self._results_stale = False
+        self._results_stale_reason: str | None = None
         self._project_dirty = False
         self._autosave_settings = AutosaveSettings(
             enabled=bool(QSettings().value("autosave/enabled", True, type=bool)),
@@ -898,7 +899,9 @@ class MainWindow(QMainWindow):
         definition_status = str(current.get("override_status", "shared"))
         banner = "" if definition_status == "shared" else f"override {definition_status}"
         if current.get("results_stale"):
-            banner = f"{banner}; results stale" if banner else "results stale"
+            stale_reason = self._results_stale_reason or "Analysis definition changed"
+            stale_banner = f"{stale_reason} — results stale; rerun Pipeline"
+            banner = f"{banner}; {stale_banner}" if banner else stale_banner
         self._plot_widget.set_status_banner(banner)
 
     def _on_create_gate_override(self) -> None:
@@ -1265,36 +1268,23 @@ class MainWindow(QMainWindow):
         existing = self._transform_for_parameter(parameter_id)
         if choice == "linear":
             if existing is not None:
-                QMessageBox.information(
-                    self,
-                    "Versioned transform is active",
-                    "This parameter already has a persisted analysis transform. "
-                    "Use Manage Parameter Transforms to create a replacement and "
-                    "explicitly migrate any referenced gates.",
-                )
-                self._channel_selector.set_analysis_transform_choice(
-                    axis, existing.transform_type
-                )
-                return
+                if not self._replaceable_axis_transform(existing, axis):
+                    return
+                self._remove_axis_transform(existing)
             if axis == "x":
                 self._channel_selector.set_x_transform("linear")
             else:
                 self._channel_selector.set_y_transform("linear")
+            self._channel_selector.set_analysis_transform_choice(axis, "linear")
+            self._mark_results_stale(f"{axis.upper()} analysis transform set to Linear")
             self._replot()
             return
         if existing is not None:
             if existing.transform_type == choice:
                 return
-            QMessageBox.information(
-                self,
-                "Versioned transform is active",
-                "Create a new version in Manage Parameter Transforms and use the "
-                "explicit gate migration preview before changing a referenced axis.",
-            )
-            self._channel_selector.set_analysis_transform_choice(
-                axis, existing.transform_type
-            )
-            return
+            if not self._replaceable_axis_transform(existing, axis):
+                return
+            self._remove_axis_transform(existing)
         settings_by_type: dict[str, dict[str, Any]] = {
             "log": {"base": 10.0, "invalid_value_policy": "to_nan"},
             "asinh": {"cofactor": 1.0},
@@ -1318,8 +1308,73 @@ class MainWindow(QMainWindow):
             "role": "analysis",
             "notes": "Created from the axis Transform selector.",
         })
-        self._mark_results_stale(f"{axis.upper()} analysis transform created")
+        labels = {"log": "Log10", "asinh": "Asinh", "logicle": "Logicle"}
+        self._mark_results_stale(f"{axis.upper()} analysis transform set to {labels[choice]}")
         self._channel_selector.set_analysis_transform_choice(axis, choice)
+
+    def _replaceable_axis_transform(self, transform: TransformSpec, axis: str) -> bool:
+        """Return whether an axis quick-selection may replace *transform* safely."""
+        references = self._transform_references(transform)
+        if not references:
+            return True
+        QMessageBox.information(
+            self,
+            "Versioned transform is active",
+            "This transform is referenced by " + ", ".join(references) + ". "
+            "Create a new version in Manage Parameter Transforms and explicitly "
+            "migrate dependent gates or definitions before changing this axis.",
+        )
+        self._channel_selector.set_analysis_transform_choice(
+            axis, transform.transform_type
+        )
+        return False
+
+    def _remove_axis_transform(self, transform: TransformSpec) -> None:
+        """Remove an unreferenced axis transform before creating a new version."""
+        self._transforms = [
+            value for value in self._transforms if value.get("id") != transform.id
+        ]
+
+    def _transform_references(self, transform: TransformSpec) -> list[str]:
+        """List persisted definitions that prevent replacement of a transform ID."""
+        references: list[str] = []
+        for gate in self._gate_editor.gates():
+            x_transform_id = gate.x_transform_id or gate.transform_id
+            if x_transform_id == transform.id or (
+                x_transform_id is None and gate.x_parameter == transform.parameter
+            ):
+                references.append(f"gate {gate.name} (X axis)")
+            if gate.y_transform_id == transform.id or (
+                gate.y_transform_id is None and gate.y_parameter == transform.parameter
+            ):
+                references.append(f"gate {gate.name} (Y axis)")
+        for statistic in self._statistics:
+            if statistic.get("transform_id") == transform.id:
+                references.append(
+                    f"statistic {statistic.get('name', statistic.get('id', 'unknown'))}"
+                )
+        for collection_name, definitions, source_key in (
+            ("plot view", self._plot_views, "overlay_sources"),
+            ("overlay", self._overlays, "sources"),
+        ):
+            for definition in definitions:
+                name = str(definition.get("name", definition.get("id", "unknown")))
+                if definition.get("transform_id") == transform.id:
+                    references.append(f"{collection_name} {name}")
+                for axis in ("x", "y"):
+                    if definition.get(f"{axis}_transform_id") == transform.id:
+                        references.append(f"{collection_name} {name} ({axis.upper()} axis)")
+                for source in definition.get(source_key, []):
+                    for axis in ("x", "y"):
+                        if source.get(f"{axis}_transform_id") == transform.id:
+                            source_name = source.get(
+                                "display_name", source.get("source_id", "unknown")
+                            )
+                            references.append(
+                                f"{collection_name} {name} source {source_name} "
+                                f"({axis.upper()} axis)"
+                            )
+        return references
 
     def _on_display_max_points_changed(self, max_points: int) -> None:
         """Persist and redraw a display-only scatter sampling change."""
@@ -1491,9 +1546,12 @@ class MainWindow(QMainWindow):
                 processed = self._processed_display_cache.get(key)
                 if processed is None:
                     self._plot_widget.clear_plot()
-                    self._plot_widget.set_status_banner(
-                        "Preparing canonical processed display…"
-                    )
+                    if self._results_stale:
+                        self._refresh_override_statuses()
+                    else:
+                        self._plot_widget.set_status_banner(
+                            "Preparing canonical processed display…"
+                        )
                     return
         data = processed.events
 
@@ -1579,6 +1637,8 @@ class MainWindow(QMainWindow):
         self._plot_widget.set_presentation(
             {} if view is None else view.get("presentation", {})
         )
+        if self._results_stale and not self._old_membership_banner:
+            self._refresh_override_statuses()
 
     def _get_channel_index(self, channel_id: str) -> int:
         """Get a column index by stable ID for the current sample."""
@@ -2317,6 +2377,10 @@ class MainWindow(QMainWindow):
         report = worker._report
         if worker.revision != self._preview_revision.analysis_revision:
             self._results_stale = True
+            self._results_stale_reason = (
+                "Pipeline result discarded; analysis definitions changed during execution"
+            )
+            self._refresh_override_statuses()
             self._update_status(
                 "Pipeline result discarded; analysis definitions changed during execution"
             )
@@ -2358,6 +2422,7 @@ class MainWindow(QMainWindow):
             self._diagnostics_panel.set_report(report)
             self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
+            self._results_stale_reason = None
             self._preview_report = None
             self._preview_revision.accept_authoritative(
                 self._preview_revision.analysis_revision
@@ -2365,6 +2430,7 @@ class MainWindow(QMainWindow):
             self._preview_scheduler.cancel_pending()
             self._compensation_status_indicator.clear_stale()
             self._validate_population_selection(report)
+            self._refresh_override_statuses()
             self._update_status(f"Pipeline complete: {report.summary}")
             # Replot to apply the now-valid population membership mask.
             self._replot()
@@ -4113,6 +4179,7 @@ class MainWindow(QMainWindow):
         reason: str,
         affected_gate_ids: set[str] | frozenset[str] | None = None,
     ) -> None:
+        self._results_stale_reason = reason
         affected_population_ids = self._population_ids_for_gates(affected_gate_ids)
         revision = self._preview_revision.invalidate(affected_population_ids)
         if self._current_sample_id is not None:

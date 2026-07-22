@@ -8,6 +8,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QComboBox
 
 from flowdesk_core.fcs_io import write_fcs_file
+from flowdesk_core.models import GateSpec
 from flowdesk_core.parameter_catalog import (
   ParameterCatalogDiagnostic,
   ParameterCatalogEntry,
@@ -246,6 +247,77 @@ def test_axis_transform_selector_creates_one_persisted_log_definition(qapp, tmp_
     assert transform["settings"]["base"] == 10.0
     assert window._transform_for_parameter(parameter_id).id == transform["id"]
     assert window._gate_editor._x_transform_id == transform["id"]
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_axis_transform_selector_replaces_an_unreferenced_definition(qapp, tmp_path) -> None:
+  path = tmp_path / "transform-replace.fcs"
+  write_fcs_file(path, np.array([[1.0, 2.0], [10.0, 3.0]]), ["X", "Y"])
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    assert window._sample_browser.select_sample(sample.id)
+    parameter_id = sample.info.channels[0].id
+    combo = window.findChild(QComboBox, "xAnalysisTransformCombo")
+    assert combo is not None
+
+    combo.setCurrentIndex(combo.findData("asinh"))
+    asinh_id = window._transform_for_parameter(parameter_id).id
+    combo.setCurrentIndex(combo.findData("log"))
+
+    assert len(window._transforms) == 1
+    replacement = window._transform_for_parameter(parameter_id)
+    assert replacement is not None
+    assert replacement.id != asinh_id
+    assert replacement.transform_type == "log"
+    assert combo.currentData() == "log"
+    assert window._gate_editor._x_transform_id == replacement.id
+    assert window._plot_widget._status_banner.text() == (
+      "X analysis transform set to Log10 — results stale; rerun Pipeline"
+    )
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_axis_transform_selector_keeps_a_gate_referenced_definition(
+  qapp, tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  path = tmp_path / "transform-gate-reference.fcs"
+  write_fcs_file(path, np.array([[1.0, 2.0], [10.0, 3.0]]), ["X", "Y"])
+  messages: list[str] = []
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.QMessageBox.information",
+    lambda _parent, _title, message: messages.append(message),
+  )
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    assert window._sample_browser.select_sample(sample.id)
+    parameter_id = sample.info.channels[0].id
+    combo = window.findChild(QComboBox, "xAnalysisTransformCombo")
+    assert combo is not None
+    combo.setCurrentIndex(combo.findData("asinh"))
+    transform = window._transform_for_parameter(parameter_id)
+    assert transform is not None
+    window._gate_editor.set_gates([GateSpec(
+      id="keep-asinh", name="Keep Asinh", gate_type="range",
+      parent_population_id="all_events", x_parameter=parameter_id,
+      x_transform_id=transform.id, thresholds={"min": 1.0},
+    )])
+
+    combo.setCurrentIndex(combo.findData("log"))
+
+    assert window._transform_for_parameter(parameter_id).id == transform.id
+    assert combo.currentData() == "asinh"
+    assert len(messages) == 1
+    assert "gate Keep Asinh (X axis)" in messages[0]
   finally:
     window.close()
     window.deleteLater()
