@@ -2331,6 +2331,24 @@ def test_pipeline_statistics_with_gating_strategy() -> None:
       "metric": "frequency_of_total",
       "source_stage": "compensated",
     },
+    {
+      "id": "stat_mean_all_targets",
+      "name": "Mean FL1 all targets",
+      "population_id": "all_events",
+      "population_ids": ["all_events", "g1", "g2"],
+      "parameter_id": "FSC-H",
+      "metric": "mean",
+      "source_stage": "compensated",
+    },
+    {
+      "id": "stat_disabled",
+      "name": "Disabled mean",
+      "population_id": "all_events",
+      "parameter_id": "FSC-H",
+      "metric": "mean",
+      "source_stage": "compensated",
+      "compute_enabled": False,
+    },
   ]
   project = _make_project(
     project_id="stat_gate_test",
@@ -2373,6 +2391,21 @@ def test_pipeline_statistics_with_gating_strategy() -> None:
 
   mean_live = by_id["stat_mean_live"]
   assert mean_live.value == pytest.approx(4.0)  # mean of [3.0, 5.0]
+
+  multi_target = [
+    result for result in report.statistic_results
+    if result.statistic_id == "stat_mean_all_targets"
+  ]
+  assert [(result.population_id, result.value) for result in multi_target] == [
+    ("all_events", pytest.approx(3.0)),
+    ("g1", pytest.approx(4.0)),
+    ("g2", pytest.approx(5.0)),
+  ]
+  assert not any(
+    result.statistic_id == "stat_disabled"
+    for result in report.statistic_results
+  )
+  assert "statistics=disabled ids=stat_disabled" in report.messages
   assert mean_live.status == "ok"
 
   assert by_id["stat_frequency_high_live_parent"].value == pytest.approx(0.5)

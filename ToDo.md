@@ -819,9 +819,9 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 
 #### Increment 2: Headless multi-population executionと局所invalidation
 
-- [ ] `PipelineRunner`がenabled Statisticだけを明示target Populationごとにfull-resolution membershipで計算し、Group binding、preview、CLI/Python、disabled provenanceへ同じ定義を適用する。
-- [ ] sample/stage/parameter/transformの値列とmembershipを再利用し、analysis revision、upstream dependency、Statistic ID、Population ID、non-finite policyを含むcache keyと局所invalidationを実装する。display downsampleやviewport visibilityを計算条件にしない。
-- [ ] mean/median/percentile、overlapping hierarchy、empty/undefined/non-finite、disabled、複数sampleのknown-value testと計測fixtureを追加する。
+- [x] `PipelineRunner`がenabled Statisticだけを明示target Populationごとにfull-resolution membershipで計算し、Group binding、preview、CLI/Python、disabled provenanceへ同じ定義を適用する。
+- [x] sample/stage/parameter/transformの値列とmembershipを再利用し、analysis revision、upstream dependency、Statistic ID、Population ID、non-finite policyを含むcache keyと局所invalidationを実装する。display downsampleやviewport visibilityを計算条件にしない。
+- [x] mean/median/percentile、overlapping hierarchy、empty/undefined/non-finite、disabled、複数sampleのknown-value testと計測fixtureを追加する。
 
 #### Increment 3: Results wide matrixとQC detail
 

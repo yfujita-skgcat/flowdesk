@@ -622,6 +622,14 @@ class PipelineRunner:
     input_files: list[dict[str, Any]] = []
     diagnostics: list[ExecutionDiagnostic] = []
     failed_sample_count = 0
+    disabled_statistic_ids = tuple(
+      spec.id for spec in self._statistic_specs()
+      if not spec.compute_enabled
+    )
+    if disabled_statistic_ids:
+      messages.append(
+        "statistics=disabled ids=" + ",".join(disabled_statistic_ids)
+      )
 
     # --- Pre-step: Execute compensation calculations ---
     # Control samples and populations are explicit in the persisted calculation
@@ -1789,97 +1797,107 @@ class PipelineRunner:
     results: list[StatisticResult] = []
 
     for spec in specs:
-      pop_result = parent_by_population.get(spec.population_id)
-      if pop_result is None:
+      if not spec.compute_enabled:
         continue
 
-      event_count = pop_result.event_count
-      parent_population_id = population_parent_ids.get(spec.population_id)
-      parent_mask = (
-        None if parent_population_id is None
-        else membership_by_population.get(parent_population_id)
-      )
-      parent_count = (
-        None if parent_mask is None else int(parent_mask.sum())
-      )
+      source_data: _AnalysisData | None = None
+      col_idx: int | None = None
+      if spec.metric not in ("count", "frequency_of_parent", "frequency_of_total"):
+        # Materialize and resolve one value column per definition, then reuse
+        # it for every explicitly assigned population target.
+        if spec.parameter_id is None:
+          continue
+        source_data = data_by_stage[spec.source_stage]
+        if spec.source_stage == "transformed":
+          try:
+            source_data = self._materialize_statistic_transform_data(
+              source_data, spec.transform_id, spec.parameter_id
+            )
+          except TransformError as exc:
+            raise PipelineError(
+              f"statistics_transform_failed: {spec.transform_id!r}: {exc}"
+            ) from exc
+        column_index = {
+          channel_id: index
+          for index, channel_id in enumerate(source_data.channel_ids)
+        }
+        col_idx = column_index.get(spec.parameter_id)
+        if col_idx is None:
+          continue
 
-      mask = membership_by_population.get(spec.population_id)
+      for population_id in spec.population_ids:
+        pop_result = parent_by_population.get(population_id)
+        if pop_result is None:
+          continue
 
-      # count / frequency metrics don't need per-parameter values.
-      if spec.metric in ("count", "frequency_of_parent", "frequency_of_total"):
+        event_count = pop_result.event_count
+        parent_population_id = population_parent_ids.get(population_id)
+        parent_mask = (
+          None if parent_population_id is None
+          else membership_by_population.get(parent_population_id)
+        )
+        parent_count = (
+          None if parent_mask is None else int(parent_mask.sum())
+        )
+
+        mask = membership_by_population.get(population_id)
+
+        # count / frequency metrics don't need per-parameter values.
+        if spec.metric in ("count", "frequency_of_parent", "frequency_of_total"):
+          result = compute_statistic(
+            spec=spec,
+            sample_id=sample_id,
+            event_count=event_count,
+            parent_count=parent_count,
+            total_count=total_count,
+            values=None,
+          )
+          results.append(replace(
+            result,
+            population_id=population_id,
+            statistic_name=spec.name,
+            n_total=event_count,
+            n_valid=event_count,
+            n_invalid=0,
+            invalid_fraction=0.0,
+            non_finite_policy=spec.non_finite_policy,
+          ))
+          continue
+
+        values: NDArray[np.float64] | None = None
+        if mask is not None:
+          values = source_data.events[mask, col_idx].copy()
+        elif event_count > 0:
+          values = source_data.events[:, col_idx].copy()
+        else:
+          values = None
+
         result = compute_statistic(
           spec=spec,
           sample_id=sample_id,
           event_count=event_count,
           parent_count=parent_count,
           total_count=total_count,
-          values=None,
-        )
-        results.append(replace(
-          result,
-          statistic_name=spec.name,
-          n_total=event_count,
-          n_valid=event_count,
-          n_invalid=0,
-          invalid_fraction=0.0,
+          values=values,
           non_finite_policy=spec.non_finite_policy,
-        ))
-        continue
-
-      # Value-based metrics need a parameter column.
-      if spec.parameter_id is None:
-        continue
-      source_data = data_by_stage[spec.source_stage]
-      if spec.source_stage == "transformed":
-        try:
-          source_data = self._materialize_statistic_transform_data(
-            source_data, spec.transform_id, spec.parameter_id
+        )
+        invalid_count = 0 if values is None else int(np.count_nonzero(~np.isfinite(values)))
+        total_values = None if values is None else int(values.size)
+        results.append(
+          replace(
+            result,
+            population_id=population_id,
+            statistic_name=spec.name,
+            unit=source_data.channels[col_idx].unit,
+            n_total=total_values,
+            n_valid=(None if total_values is None else total_values - invalid_count),
+            n_invalid=(None if total_values is None else invalid_count),
+            invalid_fraction=(
+              None if total_values in (None, 0) else invalid_count / total_values
+            ),
+            non_finite_policy=spec.non_finite_policy,
           )
-        except TransformError as exc:
-          raise PipelineError(
-            f"statistics_transform_failed: {spec.transform_id!r}: {exc}"
-          ) from exc
-      column_index = {
-        channel_id: index
-        for index, channel_id in enumerate(source_data.channel_ids)
-      }
-      col_idx = column_index.get(spec.parameter_id)
-      if col_idx is None:
-        continue
-
-      values: NDArray[np.float64] | None = None
-      if mask is not None:
-        values = source_data.events[mask, col_idx].copy()
-      elif event_count > 0:
-        values = source_data.events[:, col_idx].copy()
-      else:
-        values = None
-
-      result = compute_statistic(
-        spec=spec,
-        sample_id=sample_id,
-        event_count=event_count,
-        parent_count=parent_count,
-        total_count=total_count,
-        values=values,
-        non_finite_policy=spec.non_finite_policy,
-      )
-      invalid_count = 0 if values is None else int(np.count_nonzero(~np.isfinite(values)))
-      total_values = None if values is None else int(values.size)
-      results.append(
-        replace(
-          result,
-          statistic_name=spec.name,
-          unit=source_data.channels[col_idx].unit,
-          n_total=total_values,
-          n_valid=(None if total_values is None else total_values - invalid_count),
-          n_invalid=(None if total_values is None else invalid_count),
-          invalid_fraction=(
-            None if total_values in (None, 0) else invalid_count / total_values
-          ),
-          non_finite_policy=spec.non_finite_policy,
         )
-      )
 
     return results
 
