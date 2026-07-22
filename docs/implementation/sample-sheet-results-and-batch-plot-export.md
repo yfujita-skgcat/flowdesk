@@ -126,6 +126,14 @@ Sheet; FCS keyword columns remain read-only. `sample_title` changes are display/
 only. Other annotation edits invalidate analysis only when a Group membership/binding
 rule actually references the changed key.
 
+The reference Qt surface exposes stable actions named `sampleSheetAddAnnotationColumnButton`,
+`sampleSheetImportCsvButton`, `sampleSheetPasteButton`, `sampleSheetFindReplaceButton`,
+`sampleSheetFillSeriesButton`, `sampleSheetUndoButton`, and `sampleSheetRedoButton`.
+Each action delegates to `SampleSheetModel` and must not mutate raw FCS bytes/events.
+Find/replace is restricted to workspace/imported annotations, and CSV/paste validation
+must complete before the model records an undo snapshot. These actions remain inside the
+Sample Sheet dialog; no competing top-level annotation editor is allowed.
+
 ### Tests
 
 - Core: title resolution and fallback order, annotation round-trip, paste/import
