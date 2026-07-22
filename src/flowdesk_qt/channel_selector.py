@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from PySide6.QtCore import QSignalBlocker
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.models import ChannelSpec
+from flowdesk_core.parameter_catalog import ParameterCatalogEntry
 from flowdesk_qt.diagnostics import invoke_callback
 
 AxisTransform = Literal["linear", "log10", "asinh"]
@@ -69,19 +70,64 @@ class ChannelSelector(QWidget):
         channels: list[ChannelSpec] | tuple[ChannelSpec, ...],
         preserve_selection: bool = True,
     ) -> tuple[bool, bool]:
-        """Populate selectors with display labels backed by stable channel IDs."""
+        """Populate selectors with acquired-channel entries only."""
+        return self.set_parameter_catalog(
+            tuple(
+                ParameterCatalogEntry(
+                    parameter_id=channel.id,
+                    display_name=channel.short_name or channel.name,
+                    kind="acquired",
+                    unit=channel.unit,
+                    source_stage="raw",
+                )
+                for channel in channels
+            ),
+            preserve_selection=preserve_selection,
+        )
+
+    def set_parameter_catalog(
+        self,
+        entries: tuple[ParameterCatalogEntry, ...],
+        *,
+        preserve_selection: bool = True,
+        allow_derived: bool = False,
+    ) -> tuple[bool, bool]:
+        """Populate selectors from the shared catalog without inventing IDs.
+
+        Until canonical processed display data is available, valid derived entries remain
+        visible but disabled in the plot selector.  They are still selectable by later
+        analysis-definition consumers that can request a fresh pipeline run.
+        """
         prev_x = self.x_channel_id() if preserve_selection else ""
         prev_y = self.y_channel_id() if preserve_selection else ""
 
         with QSignalBlocker(self._x_combo), QSignalBlocker(self._y_combo):
             self._x_combo.clear()
             self._y_combo.clear()
-            for channel in channels:
-                label = channel.name
-                if channel.short_name and channel.short_name != channel.name:
-                    label = f"{channel.short_name} [{channel.name}]"
-                self._x_combo.addItem(label, channel.id)
-                self._y_combo.addItem(label, channel.id)
+            for entry in entries:
+                enabled = entry.kind == "acquired" or (
+                    allow_derived and entry.is_definition_valid
+                )
+                tooltip = entry.availability
+                if entry.diagnostics:
+                    tooltip = "; ".join(
+                        diagnostic.message for diagnostic in entry.diagnostics
+                    )
+                self._x_combo.addItem(entry.selector_label, entry.parameter_id)
+                self._y_combo.addItem(entry.selector_label, entry.parameter_id)
+                x_index = self._x_combo.count() - 1
+                y_index = self._y_combo.count() - 1
+                self._x_combo.setItemData(
+                    x_index, tooltip, Qt.ItemDataRole.ToolTipRole
+                )
+                self._y_combo.setItemData(
+                    y_index, tooltip, Qt.ItemDataRole.ToolTipRole
+                )
+                for combo, index in ((self._x_combo, x_index), (self._y_combo, y_index)):
+                    model = combo.model()
+                    item = model.item(index) if hasattr(model, "item") else None
+                    if item is not None:
+                        item.setEnabled(enabled)
             self._y_combo.addItem(COUNT_DISPLAY, COUNT_CHANNEL)
 
             x_index = self._x_combo.findData(prev_x)
@@ -90,15 +136,17 @@ class ChannelSelector(QWidget):
             y_preserved = prev_y != "" and y_index >= 0
             if x_preserved:
                 self._x_combo.setCurrentIndex(x_index)
-            elif channels:
-                self._x_combo.setCurrentIndex(0)
+            elif entries:
+                self._x_combo.setCurrentIndex(self._first_enabled_index(self._x_combo))
 
             if y_preserved:
                 self._y_combo.setCurrentIndex(y_index)
-            elif len(channels) >= 2:
-                self._y_combo.setCurrentIndex(1)
-            elif channels:
-                self._y_combo.setCurrentIndex(0)
+            elif len(entries) >= 2:
+                self._y_combo.setCurrentIndex(
+                    self._first_enabled_index(self._y_combo, start=1)
+                )
+            elif entries:
+                self._y_combo.setCurrentIndex(self._first_enabled_index(self._y_combo))
 
         self._on_any_changed()
         return (x_preserved, y_preserved)
@@ -218,6 +266,16 @@ class ChannelSelector(QWidget):
         self._display_max_points_callbacks.append(callback)
 
     # -- private ------------------------------------------------------------
+
+    @staticmethod
+    def _first_enabled_index(combo: QComboBox, start: int = 0) -> int:
+        """Return the first enabled parameter row without silently selecting an error."""
+        model = combo.model()
+        for index in range(start, combo.count()):
+            item = model.item(index) if hasattr(model, "item") else None
+            if item is None or item.isEnabled():
+                return index
+        return 0
 
     def _on_any_changed(self) -> None:
         x = self.x_channel()

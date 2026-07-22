@@ -719,11 +719,11 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 
 #### Increment 2: 共通Parameter Catalog
 
-- [ ] acquired channelとderived outputをstable parameter IDで表すGUI非依存catalog/resolverを追加する。display name、kind、unit/source provenance、definition/expression、inputs、sample applicability、available/missing/stale/error/not-run、structured diagnosticを保持する。
-- [ ] catalogをX/Y axis、Channel/Parameter Information、Gate、Transform、Results Statistic、simple Overlayのparameter候補へ供給する。widgetごとの独自listを作らない。
-- [ ] acquired順+derived display順を決定的に維持し、同名別ID、missing input、cycle、sample差、stale/errorでもentryを隠さず理由を表示する。
-- [ ] definition追加・編集・run/failure・project reload後にselector/statusを更新し、現在のstable IDを維持できない場合は先頭channelへsilent fallbackしない。
-- [ ] Parameters画面で`Parameter | Type | Source | Expression | Unit | Status`を表示し、FCS raw metadataはread-only detailとして保持する。
+- [x] acquired channelとderived outputをstable parameter IDで表すGUI非依存catalog/resolverを追加する。display name、kind、unit/source provenance、definition/expression、inputs、sample applicability、available/missing/stale/error/not-run、structured diagnosticを保持する。
+- [x] catalogをX/Y axis、Channel/Parameter Information、Gate、Transform、Results Statistic、simple Overlayのparameter候補へ供給する。widgetごとの独自listを作らない。canonical processed display未実装の間、X/Yではderived entryを可視・disabledとする。
+- [x] acquired順+derived display順を決定的に維持し、同名別ID、missing input、cycle、sample差、stale/errorでもentryを隠さず理由を表示する。
+- [x] definition追加・編集・run/failure・project reload後にselector/statusを更新し、現在のstable IDを維持できない場合は先頭channelへsilent fallbackしない。
+- [x] Parameters画面で`Parameter | Type | Source | Expression | Unit | Status`を表示し、FCS raw metadataはread-only detailとして保持する。
 
 #### Increment 3: canonical processed display request/result
 

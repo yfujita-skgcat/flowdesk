@@ -57,6 +57,11 @@ from flowdesk_core.overrides import (
     override_spec_from_mapping,
     resolve_gate_overrides,
 )
+from flowdesk_core.parameter_catalog import (
+    ParameterCatalogDiagnostic,
+    ParameterCatalogEntry,
+    build_parameter_catalog,
+)
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_presentation import (
     SamplePresentationContext,
@@ -272,6 +277,7 @@ class MainWindow(QMainWindow):
         self._project_id = "flowdesk_session"
         self._project_path: Path | None = None
         self._derived_parameters: list[dict[str, Any]] = []
+        self._parameter_catalog: tuple[ParameterCatalogEntry, ...] = ()
         self._compensation_matrices: list[dict[str, Any]] = []
         self._compensation_bindings: list[dict[str, Any]] = []
         self._compensation_calculations: list[dict[str, Any]] = []
@@ -1050,7 +1056,11 @@ class MainWindow(QMainWindow):
         if report is not None and not self._results_stale:
             self._validate_population_selection(report)
         self._channel_names = [ch.name for ch in sample.info.channels]
-        x_preserved, y_preserved = self._channel_selector.set_channel_specs(sample.info.channels)
+        self._parameter_catalog = self._catalog_for_sample(sample)
+        self._channel_metadata.set_parameter_catalog(self._parameter_catalog)
+        x_preserved, y_preserved = self._channel_selector.set_parameter_catalog(
+            self._parameter_catalog
+        )
 
         status = (
             f"Selected: {sample.name}  ({sample.info.event_count} events, "
@@ -1974,6 +1984,7 @@ class MainWindow(QMainWindow):
             self._population_tree.set_report(report)
             self._workspace_tree.set_report(report)
             self._last_result_report = report
+            self._refresh_parameter_catalog()
             self._result_state.set_authoritative_report(
                 report,
                 self._preview_revision.analysis_revision,
@@ -2318,6 +2329,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self._derived_parameters = dialog.definitions()
+        self._refresh_parameter_catalog()
         self._mark_results_stale("Derived parameters changed")
 
     def _on_edit_annotations(self) -> None:
@@ -2357,6 +2369,60 @@ class MainWindow(QMainWindow):
         """Direct users to the supported Samples-pane overlay controls."""
         self._sample_browser.setFocus(Qt.FocusReason.MenuBarFocusReason)
         self._update_status("Use the Samples pane Ov column to overlay compatible samples")
+
+    def _refresh_parameter_catalog(self) -> None:
+        """Refresh the selected sample's typed parameter view after definition edits."""
+        sample = self._sample_browser.selected_sample()
+        if sample is None:
+            self._parameter_catalog = ()
+            self._channel_metadata.set_parameter_catalog(())
+            return
+        self._parameter_catalog = self._catalog_for_sample(sample)
+        self._channel_metadata.set_parameter_catalog(self._parameter_catalog)
+        self._channel_selector.set_parameter_catalog(self._parameter_catalog)
+
+    def _catalog_for_sample(
+        self, sample: _SampleInfo
+    ) -> tuple[ParameterCatalogEntry, ...]:
+        """Attach current/stale pipeline status to the immutable definition catalog."""
+        catalog = build_parameter_catalog(
+            sample.info.channels,
+            self._derived_parameters,
+            sample_id=sample.id,
+        )
+        report = self._last_result_report
+        if report is None:
+            return catalog
+        diagnostics_by_parameter: dict[str, list[ParameterCatalogDiagnostic]] = {}
+        for diagnostic in report.diagnostics:
+            if diagnostic.sample_id not in {None, sample.id} or not diagnostic.parameter_id:
+                continue
+            diagnostics_by_parameter.setdefault(diagnostic.parameter_id, []).append(
+                ParameterCatalogDiagnostic(
+                    code=diagnostic.code,
+                    message=diagnostic.message,
+                    parameter_id=diagnostic.parameter_id,
+                )
+            )
+        refreshed: list[ParameterCatalogEntry] = []
+        for entry in catalog:
+            if entry.kind != "derived" or entry.availability != "not_run":
+                refreshed.append(entry)
+                continue
+            diagnostics = tuple(
+                diagnostics_by_parameter.get(entry.parameter_id, [])
+                + diagnostics_by_parameter.get(entry.definition_id or "", [])
+            )
+            availability = "stale" if self._results_stale else "available"
+            if any(
+                diagnostic.code == "derived_parameter_evaluation_failed"
+                for diagnostic in diagnostics
+            ):
+                availability = "error"
+            refreshed.append(replace(
+                entry, availability=availability, diagnostics=diagnostics
+            ))
+        return tuple(refreshed)
 
     def _refresh_sample_display_names(self) -> None:
         """Refresh non-scientific labels after a title edit."""
@@ -2602,21 +2668,25 @@ class MainWindow(QMainWindow):
         """Edit versioned transform definitions without changing used IDs in place."""
         from flowdesk_qt.transform_editor import TransformEditorDialog
 
-        channels_by_id = {}
-        for sample in self._sample_browser.samples():
-            for channel in sample.info.channels:
-                channels_by_id.setdefault(channel.id, channel)
+        catalog = self._parameter_catalog
+        if not catalog:
+            channels_by_id = {}
+            for sample in self._sample_browser.samples():
+                for channel in sample.info.channels:
+                    channels_by_id.setdefault(channel.id, channel)
+            catalog = build_parameter_catalog(
+                tuple(channels_by_id.values()), self._derived_parameters
+            )
         current = self._sample_data.get(self._current_sample_id or "")
         preview_values = {}
         if current is not None:
-            channels_by_id.update({channel.id: channel for channel in current.channels})
             preview_values = {
                 channel.id: current.events[:, index]
                 for index, channel in enumerate(current.channels)
             }
         dialog = TransformEditorDialog(
             self._transforms,
-            tuple(channels_by_id.values()),
+            catalog,
             preview_values=preview_values,
             parent=self,
         )
@@ -2693,9 +2763,7 @@ class MainWindow(QMainWindow):
                 channels_by_id.setdefault(channel.id, channel)
         current = self._sample_data.get(self._current_sample_id or "")
         if current is not None:
-            channels_by_id.update(
-                {channel.id: channel for channel in current.channels}
-            )
+            channels_by_id.update({channel.id: channel for channel in current.channels})
 
         population_ids = ["all_events"]
         for gate in self._gate_editor.gates():
@@ -2767,14 +2835,14 @@ class MainWindow(QMainWindow):
         """Edit persisted definitions without running scientific analysis in Qt."""
         from flowdesk_qt.statistics_editor import StatisticsEditorDialog
 
-        channels_by_id = {}
-        for sample in self._sample_browser.samples():
-            for channel in sample.info.channels:
-                channels_by_id.setdefault(channel.id, channel)
-        current = self._sample_data.get(self._current_sample_id or "")
-        if current is not None:
-            channels_by_id.update(
-                {channel.id: channel for channel in current.channels}
+        catalog = self._parameter_catalog
+        if not catalog:
+            channels_by_id = {}
+            for sample in self._sample_browser.samples():
+                for channel in sample.info.channels:
+                    channels_by_id.setdefault(channel.id, channel)
+            catalog = build_parameter_catalog(
+                tuple(channels_by_id.values()), self._derived_parameters
             )
 
         population_ids = ["all_events"]
@@ -2784,7 +2852,7 @@ class MainWindow(QMainWindow):
 
         dialog = StatisticsEditorDialog(
             self._statistics,
-            tuple(channels_by_id.values()),
+            catalog,
             population_ids,
             new_statistic_defaults=(
                 {
@@ -3519,6 +3587,7 @@ class MainWindow(QMainWindow):
         self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
         self._compensation_status_indicator.mark_stale()
+        self._refresh_parameter_catalog()
         self._refresh_override_statuses()
         self._update_status(f"{reason} (results stale; rerun pipeline)")
         self._schedule_current_preview()

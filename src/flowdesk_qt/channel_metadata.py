@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
   QWidget,
 )
 
+from flowdesk_core.parameter_catalog import ParameterCatalogEntry
+
 _CHANNEL_COLUMNS = (
   ("id", "Stable ID"),
   ("name", "$PnN"),
@@ -76,7 +78,7 @@ class ChannelMetadataWorkspace(QWidget):
       self.set_column_visible(key, key in _DEFAULT_COLUMNS)
 
     header = QHBoxLayout()
-    header.addWidget(QLabel("Channel Metadata"))
+    header.addWidget(QLabel("Channel / Parameter Information"))
     header.addStretch(1)
     header.addWidget(self._column_button)
 
@@ -88,12 +90,27 @@ class ChannelMetadataWorkspace(QWidget):
     layout = QVBoxLayout(self)
     layout.addLayout(header)
     layout.addLayout(info)
+    self._parameter_table = QTableWidget()
+    self._parameter_table.setObjectName("parameterCatalogTable")
+    self._parameter_table.setColumnCount(6)
+    self._parameter_table.setHorizontalHeaderLabels(
+      ["Parameter", "Type", "Source", "Expression", "Unit", "Status"]
+    )
+    self._parameter_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    self._parameter_table.setSortingEnabled(True)
+    layout.addWidget(self._parameter_table)
+    layout.addWidget(QLabel("FCS metadata (read-only)"))
     layout.addWidget(self._table)
 
   @property
   def table(self) -> QTableWidget:
     """Expose the table for accessibility and GUI regression tests."""
     return self._table
+
+  @property
+  def parameter_table(self) -> QTableWidget:
+    """Expose the typed acquired-plus-derived parameter table for GUI tests."""
+    return self._parameter_table
 
   def set_sample(self, sample: Any | None) -> None:
     """Display metadata for a SampleBrowser sample or clear the workspace."""
@@ -103,6 +120,7 @@ class ChannelMetadataWorkspace(QWidget):
       self._status_label.setText("Channel status: -")
       self._file_label.setText("File: -")
       self._table.setRowCount(0)
+      self._parameter_table.setRowCount(0)
       return
     self._sample_label.setText(f"Sample: {sample.name} ({sample.id})")
     self._status_label.setText(
@@ -110,6 +128,33 @@ class ChannelMetadataWorkspace(QWidget):
     )
     self._file_label.setText(f"File: {sample.path or '-'}")
     self._populate(sample.info)
+
+  def set_parameter_catalog(self, catalog: tuple[ParameterCatalogEntry, ...]) -> None:
+    """Display catalog provenance without evaluating parameter expressions in Qt."""
+    self._parameter_table.setSortingEnabled(False)
+    self._parameter_table.setRowCount(len(catalog))
+    for row, entry in enumerate(catalog):
+      source = entry.source_stage
+      if entry.definition_id:
+        source = f"{source} ({entry.definition_id})"
+      diagnostic_text = "; ".join(
+        f"{diagnostic.code}: {diagnostic.message}"
+        for diagnostic in entry.diagnostics
+      )
+      values = (
+        entry.selector_label,
+        entry.kind,
+        source,
+        entry.expression or "",
+        entry.unit or "",
+        entry.availability,
+      )
+      for column, value in enumerate(values):
+        item = QTableWidgetItem(str(value))
+        if diagnostic_text:
+          item.setToolTip(diagnostic_text)
+        self._parameter_table.setItem(row, column, item)
+    self._parameter_table.setSortingEnabled(True)
 
   def set_column_visible(self, key: str, visible: bool) -> None:
     """Show or hide one metadata column by stable key."""

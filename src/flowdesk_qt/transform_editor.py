@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.models import ChannelSpec, TransformSpec
+from flowdesk_core.parameter_catalog import ParameterCatalogEntry
 from flowdesk_core.transforms import (
   LOGICLE_IMPLEMENTATION_VERSION,
   TransformError,
@@ -56,7 +57,7 @@ class TransformEditorDialog(QDialog):
   def __init__(
     self,
     transforms: Sequence[dict[str, Any]],
-    available_channels: Sequence[ChannelSpec],
+    available_channels: Sequence[ChannelSpec | ParameterCatalogEntry],
     *,
     preview_values: dict[str, NDArray[np.float64]] | None = None,
     parent: QWidget | None = None,
@@ -108,7 +109,25 @@ class TransformEditorDialog(QDialog):
     self._parameter_combo = QComboBox()
     self._parameter_combo.setObjectName("transformParameterCombo")
     for channel in self._channels:
-      self._parameter_combo.addItem(f"{channel.name} [{channel.id}]", channel.id)
+      if isinstance(channel, ParameterCatalogEntry):
+        label = channel.selector_label
+        enabled = channel.is_definition_valid
+        tooltip = "; ".join(
+          diagnostic.message for diagnostic in channel.diagnostics
+        ) or channel.availability
+        parameter_id = channel.parameter_id
+      else:
+        label = f"{channel.name} [{channel.id}]"
+        enabled = True
+        tooltip = ""
+        parameter_id = channel.id
+      self._parameter_combo.addItem(label, parameter_id)
+      index = self._parameter_combo.count() - 1
+      self._parameter_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
+      model = self._parameter_combo.model()
+      item = model.item(index) if hasattr(model, "item") else None
+      if item is not None:
+        item.setEnabled(enabled)
     self._type_combo = QComboBox()
     self._type_combo.setObjectName("transformTypeCombo")
     self._type_combo.addItems(["linear", "log", "asinh", "logicle"])

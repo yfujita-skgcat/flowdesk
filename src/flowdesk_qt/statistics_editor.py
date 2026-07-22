@@ -33,6 +33,7 @@ from flowdesk_core.models import (
     ChannelSpec,
     StatisticSpec,
 )
+from flowdesk_core.parameter_catalog import ParameterCatalogEntry
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -100,7 +101,7 @@ class StatisticsEditorDialog(QDialog):
     def __init__(
         self,
         statistics: Sequence[dict[str, Any]],
-        available_channels: Sequence[ChannelSpec],
+        available_channels: Sequence[ChannelSpec | ParameterCatalogEntry],
         population_ids: Sequence[str],
         *,
         new_statistic_defaults: Mapping[str, Any] | None = None,
@@ -183,9 +184,27 @@ class StatisticsEditorDialog(QDialog):
         self._parameter_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._parameter_combo.addItem("(none)", "")
         for channel in self._channels:
+            if isinstance(channel, ParameterCatalogEntry):
+                label = channel.selector_label
+                enabled = channel.is_definition_valid
+                tooltip = "; ".join(
+                    diagnostic.message for diagnostic in channel.diagnostics
+                ) or channel.availability
+                parameter_id = channel.parameter_id
+            else:
+                label = f"{channel.name} [{channel.id}]"
+                enabled = True
+                tooltip = ""
+                parameter_id = channel.id
             self._parameter_combo.addItem(
-                f"{channel.name} [{channel.id}]", channel.id
+                label, parameter_id
             )
+            index = self._parameter_combo.count() - 1
+            self._parameter_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
+            model = self._parameter_combo.model()
+            item = model.item(index) if hasattr(model, "item") else None
+            if item is not None:
+                item.setEnabled(enabled)
 
         self._metric_combo = QComboBox()
         self._metric_combo.setObjectName("statisticMetricCombo")
