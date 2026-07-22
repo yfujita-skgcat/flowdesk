@@ -7,6 +7,7 @@ Assembles the UI components and delegates all scientific computation to
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from copy import deepcopy
 from dataclasses import asdict, replace
@@ -97,6 +98,17 @@ from flowdesk_storage.serialization import now_iso
 logger = logging.getLogger(__name__)
 
 RIGHT_PANE_MIN_WIDTH = 280
+
+
+# Advanced overlay definitions are persisted for compatibility, but their source list is
+# not yet consumed by the live renderer. Keep this capability explicit so an unfinished
+# dialog cannot be presented as a working analysis/display operation.
+ADVANCED_OVERLAY_LIVE_RENDERING_AVAILABLE = False
+
+
+def _is_release_build() -> bool:
+    """Return whether unfinished UI must be hidden rather than shown disabled."""
+    return os.environ.get("FLOWDESK_BUILD_CHANNEL", "development").strip().lower() == "release"
 
 
 # ---------------------------------------------------------------------------
@@ -479,14 +491,10 @@ class MainWindow(QMainWindow):
         self.action_export_results = QAction("Export Population &Results...", self)
         self.action_export_results.setObjectName("actionExportResults")
         self.action_export_results.triggered.connect(self._on_export_population_results)
-        file_menu.addAction(self.action_export_results)
 
         self.action_export_statistics = QAction("Export &Statistics...", self)
         self.action_export_statistics.setObjectName("actionExportStatistics")
         self.action_export_statistics.triggered.connect(self._on_export_statistics)
-        file_menu.addAction(self.action_export_statistics)
-
-        file_menu.addSeparator()
 
         self.action_quit = QAction("E&xit", self)
         self.action_quit.setObjectName("actionQuit")
@@ -556,39 +564,10 @@ class MainWindow(QMainWindow):
         )
         analysis_menu.addAction(self.action_compensation_calculations)
 
-        self.action_transforms = QAction("Analysis &Transforms...", self)
+        self.action_transforms = QAction("Manage Parameter &Transforms...", self)
         self.action_transforms.setObjectName("actionTransforms")
         self.action_transforms.triggered.connect(self._on_edit_transforms)
         analysis_menu.addAction(self.action_transforms)
-
-        self.action_statistics = QAction("Population &Statistics...", self)
-        self.action_statistics.setObjectName("actionStatistics")
-        self.action_statistics.triggered.connect(self._on_edit_statistics)
-        analysis_menu.addAction(self.action_statistics)
-
-        self.action_annotations = QAction("Sample &Annotations...", self)
-        self.action_annotations.setObjectName("actionAnnotations")
-        self.action_annotations.triggered.connect(self._on_edit_annotations)
-        analysis_menu.addAction(self.action_annotations)
-
-        self.action_sample_sheet = QAction("Sample &Sheet...", self)
-        self.action_sample_sheet.setObjectName("actionSampleSheet")
-        self.action_sample_sheet.triggered.connect(self._on_edit_sample_sheet)
-        analysis_menu.addAction(self.action_sample_sheet)
-
-        self.action_batch_plot_export = QAction("Batch Plot E&xport...", self)
-        self.action_batch_plot_export.setObjectName("actionBatchPlotExport")
-        self.action_batch_plot_export.triggered.connect(self._on_batch_plot_export)
-        analysis_menu.addAction(self.action_batch_plot_export)
-
-        self.action_overlay_sources = QAction("Overlay &Sources...", self)
-        self.action_overlay_sources.setObjectName("actionOverlaySources")
-        self.action_overlay_sources.triggered.connect(self._on_edit_overlay_sources)
-        analysis_menu.addAction(self.action_overlay_sources)
-        self.action_plot_presentation = QAction("Plot &Presentation...", self)
-        self.action_plot_presentation.setObjectName("actionPlotPresentation")
-        self.action_plot_presentation.triggered.connect(self._on_edit_plot_presentation)
-        analysis_menu.addAction(self.action_plot_presentation)
 
         analysis_menu.addSeparator()
         self.action_advanced_groups = QAction(
@@ -613,6 +592,73 @@ class MainWindow(QMainWindow):
         self.action_clear_gates.setShortcut(QKeySequence("Ctrl+G"))
         self.action_clear_gates.triggered.connect(self._on_clear_gates)
         analysis_menu.addAction(self.action_clear_gates)
+
+        # Results owns persisted statistic definitions and result export. Context actions
+        # elsewhere only prefill the same shared editor.
+        results_menu = menubar.addMenu("&Results")
+        self.action_add_statistic = QAction("&Add Statistic...", self)
+        self.action_add_statistic.setObjectName("actionAddStatistic")
+        self.action_add_statistic.triggered.connect(
+            lambda: self._on_add_statistic_from_results("all_events")
+        )
+        results_menu.addAction(self.action_add_statistic)
+        self.action_statistics = QAction("Manage &Statistics...", self)
+        self.action_statistics.setObjectName("actionStatistics")
+        self.action_statistics.triggered.connect(self._on_edit_statistics)
+        results_menu.addAction(self.action_statistics)
+        results_menu.addSeparator()
+        results_menu.addAction(self.action_export_results)
+        results_menu.addAction(self.action_export_statistics)
+        self.action_batch_plot_export = QAction("Batch Plot E&xport...", self)
+        self.action_batch_plot_export.setObjectName("actionBatchPlotExport")
+        self.action_batch_plot_export.triggered.connect(self._on_batch_plot_export)
+        results_menu.addAction(self.action_batch_plot_export)
+
+        # Data owns sample metadata presentation. The detailed parameter workspace stays
+        # read-only in this increment; catalog integration follows in B7.4 Increment 2.
+        data_menu = menubar.addMenu("&Data")
+        self.action_sample_sheet = QAction("Sample &Sheet...", self)
+        self.action_sample_sheet.setObjectName("actionSampleSheet")
+        self.action_sample_sheet.triggered.connect(self._on_edit_sample_sheet)
+        data_menu.addAction(self.action_sample_sheet)
+        self.action_parameter_information = QAction(
+            "Channel / Parameter &Information", self
+        )
+        self.action_parameter_information.setObjectName("actionParameterInformation")
+        self.action_parameter_information.triggered.connect(
+            self._on_focus_parameter_information
+        )
+        data_menu.addAction(self.action_parameter_information)
+
+        # Plot owns display-only actions. Samples-pane Ov controls are the supported
+        # overlay workflow until the advanced persisted source list reaches live layers.
+        plot_menu = menubar.addMenu("&Plot")
+        self.action_overlay_samples = QAction("Overlay &Samples", self)
+        self.action_overlay_samples.setObjectName("actionOverlaySamples")
+        self.action_overlay_samples.setToolTip(
+            "Use the Samples pane Ov column to select compatible overlay samples."
+        )
+        self.action_overlay_samples.triggered.connect(self._on_focus_overlay_samples)
+        plot_menu.addAction(self.action_overlay_samples)
+        self.action_overlay_sources = QAction(
+            "Advanced Overlay Sources... (Not implemented)", self
+        )
+        self.action_overlay_sources.setObjectName("actionOverlaySources")
+        self.action_overlay_sources.setToolTip(
+            "Advanced per-layer overlays are not implemented. Use the Samples pane Ov controls."
+        )
+        self.action_overlay_sources.setStatusTip(self.action_overlay_sources.toolTip())
+        self.action_overlay_sources.setEnabled(ADVANCED_OVERLAY_LIVE_RENDERING_AVAILABLE)
+        self.action_overlay_sources.setVisible(
+            ADVANCED_OVERLAY_LIVE_RENDERING_AVAILABLE or not _is_release_build()
+        )
+        if ADVANCED_OVERLAY_LIVE_RENDERING_AVAILABLE:
+            self.action_overlay_sources.triggered.connect(self._on_edit_overlay_sources)
+        plot_menu.addAction(self.action_overlay_sources)
+        self.action_plot_presentation = QAction("Plot &Presentation...", self)
+        self.action_plot_presentation.setObjectName("actionPlotPresentation")
+        self.action_plot_presentation.triggered.connect(self._on_edit_plot_presentation)
+        plot_menu.addAction(self.action_plot_presentation)
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -2301,6 +2347,16 @@ class MainWindow(QMainWindow):
             return
         self._annotations = dialog.annotations()
         self._refresh_sample_display_names()
+
+    def _on_focus_parameter_information(self) -> None:
+        """Focus the read-only parameter information workspace."""
+        self._channel_metadata.setFocus(Qt.FocusReason.MenuBarFocusReason)
+        self._update_status("Channel / Parameter Information is shown in the workspace")
+
+    def _on_focus_overlay_samples(self) -> None:
+        """Direct users to the supported Samples-pane overlay controls."""
+        self._sample_browser.setFocus(Qt.FocusReason.MenuBarFocusReason)
+        self._update_status("Use the Samples pane Ov column to overlay compatible samples")
 
     def _refresh_sample_display_names(self) -> None:
         """Refresh non-scientific labels after a title edit."""

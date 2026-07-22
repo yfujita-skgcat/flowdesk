@@ -711,11 +711,11 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 
 #### Increment 1: 未完成featureのguardとmenu ownership
 
-- [ ] `Advanced Overlay Sources... (Not implemented)`をAnalysisからPlot/Viewへ移し、development/alphaではdisabledと説明tooltipを表示し、releaseでは非表示にする。一つの明示的capability/build policyを使い、enabled actionから未接続editorを開かない。
-- [ ] Samples paneの`Ov`が現在のsupported overlay workflowであることをtooltip/statusへ示す。既存projectの`overlay_sources`は削除・変換せずround-tripする。
-- [ ] `Analysis -> Population Statistics...`を削除し、ResultsのAdd/Edit/Duplicate/Remove/Manageへ統合する。Population/Graphのshortcutも同じcommand/validatorだけを呼ぶ。
-- [ ] top-level `Sample Annotations...`を削除し、通常導線を`Data -> Sample Sheet...`へ統合する。`Analysis Transforms...`は`Manage Parameter Transforms...`へ改称し、display-only actionをAnalysisから除く。
-- [ ] menu location、label、objectName、enabled/visible state、tooltip、keyboard access、project/pipeline非変更をGUI testする。
+- [x] `Advanced Overlay Sources... (Not implemented)`をAnalysisからPlot/Viewへ移し、development/alphaではdisabledと説明tooltipを表示し、releaseでは非表示にする。一つの明示的capability/build policyを使い、enabled actionから未接続editorを開かない。
+- [x] Samples paneの`Ov`が現在のsupported overlay workflowであることをtooltip/statusへ示す。既存projectの`overlay_sources`は削除・変換せずround-tripする。
+- [x] `Analysis -> Population Statistics...`を削除し、ResultsのAdd/Edit/Duplicate/Remove/Manageへ統合する。Population/Graphのshortcutも同じcommand/validatorだけを呼ぶ。
+- [x] top-level `Sample Annotations...`を削除し、通常導線を`Data -> Sample Sheet...`へ統合する。`Analysis Transforms...`は`Manage Parameter Transforms...`へ改称し、display-only actionをAnalysisから除く。
+- [x] menu location、label、objectName、enabled/visible state、tooltip、keyboard access、project/pipeline非変更をGUI testする。
 
 #### Increment 2: 共通Parameter Catalog
 
