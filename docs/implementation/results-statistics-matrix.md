@@ -159,6 +159,9 @@ Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to
 
 - `Compute` changes persisted analytical state and requires canonical recalculation.
 - `Show` changes Results view state only.
+- `Applies to` is editable from Manage Statistics through the shared stable-ID
+  population chooser; changing targets invalidates the affected statistic cells
+  and requires canonical recalculation.
 - `Parameter` shows the user-facing parameter name (for example `FSC-A`), not only
   the stable internal parameter ID.
 - `Applies to` shows the user-facing names of the explicit target populations. A

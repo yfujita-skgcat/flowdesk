@@ -415,6 +415,32 @@ def test_statistic_management_dialog_separates_compute_and_show(qapp) -> None:
   assert dialog._table.item(0, 6).text() == "All Events, Live cells"
 
 
+def test_statistic_management_edits_population_targets(qapp, monkeypatch) -> None:
+  dialog = StatisticManagementDialog(
+    [{
+      "id": "mean",
+      "name": "Mean",
+      "population_ids": ["all_events"],
+      "parameter_id": "FL1-A",
+      "metric": "mean",
+    }],
+    population_labels={"all_events": "All Events", "live": "Live cells"},
+    population_ids=("all_events", "live"),
+    population_parents={"all_events": None, "live": "all_events"},
+  )
+  monkeypatch.setattr(
+    "flowdesk_qt.statistics_editor.choose_population_targets",
+    lambda *_args: ("all_events", "live"),
+  )
+
+  dialog._edit_targets(0)
+
+  definition = dialog.definitions()[0]
+  assert definition["population_ids"] == ["all_events", "live"]
+  assert definition["population_id"] == "all_events"
+  assert dialog._table.item(0, 6).text() == "All Events, Live cells"
+
+
 def test_main_window_exposes_sample_sheet_and_batch_plot_actions(qapp) -> None:
   window = MainWindow()
   try:

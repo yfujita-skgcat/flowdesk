@@ -72,6 +72,50 @@ _VALUE_METRICS = frozenset([
 _SOURCE_STAGES = ["raw", "compensated", "transformed"]
 
 
+def choose_population_targets(
+    parent: QWidget,
+    population_ids: Sequence[str],
+    population_parents: Mapping[str, str | None],
+    selected_ids: Sequence[str],
+) -> tuple[str, ...] | None:
+    """Show the shared stable-ID population target chooser."""
+    dialog = QDialog(parent)
+    dialog.setObjectName("statisticPopulationTargetsDialog")
+    dialog.setWindowTitle("Select statistic populations")
+    layout = QVBoxLayout(dialog)
+    targets = QTreeWidget()
+    targets.setObjectName("statisticPopulationTargetsList")
+    targets.setHeaderLabels(["Population targets"])
+    target_items: dict[str, QTreeWidgetItem] = {}
+    selected = set(selected_ids)
+    for population_id in population_ids:
+        parent_id = population_parents.get(population_id)
+        parent_item = target_items.get(parent_id)
+        item = QTreeWidgetItem(parent_item or targets, [population_id])
+        item.setData(0, Qt.ItemDataRole.UserRole, population_id)
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        item.setCheckState(
+            0,
+            Qt.CheckState.Checked
+            if population_id in selected else Qt.CheckState.Unchecked,
+        )
+        target_items[population_id] = item
+    layout.addWidget(targets)
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Ok
+        | QDialogButtonBox.StandardButton.Cancel
+    )
+    layout.addWidget(buttons)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return None
+    return tuple(
+        population_id for population_id in population_ids
+        if target_items[population_id].checkState(0) == Qt.CheckState.Checked
+    )
+
+
 def _empty_statistic(
     defaults: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -670,45 +714,15 @@ class StatisticsEditorDialog(QDialog):
         )
 
     def _select_population_targets(self) -> None:
-        dialog = QDialog(self)
-        dialog.setObjectName("statisticPopulationTargetsDialog")
-        dialog.setWindowTitle("Select statistic populations")
-        layout = QVBoxLayout(dialog)
-        targets = QTreeWidget()
-        targets.setObjectName("statisticPopulationTargetsList")
-        targets.setHeaderLabels(["Population targets"])
-        target_items: dict[str, QTreeWidgetItem] = {}
-        for population_id in self._population_ids:
-            parent_id = self._population_parents.get(population_id)
-            parent_item = target_items.get(parent_id)
-            item = QTreeWidgetItem(parent_item or targets, [population_id])
-            item.setData(0, Qt.ItemDataRole.UserRole, population_id)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(
-                0,
-                Qt.CheckState.Checked
-                if population_id in self._target_population_ids
-                else Qt.CheckState.Unchecked
-            )
-            target_items[population_id] = item
-        layout.addWidget(targets)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
+        selected = choose_population_targets(
+            self,
+            self._population_ids,
+            self._population_parents,
+            self._target_population_ids,
         )
-        layout.addWidget(buttons)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        if selected is None:
             return
-        selected: list[str] = []
-        for item in target_items.values():
-            if item.checkState(0) == Qt.CheckState.Checked:
-                selected.append(str(item.data(0, Qt.ItemDataRole.UserRole)))
-        self._target_population_ids = tuple(
-            population_id for population_id in self._population_ids
-            if population_id in selected
-        )
+        self._target_population_ids = selected
         self._update_population_scope_label()
 
     # -- Validation ----------------------------------------------------------
@@ -796,6 +810,8 @@ class StatisticManagementDialog(QDialog):
         *,
         parameter_labels: Mapping[str, str] | None = None,
         population_labels: Mapping[str, str] | None = None,
+        population_ids: Sequence[str] = (),
+        population_parents: Mapping[str, str | None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -806,8 +822,11 @@ class StatisticManagementDialog(QDialog):
         self._visibility = dict(visibility or {})
         self._parameter_labels = dict(parameter_labels or {})
         self._population_labels = dict(population_labels or {})
+        self._population_ids = tuple(str(value) for value in population_ids)
+        self._population_parents = dict(population_parents or {})
         self._compute_checks: dict[str, QCheckBox] = {}
         self._show_checks: dict[str, QCheckBox] = {}
+        self._target_ids: dict[str, tuple[str, ...]] = {}
 
         layout = QVBoxLayout(self)
         self._table = QTableWidget(0, len(self._HEADERS))
@@ -817,7 +836,13 @@ class StatisticManagementDialog(QDialog):
             QTableWidget.SelectionBehavior.SelectRows
         )
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.cellDoubleClicked.connect(self._edit_targets_at)
         layout.addWidget(self._table)
+
+        edit_targets = QPushButton("Edit Applies to...")
+        edit_targets.setObjectName("statisticEditTargetsButton")
+        edit_targets.clicked.connect(self._edit_selected_targets)
+        layout.addWidget(edit_targets)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -853,6 +878,8 @@ class StatisticManagementDialog(QDialog):
             self._set_item(row, 4, value.get("metric", "count"))
             self._set_item(row, 5, value.get("transform_id") or value.get("source_stage", ""))
             targets = value.get("population_ids") or [value.get("population_id", "")]
+            target_ids = tuple(str(target) for target in targets if target)
+            self._target_ids[statistic_id] = target_ids
             target_labels = [
                 self._population_labels.get(str(target), str(target))
                 for target in targets if target
@@ -860,6 +887,35 @@ class StatisticManagementDialog(QDialog):
             applies_to = ", ".join(target_labels) or "(none)"
             self._set_item(row, 6, applies_to)
             self._table.item(row, 6).setToolTip(applies_to)
+
+    def _edit_selected_targets(self) -> None:
+        row = self._table.currentRow()
+        if row >= 0:
+            self._edit_targets(row)
+
+    def _edit_targets_at(self, row: int, column: int) -> None:
+        if column == 6:
+            self._edit_targets(row)
+
+    def _edit_targets(self, row: int) -> None:
+        if not self._population_ids or not (0 <= row < len(self._statistics)):
+            return
+        statistic_id = str(self._statistics[row].get("id", ""))
+        selected = choose_population_targets(
+            self,
+            self._population_ids,
+            self._population_parents,
+            self._target_ids.get(statistic_id, ()),
+        )
+        if selected is None:
+            return
+        self._target_ids[statistic_id] = selected
+        labels = [self._population_labels.get(target, target) for target in selected]
+        applies_to = ", ".join(labels) or "(none)"
+        item = self._table.item(row, 6)
+        if item is not None:
+            item.setText(applies_to)
+            item.setToolTip(applies_to)
 
     def _set_item(self, row: int, column: int, value: object) -> None:
         self._table.setItem(row, column, QTableWidgetItem(str(value)))
@@ -870,6 +926,10 @@ class StatisticManagementDialog(QDialog):
         for value in result:
             statistic_id = str(value.get("id", ""))
             value["compute_enabled"] = self._compute_checks[statistic_id].isChecked()
+            if self._population_ids:
+                targets = list(self._target_ids.get(statistic_id, ()))
+                value["population_ids"] = targets
+                value["population_id"] = targets[0] if targets else ""
         return result
 
     def visibility(self) -> dict[str, bool]:

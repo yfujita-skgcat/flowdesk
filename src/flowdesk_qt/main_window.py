@@ -3475,6 +3475,8 @@ class MainWindow(QMainWindow):
                 for entry in self._parameter_catalog
             },
             population_labels=self._population_name_map(),
+            population_ids=tuple(self._population_parent_map()),
+            population_parents=self._population_parent_map(),
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -3485,12 +3487,22 @@ class MainWindow(QMainWindow):
             if bool(old.get("compute_enabled", True))
             != bool(value.get("compute_enabled", True))
         ]
+        targets_changed = any(
+            tuple(old.get("population_ids") or [old.get("population_id", "")])
+            != tuple(value.get("population_ids") or [value.get("population_id", "")])
+            for old, value in zip(self._statistics, updated, strict=True)
+        )
         self._statistics = updated
         self._sync_statistic_result_definitions()
         self._results_workspace.set_statistic_column_visibility(dialog.visibility())
         self._project_dirty = True
-        if compute_changed:
-            self._mark_results_stale("Statistic Compute settings changed")
+        if compute_changed or targets_changed:
+            reason = (
+                "Statistic targets changed"
+                if targets_changed and not compute_changed
+                else "Statistic Compute settings changed"
+            )
+            self._mark_results_stale(reason)
 
     def _on_migrate_gate(self, gate) -> None:
         """Preview and explicitly duplicate or replace one geometric gate."""
