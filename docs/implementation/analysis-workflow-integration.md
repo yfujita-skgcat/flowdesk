@@ -15,8 +15,8 @@ scientific execution path. In particular:
 4. statistic definitions are managed from Results;
 5. sample titles and annotations are edited in one Sample Sheet surface;
 6. analysis, data, results, and plot commands are placed according to their effect; and
-7. Advanced Overlay is disabled until its persisted sources actually drive live
-   rendering end to end.
+7. Advanced Overlay sources use the same compatibility-checked processed-display path as
+   simple overlays and drive live rendering, persistence, and export end to end.
 
 Implement exactly one numbered increment per LLM/Codex run. Do not mark an increment
 complete because a dialog opens or a definition round-trips. Its required execution,
@@ -43,9 +43,9 @@ The following is the implementation boundary at the time this guide was added:
   statistic editor.
 - Sample Sheet title and Sample Annotations both persist through `AnnotationSpec`, but
   separate dialogs expose overlapping concepts.
-- The live overlay path is built by `_render_manual_overlays()` from Samples-pane manual
-  and comparison selections. Persisted `view["overlay_sources"]` is edited, saved, and
-  included in export metadata, but it is not the source list used by this live renderer.
+- The live overlay path is built by `_render_manual_overlays()` from either persisted
+  `view["overlay_sources"]` or the Samples-pane manual/comparison selections. Both paths
+  use the same processed-display request and compatibility resolver.
 
 These are integration gaps. Earlier phase completion means the underlying models,
 editors, resolvers, or core execution exist; it does not waive the acceptance criteria
@@ -64,8 +64,9 @@ in this guide.
   the plot uses that transform.
 - Do not enable arbitrary per-layer parameter or transform selection for overlay. A
   comparison plot must have common scientific axes.
-- Do not delete or reinterpret persisted advanced overlay definitions while their UI is
-  disabled. Preserve them for compatibility and diagnose them as inactive.
+- Do not permit a visible advanced source whose scientific axes differ from the active
+  plot. Preserve hidden/incompatible definitions for repair, but block them from live
+  rendering and export until compatibility is restored.
 
 ## Inspect first
 
@@ -397,7 +398,7 @@ Data
 Plot (or View)
   Plot Appearance...
   Overlay Samples
-  Advanced Overlay Sources... (Not implemented)
+  Advanced Overlay Sources...
 ```
 
 Do not add duplicate data models when moving actions. Context actions and menu actions
@@ -408,23 +409,24 @@ revision or run the pipeline.
 
 ### Immediate behavior
 
-Until end-to-end rendering is implemented:
+The advanced source editor is enabled only for sources that satisfy the active plot
+compatibility contract:
 
 - remove Overlay Sources from Analysis;
-- in development/alpha builds, show
-  `Advanced Overlay Sources... (Not implemented)` under Plot/View, disabled;
-- set a tooltip/status tip explaining that Samples-pane `Ov` controls are the supported
-  overlay workflow;
-- in release builds, hide the action rather than exposing a disabled unfinished feature;
-- do not instantiate the editor from an enabled action or imply Apply affected the live
-  plot; and
-- preserve existing persisted `overlay_sources` unchanged on load/save.
+- show `Advanced Overlay Sources...` under Plot/View in all build channels;
+- resolve every visible source before accepting it and block missing, stale, or
+  incompatible sample/population/parameter/transform definitions;
+- keep sample/population, label, color, alpha, visibility, and order source-specific;
+  require active plot parameter, transform, dimensionality, and binning to be shared;
+- route accepted definitions through `_render_manual_overlays()` and the same
+  `ProcessedDisplayRequest` used by the simple overlay path; and
+- preserve hidden/incompatible persisted definitions unchanged for repair and round-trip.
 
 Use one explicit capability flag/build policy, not scattered environment checks. Add a
-GUI test for label, location, enabled/visible state, tooltip, and the absence of project
-mutation.
+GUI test for label, location, enabled/visible state, tooltip, compatibility blocking,
+live layer rendering, and the absence of scientific pipeline mutation.
 
-### Scientific scope of a future implementation
+### Scientific scope of the advanced implementation
 
 The active plot owns common X/Y parameters, transform IDs, dimensionality, range,
 histogram bins, and normalization contract. Advanced sources may initially vary only:
@@ -461,7 +463,7 @@ Core/model candidates:
 - `src/flowdesk_core/pipeline_runner.py`, `preview.py`, and `display_data.py`
 - `src/flowdesk_core/transforms.py`, `statistics.py`, `annotations.py`, and
   dependency/invalidation/project-command modules
-- `src/flowdesk_core/overlays.py` only in the future advanced-rendering increment
+- `src/flowdesk_core/overlays.py` for shared advanced rendering contracts
 
 Qt candidates:
 
@@ -469,7 +471,7 @@ Qt candidates:
 - `src/flowdesk_qt/derived_parameter_editor.py`, `transform_editor.py`,
   `statistics_editor.py`, `results_workspace.py`, and `sample_sheet.py`
 - `src/flowdesk_qt/sample_browser.py`, `plot_widget.py`, and preview scheduler/state
-- `src/flowdesk_qt/overlay_source_editor.py` only after the capability is enabled
+- `src/flowdesk_qt/overlay_source_editor.py` for the enabled advanced source editor
 
 Storage/schema candidates:
 
@@ -481,7 +483,7 @@ Tests:
 - focused core tests for parameter catalog, pipeline display preparation, transforms,
   statistics, annotations, dependency invalidation, overlays, and project round trips
 - GUI tests for derived axes, selector refresh/status, menu ownership, Results statistic
-  workflow, unified Sample Sheet, disabled Advanced Overlay, rendering, revision handling,
+  workflow, unified Sample Sheet, advanced Overlay rendering, revision handling,
   and strict teardown
 
 ## Numbered implementation increments
@@ -489,7 +491,8 @@ Tests:
 ### Increment 1: Guard unfinished features and correct menu ownership
 
 - Add the explicit build/capability policy for unfinished actions.
-- Disable and relabel Advanced Overlay in development; hide it in release.
+- Keep the Advanced Overlay guard until live rendering is proven; it is now enabled after
+  the Increment 7 live-layer tests pass.
 - Remove it from Analysis and route display commands to Plot/View.
 - Remove Analysis Population Statistics and top-level Sample Annotations entry points;
   keep supported Results and Sample Sheet workflows reachable.
@@ -545,13 +548,13 @@ Sample Sheet integration, or advanced overlay rendering is complete.
 - Implement dependency-aware invalidation for title, referenced, and unreferenced fields.
 - Test GUI/preview/batch/CLI/export equality and raw FCS immutability.
 
-### Increment 7: Future Advanced Overlay end-to-end implementation
+### Increment 7: Advanced Overlay end-to-end implementation
 
-Do not start unless a concrete scientific workflow requires more than Samples-pane `Ov`
-controls. Restrict its initial source differences to sample/population/style. Implement
-the eight enablement conditions above, remove the capability guard only after all tests
-pass, and document any canonical mapping/calibration feature in its own guide before
-production code.
+The concrete workflow is comparison of named populations across control/treatment
+samples while keeping one active scientific coordinate system. Restrict source
+differences to sample/population/style. Canonical mapping/calibration remains a separate
+future feature. The capability guard is removed only after live-layer, persistence,
+reload, compatibility, and GUI/headless export tests pass.
 
 ## Required acceptance tests
 
@@ -571,8 +574,8 @@ production code.
   Analysis menu.
 - Sample title and annotations are edited in one Sample Sheet; invalidation follows
   actual Group-rule dependencies.
-- Advanced Overlay is disabled/hidden until persisted sources drive live layers,
-  reload, and export through one resolver.
+- Advanced Overlay visible sources drive live layers, save/reload, and GUI/headless
+  export through one compatibility resolver; invalid visible sources are blocked.
 - No GUI scientific calculation, raw-event mutation, silent fallback, stale-as-current
   display, display-downsampled statistic, or live QThread remains.
 

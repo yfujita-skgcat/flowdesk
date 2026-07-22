@@ -36,14 +36,14 @@ def test_analysis_workflow_actions_have_one_menu_owner(qapp) -> None:
     assert "Sample &Sheet..." in data
     assert "Channel / Parameter &Information" in data
     assert "Overlay &Samples" in plot
-    assert "Advanced Overlay Sources... (Not implemented)" in plot
+    assert "Advanced Overlay Sources..." in plot
     assert "Plot &Presentation..." in plot
   finally:
     window.close()
     window.deleteLater()
 
 
-def test_advanced_overlay_is_disabled_and_does_not_mutate_project(qapp) -> None:
+def test_advanced_overlay_is_enabled_and_does_not_rerun_pipeline(qapp) -> None:
   window = MainWindow()
   try:
     before = window._build_project_manifest()
@@ -51,8 +51,8 @@ def test_advanced_overlay_is_disabled_and_does_not_mutate_project(qapp) -> None:
 
     assert window.action_overlay_sources.objectName() == "actionOverlaySources"
     assert window.action_overlay_sources.isVisible()
-    assert not window.action_overlay_sources.isEnabled()
-    assert "not implemented" in window.action_overlay_sources.toolTip().lower()
+    assert window.action_overlay_sources.isEnabled()
+    assert "compatible" in window.action_overlay_sources.toolTip().lower()
 
     window.action_overlay_samples.trigger()
 
@@ -64,12 +64,12 @@ def test_advanced_overlay_is_disabled_and_does_not_mutate_project(qapp) -> None:
     window.deleteLater()
 
 
-def test_release_build_hides_unfinished_advanced_overlay(qapp, monkeypatch) -> None:
+def test_release_build_keeps_completed_advanced_overlay_visible(qapp, monkeypatch) -> None:
   monkeypatch.setenv("FLOWDESK_BUILD_CHANNEL", "release")
   window = MainWindow()
   try:
-    assert not window.action_overlay_sources.isVisible()
-    assert not window.action_overlay_sources.isEnabled()
+    assert window.action_overlay_sources.isVisible()
+    assert window.action_overlay_sources.isEnabled()
   finally:
     window.close()
     window.deleteLater()

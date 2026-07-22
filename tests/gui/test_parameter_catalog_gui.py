@@ -182,6 +182,51 @@ def test_simple_overlay_uses_the_same_derived_parameter_id(qapp, tmp_path) -> No
     qapp.processEvents()
 
 
+def test_advanced_overlay_source_renders_persisted_layer(qapp, tmp_path) -> None:
+  first = tmp_path / "advanced-active.fcs"
+  second = tmp_path / "advanced-overlay.fcs"
+  write_fcs_file(first, np.array([[2.0, 1.0], [8.0, 2.0]]), ["X", "Y"])
+  write_fcs_file(second, np.array([[3.0, 1.0], [9.0, 3.0]]), ["X", "Y"])
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(first), str(second)]) == 2
+    active, overlay = window._sample_browser.samples()
+    x_id, y_id = (channel.id for channel in active.info.channels)
+    assert window._sample_browser.select_sample(active.id)
+    window._channel_selector.set_selected_channels(x_id, y_id)
+    source = {
+      "source_id": "advanced-overlay",
+      "sample_id": overlay.id,
+      "population_id": "all_events",
+      "display_name": "Overlay source",
+      "x_parameter_id": x_id,
+      "y_parameter_id": y_id,
+      "x_transform_id": None,
+      "y_transform_id": None,
+      "visible": True,
+      "order": 0,
+      "style": {
+        "legend_label": "Treatment",
+        "color": "#ff0000",
+        "alpha": 0.5,
+      },
+    }
+    assert window._overlay_status_resolver([source])["advanced-overlay"] == (
+      "compatible", ()
+    )
+    window._plot_views = [{"id": "default", "overlay_sources": [source]}]
+    window._render_manual_overlays(x_id, y_id)
+    QTest.qWait(20)
+    assert len(window._plot_widget._overlay_scatter_items) == 1
+    overlay_x, overlay_y = window._plot_widget._overlay_scatter_items[0].getData()
+    np.testing.assert_allclose(overlay_x, [3.0, 9.0])
+    np.testing.assert_allclose(overlay_y, [1.0, 3.0])
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 def test_axis_transform_selector_creates_one_persisted_log_definition(qapp, tmp_path) -> None:
   path = tmp_path / "transform.fcs"
   write_fcs_file(path, np.array([[1.0, 2.0], [10.0, 3.0]]), ["X", "Y"])

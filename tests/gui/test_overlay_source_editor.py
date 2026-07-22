@@ -73,3 +73,29 @@ def test_editor_keeps_hidden_invalid_source_for_repair(qapp) -> None:
     dialog.close()
     dialog.deleteLater()
     qapp.processEvents()
+
+
+def test_editor_rejects_visible_incompatible_source(qapp) -> None:
+  source = {
+    "source_id": "wrong-axis", "sample_id": "s1", "population_id": "all_events",
+    "display_name": "Wrong axis", "x_parameter_id": "x", "visible": True,
+  }
+  dialog = OverlaySourceEditorDialog(
+    _samples(), ("all_events",), (), (source,),
+    status_resolver=lambda _sources: {
+      "wrong-axis": ("incompatible", ("X parameter must match active plot",)),
+    },
+  )
+  try:
+    assert dialog.sources()[0]["source_id"] == "wrong-axis"
+    dialog._visible_check.setChecked(True)
+    dialog._status_results = {
+      "wrong-axis": ("incompatible", ("X parameter must match active plot",))
+    }
+    dialog._accept()
+    assert dialog.result() == 0
+    assert "incompatible" in dialog._status_label.text()
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()

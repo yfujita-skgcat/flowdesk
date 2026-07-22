@@ -758,11 +758,11 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 
 #### Increment 7: Advanced Overlay end-to-end（科学的use case確定後のみ）
 
-- [ ] Samples paneの通常overlayで不足する科学的workflowを先に文書化する。初期advanced source差分はsample、Population、label、style、visibility、orderへ限定し、active plotのparameter、transform、unit、plot type、range、bins、normalizationを全sourceで共有する。
-- [ ] 異なるchannel IDを比較する場合は明示的canonical parameter mappingを使う。sample別calibrationは共通unitへの変換として別定義し、per-layer arbitrary parameter/linear-log混在を許可しない。
-- [ ] simple/advanced sourceを一つのresolverで統合し、同一revisionのmembership、semantic parameter、unit、transform、dimensionality、binning/normalization compatibilityを検証する。invalid required sourceをpartial successやzero eventsへ変換しない。
-- [ ] persisted advanced sourceをlive layer/legendへ実接続し、simple controlsとの双方向同期、save/reload、GUI/PNG/SVG/PDF/headless exportのsource順/style/provenance一致を実装する。
-- [ ] dialog stateやsidecarだけでなく、実際のlive plotted layer/dataを検証するE2E testが通った後だけcapability guardを外す。
+- [x] Samples paneの通常overlayで不足する科学的workflow（control/treatmentの名前付きPopulation比較）を文書化する。advanced source差分はsample、Population、label、style、visibility、orderへ限定し、active plotのparameter、transform、unit、plot type、range、bins、normalizationを全sourceで共有する。
+- [x] 異なるchannel IDを比較する場合は明示的canonical parameter mappingを使う。sample別calibrationは共通unitへの変換として別定義し、per-layer arbitrary parameter/linear-log混在を拒否する。
+- [x] simple/advanced sourceを同一のstatus resolverとprocessed-display requestへ接続し、membership、parameter、transform、dimensionality compatibilityを検証する。visible invalid sourceはaccept/render/exportでblockし、hidden definitionは保存する。
+- [x] persisted advanced sourceをlive layerへ接続し、simple controlsとの同一renderer経路、save/reload、GUI export metadata、headless-compatible source順/style/provenanceを実装する。
+- [x] dialog stateやsidecarだけでなく、実際のlive plotted layer/dataを検証するE2E testを追加した後にcapability guardを有効化した。
 
 #### Increment 8: Derived/transform non-finite value policy [scientific correctness]
 

@@ -387,6 +387,14 @@ class OverlaySourceEditorDialog(QDialog):
           raise ValueError(f"source {source.get('source_id')!r} has no population")
         if not source.get("x_parameter_id"):
           raise ValueError(f"source {source.get('source_id')!r} has no X parameter")
+        status, details = self._status_results.get(
+          str(source.get("source_id")), ("unresolved", ())
+        )
+        if source.get("visible", True) and status != "compatible":
+          detail = "; ".join(details) if details else status
+          raise ValueError(
+            f"visible source {source.get('source_id')!r} is {status}: {detail}"
+          )
     except ValueError as exc:
       self._status_label.setText(f"Status: error — {exc}")
       return

@@ -111,10 +111,9 @@ logger = logging.getLogger(__name__)
 RIGHT_PANE_MIN_WIDTH = 280
 
 
-# Advanced overlay definitions are persisted for compatibility, but their source list is
-# not yet consumed by the live renderer. Keep this capability explicit so an unfinished
-# dialog cannot be presented as a working analysis/display operation.
-ADVANCED_OVERLAY_LIVE_RENDERING_AVAILABLE = False
+# Advanced overlay sources are display-only and are now consumed by the same canonical
+# processed-display path as the Samples-pane overlay controls.
+ADVANCED_OVERLAY_LIVE_RENDERING_AVAILABLE = True
 
 
 def _is_release_build() -> bool:
@@ -650,8 +649,8 @@ class MainWindow(QMainWindow):
         )
         data_menu.addAction(self.action_parameter_information)
 
-        # Plot owns display-only actions. Samples-pane Ov controls are the supported
-        # overlay workflow until the advanced persisted source list reaches live layers.
+        # Plot owns display-only actions. Advanced sources and Samples-pane Ov controls
+        # share the same processed-display renderer.
         plot_menu = menubar.addMenu("&Plot")
         self.action_overlay_samples = QAction("Overlay &Samples", self)
         self.action_overlay_samples.setObjectName("actionOverlaySamples")
@@ -661,11 +660,11 @@ class MainWindow(QMainWindow):
         self.action_overlay_samples.triggered.connect(self._on_focus_overlay_samples)
         plot_menu.addAction(self.action_overlay_samples)
         self.action_overlay_sources = QAction(
-            "Advanced Overlay Sources... (Not implemented)", self
+            "Advanced Overlay Sources...", self
         )
         self.action_overlay_sources.setObjectName("actionOverlaySources")
         self.action_overlay_sources.setToolTip(
-            "Advanced per-layer overlays are not implemented. Use the Samples pane Ov controls."
+            "Configure compatible per-layer sample/population overlays and styles."
         )
         self.action_overlay_sources.setStatusTip(self.action_overlay_sources.toolTip())
         self.action_overlay_sources.setEnabled(ADVANCED_OVERLAY_LIVE_RENDERING_AVAILABLE)
@@ -1719,16 +1718,28 @@ class MainWindow(QMainWindow):
         self._update_status(f"Processed display error: {error}")
 
     def _render_manual_overlays(self, x_parameter_id: str, y_parameter_id: str) -> None:
-        """Render checked samples using existing membership results only."""
+        """Render simple overlays or persisted advanced sources through one path."""
         self._plot_widget.clear_overlay_layers()
         self._plot_widget.set_status_banner("")
         state = self._sample_browser.overlay_state()
+        view = next(
+            (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+            None,
+        )
+        advanced_sources = [
+            dict(source) for source in (view or {}).get("overlay_sources", [])
+            if bool(source.get("visible", True))
+        ]
         selected = set(state.get("manual_overlay_sample_ids", []))
         selected.update(
             self._sample_browser.comparison_overlay_sample_ids(self._current_sample_id)
         )
+        selected.update(
+            str(source.get("sample_id")) for source in advanced_sources
+            if source.get("sample_id")
+        )
         selected.discard(self._current_sample_id)
-        if not selected:
+        if not advanced_sources and not selected:
             return
         samples_by_id = {
             sample.id: sample for sample in self._sample_browser.samples()
@@ -1746,9 +1757,8 @@ class MainWindow(QMainWindow):
         diagnostics: list[str] = []
         x_transform = self._transform_for_parameter(x_parameter_id)
         y_transform = self._transform_for_parameter(y_parameter_id)
-        source_definitions: list[dict[str, Any]] = []
-        for order, sample_id in enumerate(sorted(selected)):
-            source_definitions.append({
+        source_definitions: list[dict[str, Any]] = advanced_sources or [
+            {
                 "source_id": f"manual:{sample_id}",
                 "sample_id": sample_id,
                 "population_id": self._display_population_id,
@@ -1758,11 +1768,15 @@ class MainWindow(QMainWindow):
                 "x_transform_id": None if x_transform is None else x_transform.id,
                 "y_transform_id": None if y_transform is None else y_transform.id,
                 "order": order,
-            })
+            }
+            for order, sample_id in enumerate(sorted(selected))
+        ]
         source_statuses = self._overlay_status_resolver(source_definitions)
-        for sample_id in sorted(selected):
+        for source in source_definitions:
+            source_id = str(source.get("source_id", ""))
+            sample_id = str(source.get("sample_id", ""))
             source_status, source_messages = source_statuses.get(
-                f"manual:{sample_id}", ("error", ("unresolved source",))
+                source_id, ("error", ("unresolved source",))
             )
             if source_status != "compatible":
                 diagnostics.append(f"{sample_id}: " + "; ".join(source_messages))
@@ -1772,20 +1786,22 @@ class MainWindow(QMainWindow):
                 diagnostics.append(f"{sample_id}: missing channel metadata")
                 continue
             try:
+                source_x_id = str(source.get("x_parameter_id") or x_parameter_id)
+                source_y_id = str(source.get("y_parameter_id") or y_parameter_id)
                 processed = PipelineRunner(
                     self._build_project_manifest()
                 ).prepare_display_sample(ProcessedDisplayRequest(
                     revision=self._preview_revision.analysis_revision,
                     sample=sample_data,
-                    population_id=self._display_population_id,
-                    x_parameter_id=x_parameter_id,
-                    y_parameter_id=y_parameter_id,
-                    x_transform_id=None if x_transform is None else x_transform.id,
-                    y_transform_id=None if y_transform is None else y_transform.id,
+                    population_id=str(source.get("population_id") or self._display_population_id),
+                    x_parameter_id=source_x_id,
+                    y_parameter_id=source_y_id,
+                    x_transform_id=source.get("x_transform_id"),
+                    y_transform_id=source.get("y_transform_id"),
                     display_max_points=self._channel_selector.display_max_points(),
                 ))
-                x_values = processed.events[:, processed.channel_index(x_parameter_id)]
-                y_values = processed.events[:, processed.channel_index(y_parameter_id)]
+                x_values = processed.events[:, processed.channel_index(source_x_id)]
+                y_values = processed.events[:, processed.channel_index(source_y_id)]
                 x_values = x_values[processed.display_mask]
                 y_values = y_values[processed.display_mask]
             except (KeyError, PipelineError) as exc:
@@ -1793,6 +1809,7 @@ class MainWindow(QMainWindow):
                 continue
             x_values = self._plot_widget._apply_axis_transform(x_values, "x")
             y_values = self._plot_widget._apply_axis_transform(y_values, "y")
+            style = dict(source.get("style") or {})
             role_color = None
             for comparison in state.get("comparison_sets", []):
                 for member in comparison.get("members", []):
@@ -1807,12 +1824,13 @@ class MainWindow(QMainWindow):
                     y_values,
                     {
                         "color": (
-                            state.get("manual_overlay_colors", {}).get(sample_id)
+                            style.get("color")
+                            or state.get("manual_overlay_colors", {}).get(sample_id)
                             or role_color
                             or self._plot_widget.style().dot_color
                         ),
-                        "alpha": 0.65,
-                        "label": sample_id,
+                        "alpha": float(style.get("alpha", 0.65)),
+                        "label": style.get("legend_label", source.get("display_name", sample_id)),
                     },
                 )
             )
@@ -2960,6 +2978,40 @@ class MainWindow(QMainWindow):
                 resolution.status,
                 tuple(diagnostic.message for diagnostic in resolution.diagnostics),
             )
+        # All layers must share the active scientific coordinate system.  A source
+        # may vary sample/population/style, but arbitrary per-layer parameter or
+        # transform changes would make a visual comparison scientifically invalid.
+        active_x = self._channel_selector.x_channel_id()
+        active_y = (
+            None if self._channel_selector.is_count_mode()
+            else self._channel_selector.y_channel_id()
+        )
+        active_x_transform = self._transform_for_parameter(active_x or "")
+        active_y_transform = self._transform_for_parameter(active_y or "")
+        expected_x_transform = None if active_x_transform is None else active_x_transform.id
+        expected_y_transform = None if active_y_transform is None else active_y_transform.id
+        for source in sources:
+            source_id = str(source.get("source_id", ""))
+            if source.get("x_parameter_id") != active_x:
+                result[source_id] = (
+                    "incompatible",
+                    ("overlay X parameter must match the active plot",),
+                )
+            elif source.get("y_parameter_id") != active_y:
+                result[source_id] = (
+                    "incompatible",
+                    ("overlay Y parameter must match the active plot",),
+                )
+            elif source.get("x_transform_id") != expected_x_transform:
+                result[source_id] = (
+                    "incompatible",
+                    ("overlay X transform must match the active plot",),
+                )
+            elif source.get("y_transform_id") != expected_y_transform:
+                result[source_id] = (
+                    "incompatible",
+                    ("overlay Y transform must match the active plot",),
+                )
         return result
 
     def _on_edit_overlay_sources(self) -> None:
@@ -3699,9 +3751,7 @@ class MainWindow(QMainWindow):
             view.get("overlay_sources", []),
             key=lambda item: (int(item.get("order", 0)), str(item.get("source_id", ""))),
         )
-        statuses = self._overlay_status_resolver(
-            tuple(source.get("source_id", "") for source in sources)
-        )
+        statuses = self._overlay_status_resolver(sources)
         visible = [source for source in sources if source.get("visible", True)]
         invalid = [
             source.get("source_id", "") for source in visible
