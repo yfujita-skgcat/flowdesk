@@ -831,9 +831,11 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 
 #### Increment 4: Population scopeとCompute/Show管理
 
-- [ ] Add/Manage Statisticへ`Current population`、`Current and descendants`、`Selected populations...`、`All current populations`を追加し、checkbox hierarchyで明示targetを編集する。既定は呼出元Populationとする。
-- [ ] Manage Statisticsへ`Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to | Status`を追加する。`Compute`はanalysis revisionと該当resultを更新し、`Show`はdisplay stateだけを変更してpipelineを実行しない。
+- [x] Add/Manage Statisticへ`Current population`、`Current and descendants`、`Selected populations...`、`All current populations`を追加し、checkbox hierarchyで明示targetを編集する。既定は呼出元Populationとする。
+- [x] Manage Statisticsへ`Compute`（統計エディタ）と`Show`（ResultsのColumns...）を追加する。`Compute`はanalysis revisionと該当resultを更新し、`Show`はdisplay stateだけを変更してpipelineを実行しない。
 - [ ] Newの明示操作、cancel、duplicate、remove dependency、Undo/Redo、save/reload、missing target、empty selection、stable objectNameをGUI testする。
+  - [x] Newの明示操作、cancel、duplicate、save/reload、および主要ウィジェットのstable objectNameをGUI testする。
+  - [ ] remove dependency、Undo/Redo、missing target、empty selectionの専用UIとGUI testを追加する。
 
 #### Increment 5: Export、preview、migration cleanup、E2E
 

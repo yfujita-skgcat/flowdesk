@@ -14,6 +14,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -74,6 +76,7 @@ def _empty_statistic(
         "id": "",
         "name": "",
         "population_id": "",
+        "population_ids": [],
         "parameter_id": None,
         "metric": "count",
         "source_stage": "compensated",
@@ -106,6 +109,7 @@ class StatisticsEditorDialog(QDialog):
         available_channels: Sequence[ChannelSpec | ParameterCatalogEntry],
         population_ids: Sequence[str],
         *,
+        population_parents: Mapping[str, str | None] | None = None,
         transforms: Sequence[Mapping[str, Any]] = (),
         new_statistic_defaults: Mapping[str, Any] | None = None,
         parent: QWidget | None = None,
@@ -118,6 +122,7 @@ class StatisticsEditorDialog(QDialog):
         self._statistics = deepcopy(list(statistics))
         self._channels = tuple(available_channels)
         self._population_ids = tuple(population_ids)
+        self._population_parents = dict(population_parents or {})
         self._transforms = tuple(dict(value) for value in transforms)
         # Defaults supplied by an entry point (for example Results -> Add
         # Statistic...) are applied only when the user explicitly clicks New.
@@ -128,6 +133,7 @@ class StatisticsEditorDialog(QDialog):
             if new_statistic_defaults is not None else None
         )
         self._current_row = -1
+        self._target_population_ids: tuple[str, ...] = ()
         self._loading = False
 
         self._build_ui()
@@ -186,6 +192,22 @@ class StatisticsEditorDialog(QDialog):
         self._population_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         for pid in self._population_ids:
             self._population_combo.addItem(pid, pid)
+        self._population_scope_combo = QComboBox()
+        self._population_scope_combo.setObjectName("statisticPopulationScopeCombo")
+        self._population_scope_combo.addItem("Current population", "current")
+        self._population_scope_combo.addItem(
+            "Current population and descendants", "descendants"
+        )
+        self._population_scope_combo.addItem("Selected populations...", "selected")
+        self._population_scope_combo.addItem("All current populations", "all")
+        self._target_button = QPushButton("Targets...")
+        self._target_button.setObjectName("statisticPopulationTargetsButton")
+        population_row = QWidget()
+        population_layout = QHBoxLayout(population_row)
+        population_layout.setContentsMargins(0, 0, 0, 0)
+        population_layout.addWidget(self._population_combo)
+        population_layout.addWidget(self._population_scope_combo)
+        population_layout.addWidget(self._target_button)
 
         self._parameter_combo = QComboBox()
         self._parameter_combo.setObjectName("statisticParameterCombo")
@@ -244,10 +266,13 @@ class StatisticsEditorDialog(QDialog):
         self._format_edit.setObjectName("statisticFormatEdit")
         self._notes_edit = QLineEdit()
         self._notes_edit.setObjectName("statisticNotesEdit")
+        self._compute_check = QCheckBox("Compute enabled")
+        self._compute_check.setObjectName("statisticComputeEnabledCheck")
+        self._compute_check.setChecked(True)
 
         form.addRow("Statistic ID:", self._id_edit)
         form.addRow("Name:", self._name_edit)
-        form.addRow("Population:", self._population_combo)
+        form.addRow("Population targets:", population_row)
         form.addRow("Parameter:", self._parameter_combo)
         form.addRow("Metric:", self._metric_combo)
         form.addRow("Source Stage:", self._source_combo)
@@ -256,6 +281,7 @@ class StatisticsEditorDialog(QDialog):
         form.addRow(self._percentile_q_label, self._percentile_q_edit)
         form.addRow("Format:", self._format_edit)
         form.addRow("Notes:", self._notes_edit)
+        form.addRow("Analysis:", self._compute_check)
 
         right_layout.addLayout(form)
 
@@ -287,6 +313,13 @@ class StatisticsEditorDialog(QDialog):
         self._metric_combo.currentTextChanged.connect(self._on_metric_changed)
         self._metric_combo.currentIndexChanged.connect(self._on_metric_changed)
         self._source_combo.currentTextChanged.connect(self._on_source_changed)
+        self._population_scope_combo.currentIndexChanged.connect(
+            self._on_population_scope_changed
+        )
+        self._population_combo.currentIndexChanged.connect(
+            self._on_population_base_changed
+        )
+        self._target_button.clicked.connect(self._select_population_targets)
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
 
@@ -303,8 +336,12 @@ class StatisticsEditorDialog(QDialog):
             for stat in self._statistics:
                 label = stat.get("name") or stat.get("id") or "New statistic"
                 metric = stat.get("metric", "count")
-                pop = stat.get("population_id", "")
-                self._list.addItem(f"{label} ({metric}, pop={pop})")
+                populations = stat.get("population_ids") or [
+                    stat.get("population_id", "")
+                ]
+                populations = [str(value) for value in populations if value]
+                scope = ", ".join(populations) or "(none)"
+                self._list.addItem(f"{label} ({metric}, pop={scope})")
             if self._statistics:
                 self._list.setCurrentRow(
                     min(selected_row, len(self._statistics) - 1)
@@ -328,6 +365,14 @@ class StatisticsEditorDialog(QDialog):
             idx = self._population_combo.findData(pop_id)
             if idx >= 0:
                 self._population_combo.setCurrentIndex(idx)
+            raw_targets = value.get("population_ids")
+            if not isinstance(raw_targets, list) or not raw_targets:
+                raw_targets = [pop_id] if pop_id else []
+            self._target_population_ids = tuple(
+                population_id for population_id in raw_targets
+                if population_id in self._population_ids
+            )
+            self._update_population_scope_label()
 
             param_id = value.get("parameter_id") or ""
             pidx = self._parameter_combo.findData(str(param_id))
@@ -358,6 +403,7 @@ class StatisticsEditorDialog(QDialog):
                 self._format_edit.clear()
 
             self._notes_edit.setText(str(value.get("notes", "")))
+            self._compute_check.setChecked(bool(value.get("compute_enabled", True)))
             self._diag_label.clear()
             self._on_metric_changed()
             # Reapply after all row fields and enabled states have settled.  This
@@ -387,10 +433,15 @@ class StatisticsEditorDialog(QDialog):
         if not fmt_text:
             fmt_text = None
 
+        target_ids = self._target_population_ids
+        if not target_ids:
+            current_population = str(self._population_combo.currentData() or "")
+            target_ids = (current_population,) if current_population else ()
         self._statistics[self._current_row] = {
             "id": self._id_edit.text().strip(),
             "name": self._name_edit.text().strip(),
-            "population_id": str(self._population_combo.currentData() or ""),
+            "population_id": target_ids[0] if target_ids else "",
+            "population_ids": list(target_ids),
             "parameter_id": param_id,
             "metric": metric,
             "source_stage": self._source_combo.currentText(),
@@ -400,6 +451,7 @@ class StatisticsEditorDialog(QDialog):
             "settings": settings,
             "format": fmt_text,
             "notes": self._notes_edit.text().strip(),
+            "compute_enabled": self._compute_check.isChecked(),
         }
 
     def _on_row_changed(self, row: int) -> None:
@@ -462,6 +514,83 @@ class StatisticsEditorDialog(QDialog):
             self._source_combo.currentText() == "transformed"
         )
 
+    def _descendant_population_ids(self, population_id: str) -> tuple[str, ...]:
+        targets = [population_id]
+        changed = True
+        while changed:
+            changed = False
+            for candidate, parent in self._population_parents.items():
+                if candidate not in targets and parent in targets:
+                    targets.append(candidate)
+                    changed = True
+        return tuple(
+            candidate for candidate in self._population_ids if candidate in targets
+        )
+
+    def _on_population_scope_changed(self, _index: int) -> None:
+        if self._loading:
+            return
+        scope = self._population_scope_combo.currentData()
+        current = str(self._population_combo.currentData() or "")
+        if scope == "current":
+            self._target_population_ids = (current,) if current else ()
+        elif scope == "descendants":
+            self._target_population_ids = self._descendant_population_ids(current)
+        elif scope == "all":
+            self._target_population_ids = tuple(self._population_ids)
+        elif scope == "selected":
+            self._select_population_targets()
+        self._update_population_scope_label()
+
+    def _on_population_base_changed(self, _index: int) -> None:
+        """Recompute an implicit scope when its anchor population changes."""
+        if self._loading:
+            return
+        scope = self._population_scope_combo.currentData()
+        current = str(self._population_combo.currentData() or "")
+        if scope == "current":
+            self._target_population_ids = (current,) if current else ()
+        elif scope == "descendants":
+            self._target_population_ids = self._descendant_population_ids(current)
+        self._update_population_scope_label()
+
+    def _update_population_scope_label(self) -> None:
+        count = len(self._target_population_ids)
+        self._target_button.setText(f"Targets ({count})...")
+
+    def _select_population_targets(self) -> None:
+        dialog = QDialog(self)
+        dialog.setObjectName("statisticPopulationTargetsDialog")
+        dialog.setWindowTitle("Select statistic populations")
+        layout = QVBoxLayout(dialog)
+        targets = QListWidget()
+        targets.setObjectName("statisticPopulationTargetsList")
+        for population_id in self._population_ids:
+            item = QListWidgetItem(population_id, targets)
+            item.setData(Qt.ItemDataRole.UserRole, population_id)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(
+                Qt.CheckState.Checked
+                if population_id in self._target_population_ids
+                else Qt.CheckState.Unchecked
+            )
+        layout.addWidget(targets)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        layout.addWidget(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._target_population_ids = tuple(
+            str(targets.item(index).data(Qt.ItemDataRole.UserRole))
+            for index in range(targets.count())
+            if targets.item(index).checkState() == Qt.CheckState.Checked
+        )
+        self._update_population_scope_label()
+
     # -- Validation ----------------------------------------------------------
 
     def _validate_all(self) -> None:
@@ -487,9 +616,9 @@ class StatisticsEditorDialog(QDialog):
                 raise ValueError(
                     f"Statistic '{spec.id}' has an empty name"
                 )
-            if not spec.population_id:
+            if not spec.population_ids:
                 raise ValueError(
-                    f"Statistic '{spec.name}' has an empty population_id"
+                    f"Statistic '{spec.name}' has no population targets"
                 )
 
             if spec.metric in _VALUE_METRICS and not spec.parameter_id:

@@ -82,6 +82,30 @@ def test_value_metric_enables_parameter_selector(qapp) -> None:
   assert dialog._parameter_combo.isEnabled()
 
 
+def test_statistics_editor_persists_population_scope_and_compute_flag(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events", "live", "marker"),
+    population_parents={"live": "all_events", "marker": "live"},
+  )
+  dialog._new_button.click()
+  dialog._id_edit.setText("live_mean")
+  dialog._name_edit.setText("Live mean")
+  dialog._population_combo.setCurrentText("all_events")
+  dialog._population_scope_combo.setCurrentText(
+    "Current population and descendants"
+  )
+  dialog._metric_combo.setCurrentText("mean")
+  dialog._parameter_combo.setCurrentText("FL1-A [FL1-A]")
+  dialog._compute_check.setChecked(False)
+
+  definition = dialog.definitions()[0]
+  assert definition["population_id"] == "all_events"
+  assert definition["population_ids"] == ["all_events", "live", "marker"]
+  assert definition["compute_enabled"] is False
+
+
 def test_results_add_statistic_defaults_to_active_x_parameter(qapp, monkeypatch) -> None:
   window = MainWindow()
   captured: dict[str, object] = {}
@@ -219,6 +243,16 @@ def test_results_add_statistic_entrypoint_uses_shared_editor(qapp, monkeypatch) 
   finally:
     window.close()
     window.deleteLater()
+
+
+def test_results_manage_statistics_entrypoint_uses_shared_editor(qapp) -> None:
+  from flowdesk_qt.results_workspace import ResultsWorkspace
+
+  workspace = ResultsWorkspace()
+  calls: list[str] = []
+  workspace.on_manage_statistics_requested(lambda: calls.append("manage"))
+  workspace._manage_statistics_button.click()
+  assert calls == ["manage"]
 
 
 def test_main_window_exposes_sample_sheet_and_batch_plot_actions(qapp) -> None:

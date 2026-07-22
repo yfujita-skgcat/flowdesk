@@ -1043,6 +1043,9 @@ class MainWindow(QMainWindow):
         self._results_workspace.on_add_statistic_requested(
             self._on_add_statistic_from_results
         )
+        self._results_workspace.on_manage_statistics_requested(
+            self._open_statistics_editor
+        )
         self._workspace_tree.on_selection_changed(self._on_workspace_tree_selected)
 
         # Connect plot mouse events to gate creation
@@ -3358,6 +3361,7 @@ class MainWindow(QMainWindow):
             self._statistics,
             catalog,
             population_ids,
+            population_parents=self._population_parent_map(),
             transforms=self._transforms,
             new_statistic_defaults=(
                 {

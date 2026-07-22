@@ -214,10 +214,16 @@ automatic warning threshold is chosen.
 
 ### Increment 4: Population target selection and Compute/Show management
 
-- Add current/subtree/selected/all-current population targeting to the editor.
-- Add `Compute`, `Show`, and target management to Manage Statistics.
-- Prove `Show` is display-only and `Compute` changes only statistic analysis state.
-- Add undo/redo, cancel, save/reload, dependency diagnostics, and stable object-name tests.
+- Implemented current/subtree/selected/all-current population targeting in the shared
+  statistic editor. Targets are materialized as an explicit ordered `population_ids`
+  list at commit time; a later gate is not implicitly added.
+- `Compute enabled` is persisted in the statistic definition and is honored by the
+  headless runner. Results `Columns...` controls `Show` as display-only state, while
+  `Manage Statistics...` opens the same editor used by Add Statistic.
+- Cancel, duplicate, save/reload, and stable object-name coverage are implemented.
+  Dependency removal, statistics-specific Undo/Redo, and dedicated missing-target /
+  empty-selection UX remain follow-up work; an empty target list is rejected by model
+  validation rather than silently computing all populations.
 
 ### Increment 5: Export, preview, cleanup, and end-to-end acceptance
 

@@ -75,6 +75,7 @@ class ResultsWorkspace(QWidget):
     self._statistic_column_widths: dict[str, int] = {}
     self._callbacks: list[Callable[[str, str, str], None]] = []
     self._add_statistic_callbacks: list[Callable[[str], None]] = []
+    self._manage_statistic_callbacks: list[Callable[[], None]] = []
 
     self._tree = QTreeWidget()
     self._tree.setObjectName("resultsWorkspaceTree")
@@ -99,6 +100,11 @@ class ResultsWorkspace(QWidget):
     self._add_statistic_button.setText("Add Statistic...")
     self._add_statistic_button.clicked.connect(self._on_add_statistic)
     layout.addWidget(self._add_statistic_button)
+    self._manage_statistics_button = QToolButton()
+    self._manage_statistics_button.setObjectName("resultsManageStatisticsButton")
+    self._manage_statistics_button.setText("Manage Statistics...")
+    self._manage_statistics_button.clicked.connect(self._on_manage_statistics)
+    layout.addWidget(self._manage_statistics_button)
     self._column_button = QToolButton()
     self._column_button.setObjectName("resultsStatisticColumnsButton")
     self._column_button.setText("Columns...")
@@ -117,6 +123,14 @@ class ResultsWorkspace(QWidget):
   def on_add_statistic_requested(self, callback: Callable[[str], None]) -> None:
     """Register the Results entry point for persisted statistic definitions."""
     self._add_statistic_callbacks.append(callback)
+
+  def on_manage_statistics_requested(self, callback: Callable[[], None]) -> None:
+    """Register the shared editor entry point for existing definitions."""
+    self._manage_statistic_callbacks.append(callback)
+
+  def _on_manage_statistics(self) -> None:
+    for callback in self._manage_statistic_callbacks:
+      invoke_callback(callback)
 
   def _on_add_statistic(self) -> None:
     item = self._tree.currentItem()
