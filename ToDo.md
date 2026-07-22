@@ -762,6 +762,7 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 - [x] 異なるchannel IDを比較する場合は明示的canonical parameter mappingを使う。sample別calibrationは共通unitへの変換として別定義し、per-layer arbitrary parameter/linear-log混在を拒否する。
 - [x] simple/advanced sourceを同一のstatus resolverとprocessed-display requestへ接続し、membership、parameter、transform、dimensionality compatibilityを検証する。visible invalid sourceはaccept/render/exportでblockし、hidden definitionは保存する。
 - [x] persisted advanced sourceをlive layerへ接続し、simple controlsとの同一renderer経路、save/reload、GUI export metadata、headless-compatible source順/style/provenanceを実装する。
+- [x] Batch Plot CLIもraw event配列を直接plotせず、`PipelineRunner.prepare_display_sample`でderived/compensation/membershipを解決してからPNG/SVG/PDFへ渡す。
 - [x] dialog stateやsidecarだけでなく、実際のlive plotted layer/dataを検証するE2E testを追加した後にcapability guardを有効化した。
 
 #### Increment 8: Derived/transform non-finite value policy [scientific correctness]

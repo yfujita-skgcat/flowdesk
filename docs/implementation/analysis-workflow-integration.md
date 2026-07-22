@@ -556,6 +556,11 @@ differences to sample/population/style. Canonical mapping/calibration remains a 
 future feature. The capability guard is removed only after live-layer, persistence,
 reload, compatibility, and GUI/headless export tests pass.
 
+The headless Batch Plot CLI uses `PipelineRunner.prepare_display_sample` for every layer
+before normalization and output. It therefore cannot accidentally plot raw columns when
+the view selects a derived parameter, and its SVG/PNG/PDF outputs retain the same source
+identity and population selection contract as the GUI renderer.
+
 ## Required acceptance tests
 
 - A saved derived parameter appears in Parameter Information and every applicable
