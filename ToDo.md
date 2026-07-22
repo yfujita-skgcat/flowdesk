@@ -833,9 +833,9 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 
 - [x] Add/Manage Statisticへ`Current population`、`Current and descendants`、`Selected populations...`、`All current populations`を追加し、checkbox hierarchyで明示targetを編集する。既定は呼出元Populationとする。
 - [x] Manage Statisticsへ`Compute`（統計エディタ）と`Show`（ResultsのColumns...）を追加する。`Compute`はanalysis revisionと該当resultを更新し、`Show`はdisplay stateだけを変更してpipelineを実行しない。
-- [ ] Newの明示操作、cancel、duplicate、remove dependency、Undo/Redo、save/reload、missing target、empty selection、stable objectNameをGUI testする。
+- [x] Newの明示操作、cancel、duplicate、remove dependency、Undo/Redo、save/reload、missing target、empty selection、stable objectNameをGUI testする。
   - [x] Newの明示操作、cancel、duplicate、save/reload、および主要ウィジェットのstable objectNameをGUI testする。
-  - [ ] remove dependency、Undo/Redo、missing target、empty selectionの専用UIとGUI testを追加する。
+  - [x] remove dependency、Undo/Redo、missing target、empty selectionの専用UIとGUI testを追加する。
 
 #### Increment 5: Export、preview、migration cleanup、E2E
 
@@ -845,10 +845,10 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 
 #### Phase B7.5 必須受け入れtest
 
-- [ ] 同一StatisticをAll Eventsと複数gateへ割り当てると、sampleごとに一つの共有列とPopulation別の独立cellが表示され、値が`% Parent`/`% Total`へ入らない。
-- [ ] `Show`変更はanalysis revision、headless/export値、gate membershipを変更せず、`Compute`変更は該当Statisticだけを再計算する。
-- [ ] Population target、source stage/transform、non-finite policy、unit、QC、disabled provenanceがsave/reload後もGUI/CLI/Pythonで一致する。
-- [ ] unassigned、disabled、not run、stale、undefined/error、zero/currentを色以外でも識別でき、表示操作やdownsamplingが科学計算を変更しない。
+- [x] 同一StatisticをAll Eventsと複数gateへ割り当てると、sampleごとに一つの共有列とPopulation別の独立cellが表示され、値が`% Parent`/`% Total`へ入らない。
+- [x] `Show`変更はanalysis revision、headless/export値、gate membershipを変更せず、`Compute`変更は該当Statisticだけを再計算する。
+- [x] Population target、source stage/transform、non-finite policy、unit、QC、disabled provenanceがsave/reload後もGUI/CLI/Pythonで一致する。
+- [x] unassigned、disabled、not run、stale、undefined/error、zero/currentを色以外でも識別でき、表示操作やdownsamplingが科学計算を変更しない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

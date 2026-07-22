@@ -220,10 +220,11 @@ automatic warning threshold is chosen.
 - `Compute enabled` is persisted in the statistic definition and is honored by the
   headless runner. Results `Columns...` controls `Show` as display-only state, while
   `Manage Statistics...` opens the same editor used by Add Statistic.
-- Cancel, duplicate, save/reload, and stable object-name coverage are implemented.
-  Dependency removal, statistics-specific Undo/Redo, and dedicated missing-target /
-  empty-selection UX remain follow-up work; an empty target list is rejected by model
-  validation rather than silently computing all populations.
+- Cancel, duplicate, save/reload, stable object-name coverage, statistics editor
+  Undo/Redo, and missing-target/empty-selection validation are implemented. Removing a
+  gate leaves its statistic definition intact but surfaces a blocking dependency
+  diagnostic instead of silently retargeting it. Selected targets are rendered in a
+  checkable hierarchy and an empty selection is rejected by model validation.
 
 ### Increment 5: Export, preview, cleanup, and end-to-end acceptance
 

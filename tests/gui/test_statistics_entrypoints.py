@@ -106,6 +106,63 @@ def test_statistics_editor_persists_population_scope_and_compute_flag(qapp) -> N
   assert definition["compute_enabled"] is False
 
 
+def test_statistics_editor_undo_redo_and_missing_target_diagnostic(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events",),
+  )
+  dialog._new_button.click()
+  dialog._id_edit.setText("missing")
+  dialog._name_edit.setText("Missing target")
+  dialog._target_population_ids = ("deleted_gate",)
+  dialog._update_population_scope_label()
+  assert "deleted_gate" in dialog._diag_label.text()
+  with pytest.raises(ValueError, match="missing population target"):
+    dialog.definitions()
+
+  dialog._undo_button.click()
+  assert dialog._statistics == []
+  dialog._redo_button.click()
+  assert len(dialog._statistics) == 1
+
+
+def test_statistics_editor_reports_removed_population_dependency(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[{
+      "id": "gate_mean",
+      "name": "Gate mean",
+      "population_id": "removed_gate",
+      "population_ids": ["removed_gate"],
+      "parameter_id": "FL1-A",
+      "metric": "mean",
+      "source_stage": "compensated",
+    }],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events",),
+  )
+  assert "removed_gate" in dialog._diag_label.text()
+  with pytest.raises(ValueError, match="missing population target"):
+    dialog.definitions()
+
+
+def test_statistics_editor_rejects_empty_selected_scope(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events",),
+  )
+  dialog._new_button.click()
+  dialog._id_edit.setText("empty")
+  dialog._name_edit.setText("Empty target")
+  dialog._population_scope_combo.blockSignals(True)
+  dialog._population_scope_combo.setCurrentText("Selected populations...")
+  dialog._population_scope_combo.blockSignals(False)
+  dialog._target_population_ids = ()
+  with pytest.raises(ValueError, match="no population targets"):
+    dialog.definitions()
+
+
 def test_results_add_statistic_defaults_to_active_x_parameter(qapp, monkeypatch) -> None:
   window = MainWindow()
   captured: dict[str, object] = {}

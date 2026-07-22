@@ -324,6 +324,36 @@ def test_results_status_distinguishes_missing_zero_stale_and_statistic_errors(qa
     qapp.processEvents()
 
 
+def test_results_workspace_marks_disabled_statistic_without_fabricating_value(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    report = ExecutionReport(
+      project_id="project",
+      execution_profile_id="default",
+      pipeline_version="test",
+      status="success",
+      population_results=(PopulationResult("sample-1", "all_events", 10, None, 1.0),),
+      statistic_results=(),
+    )
+    state = RuntimeResultState(
+      report,
+      authoritative_revision=4,
+      sample_ids=("sample-1",),
+      population_ids=("all_events",),
+      statistic_definitions=(("disabled-mean", "all_events", False),),
+    )
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy({"all_events": None})
+    workspace.set_result_state(state)
+    item = workspace.tree().topLevelItem(0).child(0)
+    assert item.text(5) == "-"
+    assert "status=disabled" in item.toolTip(5)
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
 def test_main_window_exposes_exclusive_gating_and_results_tabs(qapp) -> None:
   window = MainWindow()
   try:

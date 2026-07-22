@@ -23,10 +23,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -135,6 +136,8 @@ class StatisticsEditorDialog(QDialog):
         self._current_row = -1
         self._target_population_ids: tuple[str, ...] = ()
         self._loading = False
+        self._undo_history: list[list[dict[str, Any]]] = []
+        self._redo_history: list[list[dict[str, Any]]] = []
 
         self._build_ui()
 
@@ -170,10 +173,16 @@ class StatisticsEditorDialog(QDialog):
         self._duplicate_button.setObjectName("statisticDuplicateButton")
         self._clear_button = QPushButton("Clear All")
         self._clear_button.setObjectName("statisticClearButton")
+        self._undo_button = QPushButton("Undo")
+        self._undo_button.setObjectName("statisticUndoButton")
+        self._redo_button = QPushButton("Redo")
+        self._redo_button.setObjectName("statisticRedoButton")
         btn_row.addWidget(self._new_button)
         btn_row.addWidget(self._delete_button)
         btn_row.addWidget(self._duplicate_button)
         btn_row.addWidget(self._clear_button)
+        btn_row.addWidget(self._undo_button)
+        btn_row.addWidget(self._redo_button)
         left_layout.addLayout(btn_row)
         left_layout.addStretch(1)
 
@@ -310,6 +319,8 @@ class StatisticsEditorDialog(QDialog):
         self._delete_button.clicked.connect(self._delete_statistic)
         self._duplicate_button.clicked.connect(self._duplicate_statistic)
         self._clear_button.clicked.connect(self._clear_all)
+        self._undo_button.clicked.connect(self._undo)
+        self._redo_button.clicked.connect(self._redo)
         self._metric_combo.currentTextChanged.connect(self._on_metric_changed)
         self._metric_combo.currentIndexChanged.connect(self._on_metric_changed)
         self._source_combo.currentTextChanged.connect(self._on_source_changed)
@@ -326,6 +337,7 @@ class StatisticsEditorDialog(QDialog):
         # Initial visibility of percentile q field
         self._on_metric_changed()
         self._on_source_changed()
+        self._update_history_buttons()
 
     # -- Row management ------------------------------------------------------
 
@@ -369,8 +381,7 @@ class StatisticsEditorDialog(QDialog):
             if not isinstance(raw_targets, list) or not raw_targets:
                 raw_targets = [pop_id] if pop_id else []
             self._target_population_ids = tuple(
-                population_id for population_id in raw_targets
-                if population_id in self._population_ids
+                str(population_id) for population_id in raw_targets
             )
             self._update_population_scope_label()
 
@@ -404,7 +415,6 @@ class StatisticsEditorDialog(QDialog):
 
             self._notes_edit.setText(str(value.get("notes", "")))
             self._compute_check.setChecked(bool(value.get("compute_enabled", True)))
-            self._diag_label.clear()
             self._on_metric_changed()
             # Reapply after all row fields and enabled states have settled.  This
             # prevents a persisted count definition from leaving the Parameter
@@ -434,7 +444,8 @@ class StatisticsEditorDialog(QDialog):
             fmt_text = None
 
         target_ids = self._target_population_ids
-        if not target_ids:
+        scope = self._population_scope_combo.currentData()
+        if not target_ids and scope != "selected":
             current_population = str(self._population_combo.currentData() or "")
             target_ids = (current_population,) if current_population else ()
         self._statistics[self._current_row] = {
@@ -461,6 +472,7 @@ class StatisticsEditorDialog(QDialog):
         self._load_row(row)
 
     def _add_statistic(self) -> None:
+        self._record_history()
         self._commit_current()
         defaults = self._pending_new_defaults
         self._pending_new_defaults = None
@@ -471,6 +483,7 @@ class StatisticsEditorDialog(QDialog):
         row = self._list.currentRow()
         if row < 0:
             return
+        self._record_history()
         self._statistics.pop(row)
         self._current_row = -1
         if self._statistics:
@@ -481,6 +494,7 @@ class StatisticsEditorDialog(QDialog):
         if row < 0 or row >= len(self._statistics):
             return
         self._commit_current()
+        self._record_history()
         duplicate = deepcopy(self._statistics[row])
         duplicate["id"] = f"{duplicate.get('id', 'statistic')}-copy"
         duplicate["name"] = f"{duplicate.get('name', 'Statistic')} copy"
@@ -488,10 +502,39 @@ class StatisticsEditorDialog(QDialog):
         self._refresh_list(row + 1)
 
     def _clear_all(self) -> None:
+        self._record_history()
         self._statistics.clear()
         self._current_row = -1
         self._statistics.append(_empty_statistic())
         self._refresh_list(0)
+
+    def _record_history(self) -> None:
+        self._commit_current()
+        self._undo_history.append(deepcopy(self._statistics))
+        self._redo_history.clear()
+        self._update_history_buttons()
+
+    def _restore_history(self, snapshot: list[dict[str, Any]]) -> None:
+        self._statistics = deepcopy(snapshot)
+        self._current_row = -1
+        self._refresh_list(min(self._list.currentRow(), len(self._statistics) - 1))
+        self._update_history_buttons()
+
+    def _undo(self) -> None:
+        if not self._undo_history:
+            return
+        self._redo_history.append(deepcopy(self._statistics))
+        self._restore_history(self._undo_history.pop())
+
+    def _redo(self) -> None:
+        if not self._redo_history:
+            return
+        self._undo_history.append(deepcopy(self._statistics))
+        self._restore_history(self._redo_history.pop())
+
+    def _update_history_buttons(self) -> None:
+        self._undo_button.setEnabled(bool(self._undo_history))
+        self._redo_button.setEnabled(bool(self._redo_history))
 
     # -- Metric-dependent UI -------------------------------------------------
 
@@ -557,16 +600,27 @@ class StatisticsEditorDialog(QDialog):
     def _update_population_scope_label(self) -> None:
         count = len(self._target_population_ids)
         self._target_button.setText(f"Targets ({count})...")
+        missing = sorted(
+            set(self._target_population_ids) - set(self._population_ids)
+        )
+        self._diag_label.setText(
+            "Missing population target(s): " + ", ".join(missing)
+            if missing else ""
+        )
 
     def _select_population_targets(self) -> None:
         dialog = QDialog(self)
         dialog.setObjectName("statisticPopulationTargetsDialog")
         dialog.setWindowTitle("Select statistic populations")
         layout = QVBoxLayout(dialog)
-        targets = QListWidget()
+        targets = QTreeWidget()
         targets.setObjectName("statisticPopulationTargetsList")
+        targets.setHeaderLabels(["Population targets"])
+        target_items: dict[str, QTreeWidgetItem] = {}
         for population_id in self._population_ids:
-            item = QListWidgetItem(population_id, targets)
+            parent_id = self._population_parents.get(population_id)
+            parent_item = target_items.get(parent_id)
+            item = QTreeWidgetItem(parent_item or targets, [population_id])
             item.setData(Qt.ItemDataRole.UserRole, population_id)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(
@@ -584,10 +638,13 @@ class StatisticsEditorDialog(QDialog):
         buttons.rejected.connect(dialog.reject)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        selected: list[str] = []
+        for item in target_items.values():
+            if item.checkState(0) == Qt.CheckState.Checked:
+                selected.append(str(item.data(0, Qt.ItemDataRole.UserRole)))
         self._target_population_ids = tuple(
-            str(targets.item(index).data(Qt.ItemDataRole.UserRole))
-            for index in range(targets.count())
-            if targets.item(index).checkState() == Qt.CheckState.Checked
+            population_id for population_id in self._population_ids
+            if population_id in selected
         )
         self._update_population_scope_label()
 
@@ -600,6 +657,15 @@ class StatisticsEditorDialog(QDialog):
             # Allow empty (unfilled) definitions to be silently skipped
             if not mapping.get("id") and not mapping.get("name"):
                 continue
+
+            raw_targets = mapping.get("population_ids")
+            if raw_targets == [] or (
+                not raw_targets and not mapping.get("population_id")
+            ):
+                raise ValueError(
+                    f"Statistic '{mapping.get('name', mapping.get('id', '?'))}' "
+                    "has no population targets"
+                )
 
             try:
                 spec = StatisticSpec(**mapping)
@@ -619,6 +685,12 @@ class StatisticsEditorDialog(QDialog):
             if not spec.population_ids:
                 raise ValueError(
                     f"Statistic '{spec.name}' has no population targets"
+                )
+            missing_targets = set(spec.population_ids) - set(self._population_ids)
+            if missing_targets:
+                raise ValueError(
+                    f"Statistic '{spec.name}' has missing population target(s): "
+                    + ", ".join(sorted(missing_targets))
                 )
 
             if spec.metric in _VALUE_METRICS and not spec.parameter_id:
