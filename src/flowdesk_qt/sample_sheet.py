@@ -16,12 +16,17 @@ from PySide6.QtCore import (
 from PySide6.QtWidgets import (
   QDialog,
   QDialogButtonBox,
+  QHBoxLayout,
+  QInputDialog,
   QLineEdit,
+  QPushButton,
   QTableView,
   QVBoxLayout,
 )
 
 from flowdesk_core.annotations import (
+  annotation_columns,
+  annotation_table,
   parse_annotation_csv,
   resolve_sample_title,
   set_sample_title,
@@ -30,9 +35,9 @@ from flowdesk_core.models import AnnotationSpec
 
 
 class SampleSheetModel(QAbstractTableModel):
-  """Table model exposing stable sample identity and editable display title."""
+  """One non-destructive sheet for titles and workspace annotations."""
 
-  HEADERS = ("Sample ID", "File", "Sample name", "Title")
+  BASE_HEADERS = ("Sample ID", "File", "Sample name", "Title")
 
   def __init__(
     self,
@@ -43,6 +48,10 @@ class SampleSheetModel(QAbstractTableModel):
     super().__init__(parent)
     self._samples = tuple(dict(sample) for sample in samples)
     self._annotations = _to_specs(annotations)
+    self._annotation_columns = tuple(
+      value for value in annotation_columns(self._annotations)
+      if value != "sample_title"
+    )
     self._undo: list[tuple[AnnotationSpec, ...]] = []
     self._redo: list[tuple[AnnotationSpec, ...]] = []
 
@@ -50,19 +59,28 @@ class SampleSheetModel(QAbstractTableModel):
     return 0 if parent is not None and parent.isValid() else len(self._samples)
 
   def columnCount(self, parent: QModelIndex | None = None) -> int:
-    return 0 if parent is not None and parent.isValid() else len(self.HEADERS)
+    return 0 if parent is not None and parent.isValid() else len(self.headers)
+
+  @property
+  def headers(self) -> tuple[str, ...]:
+    return self.BASE_HEADERS + self._annotation_columns
 
   def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
     if role != Qt.ItemDataRole.DisplayRole:
       return None
     if orientation == Qt.Orientation.Horizontal:
-      return self.HEADERS[section]
+      return self.headers[section]
     return section + 1
 
   def flags(self, index: QModelIndex):
     flags = super().flags(index)
     if index.isValid() and index.column() == 3:
       return flags | Qt.ItemFlag.ItemIsEditable
+    if index.isValid() and index.column() >= len(self.BASE_HEADERS):
+      keyword = self.headers[index.column()]
+      sample_id = str(self._samples[index.row()].get("id", ""))
+      if not self._has_fcs_value(sample_id, keyword):
+        return flags | Qt.ItemFlag.ItemIsEditable
     return flags & ~Qt.ItemFlag.ItemIsEditable
 
   def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
@@ -75,30 +93,50 @@ class SampleSheetModel(QAbstractTableModel):
       str(sample.get("path", "")),
       self._annotations,
     )
-    values = (
+    values: tuple[Any, ...] = (
       str(sample.get("id", "")),
       str(sample.get("path", "")),
       str(sample.get("name", "")),
       title,
+    ) + tuple(
+      self._annotation_value(str(sample.get("id", "")), keyword)
+      for keyword in self._annotation_columns
     )
     if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
       return values[index.column()]
-    if role == Qt.ItemDataRole.ToolTipRole and index.column() == 0:
-      return "Stable sample identity; editing Title never changes this value."
+    if role == Qt.ItemDataRole.ToolTipRole:
+      if index.column() == 0:
+        return "Stable sample identity; editing Title never changes this value."
+      if index.column() >= len(self.BASE_HEADERS):
+        keyword = self.headers[index.column()]
+        sample_id = str(sample.get("id", ""))
+        if self._has_fcs_value(sample_id, keyword):
+          return "FCS-derived keyword (read-only). Add a workspace column to override it."
     return None
 
   def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole):
     if (
       role != Qt.ItemDataRole.EditRole
       or not index.isValid()
-      or index.column() != 3
+      or index.column() < 3
     ):
       return False
     sample_id = str(self._samples[index.row()].get("id", ""))
     self._remember()
-    self._annotations = set_sample_title(
-      self._annotations, sample_id, str(value) if value is not None else ""
-    )
+    if index.column() == 3:
+      self._annotations = set_sample_title(
+        self._annotations, sample_id, str(value) if value is not None else ""
+      )
+    else:
+      keyword = self.headers[index.column()]
+      self._annotations = tuple(
+        item for item in self._annotations
+        if not (
+          item.sample_id == sample_id
+          and item.keyword == keyword
+          and item.source == "workspace"
+        )
+      ) + (AnnotationSpec(sample_id, keyword, value, "workspace"),)
     self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole])
     return True
 
@@ -154,7 +192,7 @@ class SampleSheetModel(QAbstractTableModel):
 
   def sort(self, column: int, order=Qt.SortOrder.AscendingOrder) -> None:
     """Sort rows by display value while retaining stable IDs and annotations."""
-    if column < 0 or column >= len(self.HEADERS):
+    if column < 0 or column >= len(self.headers):
       return
     reverse = order == Qt.SortOrder.DescendingOrder
     self.layoutAboutToBeChanged.emit()
@@ -182,7 +220,7 @@ class SampleSheetModel(QAbstractTableModel):
     return True
 
   def data_for_sample(self, sample: dict[str, Any], column: int) -> str:
-    return (
+    values: tuple[Any, ...] = (
       str(sample.get("id", "")),
       str(sample.get("path", "")),
       str(sample.get("name", "")),
@@ -190,7 +228,32 @@ class SampleSheetModel(QAbstractTableModel):
         str(sample.get("id", "")), str(sample.get("name", "")),
         str(sample.get("path", "")), self._annotations,
       ),
-    )[column]
+    ) + tuple(
+      self._annotation_value(str(sample.get("id", "")), keyword)
+      for keyword in self._annotation_columns
+    )
+    return str(values[column])
+
+  def add_annotation_column(self, keyword: str) -> None:
+    """Add an editable workspace/imported annotation column without FCS mutation."""
+    normalized = keyword.strip()
+    if not normalized:
+      raise ValueError("annotation column name must be non-empty")
+    if normalized in self.headers:
+      raise ValueError(f"annotation column already exists: {normalized!r}")
+    self.beginResetModel()
+    self._annotation_columns += (normalized,)
+    self.endResetModel()
+
+  def _annotation_value(self, sample_id: str, keyword: str) -> Any:
+    rows = annotation_table((sample_id,), self._annotations)
+    return rows[0].get(keyword) if rows else None
+
+  def _has_fcs_value(self, sample_id: str, keyword: str) -> bool:
+    return any(
+      item.sample_id == sample_id and item.keyword == keyword and item.source == "fcs"
+      for item in self._annotations
+    )
 
   def _remember(self) -> None:
     self._undo.append(self._annotations)
@@ -235,6 +298,10 @@ class SampleSheetDialog(QDialog):
     self._table.setAlternatingRowColors(True)
     self._table.setSortingEnabled(True)
     self._table.horizontalHeader().setSortIndicatorShown(True)
+    add_column = QPushButton("Add Annotation Column…")
+    add_column.setObjectName("sampleSheetAddAnnotationColumnButton")
+    add_column.clicked.connect(self._on_add_annotation_column)
+    self._columns_button = add_column
     buttons = QDialogButtonBox(
       QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
     )
@@ -243,6 +310,10 @@ class SampleSheetDialog(QDialog):
     buttons.rejected.connect(self.reject)
     layout = QVBoxLayout(self)
     layout.addWidget(self._filter_edit)
+    actions = QHBoxLayout()
+    actions.addWidget(add_column)
+    actions.addStretch(1)
+    layout.addLayout(actions)
     layout.addWidget(self._table)
     layout.addWidget(buttons)
     self._filter_edit.textChanged.connect(self._proxy.setFilterFixedString)
@@ -264,6 +335,17 @@ class SampleSheetDialog(QDialog):
 
   def redo(self) -> bool:
     return self._model.redo()
+
+  def _on_add_annotation_column(self) -> None:
+    keyword, accepted = QInputDialog.getText(
+      self, "Add Annotation Column", "Column name:"
+    )
+    if not accepted:
+      return
+    try:
+      self._model.add_annotation_column(keyword)
+    except ValueError:
+      return
 
 
 def _to_specs(

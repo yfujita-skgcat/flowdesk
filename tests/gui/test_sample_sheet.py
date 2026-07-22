@@ -84,3 +84,22 @@ def test_sample_sheet_filter_is_case_insensitive_and_non_destructive(qapp) -> No
   assert dialog._proxy.data(dialog._proxy.index(0, 0)) == "s2"
   assert len(dialog.annotations()) == 0
   dialog.reject()
+
+
+def test_sample_sheet_exposes_workspace_columns_and_preserves_fcs_read_only(qapp) -> None:
+  model = SampleSheetModel(
+    [{"id": "s1", "name": "Sample", "path": "/tmp/sample.fcs"}],
+    [{"sample_id": "s1", "keyword": "Condition", "value": "control", "source": "fcs"}],
+  )
+  assert model.headers == ("Sample ID", "File", "Sample name", "Title", "Condition")
+  condition = model.index(0, 4)
+  assert not model.flags(condition) & Qt.ItemFlag.ItemIsEditable
+  model.add_annotation_column("Dose")
+  dose = model.index(0, 5)
+  assert model.flags(dose) & Qt.ItemFlag.ItemIsEditable
+  assert model.setData(dose, 10)
+  assert model.data(dose, Qt.ItemDataRole.DisplayRole) == 10
+  assert any(
+    value["keyword"] == "Dose" and value["source"] == "workspace"
+    for value in model.annotations()
+  )

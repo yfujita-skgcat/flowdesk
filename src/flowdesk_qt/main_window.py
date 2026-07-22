@@ -2511,21 +2511,11 @@ class MainWindow(QMainWindow):
         return references
 
     def _on_edit_annotations(self) -> None:
-        """Edit project annotations through a GUI-independent data contract."""
-        from flowdesk_qt.annotation_editor import AnnotationEditorDialog
-
-        dialog = AnnotationEditorDialog(
-            [sample.id for sample in self._sample_browser.samples()],
-            self._annotations,
-            parent=self,
-        )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        self._annotations = dialog.annotations()
-        self._mark_results_stale("Annotations changed")
+        """Compatibility shortcut to the unified Sample Sheet surface."""
+        self._on_edit_sample_sheet()
 
     def _on_edit_sample_sheet(self) -> None:
-        """Edit display-only sample titles without invalidating analysis results."""
+        """Edit titles and annotations with dependency-aware invalidation."""
         from flowdesk_qt.sample_sheet import SampleSheetDialog
 
         samples = [
@@ -2535,8 +2525,57 @@ class MainWindow(QMainWindow):
         dialog = SampleSheetDialog(samples, self._annotations, parent=self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        before = self._annotations
         self._annotations = dialog.annotations()
         self._refresh_sample_display_names()
+        changed_keywords = self._changed_annotation_keywords(before, self._annotations)
+        referenced_keywords = self._group_rule_annotation_keywords()
+        if changed_keywords & referenced_keywords:
+            self._mark_results_stale("Group-referenced annotations changed")
+        else:
+            self._project_dirty = True
+            if changed_keywords - {"sample_title"}:
+                self._update_status("Sample annotations updated (analysis unaffected)")
+            else:
+                self._update_status("Sample titles updated")
+
+    @staticmethod
+    def _changed_annotation_keywords(
+        before: list[dict[str, Any]], after: list[dict[str, Any]]
+    ) -> set[str]:
+        def values(items: list[dict[str, Any]]) -> dict[tuple[str, str, str], Any]:
+            return {
+                (str(item["sample_id"]), str(item["keyword"]), str(item["source"])):
+                item.get("value")
+                for item in items
+            }
+        previous = values(before)
+        current = values(after)
+        return {
+            key[1]
+            for key in set(previous) | set(current)
+            if previous.get(key) != current.get(key)
+        }
+
+    def _group_rule_annotation_keywords(self) -> set[str]:
+        """Collect safe-rule keyword operands used for group assignment."""
+        result: set[str] = set()
+
+        def visit(value: object) -> None:
+            if not isinstance(value, dict):
+                return
+            keyword = value.get("keyword")
+            if isinstance(keyword, str):
+                result.add(keyword)
+            for child in value.get("all", []) if isinstance(value.get("all"), list) else []:
+                visit(child)
+            for child in value.get("any", []) if isinstance(value.get("any"), list) else []:
+                visit(child)
+            visit(value.get("not"))
+
+        for group in self._sample_groups:
+            visit(group.get("membership_rule"))
+        return result
 
     def _on_focus_parameter_information(self) -> None:
         """Focus the read-only parameter information workspace."""
