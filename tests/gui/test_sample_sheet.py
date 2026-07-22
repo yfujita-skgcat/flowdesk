@@ -67,6 +67,7 @@ def test_sample_sheet_csv_preview_validates_sample_ids(qapp) -> None:
   )
   dialog.import_csv_text("sample_id,Condition\ns1,treated\n")
   assert any(item["keyword"] == "Condition" for item in dialog.annotations())
+  assert dialog._model.headers[-1] == "Condition"
   with pytest.raises(ValueError, match="unknown samples"):
     dialog.import_csv_text("sample_id,Condition\ns2,bad\n")
   dialog.reject()

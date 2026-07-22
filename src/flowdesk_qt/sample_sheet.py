@@ -188,7 +188,12 @@ class SampleSheetModel(QAbstractTableModel):
       raise ValueError(f"CSV references unknown samples: {unknown!r}")
     self._remember()
     self._annotations = self._annotations + tuple(imported)
-    self.layoutChanged.emit()
+    self.beginResetModel()
+    self._annotation_columns = tuple(
+      value for value in annotation_columns(self._annotations)
+      if value != "sample_title"
+    )
+    self.endResetModel()
 
   def sort(self, column: int, order=Qt.SortOrder.AscendingOrder) -> None:
     """Sort rows by display value while retaining stable IDs and annotations."""
