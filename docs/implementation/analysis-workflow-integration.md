@@ -180,6 +180,47 @@ Do not fall back to raw `_event_data` when a requested derived/compensated view 
 Keep the last valid plot with a clear stale/error banner or show a non-success placeholder.
 Never label that fallback as current.
 
+## 2.1 Non-finite values are analytical QC, not a display detail
+
+Derived expressions and transforms can create values outside their numerical domain:
+`log(0)`, `log(negative)`, a ratio with denominator zero, overflow, and compensated
+fluorescence below a log domain are distinct scientific conditions. Do not silently turn
+them into a successful statistic by dropping the affected events.
+
+The project model must persist an explicit non-finite policy for every value-based
+statistic and derived definition. The default statistic policy is `strict`: any `NaN`,
+`+Inf`, or `-Inf` in the selected population produces an `undefined` result with a stable
+reason. `exclude_invalid` is an explicit opt-in policy, never an implicit consequence of
+using a NumPy `nan*` function. It calculates from finite values only and records:
+
+```text
+n_total, n_valid, n_invalid, invalid_fraction,
+non_finite_policy, undefined_reason
+```
+
+These fields belong in `StatisticResult`, Results, long/wide CSV/TSV exports, and export
+provenance. A displayed numeric result without its valid-event denominator is incomplete.
+`Inf` must never be treated as a large valid measurement.
+
+Rendering may omit non-finite coordinates because graphics backends cannot place them.
+It must instead expose a status/tooltip with affected count grouped by parameter ID,
+derived expression/source stage, transform ID, and invalid reason. Gate membership for a
+non-finite coordinate is false for that gate; the exclusion count is QC/provenance, not
+a zero-event success or an unreported fallback.
+
+`log(x + 1)` is not a generic error recovery. It is a separate persisted expression,
+appropriate only when `x` is a non-negative quantity and including zero has a documented
+scientific meaning. For compensation-corrected fluorescence, which can legitimately be
+negative, use an explicit asinh/logicle definition or a documented censoring/LOD policy.
+Never introduce an epsilon, clipping, or `log(x+1)` migration automatically. Such a
+choice must persist its constant, unit, rationale, policy/version, and provenance, and
+must reproduce identically in GUI, headless runner, CLI, and export.
+
+Required fixtures cover zero and negative log input, `log(x+1)`, division by zero,
+overflow, all-invalid and mixed-valid populations, and raw-event immutability. Existing
+projects retain their historical behavior through an explicit compatibility mode or a
+confirmed migration; no silent change in NaN handling is allowed.
+
 The current-sample scheduling rules remain latest-wins and revision checked. Worker
 output is adopted atomically on the GUI thread, and window/project shutdown must leave no
 thread running.
