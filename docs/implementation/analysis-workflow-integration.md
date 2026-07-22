@@ -342,19 +342,19 @@ state.
 
 `Events`, `% Parent`, and `% Total` remain normal Results columns. Named count/frequency
 specifications are created only when a persisted/exportable named result is requested.
-For many custom statistics, offer a long-form detail table rather than an unrelated
-second definition UI.
+Phase B7.5 replaces statistic child rows with dynamic statistic columns and retains a
+long-form detail view for QC-heavy inspection; see
+[`results-statistics-matrix.md`](results-statistics-matrix.md).
 
 Every parameter selector uses the shared catalog, including derived outputs. Add/edit/
 duplicate/remove marks dependent results stale and refreshes only through canonical
 preview or Run Pipeline.
 
-Statistics are rendered beneath their target population, including the synthetic
-`all_events` root. A statistic may be present in the authoritative `ExecutionReport`
-without being a population row; the Results tree must still expose it immediately
-below the matching population and preserve its value, status, and QC tooltip. The
-rendering test must cover an `all_events` statistic because root-only statistics are
-valid and common for measurements such as FSC-A mean.
+The completed B7.4 compatibility implementation renders statistics beneath their target
+population, including the synthetic `all_events` root. This is not the final table
+contract: placing a statistic value into a fixed population column such as `% Total` is
+semantically invalid. Phase B7.5 moves each named statistic to its own column while
+preserving `all_events` and gated-population results, status, and QC provenance.
 
 ## 6. Unified Sample Sheet and annotation invalidation
 
@@ -559,6 +559,9 @@ Sample Sheet integration, or advanced overlay rendering is complete.
 - Add annotation provenance/type controls within that surface.
 - Implement dependency-aware invalidation for title, referenced, and unreferenced fields.
 - Test GUI/preview/batch/CLI/export equality and raw FCS immutability.
+
+The statistic-child presentation completed by this increment is a compatibility step.
+Phase B7.5 replaces it with the Results statistics matrix and explicit computation scope.
 
 ### Increment 7: Advanced Overlay end-to-end implementation
 

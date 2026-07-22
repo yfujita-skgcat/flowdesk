@@ -226,6 +226,11 @@ or flat-table surface separate from population navigation, avoiding duplicate ad
 statistic trees. Distinguish `current`, `stale`, `undefined`, `error`, and `not run`
 without relying on color alone.
 
+This increment's detail/child presentation is superseded by the Phase B7.5 plan in
+[`results-statistics-matrix.md`](results-statistics-matrix.md): Population remains the row
+dimension, named statistics become dynamic columns, and a long-form detail view exposes
+QC fields without placing numeric metrics in `% Parent` or `% Total` columns.
+
 ### Tests
 
 - Known full-resolution values for mean, median, percentile, and selected edge cases;

@@ -66,6 +66,7 @@ git status --short
 | B7.2 | `docs/implementation/integrated-overlay-controls-and-plot-appearance.md` |
 | B7.3 | `docs/implementation/sample-sheet-results-and-batch-plot-export.md` |
 | B7.4 | `docs/implementation/analysis-workflow-integration.md` |
+| B7.5 | `docs/implementation/results-statistics-matrix.md` |
 | C1 | `docs/implementation/table-editor.md` |
 | C2 | `docs/implementation/layout-editor.md` |
 | C3 | `docs/implementation/templates-and-mapping.md` |
@@ -343,7 +344,7 @@ Auto/magnetic/tethered/clone gateはPhase B5まで実装しない。
 - [x] 済み: increment 3（Results hierarchy model/widget）を実装し、`ExecutionReport`を唯一の結果データソースとするtree-tableを追加する。
 - [x] 済み: `ResultsWorkspace`へ`Sample -> All Events -> Population`のtree-tableを追加し、`Events`、`% Parent`、`% Total`、`Status`をExecutionReportだけから表示する。
 - [x] 済み: sample rowと`All Events` rowを分ける。sample row選択はactive sampleだけを変更し、`All Events` row選択は`display_population_id = "all_events"`として全event表示を復元する。
-- [x] 済み: statistic resultはResults workspaceのpopulation childだけに表示し、現在のWorkspaceとCustom Statistics間の表示重複をなくす。
+- [x] 済み（B7.5で置換予定）: statistic resultはResults workspaceのpopulation childだけに表示し、現在のWorkspaceとCustom Statistics間の表示重複をなくす。値を割合列位置へ置く互換表示はB7.5の動的Statistic列で廃止する。
 - [x] 済み: increment 5（Hierarchy/Flat table mode）を実装する。
 - [x] 済み: 同じResults modelから`Hierarchy`と`Flat table`を切替可能にする。Flat tableは`Sample | Population | Parent | Events | % Parent | % Total | Status`を持ち、population名へindentを埋め込まない。
 - [x] 済み: increment 6（status policy and transitional documentation）を実装する。
@@ -800,6 +801,52 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 - [x] title、参照annotation、未参照annotationのinvalidationがdependencyどおりで、raw FCS bytes/eventsは不変である。
 - [x] Advanced Overlayはlive render/save/reload/export E2E完了後にcapability guardを解除し、visible incompatible sourceをblockしつつ既存保存definitionを失わない。
 - [x] 全GUI testがstable objectNameとstrict callback handlingを使い、終了時にQThreadが残らない。
+
+### Phase B7.5: Results Statistics matrixと計算対象管理 [S07/S11/S14]
+
+現在のStatistic child rowはmean等の値を`% Total`列位置へ表示するため、列の科学的意味が
+誤っている。Populationを行、named Statisticを動的列とするmatrixへ移行し、複数Population
+への一括適用と計算対象の制御をGUI/headless共通の保存定義として実装する。
+
+実装前に`docs/implementation/results-statistics-matrix.md`を全文読み、一度のLLM実行では
+番号付きincrementを一つだけ実装する。
+
+#### Increment 1: Model、migration、runtime identity
+
+- [ ] `StatisticSpec.population_id`を後方互換な明示的`population_ids`へ拡張し、一つのstable Statistic IDを複数Populationへ割り当てられるようにする。GUIのAll/Subtree選択はaccept時点のstable ID集合として保存し、後から追加したgateを暗黙に含めない。
+- [ ] `compute_enabled`を保存可能なanalysis stateとして追加する。legacy definitionは単一targetかつenabledとして移行し、同名definitionを自動mergeしない。
+- [ ] `(sample_id, statistic_id, population_id)`をResult/preview/runtime cacheの一意keyにし、同じStatisticを複数Populationへ適用しても上書きされないcore testを追加する。
+
+#### Increment 2: Headless multi-population executionと局所invalidation
+
+- [ ] `PipelineRunner`がenabled Statisticだけを明示target Populationごとにfull-resolution membershipで計算し、Group binding、preview、CLI/Python、disabled provenanceへ同じ定義を適用する。
+- [ ] sample/stage/parameter/transformの値列とmembershipを再利用し、analysis revision、upstream dependency、Statistic ID、Population ID、non-finite policyを含むcache keyと局所invalidationを実装する。display downsampleやviewport visibilityを計算条件にしない。
+- [ ] mean/median/percentile、overlapping hierarchy、empty/undefined/non-finite、disabled、複数sampleのknown-value testと計測fixtureを追加する。
+
+#### Increment 3: Results wide matrixとQC detail
+
+- [ ] statistic child rowを廃止し、`Sample/Population | Events | % Parent | % Total | Population Status | <Statistic columns...>`へ変更する。mean等の値を割合列へ表示しない。
+- [ ] unassigned、disabled、not run、stale、undefined/error、valid zero、currentをcell単位で区別し、header/cell tooltipへstable ID、parameter、metric、value domain、unit、QC count、reason、revisionを表示する。色だけに依存しない。
+- [ ] standard列固定、横scroll、column chooser、順序/幅/visibility保存とlong-form Statistics Detailを、同じ`StatisticResult` snapshotの表示として実装する。Qtで値を再計算しない。
+
+#### Increment 4: Population scopeとCompute/Show管理
+
+- [ ] Add/Manage Statisticへ`Current population`、`Current and descendants`、`Selected populations...`、`All current populations`を追加し、checkbox hierarchyで明示targetを編集する。既定は呼出元Populationとする。
+- [ ] Manage Statisticsへ`Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to | Status`を追加する。`Compute`はanalysis revisionと該当resultを更新し、`Show`はdisplay stateだけを変更してpipelineを実行しない。
+- [ ] Newの明示操作、cancel、duplicate、remove dependency、Undo/Redo、save/reload、missing target、empty selection、stable objectNameをGUI testする。
+
+#### Increment 5: Export、preview、migration cleanup、E2E
+
+- [ ] GUI wide/detail、authoritative Run Pipeline、current-sample preview、Python API、long/wide CSV/TSVが全`(sample, statistic, population)` key、値、unit、status、QC、revisionで一致するようにする。
+- [ ] legacy child-row Results view stateを移行して旧描画経路を削除し、hiddenとdisabledを混同しない。disabled definitionを削除せず、exportで値を捏造しない。
+- [ ] column hide/reorder、scroll、display downsampleがmembership/statisticsを変えないE2E test、full core/GUI test、thread shutdown、mean/median/percentile matrix benchmarkを完了する。
+
+#### Phase B7.5 必須受け入れtest
+
+- [ ] 同一StatisticをAll Eventsと複数gateへ割り当てると、sampleごとに一つの共有列とPopulation別の独立cellが表示され、値が`% Parent`/`% Total`へ入らない。
+- [ ] `Show`変更はanalysis revision、headless/export値、gate membershipを変更せず、`Compute`変更は該当Statisticだけを再計算する。
+- [ ] Population target、source stage/transform、non-finite policy、unit、QC、disabled provenanceがsave/reload後もGUI/CLI/Pythonで一致する。
+- [ ] unassigned、disabled、not run、stale、undefined/error、zero/currentを色以外でも識別でき、表示操作やdownsamplingが科学計算を変更しない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

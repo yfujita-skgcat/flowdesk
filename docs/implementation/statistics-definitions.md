@@ -3,6 +3,12 @@
 Spec: `S11`
 ToDo: `Phase A6`
 
+> **Results matrix extension:** multi-population assignment, computation enablement, and
+> dynamic Results columns are specified in
+> [`results-statistics-matrix.md`](results-statistics-matrix.md) (`Phase B7.5`). The
+> single-population contract below remains the legacy-compatible foundation until that
+> numbered migration is implemented.
+
 ## Goal
 
 Represent every requested statistic as persisted analysis state and compute it from
@@ -80,7 +86,8 @@ debounce, descendant invalidation, latest-wins scheduling, and stale-result reje
 3. Add mean, median, SD, MAD, percentile with explicit NaN/Inf policy.
 4. Add geometric mean and CV only after defining negative/zero and zero-mean behavior.
 5. Add dependency invalidation and results to `ExecutionReport`.
-6. Add Add Statistic dialog and population-tree nodes.
+6. Add Add Statistic dialog and population-tree nodes (historical implementation;
+   superseded by the Phase B7.5 dynamic-column plan).
 7. Extend CSV/TSV export using core results.
 
 ## Required tests
