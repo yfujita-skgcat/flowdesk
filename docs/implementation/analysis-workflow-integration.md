@@ -132,7 +132,7 @@ All of these consumers must use the same catalog or a typed filtered view of it:
 - Transform editor;
 - Results statistic editor;
 - simple overlay compatibility resolution;
-- future advanced overlay and export planners.
+- advanced overlay and export planners use the same typed source/resolution contracts.
 
 The former Channels tab should become `Parameters` or `Channel / Parameter Information`
 and show, at minimum, `Parameter`, `Type`, `Source`, `Expression`, `Unit`, and `Status`.
