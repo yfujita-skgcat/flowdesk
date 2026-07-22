@@ -214,7 +214,7 @@ def test_main_window_integrates_current_sample_preview_into_results_workspace(
     assert "Batch results stale" not in positive.toolTip(0)
 
     window._on_population_selected("positive", sample.id)
-    qapp.processEvents()
+    _wait_until(qapp, lambda: window._plot_widget._scatter is not None)
     assert window.display_population_id == "positive"
     assert len(window._plot_widget._scatter.xData) == 2
   finally:

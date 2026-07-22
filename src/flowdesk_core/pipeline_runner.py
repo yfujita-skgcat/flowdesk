@@ -88,6 +88,10 @@ from flowdesk_core.overrides import (
   resolve_gate_overrides,
 )
 from flowdesk_core.preview import PreviewReport, PreviewRequest
+from flowdesk_core.processed_display import (
+  ProcessedDisplayRequest,
+  ProcessedDisplayResult,
+)
 from flowdesk_core.sample import SampleData
 from flowdesk_core.statistics import compute_statistic
 from flowdesk_core.tethered_gates import (
@@ -364,6 +368,105 @@ class PipelineRunner:
       statistic_results=statistic_results,
       diagnostics=diagnostics,
       messages=report.messages,
+    )
+
+  def prepare_display_sample(
+    self, request: ProcessedDisplayRequest
+  ) -> ProcessedDisplayResult:
+    """Return immutable compensated/derived display inputs and full membership.
+
+    Qt receives no stage implementation: this method applies the same compensation and
+    derived planner as the canonical runner, validates requested analysis transforms, and
+    obtains membership through :meth:`preview_sample`.  Plot adapters may downsample only
+    after consuming this result.
+    """
+    preview = self.preview_sample(PreviewRequest(
+      revision=request.revision,
+      sample=request.sample,
+      execution_profile_id=request.execution_profile_id,
+      required_population_id=request.population_id,
+    ))
+    try:
+      plan = plan_derived_parameters(
+        self._derived_parameter_specs(),
+        (channel.id for channel in request.sample.channels),
+      )
+    except DerivedParameterPlanningError as exc:
+      raise PipelineError(f"{exc.code}: {exc}") from exc
+    sample_meta = next(
+      (
+        value for value in self._project.get("samples", [])
+        if value.get("id") == request.sample.sample_id
+      ),
+      {"id": request.sample.sample_id},
+    )
+    raw = _AnalysisData(request.sample.events, request.sample.channels)
+    compensation = self._step_compensation(
+      raw,
+      sample_id=request.sample.sample_id,
+      execution_profile_id=request.execution_profile_id,
+      group_ids=self._sample_group_ids(sample_meta),
+    )
+    try:
+      enriched, derived_diagnostics = self._step_derived_parameters(
+        compensation.data, raw, request.sample.sample_id, plan
+      )
+    except _DerivedParameterStepError as exc:
+      raise PipelineError(
+        f"{exc.diagnostic.code}: {exc.diagnostic.message}"
+      ) from exc
+    transformed = self._step_transforms(enriched)
+    channel_ids = transformed.channel_ids
+    requested_parameters = (request.x_parameter_id, request.y_parameter_id)
+    for parameter_id in requested_parameters:
+      if parameter_id is not None and parameter_id not in channel_ids:
+        raise PipelineError(
+          f"display_parameter_missing: {parameter_id!r} is unavailable for "
+          f"sample {request.sample.sample_id!r}"
+        )
+    transforms_by_id = {transform.id: transform for transform in transformed.transforms}
+    for parameter_id, transform_id in (
+      (request.x_parameter_id, request.x_transform_id),
+      (request.y_parameter_id, request.y_transform_id),
+    ):
+      if transform_id is None:
+        continue
+      transform = transforms_by_id.get(transform_id)
+      if transform is None or transform.parameter != parameter_id:
+        raise PipelineError(
+          "display_transform_mismatch: requested transform does not match "
+          f"parameter {parameter_id!r}"
+        )
+    if request.population_id == "all_events":
+      mask = np.ones(request.sample.event_count, dtype=np.bool_)
+    else:
+      membership = next(
+        (
+          value for value in preview.population_membership
+          if value.population_id == request.population_id
+        ),
+        None,
+      )
+      if membership is None:
+        raise PipelineError(
+          f"display_population_missing: {request.population_id!r}"
+        )
+      mask = membership.mask
+    return ProcessedDisplayResult(
+      revision=request.revision,
+      sample_id=request.sample.sample_id,
+      population_id=request.population_id,
+      x_parameter_id=request.x_parameter_id,
+      y_parameter_id=request.y_parameter_id,
+      x_transform_id=request.x_transform_id,
+      y_transform_id=request.y_transform_id,
+      plot_type=request.plot_type,
+      display_max_points=request.display_max_points,
+      events=enriched.events,
+      channels=enriched.channels,
+      display_mask=mask,
+      preview_report=preview,
+      diagnostics=compensation.diagnostics + derived_diagnostics + preview.diagnostics,
     )
 
   def preview_derived_parameter(

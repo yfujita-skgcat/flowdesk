@@ -44,10 +44,10 @@ from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.integrated_overlay import resolve_overlay_style
 from flowdesk_core.models import (
-  AnnotationSpec,
-  CompensationMatrixSpec,
-  OverlaySourceSpec,
-  TransformSpec,
+    AnnotationSpec,
+    CompensationMatrixSpec,
+    OverlaySourceSpec,
+    TransformSpec,
 )
 from flowdesk_core.overlays import Overlay2DLayer
 from flowdesk_core.overrides import (
@@ -73,6 +73,10 @@ from flowdesk_core.preview import (
     PreviewRequest,
     PreviewRevisionState,
 )
+from flowdesk_core.processed_display import (
+    ProcessedDisplayRequest,
+    ProcessedDisplayResult,
+)
 from flowdesk_core.project_commands import (
     CreateGateOverrideCommand,
     EditOverlaySourcesCommand,
@@ -91,6 +95,7 @@ from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.preview_scheduler import PreviewScheduler
+from flowdesk_qt.processed_display_scheduler import ProcessedDisplayScheduler
 from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
@@ -310,11 +315,19 @@ class MainWindow(QMainWindow):
         self._preview_revision = PreviewRevisionState()
         self._preview_report: PreviewReport | None = None
         self._last_result_report = None
+        self._processed_display_cache: dict[tuple[object, ...], ProcessedDisplayResult] = {}
         self._old_membership_banner = False
         self._result_state = RuntimeResultState()
         self._preview_scheduler = PreviewScheduler(self)
         self._preview_scheduler.preview_ready.connect(self._on_preview_ready)
         self._preview_scheduler.preview_failed.connect(self._on_preview_failed)
+        self._processed_display_scheduler = ProcessedDisplayScheduler(self)
+        self._processed_display_scheduler.display_ready.connect(
+            self._on_processed_display_ready
+        )
+        self._processed_display_scheduler.display_failed.connect(
+            self._on_processed_display_failed
+        )
 
         self._compensation_status_indicator = _CompensationStatusIndicator()
         self._build_menu()
@@ -1099,7 +1112,41 @@ class MainWindow(QMainWindow):
                 state.get("manual_overlay_colors", {})
             )
             view["overlay_mode"] = state.get("overlay_mode", "manual_only")
+        # Loading a selected FCS is input acquisition only.  Coordinates still
+        # come exclusively from the canonical processed-display runner.
+        selected_ids = set(state.get("manual_overlay_sample_ids", []))
+        samples_by_id = {sample.id: sample for sample in self._sample_browser.samples()}
+        for sample_id in selected_ids:
+            if sample_id in self._event_data:
+                continue
+            sample = samples_by_id.get(sample_id)
+            if sample is not None and sample.status not in {"missing", "fingerprint mismatch"}:
+                self._load_sample_events(sample)
         self._project_dirty = True
+        # Retain immediate overlay feedback for the supported Samples-pane
+        # control.  The calculation remains in the core runner; subsequent
+        # plot changes continue through the coalescing display scheduler.
+        active = self._sample_data.get(self._current_sample_id or "")
+        if active is not None:
+            x_id = self._channel_selector.x_channel_id()
+            y_id = self._channel_selector.y_channel_id()
+            request = self._processed_display_request(
+                active,
+                x_id,
+                y_id,
+                self._transform_for_parameter(x_id),
+                None
+                if self._channel_selector.is_count_mode()
+                else self._transform_for_parameter(y_id),
+            )
+            key = self._processed_display_key(request)
+            if key not in self._processed_display_cache:
+                try:
+                    self._processed_display_cache[key] = PipelineRunner(
+                        self._build_project_manifest()
+                    ).prepare_display_sample(request)
+                except Exception as exc:
+                    self._update_status(f"Processed display error: {exc}")
         self._replot()
 
     def _on_population_display_color_changed(
@@ -1304,8 +1351,8 @@ class MainWindow(QMainWindow):
         if self._current_sample_id is None:
             return
 
-        data = self._event_data.get(self._current_sample_id)
-        if data is None or not self._channel_names:
+        sample_data = self._sample_data.get(self._current_sample_id)
+        if sample_data is None or not self._channel_names:
             return
 
         x_name = self._channel_selector.x_channel()
@@ -1333,8 +1380,21 @@ class MainWindow(QMainWindow):
             None if y_spec is None else y_spec.id,
         )
 
-        x_idx = self._get_channel_index(x_id)
-        if x_idx < 0:
+        request = self._processed_display_request(
+            sample_data, x_id, y_id, x_spec, y_spec
+        )
+        key = self._processed_display_key(request)
+        processed = self._processed_display_cache.get(key)
+        if processed is None:
+            self._queue_processed_display(request)
+            self._plot_widget.clear_plot()
+            self._plot_widget.set_status_banner("Preparing canonical processed display…")
+            return
+        data = processed.events
+
+        try:
+            x_idx = processed.channel_index(x_id)
+        except KeyError:
             return
 
         x_data = data[:, x_idx]
@@ -1345,7 +1405,7 @@ class MainWindow(QMainWindow):
 
         if is_histogram:
             # 1D histogram: only X channel data is needed.
-            x_data, _ = self._apply_population_filter(x_data, x_data)
+            x_data = x_data[processed.display_mask]
 
             x_transform = self._channel_selector.x_transform()
             self._plot_widget.set_axis_transforms(x_transform, "linear")
@@ -1356,20 +1416,21 @@ class MainWindow(QMainWindow):
             self._plot_widget.clear_overlay_layers()
         else:
             # 2D scatter plot.
-            y_idx = self._get_channel_index(y_id)
-
-            if y_idx < 0:
+            try:
+                y_idx = processed.channel_index(y_id)
+            except KeyError:
                 return
 
             y_data = data[:, y_idx]
 
             # Apply population membership mask (display filter, Phase 3).
-            display_mask = self._get_population_mask()
-            x_data, y_data = self._apply_population_filter(x_data, y_data)
+            display_mask = processed.display_mask
+            x_data, y_data = x_data[display_mask], y_data[display_mask]
             event_colors = self._population_event_colors(
                 self._current_sample_id,
                 data.shape[0],
                 display_mask,
+                report=processed.preview_report,
             )
 
             # For marginal histograms, use unfiltered data (or population-filtered if preferred).
@@ -1431,6 +1492,93 @@ class MainWindow(QMainWindow):
             return self._channel_names.index(channel_id)
         except (ValueError, AttributeError):
             return -1
+
+    def _processed_display_request(
+        self,
+        sample: SampleData,
+        x_parameter_id: str,
+        y_parameter_id: str | None,
+        x_transform: TransformSpec | None,
+        y_transform: TransformSpec | None,
+    ) -> ProcessedDisplayRequest:
+        """Build an immutable core request for the active plot selection."""
+        return ProcessedDisplayRequest(
+            revision=self._preview_revision.analysis_revision,
+            sample=sample,
+            population_id=self._display_population_id,
+            x_parameter_id=x_parameter_id,
+            y_parameter_id=(
+                None if self._channel_selector.is_count_mode() else y_parameter_id
+            ),
+            x_transform_id=None if x_transform is None else x_transform.id,
+            y_transform_id=None if y_transform is None else y_transform.id,
+            display_max_points=self._channel_selector.display_max_points(),
+            plot_type=(
+                "histogram" if self._channel_selector.is_count_mode() else "scatter"
+            ),
+        )
+    @staticmethod
+    def _processed_display_key(
+        request: ProcessedDisplayRequest,
+    ) -> tuple[object, ...]:
+        return (
+            request.revision,
+            request.sample_id,
+            request.population_id,
+            request.x_parameter_id,
+            request.y_parameter_id,
+            request.x_transform_id,
+            request.y_transform_id,
+            request.plot_type,
+            request.display_max_points,
+        )
+
+    def _queue_processed_display(self, request: ProcessedDisplayRequest) -> None:
+        """Schedule a latest-wins core request; Qt never calculates display values."""
+        try:
+            self._processed_display_scheduler.schedule(
+                self._build_project_manifest(), request
+            )
+        except Exception as exc:
+            self._plot_widget.set_status_banner(
+                f"Processed display unavailable: {exc}"
+            )
+            self._update_status(f"Processed display error: {exc}")
+
+    def _on_processed_display_ready(self, result: ProcessedDisplayResult) -> None:
+        """Adopt only the result matching the current plot definition atomically."""
+        if result.revision != self._preview_revision.analysis_revision:
+            return
+        sample = self._sample_data.get(self._current_sample_id or "")
+        if sample is None or sample.sample_id != result.sample_id:
+            return
+        x_id = self._channel_selector.x_channel_id()
+        y_id = self._channel_selector.y_channel_id()
+        x_transform = self._transform_for_parameter(x_id)
+        y_transform = (
+            None
+            if self._channel_selector.is_count_mode()
+            else self._transform_for_parameter(y_id)
+        )
+        current = self._processed_display_request(
+            sample, x_id, y_id, x_transform, y_transform
+        )
+        if self._processed_display_key(result) != self._processed_display_key(current):
+            return
+        self._processed_display_cache[self._processed_display_key(result)] = result
+        self._replot()
+
+    def _on_processed_display_failed(
+        self, request: ProcessedDisplayRequest, error: Exception
+    ) -> None:
+        """Never substitute raw events when canonical processing fails."""
+        if request.revision != self._preview_revision.analysis_revision:
+            return
+        self._plot_widget.clear_plot()
+        self._plot_widget.set_status_banner(
+            f"Processed display unavailable: {error}"
+        )
+        self._update_status(f"Processed display error: {error}")
 
     def _render_manual_overlays(self, x_parameter_id: str, y_parameter_id: str) -> None:
         """Render checked samples using existing membership results only."""
@@ -1556,6 +1704,8 @@ class MainWindow(QMainWindow):
         sample_id: str | None,
         event_count: int,
         display_mask: NDArray[np.bool_] | None,
+        *,
+        report: object | None = None,
     ) -> NDArray[np.str_] | None:
         """Resolve active-layer colors from existing membership masks only."""
         definitions = self._gate_editor.population_display_definitions()
@@ -1567,7 +1717,8 @@ class MainWindow(QMainWindow):
         if not colored:
             return None
         report = (
-            self._preview_report
+            report
+            or self._preview_report
             or self._last_result_report
             or self._population_tree.last_report()
         )
@@ -2033,6 +2184,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Do not destroy the window while its pipeline thread is running."""
         self._preview_scheduler.shutdown()
+        self._processed_display_scheduler.shutdown()
         worker = self._worker
         if worker is not None and worker.isRunning():
             worker.wait()
@@ -2174,6 +2326,8 @@ class MainWindow(QMainWindow):
         self._sample_browser.clear_samples()
         self._event_data.clear()
         self._sample_data.clear()
+        self._processed_display_cache.clear()
+        self._processed_display_scheduler.cancel_pending()
         self._current_sample_id = None
         self._channel_names = []
         self._gate_editor.set_gates(list(strategy.gates), notify=False)
@@ -3580,6 +3734,8 @@ class MainWindow(QMainWindow):
                 affected_population_ids=tuple(affected_population_ids),
             )
         self._preview_report = None
+        self._processed_display_cache.clear()
+        self._processed_display_scheduler.cancel_pending()
         self._results_stale = True
         self._population_tree.clear()
         self._population_tree.mark_results_stale()

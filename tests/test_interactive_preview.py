@@ -11,6 +11,7 @@ from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.models import ChannelSpec, GateSpec, GatingStrategySpec
 from flowdesk_core.pipeline_runner import PipelineError, PipelineRunner
 from flowdesk_core.preview import PreviewRequest, PreviewRevisionState
+from flowdesk_core.processed_display import ProcessedDisplayRequest
 from flowdesk_core.sample import SampleData
 
 
@@ -210,6 +211,55 @@ def test_preview_rejects_mismatched_strategy_or_population() -> None:
       revision=1,
       sample=sample,
       required_population_id="missing-population",
+    ))
+
+
+def test_processed_display_uses_compensated_derived_events_and_full_membership() -> None:
+  sample = _sample()
+  runner = PipelineRunner(_project(_strategy()))
+
+  display = runner.prepare_display_sample(ProcessedDisplayRequest(
+    revision=24,
+    sample=sample,
+    population_id="selected",
+    x_parameter_id="x",
+    y_parameter_id="sum",
+    x_transform_id="scale-x",
+  ))
+
+  assert display.revision == 24
+  assert display.sample_id == sample.sample_id
+  assert [channel.id for channel in display.channels] == ["x", "y", "sum"]
+  np.testing.assert_array_equal(
+    display.events[:, display.channel_index("sum")], 999.0
+  )
+  assert int(display.display_mask.sum()) == 500
+  assert not display.events.flags.writeable
+  assert not display.display_mask.flags.writeable
+  selected = next(
+    membership for membership in display.preview_report.population_membership
+    if membership.population_id == "selected"
+  )
+  np.testing.assert_array_equal(display.display_mask, selected.mask)
+
+
+def test_processed_display_rejects_missing_parameter_and_population() -> None:
+  runner = PipelineRunner(_project(_strategy()))
+  sample = _sample()
+
+  with pytest.raises(PipelineError, match="display_parameter_missing"):
+    runner.prepare_display_sample(ProcessedDisplayRequest(
+      revision=1,
+      sample=sample,
+      population_id="all_events",
+      x_parameter_id="missing",
+    ))
+  with pytest.raises(PipelineError, match="required population"):
+    runner.prepare_display_sample(ProcessedDisplayRequest(
+      revision=1,
+      sample=sample,
+      population_id="missing-population",
+      x_parameter_id="x",
     ))
 
 

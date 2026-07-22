@@ -727,11 +727,11 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 
 #### Increment 3: canonical processed display request/result
 
-- [ ] immutable project/sample snapshot、revision、Population、X/Y parameter/transform ID、plot type、display sampling policyを持つGUI非依存request/result APIを追加する。authoritative `ExecutionReport`へmutable GUI cacheを埋め込まない。
-- [ ] coreでraw -> compensation -> derived -> transform -> full-resolution membership -> population selection -> display preparation/downsampleの順に実行し、Qtでderived columnや科学計算を再実装しない。
-- [ ] 通常plotの科学座標源をraw `_event_data`からcanonical processed resultへ切り替える。failure時にrawへfallbackしてcurrent表示せず、last-valid stale/error bannerまたはnon-success placeholderを使う。
-- [ ] current-sample schedulerのdebounce/latest-wins/revision check/atomic adoptionを維持し、obsolete result、project replace、window close、worker exceptionをtestする。
-- [ ] known compensated+derived+transformed values、zero events、NaN、missing input/population、downsample不変性、raw immutability、preview/batch/CLI一致をtestする。
+- [x] immutable project/sample snapshot、revision、Population、X/Y parameter/transform ID、plot type、display sampling policyを持つGUI非依存request/result APIを追加する。authoritative `ExecutionReport`へmutable GUI cacheを埋め込まない。
+- [x] coreでraw -> compensation -> derived -> transform -> full-resolution membership -> population selection -> display preparation/downsampleの順に実行し、Qtでderived columnや科学計算を再実装しない。
+- [x] 通常plotの科学座標源をraw `_event_data`からcanonical processed resultへ切り替える。failure時にrawへfallbackしてcurrent表示せず、last-valid stale/error bannerまたはnon-success placeholderを使う。
+- [x] current-sample schedulerのdebounce/latest-wins/revision check/atomic adoptionを維持し、obsolete result、project replace、window close、worker exceptionをtestする。
+- [x] known compensated+derived+transformed values、zero events、NaN、missing input/population、downsample不変性、raw immutability、preview/batch/CLI一致をtestする。
 
 #### Increment 4: Derived Parameterの全GUI接続
 
