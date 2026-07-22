@@ -1098,9 +1098,14 @@ def test_plot_widget_formats_exponent_ticks_and_applies_readable_tick_style() ->
     )
     assert sum(bool(label) for label in fitted) < len(fitted)
     widget.set_presentation({
+      "title": "Sample title",
+      "title_font": {"family": "DejaVu Sans", "size": 24, "weight": "normal"},
       "tick_font": {"family": "DejaVu Sans", "size": 16, "weight": "bold"},
       "axis_line_width": 3.0,
     })
+    assert widget._plot_item.titleLabel.text == "Sample title"
+    assert widget._plot_item.titleLabel.opts["size"] == "24pt"
+    assert widget._plot_item.titleLabel.opts["bold"] is False
     assert widget.style().tick_font_size == 16
     assert widget.style().tick_font_weight == "bold"
     assert widget.style().axis_line_width == 3.0

@@ -1643,9 +1643,12 @@ class MainWindow(QMainWindow):
             )
         # plot_events updates labels from stable channel IDs; apply independent
         # presentation labels last so display edits never alter those IDs.
-        self._plot_widget.set_presentation(
-            {} if view is None else view.get("presentation", {})
+        presentation = {} if view is None else deepcopy(
+            view.get("presentation", {})
         )
+        if self._current_sample_id is not None:
+            presentation["title"] = self._current_sample_title()
+        self._plot_widget.set_presentation(presentation)
         if self._results_stale and not self._old_membership_banner:
             self._refresh_override_statuses()
 
@@ -2881,6 +2884,7 @@ class MainWindow(QMainWindow):
         before = self._annotations
         self._annotations = dialog.annotations()
         self._refresh_sample_display_names()
+        self._replot()
         changed_keywords = self._changed_annotation_keywords(before, self._annotations)
         referenced_keywords = self._group_rule_annotation_keywords()
         if changed_keywords & referenced_keywords:
@@ -3016,6 +3020,51 @@ class MainWindow(QMainWindow):
         self._sample_browser.set_display_names(dict(rows))
         self._workspace_tree.set_samples(rows)
         self._results_workspace.set_samples(rows)
+
+    def _current_sample_title(self) -> str:
+        """Resolve the active sample's title using the Sample Sheet rules."""
+        from flowdesk_core.annotations import resolve_sample_title
+
+        sample = next(
+            (
+                item for item in self._sample_browser.samples()
+                if item.id == self._current_sample_id
+            ),
+            None,
+        )
+        if sample is None:
+            return ""
+        annotations = [
+            AnnotationSpec(
+                sample_id=str(value["sample_id"]),
+                keyword=str(value["keyword"]),
+                value=value.get("value"),
+                source=value["source"],
+            )
+            for value in self._annotations
+        ]
+        return resolve_sample_title(
+            sample.id, sample.name, sample.path, annotations
+        )
+
+    def _set_current_sample_title(self, title: str) -> None:
+        """Store a Plot Appearance title as the active sample's workspace title."""
+        from flowdesk_core.annotations import set_sample_title
+
+        if self._current_sample_id is None:
+            return
+        annotations = tuple(
+            AnnotationSpec(
+                sample_id=str(value["sample_id"]),
+                keyword=str(value["keyword"]),
+                value=value.get("value"),
+                source=value["source"],
+            )
+            for value in self._annotations
+        )
+        updated = set_sample_title(annotations, self._current_sample_id, title)
+        self._annotations = [asdict(value) for value in updated]
+        self._project_dirty = True
 
     def _on_batch_plot_export(self) -> None:
         """Run a persisted batch plot definition through the CLI/core adapter."""
@@ -3221,22 +3270,31 @@ class MainWindow(QMainWindow):
             "plot_type",
             "histogram" if self._channel_selector.is_count_mode() else "scatter",
         ))
+        presentation = deepcopy((view or {}).get("presentation", {}))
+        if self._current_sample_id is not None:
+            presentation["title"] = self._current_sample_title()
         dialog = PlotStyleEditorDialog(
             plot_type,
-            (view or {}).get("presentation", {}),
+            presentation,
             source_ids,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        edited_presentation = dialog.presentation()
+        if self._current_sample_id is not None:
+            self._set_current_sample_title(
+                str(edited_presentation.get("title", ""))
+            )
         try:
             self._overlay_undo_stack.execute(
-                EditPlotPresentationCommand(view_id, dialog.presentation())
+                EditPlotPresentationCommand(view_id, edited_presentation)
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Plot Presentation", str(exc))
             return
         self._update_status("Plot presentation updated")
+        self._refresh_sample_display_names()
         self._replot()
 
     def _on_plot_appearance_requested(self, action_id: str) -> None:

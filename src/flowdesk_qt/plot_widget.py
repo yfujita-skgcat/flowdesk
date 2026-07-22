@@ -200,7 +200,21 @@ class PlotWidget(QWidget):
             ).presentation.__dict__.items()
         }
         title = str(value.get("title", ""))
-        self._plot_item.setTitle(title)
+        title_font = value.get("title_font", {})
+        if isinstance(title_font, dict):
+            family = str(title_font.get("family", "DejaVu Sans"))
+            size = float(title_font.get("size", 14.0))
+            weight = str(title_font.get("weight", "bold"))
+        else:
+            family = str(getattr(title_font, "family", "DejaVu Sans"))
+            size = float(getattr(title_font, "size", 14.0))
+            weight = str(getattr(title_font, "weight", "bold"))
+        self._plot_item.setTitle(
+            title,
+            family=family,
+            size=f"{size:g}pt",
+            bold=weight == "bold",
+        )
         self._plot_item.setLabel(
             "bottom", str(value.get("x_axis_display_label") or self._x_label)
         )
