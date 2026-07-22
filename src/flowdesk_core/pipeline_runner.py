@@ -1405,7 +1405,9 @@ class PipelineRunner:
             invalid_value_policy=definition.get(
               "invalid_value_policy", "emit_nan_with_warning"
             ),
-            non_finite_policy=definition.get("non_finite_policy", "strict"),
+            # Missing policy identifies a pre-Increment-8 definition. Preserve
+            # its historical NaN-aware behavior until the project is upgraded.
+            non_finite_policy=definition.get("non_finite_policy", "exclude_invalid"),
             legacy_source_stage_policy=definition.get(
               "legacy_source_stage_policy"
             ),

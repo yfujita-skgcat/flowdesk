@@ -775,7 +775,7 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 - [ ] plot/histogramでは非有限座標を描画しないが、parameter ID、expression、source stage、transform ID、invalid reason別event数をstatus/tooltipへ出す。gate membershipでは非有限座標をgate外とし、gateごとの除外数をdiagnostic/export provenanceに残す。
 - [ ] `log(x + 1)`、asinh、logicle、censoring/LODなどは別々の明示的な科学定義として扱う。`log(x+1)`は非負量でzeroを定義域へ含める根拠がある場合だけ許可し、compensation後に負値を取り得るfluorescenceにはasinh/logicleまたは文書化されたcensoringを優先する。
 - [ ] derived `log(x)`で`x = 0`、`log(x + 1)`、negative compensated value、division by zero、overflowをsynthetic fixtureでtestする。GUI preview、Run Pipeline、CLI/Python、CSV/TSV exportでvalue、status、QC count、raw immutabilityが一致することをE2E testする。
-- [ ] existing project migrationを用意し、旧StatisticSpecのNaN除外挙動をsilentに変更しない。migration policyとversionをmanifest/provenanceに記録し、旧projectは明示的な互換modeまたはupgrade確認を要求する。
+- [x] existing project migrationを用意し、旧StatisticSpecのNaN除外挙動をsilentに変更しない。migration policyとversionをmanifest/provenanceに記録し、旧projectは明示的な互換modeまたはupgrade確認を要求する。historical manifestは`exclude_invalid` compatibility modeへ移行し、diagnosticを残す。
 
 実装済みの下位項目:
 

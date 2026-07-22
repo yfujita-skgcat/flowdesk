@@ -126,3 +126,24 @@ def test_legacy_logicle_migration_preserves_headless_gate_membership(
     if item.population_id == "legacy_range"
   )
   assert membership.tolist() == [False, False, True, False]
+
+
+def test_legacy_statistic_missing_nonfinite_policy_gets_compatibility_mode() -> None:
+  from flowdesk_storage.migrations import migrate_manifest_with_report
+
+  report = migrate_manifest_with_report({
+    "project_id": "legacy-stats",
+    "project_version": "1.5.0",
+    "pipeline_version": "0.1",
+    "samples": [],
+    "statistics": [{
+      "id": "mean", "name": "Mean", "population_id": "all_events",
+      "parameter_id": "signal", "metric": "mean", "source_stage": "raw",
+    }],
+  })
+  statistic = report.migrated["statistics"][0]
+  assert statistic["non_finite_policy"] == "exclude_invalid"
+  assert any(
+    item["code"] == "legacy_statistic_nonfinite_compatibility"
+    for item in report.diagnostics
+  )

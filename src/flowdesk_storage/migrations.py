@@ -510,6 +510,36 @@ def _migrate_overlay_definitions(
         diagnostics.append(diagnostic)
 
 
+def _migrate_statistic_nonfinite_policy(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Preserve historical NaN-aware statistics during project upgrade."""
+  statistics = migrated.get("statistics", [])
+  if not isinstance(statistics, list):
+    return
+  for statistic in statistics:
+    if not isinstance(statistic, dict) or "non_finite_policy" in statistic:
+      continue
+    statistic["non_finite_policy"] = "exclude_invalid"
+    diagnostic = {
+      "code": "legacy_statistic_nonfinite_compatibility",
+      "severity": "warning",
+      "stage": "migration",
+      "message": (
+        f"Statistic {statistic.get('id', '<unknown>')!r} retained historical "
+        "NaN-aware exclusion; choose strict explicitly to change behavior"
+      ),
+      "details": {
+        "statistic_id": statistic.get("id"),
+        "non_finite_policy": "exclude_invalid",
+        "compatibility_policy": "preserve_historical_behavior",
+      },
+    }
+    if diagnostic not in diagnostics:
+      diagnostics.append(diagnostic)
+
+
 MigrationFunction = Callable[[dict[str, Any], list[dict[str, Any]]], None]
 
 
@@ -526,6 +556,7 @@ def _normalize_historical_manifest(
   _migrate_compensation_matrices(migrated, diagnostics)
   _ensure_compensation_bindings(migrated, diagnostics)
   _migrate_overlay_definitions(migrated, diagnostics)
+  _migrate_statistic_nonfinite_policy(migrated, diagnostics)
 
 
 def _add_default_sample_group(
@@ -535,6 +566,7 @@ def _add_default_sample_group(
   """Add the always-present default Group/Strategy model introduced in 1.6."""
   _migrate_boolean_expressions(migrated, diagnostics)
   _migrate_overlay_definitions(migrated, diagnostics)
+  _migrate_statistic_nonfinite_policy(migrated, diagnostics)
   groups = migrated.get("sample_groups")
   if groups is None:
     migrated["sample_groups"] = [{
