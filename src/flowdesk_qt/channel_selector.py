@@ -7,6 +7,7 @@ Contains no scientific logic; merely exposes parameter choices.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Literal
 
 from PySide6.QtCore import QSignalBlocker, Qt
@@ -43,6 +44,23 @@ class ChannelSelector(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._build_ui()
+
+    def on_analysis_transform_requested(
+        self, callback: Callable[[str, str], None]
+    ) -> None:
+        """Register a request for the persisted analysis-transform workflow."""
+        self._analysis_transform_callbacks.append(callback)
+
+    def set_analysis_transform_choice(self, axis: str, choice: str) -> None:
+        """Reflect a persisted registry binding without emitting a new request."""
+        combo = (
+            self._x_analysis_transform_combo
+            if axis == "x"
+            else self._y_analysis_transform_combo
+        )
+        index = combo.findData(choice)
+        with QSignalBlocker(combo):
+            combo.setCurrentIndex(index if index >= 0 else combo.findData("custom"))
 
     # -- public API ----------------------------------------------------------
 
@@ -242,6 +260,10 @@ class ChannelSelector(QWidget):
                 self._y_transform_combo.setCurrentText("linear")
         self._x_transform_combo.setEnabled(not x_bound)
         self._y_transform_combo.setEnabled(not y_bound and not self.is_count_mode())
+        if x_bound:
+            self.set_analysis_transform_choice("x", "custom")
+        if y_bound:
+            self.set_analysis_transform_choice("y", "custom")
 
     def display_max_points(self) -> int:
         """Return the display-only scatter sampling limit; zero disables it."""
@@ -286,6 +308,10 @@ class ChannelSelector(QWidget):
         for cb in self._change_callbacks:
             invoke_callback(cb, x, y)
 
+    def _on_analysis_transform_changed(self, axis: str, choice: str) -> None:
+        for callback in self._analysis_transform_callbacks:
+            invoke_callback(callback, axis, choice)
+
     def _on_display_max_points_changed(self, value: int) -> None:
         for callback in self._display_max_points_callbacks:
             invoke_callback(callback, int(value))
@@ -295,6 +321,7 @@ class ChannelSelector(QWidget):
     def _build_ui(self) -> None:
         self._change_callbacks = []
         self._display_max_points_callbacks = []
+        self._analysis_transform_callbacks: list[Callable[[str, str], None]] = []
         self.setObjectName("channelSelector")
 
         self._x_combo = QComboBox()
@@ -308,6 +335,20 @@ class ChannelSelector(QWidget):
         self._y_transform_combo = QComboBox()
         self._y_transform_combo.setObjectName("yTransformCombo")
         self._y_transform_combo.addItems(_TRANSFORM_OPTIONS)
+
+        self._x_analysis_transform_combo = QComboBox()
+        self._x_analysis_transform_combo.setObjectName("xAnalysisTransformCombo")
+        self._y_analysis_transform_combo = QComboBox()
+        self._y_analysis_transform_combo.setObjectName("yAnalysisTransformCombo")
+        for combo in (
+            self._x_analysis_transform_combo,
+            self._y_analysis_transform_combo,
+        ):
+            combo.addItem("Linear", "linear")
+            combo.addItem("Log10", "log")
+            combo.addItem("Asinh", "asinh")
+            combo.addItem("Logicle", "logicle")
+            combo.addItem("Custom…", "custom")
 
         self._display_max_points_spin = QSpinBox()
         self._display_max_points_spin.setObjectName("displayMaxPointsSpinBox")
@@ -326,6 +367,16 @@ class ChannelSelector(QWidget):
         self._y_combo.currentTextChanged.connect(self._on_any_changed)
         self._x_transform_combo.currentTextChanged.connect(self._on_any_changed)
         self._y_transform_combo.currentTextChanged.connect(self._on_any_changed)
+        self._x_analysis_transform_combo.currentIndexChanged.connect(
+            lambda _index: self._on_analysis_transform_changed(
+                "x", str(self._x_analysis_transform_combo.currentData())
+            )
+        )
+        self._y_analysis_transform_combo.currentIndexChanged.connect(
+            lambda _index: self._on_analysis_transform_changed(
+                "y", str(self._y_analysis_transform_combo.currentData())
+            )
+        )
         self._display_max_points_spin.valueChanged.connect(
             self._on_display_max_points_changed
         )
@@ -333,8 +384,8 @@ class ChannelSelector(QWidget):
         form = QFormLayout()
         form.addRow("X axis:", self._x_combo)
         form.addRow("Y axis:", self._y_combo)
-        form.addRow("X scale:", self._x_transform_combo)
-        form.addRow("Y scale:", self._y_transform_combo)
+        form.addRow("X transform:", self._x_analysis_transform_combo)
+        form.addRow("Y transform:", self._y_analysis_transform_combo)
         form.addRow("Display max points:", self._display_max_points_spin)
 
         box = QGroupBox("Plot Parameters")

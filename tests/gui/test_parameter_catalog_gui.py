@@ -137,3 +137,28 @@ def test_main_window_plots_derived_parameter_from_canonical_result(qapp, tmp_pat
     window.close()
     window.deleteLater()
     qapp.processEvents()
+
+
+def test_axis_transform_selector_creates_one_persisted_log_definition(qapp, tmp_path) -> None:
+  path = tmp_path / "transform.fcs"
+  write_fcs_file(path, np.array([[1.0, 2.0], [10.0, 3.0]]), ["X", "Y"])
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    assert window._sample_browser.select_sample(sample.id)
+    parameter_id = sample.info.channels[0].id
+    combo = window.findChild(QComboBox, "xAnalysisTransformCombo")
+    assert combo is not None
+    combo.setCurrentIndex(combo.findData("log"))
+    assert len(window._transforms) == 1
+    transform = window._transforms[0]
+    assert transform["parameter"] == parameter_id
+    assert transform["transform_type"] == "log"
+    assert transform["settings"]["base"] == 10.0
+    assert window._transform_for_parameter(parameter_id).id == transform["id"]
+    assert window._gate_editor._x_transform_id == transform["id"]
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()

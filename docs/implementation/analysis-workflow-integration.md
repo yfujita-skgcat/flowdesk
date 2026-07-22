@@ -232,6 +232,18 @@ tested migration to formal linear/log/asinh definitions that preserves membershi
 gate geometry. Until migrated, show `Legacy Log10`/`Legacy Asinh` visibly. Never silently
 rewrite legacy Logicle approximation to formal Logicle.
 
+### Axis quick-transform implementation boundary
+
+The visible X/Y `Transform` selectors are the normal authoring entry point. `Log10`,
+`Asinh`, and `Logicle` create one versioned analysis `TransformSpec` for the selected
+stable parameter through `MainWindow`; the widget itself only emits the request. The
+core registry is then the only source used by plotting, gate creation, membership, and
+ticks. `Linear` is the documented null/identity binding when no analysis transform is
+registered. Once a parameter has a formal definition, changing it in place is blocked:
+the user must use `Manage Parameter Transforms...` to create a new ID and the explicit
+gate-migration preview. Hidden legacy `x_scale`/`y_scale` controls remain read-compatible
+for old project fixtures only and are not visible as a new authoring workflow.
+
 Statistics stay explicit. The default numeric domain is the persisted native source
 stage (normally compensated values after derived evaluation, before display transform).
 `mean(FL1-A)` must not become `mean(logicle(FL1-A))` when the user changes a plot. A

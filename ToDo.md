@@ -742,8 +742,8 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 
 #### Increment 5: transform authoringの一本化とlegacy migration
 
-- [ ] 軸に`Linear | Log10 | Asinh | Logicle | Custom...`の一つのtransform selectorだけを表示し、正式なimmutable/versioned `TransformSpec` registryと同じproject commandを使う。別のlegacy display transform計算を新規作成に使わない。
-- [ ] quick optionはparameter/settingsが完全一致する定義をreuseし、なければ新規versionを作る。plot axisと新規gateは同じtransform IDまたは明示されたidentity bindingを保存し、events、gate coordinates、membership、ticksで一度だけ適用する。
+- [x] 軸に`Linear | Log10 | Asinh | Logicle | Custom...`の一つのtransform selectorだけを表示し、正式なimmutable/versioned `TransformSpec` registryと同じproject commandを使う。別のlegacy display transform計算を新規作成に使わない。
+- [x] quick optionはparameter/settingsが完全一致する定義をreuseし、なければ新規versionを作る。plot axisと新規gateは同じtransform IDまたは明示されたidentity bindingを保存し、events、gate coordinates、membership、ticksで一度だけ適用する。
 - [ ] 参照中definitionはin-place変更せずduplicate/version作成と明示的gate/view migration previewを使う。compensation/derived後のcanonical inputで差分を評価する。
 - [ ] legacy `x_scale`/`y_scale`は読み込み可能にし、`Legacy Log10/Asinh`と表示して、geometry/membershipを維持する明示的migrationを提供する。legacy Logicle approximationをformal Logicleへsilent変換しない。
 - [ ] plot transform変更でnative compensated/derived domainのmean/medianが変化しないことをtestする。transformed statisticは`StatisticSpec`でvalue spaceとtransform IDを明示した場合だけ許可する。

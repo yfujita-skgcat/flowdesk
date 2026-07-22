@@ -1002,6 +1002,9 @@ class MainWindow(QMainWindow):
         self._channel_selector.on_display_max_points_changed(
             self._on_display_max_points_changed
         )
+        self._channel_selector.on_analysis_transform_requested(
+            self._on_axis_analysis_transform_requested
+        )
 
         # When a gate is selected, update highlight
         self._gate_editor.on_gate_selected(self._on_gate_selected)
@@ -1237,6 +1240,77 @@ class MainWindow(QMainWindow):
         """Called when X or Y channel selection changes."""
         self._replot()
 
+    def _on_axis_analysis_transform_requested(self, axis: str, choice: str) -> None:
+        """Create or select one persisted analysis transform from an axis request."""
+        if choice == "custom":
+            self._on_edit_transforms()
+            return
+        parameter_id = (
+            self._channel_selector.x_channel_id()
+            if axis == "x"
+            else self._channel_selector.y_channel_id()
+        )
+        if not parameter_id or parameter_id == "__count__":
+            return
+        existing = self._transform_for_parameter(parameter_id)
+        if choice == "linear":
+            if existing is not None:
+                QMessageBox.information(
+                    self,
+                    "Versioned transform is active",
+                    "This parameter already has a persisted analysis transform. "
+                    "Use Manage Parameter Transforms to create a replacement and "
+                    "explicitly migrate any referenced gates.",
+                )
+                self._channel_selector.set_analysis_transform_choice(
+                    axis, existing.transform_type
+                )
+                return
+            if axis == "x":
+                self._channel_selector.set_x_transform("linear")
+            else:
+                self._channel_selector.set_y_transform("linear")
+            self._replot()
+            return
+        if existing is not None:
+            if existing.transform_type == choice:
+                return
+            QMessageBox.information(
+                self,
+                "Versioned transform is active",
+                "Create a new version in Manage Parameter Transforms and use the "
+                "explicit gate migration preview before changing a referenced axis.",
+            )
+            self._channel_selector.set_analysis_transform_choice(
+                axis, existing.transform_type
+            )
+            return
+        settings_by_type: dict[str, dict[str, Any]] = {
+            "log": {"base": 10.0, "invalid_value_policy": "to_nan"},
+            "asinh": {"cofactor": 1.0},
+            "logicle": {
+                "T": 262144.0,
+                "W": 0.5,
+                "M": 4.5,
+                "A": 0.0,
+                "implementation_version": "logicle-gml2-moore-parks-2012-v1",
+            },
+        }
+        if choice not in settings_by_type:
+            return
+        transform_id = f"transform_{parameter_id}_{choice}_{uuid.uuid4().hex[:8]}"
+        self._transforms.append({
+            "id": transform_id,
+            "name": f"{parameter_id} {choice}",
+            "transform_type": choice,
+            "parameter": parameter_id,
+            "settings": settings_by_type[choice],
+            "role": "analysis",
+            "notes": "Created from the axis Transform selector.",
+        })
+        self._mark_results_stale(f"{axis.upper()} analysis transform created")
+        self._channel_selector.set_analysis_transform_choice(axis, choice)
+
     def _on_display_max_points_changed(self, max_points: int) -> None:
         """Persist and redraw a display-only scatter sampling change."""
         try:
@@ -1368,6 +1442,13 @@ class MainWindow(QMainWindow):
         self._channel_selector.set_analysis_transform_bound(
             x_spec is not None, y_spec is not None
         )
+        self._channel_selector.set_analysis_transform_choice(
+            "x", "linear" if x_spec is None else x_spec.transform_type
+        )
+        if not self._channel_selector.is_count_mode():
+            self._channel_selector.set_analysis_transform_choice(
+                "y", "linear" if y_spec is None else y_spec.transform_type
+            )
         self._plot_widget.set_axis_transform_specs(x_spec, y_spec)
 
         # Sync gate editor with current channels
