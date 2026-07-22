@@ -735,7 +735,7 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 
 #### Increment 4: Derived Parameterの全GUI接続
 
-- [ ] derived outputをX/Y軸で選択し、synthetic ratioを正しい座標でplotできるようにする。定義直後はnot-run/staleとして見え、run後にcurrentへ更新し、errorでもentryを消さない。
+- [x] derived outputをX/Y軸で選択し、synthetic ratioを正しい座標でplotできるようにする。定義直後はnot-run/staleとして見え、run後にcurrentへ更新し、errorでもentryを消さない。
 - [ ] derived軸上でrectangle/polygon/range gateを作成・編集し、GUI preview、authoritative batch、CLI/Pythonのmembership/count/frequencyを一致させる。
 - [ ] 同じderived stable IDをTransform、mean/median Statistic、compatible simple overlay、exportで使用し、save/reload後も同じID・unit・provenanceを解決する。
 - [ ] derived definitionの編集・削除前にderived dependency、transform、gate、statistic、view参照を列挙する。参照中はblockまたは明示的dependency-aware operationを要求し、silent cascade deleteしない。

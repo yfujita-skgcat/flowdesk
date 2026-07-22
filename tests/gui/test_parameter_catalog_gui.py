@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QComboBox
 
+from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.parameter_catalog import (
   ParameterCatalogDiagnostic,
   ParameterCatalogEntry,
 )
 from flowdesk_qt.channel_metadata import ChannelMetadataWorkspace
 from flowdesk_qt.channel_selector import ChannelSelector
+from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.statistics_editor import StatisticsEditorDialog
 from flowdesk_qt.transform_editor import TransformEditorDialog
 
@@ -92,3 +96,44 @@ def test_parameter_information_shows_catalog_provenance_and_status(qapp) -> None
   finally:
     workspace.close()
     workspace.deleteLater()
+
+
+def test_main_window_plots_derived_parameter_from_canonical_result(qapp, tmp_path) -> None:
+  path = tmp_path / "ratio.fcs"
+  write_fcs_file(
+    path,
+    np.array([[2.0, 1.0], [8.0, 2.0]], dtype=np.float64),
+    ["X", "Y"],
+  )
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    assert window._sample_browser.select_sample(sample.id)
+    x_id, y_id = (channel.id for channel in sample.info.channels)
+    window._derived_parameters = [{
+      "id": "ratio-definition",
+      "name": "Ratio",
+      "output_channel_id": "ratio",
+      "expression": f"{x_id} / {y_id}",
+      "input_parameters": [x_id, y_id],
+      "source_stage": "raw",
+    }]
+    window._refresh_parameter_catalog()
+    selector = window._channel_selector
+    assert _item_enabled(selector._x_combo, "ratio")
+    selector.set_selected_channels("ratio", y_id)
+    for _ in range(100):
+      if not any(
+        result.x_parameter_id == "ratio"
+        for result in window._processed_display_cache.values()
+      ):
+        QTest.qWait(5)
+        continue
+      break
+    assert window._plot_widget._scatter is not None
+    np.testing.assert_allclose(window._plot_widget._rendered_x, [2.0, 4.0])
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()

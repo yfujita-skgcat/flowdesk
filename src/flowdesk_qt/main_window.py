@@ -44,8 +44,9 @@ from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.integrated_overlay import resolve_overlay_style
 from flowdesk_core.models import (
-    AnnotationSpec,
-    CompensationMatrixSpec,
+  AnnotationSpec,
+  ChannelSpec,
+  CompensationMatrixSpec,
     OverlaySourceSpec,
     TransformSpec,
 )
@@ -62,7 +63,7 @@ from flowdesk_core.parameter_catalog import (
     ParameterCatalogEntry,
     build_parameter_catalog,
 )
-from flowdesk_core.pipeline_runner import PipelineRunner
+from flowdesk_core.pipeline_runner import PipelineError, PipelineRunner
 from flowdesk_core.plot_presentation import (
     SamplePresentationContext,
     resolve_overlay_sources,
@@ -1072,7 +1073,7 @@ class MainWindow(QMainWindow):
         self._parameter_catalog = self._catalog_for_sample(sample)
         self._channel_metadata.set_parameter_catalog(self._parameter_catalog)
         x_preserved, y_preserved = self._channel_selector.set_parameter_catalog(
-            self._parameter_catalog
+            self._parameter_catalog, allow_derived=True
         )
 
         status = (
@@ -1604,12 +1605,6 @@ class MainWindow(QMainWindow):
             if sample.status in {"missing", "fingerprint mismatch"}:
                 continue
             self._load_sample_events(sample)
-        report = (
-            self._preview_report
-            or self._last_result_report
-            or self._population_tree.last_report()
-        )
-        memberships = getattr(report, "population_membership", ()) if report is not None else ()
         layers: list[Overlay2DLayer] = []
         diagnostics: list[str] = []
         x_transform = self._transform_for_parameter(x_parameter_id)
@@ -1635,41 +1630,30 @@ class MainWindow(QMainWindow):
             if source_status != "compatible":
                 diagnostics.append(f"{sample_id}: " + "; ".join(source_messages))
                 continue
-            events = self._event_data.get(sample_id)
-            if events is None:
-                diagnostics.append(f"{sample_id}: unresolved sample")
-                continue
             sample_data = self._sample_data.get(sample_id)
             if sample_data is None:
                 diagnostics.append(f"{sample_id}: missing channel metadata")
                 continue
             try:
-                x_index = sample_data.channel_index(x_parameter_id)
-                y_index = sample_data.channel_index(y_parameter_id)
-            except (KeyError, ValueError):
-                diagnostics.append(f"{sample_id}: missing channel")
+                processed = PipelineRunner(
+                    self._build_project_manifest()
+                ).prepare_display_sample(ProcessedDisplayRequest(
+                    revision=self._preview_revision.analysis_revision,
+                    sample=sample_data,
+                    population_id=self._display_population_id,
+                    x_parameter_id=x_parameter_id,
+                    y_parameter_id=y_parameter_id,
+                    x_transform_id=None if x_transform is None else x_transform.id,
+                    y_transform_id=None if y_transform is None else y_transform.id,
+                    display_max_points=self._channel_selector.display_max_points(),
+                ))
+                x_values = processed.events[:, processed.channel_index(x_parameter_id)]
+                y_values = processed.events[:, processed.channel_index(y_parameter_id)]
+                x_values = x_values[processed.display_mask]
+                y_values = y_values[processed.display_mask]
+            except (KeyError, PipelineError) as exc:
+                diagnostics.append(f"{sample_id}: {exc}")
                 continue
-            mask = None
-            if self._display_population_id != "all_events":
-                mask = next(
-                    (
-                        membership.mask
-                        for membership in memberships
-                        if membership.sample_id == sample_id
-                        and membership.population_id == self._display_population_id
-                    ),
-                    None,
-                )
-                if mask is None:
-                    diagnostics.append(
-                        f"{sample_id}: missing population {self._display_population_id}"
-                    )
-                    continue
-            x_values = events[:, x_index]
-            y_values = events[:, y_index]
-            if mask is not None:
-                x_values = x_values[mask]
-                y_values = y_values[mask]
             x_values = self._plot_widget._apply_axis_transform(x_values, "x")
             y_values = self._plot_widget._apply_axis_transform(y_values, "y")
             role_color = None
@@ -2533,7 +2517,9 @@ class MainWindow(QMainWindow):
             return
         self._parameter_catalog = self._catalog_for_sample(sample)
         self._channel_metadata.set_parameter_catalog(self._parameter_catalog)
-        self._channel_selector.set_parameter_catalog(self._parameter_catalog)
+        self._channel_selector.set_parameter_catalog(
+            self._parameter_catalog, allow_derived=True
+        )
 
     def _catalog_for_sample(
         self, sample: _SampleInfo
@@ -2685,9 +2671,17 @@ class MainWindow(QMainWindow):
         for sample in self._sample_browser.samples():
             population_ids = populations_by_sample.get(sample.id, set()) | {"all_events"}
             population_ids.update(gate.id for gate in self._gate_editor.gates())
+            catalog_channels = tuple(
+                ChannelSpec(
+                    id=entry.parameter_id,
+                    name=entry.display_name,
+                    unit=entry.unit,
+                )
+                for entry in self._catalog_for_sample(sample)
+            )
             contexts[sample.id] = SamplePresentationContext(
                 sample_id=sample.id,
-                channels=tuple(sample.info.channels),
+                channels=catalog_channels,
                 population_ids=tuple(sorted(population_ids)),
                 transform_ids=tuple(transform.id for transform in transform_specs),
                 transforms=tuple(transform_specs),
