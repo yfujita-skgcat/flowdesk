@@ -24,6 +24,12 @@ membership rule, and analysis bindings. A sample may belong to multiple groups.
 `AnnotationSpec` records sample ID, keyword, typed value, and source (`fcs`,
 `workspace`, `imported`). Workspace values shadow FCS display values but never mutate raw metadata.
 
+The normal editing surface is the unified Sample Sheet specified by Phase B7.4. Title is
+the reserved workspace annotation `sample_title`; other annotation columns retain their
+typed value and provenance. An advanced editor may exist inside Sample Sheet, but a
+separate top-level `Sample Annotations...` action must not create a competing workflow or
+storage model.
+
 Phase B7.2 Comparison Sets and roles are separate project display relations. They may
 label reference/target, positive/negative control, or one-to-many visual comparisons, but
 must not create, delete, recolor, or rebind a `SampleGroupSpec`; nor may they select a
@@ -110,6 +116,9 @@ started.
 - GUI and CLI resolve identical members.
 - New matching sample receives bound analysis.
 - Annotation round trip preserves source and raw FCS bytes.
+- Changing `sample_title` updates display/export without invalidating analysis; changing a
+  key referenced by a Group rule invalidates affected assignments/results; changing an
+  unreferenced key does not increment the analysis revision.
 
 ## Do not do
 

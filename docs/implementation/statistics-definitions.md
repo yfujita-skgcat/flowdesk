@@ -8,6 +8,13 @@ ToDo: `Phase A6`
 Represent every requested statistic as persisted analysis state and compute it from
 full population membership in the headless pipeline.
 
+> **GUI ownership:** statistic definitions are managed from Results. The historical
+> `Analysis -> Population Statistics...` entry duplicates the same editor and must be
+> removed in Phase B7.4. Population-tree and graph actions may remain as shortcuts only
+> when they invoke the same project command and validator. Parameter choices, including
+> derived outputs, come from the shared Parameter Catalog described in
+> [`analysis-workflow-integration.md`](analysis-workflow-integration.md).
+
 ## Inspect first
 
 - `src/flowdesk_core/statistics.py`
@@ -91,6 +98,9 @@ debounce, descendant invalidation, latest-wins scheduling, and stale-result reje
 - Do not treat `None`, NaN, and calculation error as the same status.
 - Do not reproduce statistics in table/layout/Qt code.
 - Do not claim FlowJo parity for binned statistics unless a separate policy is implemented.
+- Do not infer a statistic's value domain from the currently displayed plot transform.
+- Do not add a Results-only statistic model or leave a competing top-level Analysis
+  management surface.
 
 ## Final verification
 

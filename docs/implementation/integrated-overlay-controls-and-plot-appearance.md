@@ -15,6 +15,14 @@ one numbered increment per LLM/Codex run.
 
 ## Current implementation boundary
 
+> **Post-completion audit correction:** Samples-pane manual/comparison overlays are wired
+> to the live renderer, but persisted advanced `overlay_sources` are not read by that live
+> path. The advanced dialog must therefore be disabled/hidden under the Phase B7.4
+> capability guard. Its existing definitions, editor code, model, and persistence are
+> retained, but they are not a supported user workflow until actual live layers are
+> proven by E2E tests. See
+> [`analysis-workflow-integration.md`](analysis-workflow-integration.md).
+
 Phase B7.1 already provides:
 
 - `OverlaySourceSpec`, `PlotPresentationSpec`, `SourceStyleSpec`, stable source order,
@@ -214,8 +222,12 @@ Ov | Color | Relation | Name
 - the active sample is excluded from resolved overlay layers. Disable its checkbox or
   explain in a tooltip that the base sample is already displayed.
 
-The advanced Overlay Sources editor may retain hexadecimal input and complete per-source
-sample/population/axis/transform/style editing.
+The current advanced Overlay Sources editor code may be retained for compatibility while
+its action is disabled. When re-enabled, the first supported scope shares the active
+plot's parameter IDs, transform IDs, dimensionality, bins, normalization, and units;
+sources may vary sample, Population, label, style, visibility, and order. Arbitrary
+per-source axes/transforms require a separately reviewed canonical mapping/calibration
+design.
 
 ### Simple source resolution
 
@@ -233,10 +245,10 @@ sample. Display a warning icon plus text/tooltip near the checkbox or row. A mis
 source is not zero events and is not omitted as successful. A genuinely resolved current
 population with zero events remains a distinct valid state.
 
-Different populations or independently selected axes/transforms remain advanced operations
-in `Overlay Sources...`. Both surfaces edit or derive from the same plot-view source state;
-an advanced source that cannot be represented by the simple row remains visible with an
-`Advanced` relation/status rather than being destroyed by a checkbox refresh.
+Different populations and source styles are future advanced operations. Independently
+selected axes/transforms are not mixed on one comparison coordinate. Both surfaces must
+eventually resolve through the same plot-view source state; until that renderer connection
+exists, persisted advanced-only definitions remain preserved but inactive.
 
 ## Persistent control overlays
 
@@ -447,8 +459,9 @@ their declared responsibilities.
 
 ## Acceptance criteria
 
-- Daily overlay, population color, and appearance operations are available in context,
-  while advanced source/axis/transform editing remains available.
+- Daily overlay, population color, and appearance operations are available in context.
+  Advanced source editing remains disabled/hidden until its persisted definitions drive
+  actual live layers and exports through the same resolver.
 - All independent state fields are testable and survive their defined persistence scope.
 - Active sample and overlay selection never alias; active sample is never double drawn.
 - Comparison Sets remain separate from scientific Groups and bindings.
@@ -483,6 +496,7 @@ presentation command. Increment 3 adds display-only population swatches and colo
 actions. Increment 4 adds dedicated Samples-pane overlay controls and renderer wiring,
 and Increment 5 adds comparison-set navigation and overlay modes. Increment 6 persists
 the integrated display state in `plot_display_settings` and includes it in export
-metadata. The advanced Overlay Sources and Plot Presentation dialogs remain the full
-editors; they are not removed. The final user-guide and screenshot refresh remains
-documentation follow-up work.
+metadata. Plot Presentation remains the full appearance editor. The Advanced Overlay
+Sources implementation is retained as an inactive prototype: its persisted source list
+is not consumed by the current live renderer and its action is guarded by Phase B7.4.
+The final user-guide and screenshot refresh remains documentation follow-up work.

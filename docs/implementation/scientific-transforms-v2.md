@@ -8,6 +8,15 @@ ToDo: `Phase A3`
 Replace the approximate transform ambiguity with explicit, invertible transform
 definitions used consistently by the runner, gates, axes, and serialization.
 
+> **Authoring-workflow follow-up:** the A3 core single-application model prevents a formal
+> transform ID from being combined with a non-linear legacy gate scale. The GUI still has
+> two authoring concepts: legacy axis `linear`/`log`/`asinh` and formal Analysis
+> Transforms. The legacy choice is not purely cosmetic when a gate is created; it is
+> persisted on the gate and used by headless membership when no formal transform ID is
+> bound. Phase B7.4 must replace these competing controls with one axis transform workflow
+> backed by the same persisted registry. See
+> [`analysis-workflow-integration.md`](analysis-workflow-integration.md).
+
 ## Inspect first
 
 - `src/flowdesk_core/transforms.py`
@@ -275,6 +284,21 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
   derived parameters are configured. A later runner-level preview must expose
   the canonical post-compensation/post-derived gate input stage; raw events are
   never substituted for that stage merely to produce a preview.
+
+## Phase B7.4 integration decision
+
+- The normal axis surface exposes one selector: `Linear`, `Log10`, `Asinh`, `Logicle`,
+  or `Custom...`. It selects or creates the same immutable `TransformSpec` definitions
+  managed by `Manage Parameter Transforms...`; it is not a second display-scale engine.
+- A newly drawn gate records the exact active transform ID, or the documented identity
+  binding for Linear. Events, geometry, membership, inverse coordinate display, and ticks
+  use that one definition.
+- Legacy `x_scale`/`y_scale` remains read-compatible and visibly labelled Legacy until an
+  explicit migration proves unchanged geometry and membership. It is not offered as a
+  second new-project authoring path.
+- Plot transform selection does not choose a statistic value domain. Native compensated/
+  derived mean or median changes only when its `StatisticSpec` changes; transformed
+  statistics require an explicit transform ID in that definition.
 
 ## Stop condition
 

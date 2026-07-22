@@ -65,6 +65,7 @@ git status --short
 | B7.1 | `docs/implementation/multi-sample-overlay-and-plot-presentation.md` |
 | B7.2 | `docs/implementation/integrated-overlay-controls-and-plot-appearance.md` |
 | B7.3 | `docs/implementation/sample-sheet-results-and-batch-plot-export.md` |
+| B7.4 | `docs/implementation/analysis-workflow-integration.md` |
 | C1 | `docs/implementation/table-editor.md` |
 | C2 | `docs/implementation/layout-editor.md` |
 | C3 | `docs/implementation/templates-and-mapping.md` |
@@ -471,6 +472,10 @@ B3.2で導入した独立`Current Sample Preview` panelと、stale時に
 
 ### Phase B7.1: Multi-sample overlay and plot presentation [S09/S10/S13/S24]
 
+> 2026-07-22 end-to-end監査: 以下のcheckはmodel/editor/persistence/export metadataの
+> 完了履歴を示すが、persisted `overlay_sources`は現在のlive renderer入力ではない。
+> Advanced Overlayの有効化とlive描画受け入れはPhase B7.4で未完了として扱う。
+
 Phase B6/B7で完了した`PlotViewSpec`、plot type、display preparation、
 `OverlaySpec`/`BackgatingSpec`、membership-based overlay preparation、export基盤を維持する。
 それらの完了履歴は、multi-sample source selection、完全なstyle editor、
@@ -534,6 +539,10 @@ title/axis/legend編集が実装済みであることを意味しない。
 - [x] headless環境でfont fallbackが発生してもblank outputやmissing sourceを成功扱いにしない。
 
 ### Phase B7.2: Integrated overlay controls and plot appearance UX [S07/S09/S10/S24]
+
+> 2026-07-22 end-to-end監査: Samples paneのmanual/comparison overlayはlive描画へ
+> 接続されている。一方、advanced `Overlay Sources...`との双方向同期およびpersisted
+> advanced sourceのlive layer描画は確認できないため、Phase B7.4のguardを外さない。
 
 Phase B7.1で完成したmulti-sample source model、typed presentation、compatibility
 resolver、renderer/export、保存、Undo可能な汎用editorを維持する。B7.1の完了は、
@@ -688,6 +697,82 @@ Accessibility:
 - [x] バッチ画像exportの有無・表示downsample・style変更がraw events、membership、count、frequency、statisticsを変更しない。
 - [x] Resultsからmean/medianなどのStatisticSpecを追加・編集でき、known values、undefined status、unit、revisionがheadless report/CLI exportと一致する。
 - [x] GUIに科学計算または独自plot export定義を複製せず、core/headless runnerをGUIなしで実行できる。
+
+### Phase B7.4: Analysis workflow integration [S02/S04/S05/S07/S09/S10/S11/S14]
+
+既存Phaseでcore model、editor、保存形式が完成していても、通常GUIのselector、plot、
+Results、Sample Sheet、live overlayへ接続されていない機能はend-to-end完了とみなさない。
+このPhaseではDerived Parameterを通常のparameterとして利用可能にし、transform authoring、
+statistics、sample metadata、overlay、menuの責任を利用者のworkflowに合わせて統合する。
+
+実装前に`docs/implementation/analysis-workflow-integration.md`を全文読む。一度の
+LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの表示またはsave/loadだけで
+完了にしない。各incrementのcore/GUI/headless/CLI acceptance testが通るまで`[ ]`を維持する。
+
+#### Increment 1: 未完成featureのguardとmenu ownership
+
+- [ ] `Advanced Overlay Sources... (Not implemented)`をAnalysisからPlot/Viewへ移し、development/alphaではdisabledと説明tooltipを表示し、releaseでは非表示にする。一つの明示的capability/build policyを使い、enabled actionから未接続editorを開かない。
+- [ ] Samples paneの`Ov`が現在のsupported overlay workflowであることをtooltip/statusへ示す。既存projectの`overlay_sources`は削除・変換せずround-tripする。
+- [ ] `Analysis -> Population Statistics...`を削除し、ResultsのAdd/Edit/Duplicate/Remove/Manageへ統合する。Population/Graphのshortcutも同じcommand/validatorだけを呼ぶ。
+- [ ] top-level `Sample Annotations...`を削除し、通常導線を`Data -> Sample Sheet...`へ統合する。`Analysis Transforms...`は`Manage Parameter Transforms...`へ改称し、display-only actionをAnalysisから除く。
+- [ ] menu location、label、objectName、enabled/visible state、tooltip、keyboard access、project/pipeline非変更をGUI testする。
+
+#### Increment 2: 共通Parameter Catalog
+
+- [ ] acquired channelとderived outputをstable parameter IDで表すGUI非依存catalog/resolverを追加する。display name、kind、unit/source provenance、definition/expression、inputs、sample applicability、available/missing/stale/error/not-run、structured diagnosticを保持する。
+- [ ] catalogをX/Y axis、Channel/Parameter Information、Gate、Transform、Results Statistic、simple Overlayのparameter候補へ供給する。widgetごとの独自listを作らない。
+- [ ] acquired順+derived display順を決定的に維持し、同名別ID、missing input、cycle、sample差、stale/errorでもentryを隠さず理由を表示する。
+- [ ] definition追加・編集・run/failure・project reload後にselector/statusを更新し、現在のstable IDを維持できない場合は先頭channelへsilent fallbackしない。
+- [ ] Parameters画面で`Parameter | Type | Source | Expression | Unit | Status`を表示し、FCS raw metadataはread-only detailとして保持する。
+
+#### Increment 3: canonical processed display request/result
+
+- [ ] immutable project/sample snapshot、revision、Population、X/Y parameter/transform ID、plot type、display sampling policyを持つGUI非依存request/result APIを追加する。authoritative `ExecutionReport`へmutable GUI cacheを埋め込まない。
+- [ ] coreでraw -> compensation -> derived -> transform -> full-resolution membership -> population selection -> display preparation/downsampleの順に実行し、Qtでderived columnや科学計算を再実装しない。
+- [ ] 通常plotの科学座標源をraw `_event_data`からcanonical processed resultへ切り替える。failure時にrawへfallbackしてcurrent表示せず、last-valid stale/error bannerまたはnon-success placeholderを使う。
+- [ ] current-sample schedulerのdebounce/latest-wins/revision check/atomic adoptionを維持し、obsolete result、project replace、window close、worker exceptionをtestする。
+- [ ] known compensated+derived+transformed values、zero events、NaN、missing input/population、downsample不変性、raw immutability、preview/batch/CLI一致をtestする。
+
+#### Increment 4: Derived Parameterの全GUI接続
+
+- [ ] derived outputをX/Y軸で選択し、synthetic ratioを正しい座標でplotできるようにする。定義直後はnot-run/staleとして見え、run後にcurrentへ更新し、errorでもentryを消さない。
+- [ ] derived軸上でrectangle/polygon/range gateを作成・編集し、GUI preview、authoritative batch、CLI/Pythonのmembership/count/frequencyを一致させる。
+- [ ] 同じderived stable IDをTransform、mean/median Statistic、compatible simple overlay、exportで使用し、save/reload後も同じID・unit・provenanceを解決する。
+- [ ] derived definitionの編集・削除前にderived dependency、transform、gate、statistic、view参照を列挙する。参照中はblockまたは明示的dependency-aware operationを要求し、silent cascade deleteしない。
+
+#### Increment 5: transform authoringの一本化とlegacy migration
+
+- [ ] 軸に`Linear | Log10 | Asinh | Logicle | Custom...`の一つのtransform selectorだけを表示し、正式なimmutable/versioned `TransformSpec` registryと同じproject commandを使う。別のlegacy display transform計算を新規作成に使わない。
+- [ ] quick optionはparameter/settingsが完全一致する定義をreuseし、なければ新規versionを作る。plot axisと新規gateは同じtransform IDまたは明示されたidentity bindingを保存し、events、gate coordinates、membership、ticksで一度だけ適用する。
+- [ ] 参照中definitionはin-place変更せずduplicate/version作成と明示的gate/view migration previewを使う。compensation/derived後のcanonical inputで差分を評価する。
+- [ ] legacy `x_scale`/`y_scale`は読み込み可能にし、`Legacy Log10/Asinh`と表示して、geometry/membershipを維持する明示的migrationを提供する。legacy Logicle approximationをformal Logicleへsilent変換しない。
+- [ ] plot transform変更でnative compensated/derived domainのmean/medianが変化しないことをtestする。transformed statisticは`StatisticSpec`でvalue spaceとtransform IDを明示した場合だけ許可する。
+
+#### Increment 6: Results StatisticsとSample Sheetの最終統合
+
+- [ ] ResultsだけでAdd/Edit/Duplicate/Remove/Manage Statisticを完結し、Parameter Catalogからacquired/derivedを選択する。Events/%Parent/%Total常設列とnamed/exportable StatisticSpecを区別する。
+- [ ] Sample Sheetを`Sample ID | File | Sample name | Title | annotation columns...`へ拡張し、Columns、Add Annotation Column、CSV import、paste、find/replace、fill series、Undo/Redo、type/provenance diagnosticを一画面で提供する。
+- [ ] FCS keyword/file/nameはread-only、Titleはworkspace `sample_title`、その他はtyped workspace/imported annotationとして既存core commandを使い、raw FCS metadata/eventsを変更しない。
+- [ ] `sample_title`変更はdisplay/exportだけ、Group rule参照annotation変更は影響assignment/resultをstale化、未参照annotation変更はanalysis revisionを変えないdependency-aware invalidationを実装する。
+- [ ] save/reload、GUI preview、Run Pipeline、CLI/export、annotation/group resolutionの一致と、cancel/invalid import/raw immutabilityをtestする。
+
+#### Increment 7: Advanced Overlay end-to-end（科学的use case確定後のみ）
+
+- [ ] Samples paneの通常overlayで不足する科学的workflowを先に文書化する。初期advanced source差分はsample、Population、label、style、visibility、orderへ限定し、active plotのparameter、transform、unit、plot type、range、bins、normalizationを全sourceで共有する。
+- [ ] 異なるchannel IDを比較する場合は明示的canonical parameter mappingを使う。sample別calibrationは共通unitへの変換として別定義し、per-layer arbitrary parameter/linear-log混在を許可しない。
+- [ ] simple/advanced sourceを一つのresolverで統合し、同一revisionのmembership、semantic parameter、unit、transform、dimensionality、binning/normalization compatibilityを検証する。invalid required sourceをpartial successやzero eventsへ変換しない。
+- [ ] persisted advanced sourceをlive layer/legendへ実接続し、simple controlsとの双方向同期、save/reload、GUI/PNG/SVG/PDF/headless exportのsource順/style/provenance一致を実装する。
+- [ ] dialog stateやsidecarだけでなく、実際のlive plotted layer/dataを検証するE2E testが通った後だけcapability guardを外す。
+
+#### Phase B7.4 必須受け入れtest
+
+- [ ] Derived ParameterがParameters、X/Y、Gate、Transform、Statistic、simple Overlay、exportで同じstable IDとして利用でき、reload後のCLI/Python結果と一致する。
+- [ ] GUI plotがcanonical compensation/derived/transform済みdataを使用し、raw fallback、double transform、stale-as-current、display-downsampled scientific resultがない。
+- [ ] transform authoring pathが一つで、新規gateの座標・membership・tickと同じdefinitionを使い、legacy migrationが固定membership fixtureを維持する。
+- [ ] Statistics管理がResultsへ、title/annotation管理がSample Sheetへ、display操作がPlot/Viewへ整理され、重複entry pointが別modelを作らない。
+- [ ] title、参照annotation、未参照annotationのinvalidationがdependencyどおりで、raw FCS bytes/eventsは不変である。
+- [ ] Advanced Overlayはlive render/save/reload/export E2E完了までdisabled/hiddenで、既存保存definitionを失わない。
+- [ ] 全GUI testがstable objectNameとstrict callback handlingを使い、終了時にQThreadが残らない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

@@ -18,19 +18,24 @@ Implement only one numbered increment from this guide per LLM/Codex run. Do not 
 model/schema work, source-selection GUI, full style editing, and renderer integration in
 one run.
 
-## Completed B7.1 boundary and B7.2 follow-up
+## B7.1 foundation and post-completion audit correction
 
-Phase B7.1 is complete. Its checked history covers the typed cross-sample source and
-presentation models, compatibility resolver, generic source/presentation editors,
-definition-only Undo/Redo, renderer/export reuse, persistence, provenance, and tests.
+The checked B7.1 history covers typed cross-sample source and presentation models,
+compatibility resolution, generic editors, definition-only Undo/Redo, persistence,
+provenance, export metadata, and their focused tests.
 
-`Overlay Sources...` may remain as the advanced source configuration editor for explicit
-Population, axis, transform, order, visibility, and detailed source-style combinations.
-`Plot Presentation...` may remain as the full presentation editor. Routine manual overlay
-checkboxes/colors, Population colors, and plot appearance quick actions belong to Phase
-B7.2's integrated Samples/Gate hierarchy/plot-area UI; see
-[`integrated-overlay-controls-and-plot-appearance.md`](integrated-overlay-controls-and-plot-appearance.md).
-B7.1 completion does not mean those integrated daily-operation paths are complete.
+A later static end-to-end audit found that the normal live plot does **not** consume the
+persisted `view["overlay_sources"]` list. `MainWindow._render_manual_overlays()` constructs
+layers from Samples-pane manual and comparison selections instead. The advanced editor
+therefore changes and saves a definition that is not the source of live plot layers.
+Metadata/round-trip tests do not establish live renderer integration.
+
+Until Phase B7.4 supplies live-layer, reload, and export E2E evidence, the advanced action
+must be disabled and labelled `(Not implemented)` in development/alpha builds, hidden in
+release builds, and moved from Analysis to Plot/View. Existing persisted definitions are
+preserved unchanged. See
+[`analysis-workflow-integration.md`](analysis-workflow-integration.md). Routine manual
+overlay through the Samples-pane `Ov` controls remains the supported workflow.
 
 ## Inspect first
 
@@ -271,6 +276,12 @@ value into every existing view or modify scientific definitions.
 
 ## Source-selection GUI
 
+This section records the B7.1 editor target. It is not an authorization to expose the
+current editor while its sources are absent from live rendering. Phase B7.4 further
+restricts a future enabled advanced editor to a common active-plot parameter/transform
+coordinate; arbitrary per-layer scientific axes require a separately documented
+canonical mapping/calibration design.
+
 Provide a stable-ID-driven editor with:
 
 - source add from sample and Population hierarchy;
@@ -403,6 +414,10 @@ supported style.
 
 ## Required tests
 
+The tests below are necessary model/editor/export tests. In addition, Phase B7.4 requires
+an E2E assertion over actual live plotted layers/data. A dialog state, project JSON, or
+metadata sidecar assertion cannot satisfy that renderer acceptance test.
+
 - Overlay at least two populations from different samples.
 - Resolve correct axes by stable channel identity when sample channel order differs.
 - Never silently fallback for ambiguous, missing, or incompatible channels/transforms.
@@ -464,6 +479,10 @@ without starting GUI work.
 - Rendering downsampling and all style settings remain scientifically inert.
 - Existing B6 plot types and B7 membership-based overlays/backgating remain compatible.
 - One increment per agent run is preserved.
+
+The advanced GUI action remains unavailable until persisted source edits also satisfy the
+Phase B7.4 live renderer, simple/advanced synchronization, reload, and GUI/headless export
+acceptance criteria.
 
 ## Verification
 

@@ -14,6 +14,14 @@ Provide three connected user workflows without creating a second analysis pipeli
 The project file and the GUI-independent runner are authoritative. The Qt UI edits
 persisted definitions, requests the runner, and renders returned values only.
 
+> **Phase B7.4 follow-up:** Increment 1 completed the title-only Sample Sheet, while the
+> older Sample Annotations dialog exposes arbitrary `AnnotationSpec` values separately.
+> The normal GUI must combine them into one Sample Sheet with read-only FCS columns,
+> editable Title, and typed workspace/imported annotation columns. The underlying model
+> remains `AnnotationSpec`; this is a UI and dependency-invalidation integration, not a
+> second metadata format. See
+> [`analysis-workflow-integration.md`](analysis-workflow-integration.md).
+
 ## Inspect first
 
 - `AGENTS.md`, `specs.md` sections `S02`, `S09`, `S11`, and `S14`
@@ -111,6 +119,12 @@ subsequent input cells. Cancel must leave project state unchanged.
 Use stable `objectName` values for the table, title column, import action, and diagnostic
 surface. Update Sample Browser, Results, legends, and export labels through one resolved
 display-name helper, while preserving stable IDs in tooltips/sidecars.
+
+The Phase B7.4 extension makes this the sole normal annotation-editing surface. It adds
+typed editable workspace/imported columns and column/provenance management inside Sample
+Sheet; FCS keyword columns remain read-only. `sample_title` changes are display/export
+only. Other annotation edits invalidate analysis only when a Group membership/binding
+rule actually references the changed key.
 
 ### Tests
 

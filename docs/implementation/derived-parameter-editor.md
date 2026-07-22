@@ -8,6 +8,15 @@ ToDo: `Phase A2`
 Make derived parameters safe, dependency-ordered, visible to downstream stages,
 and editable in the GUI without hiding evaluation failures.
 
+> **GUI integration follow-up:** Phase A2 completed the core stage, persisted editor,
+> preview, and downstream headless identity contract. It did not make derived outputs
+> available to the normal X/Y selector or live plot, whose current inputs are acquired
+> `sample.info.channels` and raw `_event_data`. The shared Parameter Catalog and canonical
+> processed display path are unfinished Phase B7.4 work. Read
+> [`analysis-workflow-integration.md`](analysis-workflow-integration.md) before changing
+> any selector or plot path. A dialog/save-load test is not evidence that a derived
+> parameter is usable end to end.
+
 ## Inspect first
 
 - `src/flowdesk_core/derived_parameters.py`
@@ -214,6 +223,11 @@ not silently reinterpret it.
   processing and are never converted into NaN by a stored failure policy.
 - A derived channel can be transformed, gated, reported, and exported by stable ID.
 - Save/reload/CLI produces the same values and diagnostics.
+
+Phase B7.4 adds the user-workflow acceptance tests: the same stable derived output ID must
+appear in Parameter Information, X/Y axes, transforms, gates, Results statistics, simple
+compatible overlays, and export; its live plot must use the canonical compensated and
+derived stage rather than a Qt calculation or raw-event fallback.
 
 ## Confirmed persistence and CLI diagnostic contract
 
