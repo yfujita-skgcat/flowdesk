@@ -1405,6 +1405,7 @@ class PipelineRunner:
             invalid_value_policy=definition.get(
               "invalid_value_policy", "emit_nan_with_warning"
             ),
+            non_finite_policy=definition.get("non_finite_policy", "strict"),
             legacy_source_stage_policy=definition.get(
               "legacy_source_stage_policy"
             ),

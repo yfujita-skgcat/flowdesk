@@ -439,6 +439,10 @@
             "emit_nan_with_warning"
           ]
         },
+        "non_finite_policy": {
+          "enum": ["strict", "exclude_invalid"],
+          "default": "strict"
+        },
         "notes": { "type": "string" }
       },
       "allOf": [

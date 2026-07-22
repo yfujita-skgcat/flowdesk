@@ -364,6 +364,23 @@ class ResultsWorkspace(QWidget):
             0,
             "unit=" + str(statistic_result.unit or "")
             + "; undefined_reason=" + str(statistic_result.undefined_reason or "")
+            + "; n_total=" + str(
+              statistic_result.n_total
+              if statistic_result.n_total is not None else ""
+            )
+            + "; n_valid=" + str(
+              statistic_result.n_valid
+              if statistic_result.n_valid is not None else ""
+            )
+            + "; n_invalid=" + str(
+              statistic_result.n_invalid
+              if statistic_result.n_invalid is not None else ""
+            )
+            + "; invalid_fraction=" + str(
+              statistic_result.invalid_fraction
+              if statistic_result.invalid_fraction is not None else ""
+            )
+            + "; non_finite_policy=" + statistic_result.non_finite_policy
             + "; revision=" + str(statistic_row.revision),
           )
         item.addChild(statistic_item)

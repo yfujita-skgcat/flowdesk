@@ -518,6 +518,11 @@ def _validate_current_derived_parameters(definitions: Any) -> None:
       raise ManifestValidationError(
         f"derived parameter {parameter_id!r} has invalid failure policy"
       )
+    non_finite_policy = definition.get("non_finite_policy", "strict")
+    if non_finite_policy not in {"strict", "exclude_invalid"}:
+      raise ManifestValidationError(
+        f"derived parameter {parameter_id!r} has invalid non_finite_policy"
+      )
     source_stage = definition.get("source_stage")
     if source_stage not in {"raw", "compensated", "transformed"}:
       raise ManifestValidationError(

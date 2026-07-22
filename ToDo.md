@@ -781,6 +781,7 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 
 - [x] `StatisticSpec.non_finite_policy`（`strict`/`exclude_invalid`）をschema、manifest validator、pipeline、Statistics Editorへ接続し、persisted pipelineではstrictを既定にする。
 - [x] `StatisticResult`とQC-aware statistic exportへvalid/invalid event count、fraction、policyを追加する。旧QC情報なしの直接exportは従来headerを維持する。
+- [x] `DerivedParameterSpec`にも`non_finite_policy`を保存し、Derived Parameter Editor、schema、manifest validator、headless parserでstableにround-tripする（derived evaluation時のpolicy適用は未完了）。
 - [x] 極端なLog10 viewportの逆変換overflow warningを表示計算に限定して抑制し、解析値を変更しないfixtureを追加する。
 
 #### Phase B7.4 必須受け入れtest

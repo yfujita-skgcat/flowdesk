@@ -565,6 +565,7 @@ class DerivedParameterSpec:
   invalid_value_policy: DerivedFailurePolicy = (
     DerivedFailurePolicy.EMIT_NAN_WITH_WARNING
   )
+  non_finite_policy: StatisticNonFinitePolicy = "strict"
   legacy_source_stage_policy: Literal["reject"] | None = None
   notes: str = ""
 
@@ -603,6 +604,10 @@ class DerivedParameterSpec:
         f"expected one of: {choices}"
       ) from exc
     object.__setattr__(self, "invalid_value_policy", policy)
+    if self.non_finite_policy not in {"strict", "exclude_invalid"}:
+      raise ValueError(
+        f"invalid derived non_finite_policy {self.non_finite_policy!r}"
+      )
 
   @property
   def output_id(self) -> str:

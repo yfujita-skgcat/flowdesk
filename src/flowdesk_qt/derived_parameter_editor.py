@@ -110,12 +110,19 @@ class DerivedParameterEditorDialog(QDialog):
       "fail_sample",
       "fail_run",
     ])
+    self._nonfinite_combo = QComboBox()
+    self._nonfinite_combo.setObjectName("derivedParameterNonFinitePolicyCombo")
+    self._nonfinite_combo.addItem("Strict (report invalid events)", "strict")
+    self._nonfinite_combo.addItem(
+      "Exclude invalid values explicitly", "exclude_invalid"
+    )
     form.addRow("Definition ID:", self._id_edit)
     form.addRow("Name:", self._name_edit)
     form.addRow("Output channel ID:", self._output_id_edit)
     form.addRow("Unit:", self._unit_edit)
     form.addRow("Source stage:", self._source_combo)
     form.addRow("Failure policy:", self._policy_combo)
+    form.addRow("Non-finite policy:", self._nonfinite_combo)
 
     self._expression_edit = QPlainTextEdit()
     self._expression_edit.setObjectName("derivedParameterExpressionEdit")
@@ -195,6 +202,7 @@ class DerivedParameterEditorDialog(QDialog):
       "source_stage": "compensated",
       "input_parameters": [],
       "invalid_value_policy": "emit_nan_with_warning",
+      "non_finite_policy": "strict",
       "notes": "",
     }
 
@@ -271,6 +279,10 @@ class DerivedParameterEditorDialog(QDialog):
       self._policy_combo.setCurrentText(
         str(definition.get("invalid_value_policy", "emit_nan_with_warning"))
       )
+      policy_index = self._nonfinite_combo.findData(
+        definition.get("non_finite_policy", "strict")
+      )
+      self._nonfinite_combo.setCurrentIndex(max(0, policy_index))
       self._expression_edit.setPlainText(str(definition.get("expression", "")))
       self._refresh_parameter_widgets(
         set(definition.get("input_parameters", []))
@@ -298,6 +310,7 @@ class DerivedParameterEditorDialog(QDialog):
         if self._inputs_list.item(row).isSelected()
       ],
       "invalid_value_policy": self._policy_combo.currentText(),
+      "non_finite_policy": self._nonfinite_combo.currentData() or "strict",
       "notes": str(original.get("notes", "")),
     })
     if original["source_stage"] != "transformed":
@@ -337,6 +350,7 @@ class DerivedParameterEditorDialog(QDialog):
       output_label=definition.get("output_label"),
       unit=definition.get("unit"),
       invalid_value_policy=definition["invalid_value_policy"],
+      non_finite_policy=definition.get("non_finite_policy", "strict"),
       legacy_source_stage_policy=definition.get("legacy_source_stage_policy"),
       notes=definition.get("notes", ""),
     )

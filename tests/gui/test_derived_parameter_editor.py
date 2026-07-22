@@ -81,6 +81,7 @@ def test_editor_persists_all_fields_and_inserts_parameter(qapp) -> None:
       "source_stage": "raw",
       "input_parameters": ["signal", "reference"],
       "invalid_value_policy": "fail_run",
+      "non_finite_policy": "strict",
       "notes": "",
     }]
   finally:
