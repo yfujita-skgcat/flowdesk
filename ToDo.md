@@ -795,7 +795,7 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 - [x] transform authoring pathが一つで、新規gateの座標・membership・tickと同じdefinitionを使い、legacy migrationが固定membership fixtureを維持する。
 - [x] Statistics管理がResultsへ、title/annotation管理がSample Sheetへ、display操作がPlot/Viewへ整理され、重複entry pointが別modelを作らない。
 - [x] title、参照annotation、未参照annotationのinvalidationがdependencyどおりで、raw FCS bytes/eventsは不変である。
-- [x] Advanced Overlayはlive render/save/reload/export E2E完了までdisabled/hiddenで、既存保存definitionを失わない。
+- [x] Advanced Overlayはlive render/save/reload/export E2E完了後にcapability guardを解除し、visible incompatible sourceをblockしつつ既存保存definitionを失わない。
 - [x] 全GUI testがstable objectNameとstrict callback handlingを使い、終了時にQThreadが残らない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
