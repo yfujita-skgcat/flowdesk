@@ -14,8 +14,10 @@ from PySide6.QtCore import (
   Qt,
 )
 from PySide6.QtWidgets import (
+  QApplication,
   QDialog,
   QDialogButtonBox,
+  QFileDialog,
   QHBoxLayout,
   QInputDialog,
   QLineEdit,
@@ -192,8 +194,28 @@ class SampleSheetModel(QAbstractTableModel):
     self._annotation_columns = tuple(
       value for value in annotation_columns(self._annotations)
       if value != "sample_title"
-    )
+      )
     self.endResetModel()
+
+  def replace_text(self, old: str, new: str) -> None:
+    """Replace text in editable titles/annotations as one undoable change."""
+    if not old:
+      return
+    self._remember()
+    self._annotations = tuple(
+      AnnotationSpec(
+        sample_id=item.sample_id,
+        keyword=item.keyword,
+        value=(
+          str(item.value).replace(old, new)
+          if item.source != "fcs" and item.value is not None
+          else item.value
+        ),
+        source=item.source,
+      )
+      for item in self._annotations
+    )
+    self.layoutChanged.emit()
 
   def sort(self, column: int, order=Qt.SortOrder.AscendingOrder) -> None:
     """Sort rows by display value while retaining stable IDs and annotations."""
@@ -307,6 +329,24 @@ class SampleSheetDialog(QDialog):
     add_column.setObjectName("sampleSheetAddAnnotationColumnButton")
     add_column.clicked.connect(self._on_add_annotation_column)
     self._columns_button = add_column
+    paste = QPushButton("Paste")
+    paste.setObjectName("sampleSheetPasteButton")
+    paste.clicked.connect(self._on_paste)
+    import_csv = QPushButton("Import CSV…")
+    import_csv.setObjectName("sampleSheetImportCsvButton")
+    import_csv.clicked.connect(self._on_import_csv)
+    fill = QPushButton("Fill Titles…")
+    fill.setObjectName("sampleSheetFillSeriesButton")
+    fill.clicked.connect(self._on_fill_titles)
+    replace = QPushButton("Find/Replace…")
+    replace.setObjectName("sampleSheetFindReplaceButton")
+    replace.clicked.connect(self._on_replace)
+    undo = QPushButton("Undo")
+    undo.setObjectName("sampleSheetUndoButton")
+    undo.clicked.connect(self._model.undo)
+    redo = QPushButton("Redo")
+    redo.setObjectName("sampleSheetRedoButton")
+    redo.clicked.connect(self._model.redo)
     buttons = QDialogButtonBox(
       QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
     )
@@ -317,6 +357,12 @@ class SampleSheetDialog(QDialog):
     layout.addWidget(self._filter_edit)
     actions = QHBoxLayout()
     actions.addWidget(add_column)
+    actions.addWidget(paste)
+    actions.addWidget(import_csv)
+    actions.addWidget(fill)
+    actions.addWidget(replace)
+    actions.addWidget(undo)
+    actions.addWidget(redo)
     actions.addStretch(1)
     layout.addLayout(actions)
     layout.addWidget(self._table)
@@ -351,6 +397,31 @@ class SampleSheetDialog(QDialog):
       self._model.add_annotation_column(keyword)
     except ValueError:
       return
+
+  def _on_paste(self) -> None:
+    self._model.paste_tsv(QApplication.clipboard().text())
+
+  def _on_import_csv(self) -> None:
+    path, _ = QFileDialog.getOpenFileName(
+      self, "Import Sample Annotations", "", "CSV files (*.csv);;All files (*)"
+    )
+    if not path:
+      return
+    with open(path, encoding="utf-8", newline="") as handle:
+      self._model.import_csv_text(handle.read())
+
+  def _on_fill_titles(self) -> None:
+    prefix, accepted = QInputDialog.getText(self, "Fill Titles", "Prefix:")
+    if accepted and prefix:
+      self._model.fill_title_series(prefix, 1)
+
+  def _on_replace(self) -> None:
+    old, accepted = QInputDialog.getText(self, "Find/Replace", "Find:")
+    if not accepted or not old:
+      return
+    new, accepted = QInputDialog.getText(self, "Find/Replace", "Replace with:")
+    if accepted:
+      self._model.replace_text(old, new)
 
 
 def _to_specs(

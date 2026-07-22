@@ -750,8 +750,8 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 
 #### Increment 6: Results StatisticsとSample Sheetの最終統合
 
-- [ ] ResultsだけでAdd/Edit/Duplicate/Remove/Manage Statisticを完結し、Parameter Catalogからacquired/derivedを選択する。Events/%Parent/%Total常設列とnamed/exportable StatisticSpecを区別する。
-- [ ] Sample Sheetを`Sample ID | File | Sample name | Title | annotation columns...`へ拡張し、Columns、Add Annotation Column、CSV import、paste、find/replace、fill series、Undo/Redo、type/provenance diagnosticを一画面で提供する。
+- [x] ResultsだけでAdd/Edit/Duplicate/Remove/Manage Statisticを完結し、Parameter Catalogからacquired/derivedを選択する。Events/%Parent/%Total常設列とnamed/exportable StatisticSpecを区別する。
+- [x] Sample Sheetを`Sample ID | File | Sample name | Title | annotation columns...`へ拡張し、Columns、Add Annotation Column、CSV import、paste、find/replace、fill series、Undo/Redo、type/provenance diagnosticを一画面で提供する。
 - [x] FCS keyword/file/nameはread-only、Titleはworkspace `sample_title`、その他はtyped workspace/imported annotationとして既存core commandを使い、raw FCS metadata/eventsを変更しない。
 - [x] `sample_title`変更はdisplay/exportだけ、Group rule参照annotation変更は影響assignment/resultをstale化、未参照annotation変更はanalysis revisionを変えないdependency-aware invalidationを実装する。
 - [ ] save/reload、GUI preview、Run Pipeline、CLI/export、annotation/group resolutionの一致と、cancel/invalid import/raw immutabilityをtestする。
