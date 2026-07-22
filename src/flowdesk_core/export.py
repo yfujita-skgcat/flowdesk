@@ -301,3 +301,45 @@ def write_statistic_results(
     raise ExportError(f"Failed to write export file: {path}") from exc
   except Exception as exc:
     raise ExportError(f"Failed to write export file: {path}") from exc
+
+
+def write_statistic_results_wide(
+  results: list[StatisticResult],
+  path: str | Path,
+  delimiter: str = "\t",
+  nan_policy: NaNPolicy = "string_nan",
+) -> None:
+  """Write one row per sample/population with one value column per statistic.
+
+  The long-form :func:`write_statistic_results` remains the lossless export for
+  status and QC metadata.  This view is intended for spreadsheet-style matrix
+  analysis; column names use stable statistic IDs and duplicate target rows do
+  not overwrite one another.
+  """
+  statistic_ids = list(dict.fromkeys(result.statistic_id for result in results))
+  rows: dict[tuple[str, str], dict[str, StatisticResult]] = {}
+  for result in results:
+    rows.setdefault((result.sample_id, result.population_id), {})[
+      result.statistic_id
+    ] = result
+  header = ["sample_id", "population_id"] + statistic_ids
+  try:
+    out_path = Path(path)
+    with out_path.open("w", encoding="utf-8", newline="") as fh:
+      writer = csv.writer(fh, delimiter=delimiter)
+      writer.writerow(header)
+      for sample_id, population_id in sorted(rows):
+        values = rows[(sample_id, population_id)]
+        writer.writerow([
+          sample_id,
+          population_id,
+          *[
+            _format_value(
+              values[statistic_id].value if statistic_id in values else None,
+              nan_policy,
+            )
+            for statistic_id in statistic_ids
+          ],
+        ])
+  except OSError as exc:
+    raise ExportError(f"Failed to write export file: {path}") from exc

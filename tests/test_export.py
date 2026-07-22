@@ -17,6 +17,7 @@ from flowdesk_core.export import (
   write_population_results_csv,
   write_population_results_wide,
   write_statistic_results,
+  write_statistic_results_wide,
 )
 from flowdesk_core.models import ExportRecord, PopulationResult, StatisticResult
 
@@ -365,6 +366,23 @@ def test_write_statistic_results_values(tmp_path: Path) -> None:
   assert rows[3][5] == "NaN"
   assert rows[3][7] == "empty"
   assert rows[3][8] == "empty_population"
+
+
+def test_write_statistic_results_wide_keeps_population_rows_and_stable_columns(
+  tmp_path: Path,
+) -> None:
+  results = [
+    StatisticResult("s1", "mean", "all_events", "mean", 3.0),
+    StatisticResult("s1", "mean", "live", "mean", 7.0),
+    StatisticResult("s1", "count", "live", "count", 2),
+  ]
+  out = tmp_path / "wide.tsv"
+  write_statistic_results_wide(results, out)
+  with out.open(encoding="utf-8") as fh:
+    rows = list(csv.reader(fh, delimiter="\t"))
+  assert rows[0] == ["sample_id", "population_id", "mean", "count"]
+  assert rows[1] == ["s1", "all_events", "3.0", "NaN"]
+  assert rows[2] == ["s1", "live", "7.0", "2"]
 
 
 def test_write_statistic_results_csv_delimiter(tmp_path: Path) -> None:

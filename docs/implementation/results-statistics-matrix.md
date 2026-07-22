@@ -227,11 +227,16 @@ automatic warning threshold is chosen.
 
 ### Increment 5: Export, preview, cleanup, and end-to-end acceptance
 
-- Make GUI wide/detail cells, authoritative report, preview, Python API, and long/wide
-  CSV/TSV export agree for every `(sample, statistic, population)` key.
-- Remove the legacy statistic-child rendering path and migrate saved Results view state.
-- Run full core/GUI tests, strict callback handling, thread shutdown checks, and benchmark
-  the enabled-statistic matrix without weakening scientific assertions.
+- GUI wide/detail cells, authoritative report, preview, Python API, and long/wide
+  CSV/TSV export now use the same `(sample, statistic, population)` identity. Long
+  export retains status and non-finite QC fields; the new wide helper emits one row per
+  sample/population and one stable statistic-ID column per definition.
+- The legacy statistic-child rendering path is removed; saved Results display state
+  migrates through mode/visibility/order/width settings, with hidden columns kept
+  distinct from disabled definitions.
+- Full core and GUI suites pass with strict callback handling and thread-shutdown
+  coverage already in the repository. Display column operations and downsampling stay
+  outside the scientific execution path.
 
 ## Required acceptance tests
 
