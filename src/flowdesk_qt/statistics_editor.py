@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -832,6 +833,9 @@ class StatisticManagementDialog(QDialog):
         self._table = QTableWidget(0, len(self._HEADERS))
         self._table.setObjectName("statisticManagementTable")
         self._table.setHorizontalHeaderLabels(list(self._HEADERS))
+        self._table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive
+        )
         self._table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )

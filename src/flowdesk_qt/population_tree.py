@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import PopulationResult, StatisticResult
 from flowdesk_qt.diagnostics import invoke_callback
+from flowdesk_qt.display_format import format_display_number, format_percentage
 
 # ---------------------------------------------------------------------------
 # PopulationTree widget
@@ -162,10 +163,8 @@ class PopulationTree(QWidget):
 
             self._table.setItem(row, 2, QTableWidgetItem(r.sample_id))
             self._table.setItem(row, 3, QTableWidgetItem(str(r.event_count)))
-            freq_parent = (
-                f"{r.frequency_of_parent:.4f}" if r.frequency_of_parent is not None else "-"
-            )
-            freq_total = f"{r.frequency_of_total:.4f}" if r.frequency_of_total is not None else "-"
+            freq_parent = format_percentage(r.frequency_of_parent)
+            freq_total = format_percentage(r.frequency_of_total)
             self._table.setItem(row, 4, QTableWidgetItem(freq_parent))
             self._table.setItem(row, 5, QTableWidgetItem(freq_total))
 
@@ -189,8 +188,8 @@ class PopulationTree(QWidget):
 
             value_str = "-"
             if r.value is not None:
-                if isinstance(r.value, float):
-                    value_str = f"{r.value:.6g}"
+                if isinstance(r.value, (float, int)):
+                    value_str = format_display_number(r.value)
                 else:
                     value_str = str(r.value)
 
@@ -256,7 +255,7 @@ class PopulationTree(QWidget):
             ]
         )
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
 
         self._status_label = QLabel("No execution results")
@@ -281,7 +280,7 @@ class PopulationTree(QWidget):
         )
         self._statistics_tree.setEditTriggers(QTreeWidget.NoEditTriggers)
         self._statistics_tree.header().setSectionResizeMode(
-            QHeaderView.Stretch
+            QHeaderView.Interactive
         )
 
         stat_box = QGroupBox("Custom Statistics")

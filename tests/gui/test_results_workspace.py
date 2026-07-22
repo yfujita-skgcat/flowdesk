@@ -11,11 +11,19 @@ from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import PopulationResult, StatisticResult
 from flowdesk_core.preview import PreviewReport
+from flowdesk_qt.display_format import format_display_number, format_percentage
 from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
 
 pytestmark = pytest.mark.gui
+
+
+def test_display_format_keeps_integer_digits_and_limits_fraction() -> None:
+  assert format_display_number(123456789.12345) == "123456789.1"
+  assert format_display_number(1234567890.12345) == "1234567890"
+  assert format_percentage(1.0) == "100"
+  assert format_percentage(0.2652) == "26.52"
 
 
 def test_results_workspace_has_explicit_sample_and_all_events_rows(qapp) -> None:
@@ -49,7 +57,7 @@ def test_results_workspace_has_explicit_sample_and_all_events_rows(qapp) -> None
     assert all_events.data(0, Qt.UserRole) == "all_events"
     assert rect.text(0) == "rect_1"
     assert rect.text(1) == "4"
-    assert rect.text(2) == "0.4000"
+    assert rect.text(2) == "40"
   finally:
     workspace.close()
     workspace.deleteLater()
@@ -83,8 +91,8 @@ def test_results_workspace_shows_statistic_under_all_events(qapp) -> None:
     assert all_events.childCount() == 0
     assert workspace.tree().columnCount() == 6
     assert workspace.tree().headerItem().text(4) == "FSC-A mean"
-    assert workspace.tree().headerItem().text(5) == "Population Status"
-    assert all_events.text(3) == "1.0000"
+    assert workspace.tree().headerItem().text(5) == "Status"
+    assert all_events.text(3) == "100"
     assert all_events.text(4) == "123.5"
     assert all_events.text(5) == "current"
     assert all_events.data(0, Qt.UserRole + 1) == "population"
@@ -128,7 +136,7 @@ def test_results_workspace_uses_one_statistic_column_for_multiple_populations(qa
     tree = workspace.tree()
     assert tree.columnCount() == 6
     assert tree.headerItem().text(4) == "FSC-A mean"
-    assert tree.headerItem().text(5) == "Population Status"
+    assert tree.headerItem().text(5) == "Status"
     all_events = tree.topLevelItem(0).child(0)
     rect = all_events.child(0)
     assert all_events.text(4) == "123.5"
@@ -252,7 +260,7 @@ def test_flat_table_uses_same_report_values_without_tree_indentation(qapp) -> No
     assert tree.columnCount() == 7
     assert [tree.headerItem().text(index) for index in range(7)] == [
       "Sample", "Population", "Parent", "Events", "% Parent", "% Total",
-      "Population Status",
+      "Status",
     ]
     assert tree.topLevelItem(1).text(1) == "rect_1"
     assert tree.topLevelItem(1).text(2) == "All Events"

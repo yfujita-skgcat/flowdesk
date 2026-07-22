@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import PopulationResult, StatisticResult
 from flowdesk_qt.diagnostics import invoke_callback
+from flowdesk_qt.display_format import format_display_number, format_percentage
 from flowdesk_qt.results_state import (
   ResultRowState,
   RuntimeResultState,
@@ -52,7 +53,7 @@ class ResultsWorkspace(QWidget):
     "% Parent",
     "% Total",
   ]
-  _STATUS_HEADER = "Population Status"
+  _STATUS_HEADER = "Status"
 
   def __init__(self, parent: QWidget | None = None) -> None:
     super().__init__(parent)
@@ -84,9 +85,9 @@ class ResultsWorkspace(QWidget):
     self._tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     self._tree.currentItemChanged.connect(self._on_selection_changed)
     header = self._tree.header()
-    header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+    header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
     for column in range(1, len(self._HEADERS)):
-      header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+      header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
 
     layout = QVBoxLayout(self)
     self._mode_selector = QComboBox()
@@ -269,9 +270,9 @@ class ResultsWorkspace(QWidget):
       self._tree.setHeaderLabels(headers)
       self._set_header_tooltips()
       header = self._tree.header()
-      header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+      header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
       for column in range(1, len(headers)):
-        header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
       self._apply_statistic_column_widths()
       for sample_id, sample_name in self._samples:
         sample_item = QTreeWidgetItem(
@@ -359,10 +360,10 @@ class ResultsWorkspace(QWidget):
         self._apply_statistic_cell_state(item, sample_id, population_id)
         self._tree.addTopLevelItem(item)
     header = self._tree.header()
-    header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-    header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+    header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+    header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
     for column in range(2, len(headers)):
-      header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+      header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
     self._apply_statistic_column_widths(base_column=6)
 
   def _population_item(
@@ -507,7 +508,7 @@ class ResultsWorkspace(QWidget):
       statistic_result = result if isinstance(result, StatisticResult) else None
       value = (
         "-" if statistic_result is None or statistic_result.value is None
-        else str(statistic_result.value)
+        else format_display_number(statistic_result.value)
       )
       values.append(value)
     return values
@@ -590,11 +591,11 @@ class ResultsWorkspace(QWidget):
     ]
     self._tree.setColumnCount(len(headers))
     self._tree.setHeaderLabels(headers)
-    self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-    self._tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-    self._tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+    self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+    self._tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+    self._tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
     for column in range(3, len(headers)):
-      self._tree.header().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+      self._tree.header().setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
     if self._result_state is None:
       return
     sample_names = dict(self._samples)
@@ -612,7 +613,8 @@ class ResultsWorkspace(QWidget):
         sample_names.get(row.key.sample_id, row.key.sample_id),
         self._population_names.get(row.key.population_id, row.key.population_id),
         result.statistic_name if result is not None else row.key.result_id,
-        "-" if result is None or result.value is None else str(result.value),
+        "-" if result is None or result.value is None
+        else format_display_number(result.value),
         "" if result is None else str(result.unit or ""),
         status,
         "" if result is None or result.n_valid is None else str(result.n_valid),
@@ -658,7 +660,7 @@ class ResultsWorkspace(QWidget):
 
   @staticmethod
   def _format_frequency(value: float | None) -> str:
-    return "-" if value is None else f"{value:.4f}"
+    return format_percentage(value)
 
   @classmethod
   def _set_status_color(

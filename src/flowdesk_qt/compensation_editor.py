@@ -284,10 +284,10 @@ class CompensationMatrixEditorDialog(QDialog):
         self._heat_map.verticalHeader().setVisible(True)
         self._heat_map.horizontalHeader().setVisible(True)
         self._heat_map.verticalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
         self._heat_map.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
         heat_layout.addWidget(self._heat_map)
         right_layout.addWidget(heat_group)
@@ -407,7 +407,7 @@ class CompensationMatrixEditorDialog(QDialog):
             "Channel", "Uncompensated", "Compensated",
         ])
         self._preview_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
         preview_layout.addWidget(self._preview_table)
 
@@ -1066,7 +1066,7 @@ class CompensationCalculationEditorDialog(QDialog):
             "Negative Population",
         ])
         self._control_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
+            QHeaderView.ResizeMode.Interactive
         )
         ctrl_layout.addWidget(self._control_table)
 
@@ -1110,7 +1110,7 @@ class CompensationCalculationEditorDialog(QDialog):
             "Outliers",
         ])
         self._diag_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
+            QHeaderView.ResizeMode.Interactive
         )
         diag_layout.addWidget(self._diag_table)
 

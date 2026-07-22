@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import PopulationResult
+from flowdesk_qt.display_format import format_display_number
 
 
 class WorkspaceTree(QWidget):
@@ -142,7 +143,10 @@ class WorkspaceTree(QWidget):
       return {}
     result: dict[tuple[str, str], list[tuple[str, str, str, str]]] = {}
     for statistic in self._report.statistic_results:
-      value = "-" if statistic.value is None else str(statistic.value)
+      value = (
+        "-" if statistic.value is None
+        else format_display_number(statistic.value)
+      )
       result.setdefault((statistic.sample_id, statistic.population_id), []).append(
         (
           statistic.statistic_id,

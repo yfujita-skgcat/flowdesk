@@ -61,7 +61,7 @@ class DiagnosticsPanel(QWidget):
       ["Severity", "Code", "Stage", "Sample", "Message"]
     )
     self._table.setEditTriggers(QTableWidget.NoEditTriggers)
-    self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
 
     self._status_label = QLabel("No diagnostics")
     self._status_label.setObjectName("pipelineDiagnosticsStatusLabel")
