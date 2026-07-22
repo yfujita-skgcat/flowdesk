@@ -80,11 +80,99 @@ def test_results_workspace_shows_statistic_under_all_events(qapp) -> None:
     )
 
     all_events = workspace.tree().topLevelItem(0).child(0)
-    assert all_events.childCount() == 1
-    statistic = all_events.child(0)
-    assert statistic.text(0) == "FSC-A mean"
-    assert statistic.text(3) == "123.5"
-    assert statistic.data(0, Qt.UserRole + 1) == "statistic"
+    assert all_events.childCount() == 0
+    assert workspace.tree().columnCount() == 6
+    assert workspace.tree().headerItem().text(5) == "FSC-A mean"
+    assert all_events.text(3) == "1.0000"
+    assert all_events.text(5) == "123.5"
+    assert all_events.data(0, Qt.UserRole + 1) == "population"
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
+def test_results_workspace_uses_one_statistic_column_for_multiple_populations(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy(
+      {"all_events": None, "rect-1": "all_events"},
+      {"all_events": "All Events", "rect-1": "rect_1"},
+    )
+    workspace.set_report(
+      ExecutionReport(
+        project_id="project",
+        execution_profile_id="default",
+        pipeline_version="test",
+        status="success",
+        population_results=(
+          PopulationResult("sample-1", "all_events", 10, None, 1.0),
+          PopulationResult("sample-1", "rect-1", 4, 0.4, 0.4),
+        ),
+        statistic_results=(
+          StatisticResult(
+            "sample-1", "fsc-mean", "all_events", "mean", 123.5,
+            statistic_name="FSC-A mean",
+          ),
+          StatisticResult(
+            "sample-1", "fsc-mean", "rect-1", "mean", 45.5,
+            statistic_name="FSC-A mean",
+          ),
+        ),
+      )
+    )
+
+    tree = workspace.tree()
+    assert tree.columnCount() == 6
+    assert tree.headerItem().text(5) == "FSC-A mean"
+    all_events = tree.topLevelItem(0).child(0)
+    rect = all_events.child(0)
+    assert all_events.text(5) == "123.5"
+    assert rect.text(5) == "45.5"
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
+def test_results_workspace_column_chooser_and_statistics_detail_share_state(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy({"all_events": None})
+    workspace.set_report(
+      ExecutionReport(
+        project_id="project",
+        execution_profile_id="default",
+        pipeline_version="test",
+        status="success",
+        population_results=(
+          PopulationResult("sample-1", "all_events", 10, None, 1.0),
+        ),
+        statistic_results=(
+          StatisticResult(
+            "sample-1", "fsc-mean", "all_events", "mean", 123.5,
+            unit="AU", statistic_name="FSC-A mean", n_valid=10, n_total=10,
+          ),
+        ),
+      )
+    )
+    assert workspace.statistic_column_visibility() == {"fsc-mean": True}
+    workspace.set_statistic_column_visibility({"fsc-mean": False})
+    assert workspace.tree().columnCount() == 5
+    workspace.set_statistic_column_visibility({"fsc-mean": True})
+    workspace.set_statistic_column_widths({"fsc-mean": 180})
+    assert workspace.statistic_column_widths() == {"fsc-mean": 180}
+    workspace.set_mode("Statistics detail")
+    assert [workspace.tree().headerItem().text(index) for index in range(10)] == [
+      "Sample", "Population", "Statistic", "Value", "Unit", "Status",
+      "n valid", "n total", "Reason", "Revision",
+    ]
+    detail = workspace.tree().topLevelItem(0)
+    assert detail.text(2) == "FSC-A mean"
+    assert detail.text(3) == "123.5"
+    assert detail.text(4) == "AU"
   finally:
     workspace.close()
     workspace.deleteLater()
@@ -160,7 +248,8 @@ def test_flat_table_uses_same_report_values_without_tree_indentation(qapp) -> No
     tree = workspace.tree()
     assert tree.columnCount() == 7
     assert [tree.headerItem().text(index) for index in range(7)] == [
-      "Sample", "Population", "Parent", "Events", "% Parent", "% Total", "Status"
+      "Sample", "Population", "Parent", "Events", "% Parent", "% Total",
+      "Population Status",
     ]
     assert tree.topLevelItem(1).text(1) == "rect_1"
     assert tree.topLevelItem(1).text(2) == "All Events"
@@ -216,18 +305,19 @@ def test_results_status_distinguishes_missing_zero_stale_and_statistic_errors(qa
     missing = all_events.child(1)
     assert zero.text(4) == "zero events"
     assert missing.text(4) == "missing"
-    assert zero.childCount() == 2
-    assert {zero.child(index).text(4) for index in range(2)} == {
-      "undefined", "error"
-    }
+    assert zero.childCount() == 0
+    assert zero.text(5) == "-"
+    assert zero.text(6) == "-"
+    assert "status=undefined" in zero.toolTip(5)
+    assert "status=error" in zero.toolTip(6)
 
     workspace.mark_results_stale()
     stale_item = workspace.tree().topLevelItem(0).child(0)
     assert stale_item.text(4) == "stale"
     assert stale_item.foreground(4).color().name() == "#c62828"
-    stale_stat = stale_item.child(0)
-    assert stale_stat.text(4) == "stale"
-    assert stale_stat.foreground(4).color().name() == "#c62828"
+    stale_stat = stale_item
+    assert stale_stat.text(5) == "-"
+    assert stale_stat.foreground(5).color().name() == "#c62828"
   finally:
     workspace.close()
     workspace.deleteLater()

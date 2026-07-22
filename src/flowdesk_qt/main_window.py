@@ -1209,9 +1209,17 @@ class MainWindow(QMainWindow):
             sample_ids=tuple(sample.id for sample in self._sample_browser.samples()),
             population_ids=tuple(self._population_parent_map()),
             statistic_definitions=tuple(
-                (str(value.get("id")), str(value.get("population_id", "all_events")))
+                (
+                    str(value.get("id")),
+                    str(population_id),
+                    bool(value.get("compute_enabled", True)),
+                )
                 for value in self._statistics
                 if value.get("id")
+                for population_id in value.get(
+                    "population_ids",
+                    [value.get("population_id", "all_events")],
+                )
             ),
         )
         self._mark_results_stale("Gates changed")
@@ -2272,6 +2280,18 @@ class MainWindow(QMainWindow):
                     self._gate_editor.population_display_definitions()
                 ),
             },
+            "results_display_settings": {
+                "mode": self._results_workspace.mode(),
+                "statistic_column_visibility": (
+                    self._results_workspace.statistic_column_visibility()
+                ),
+                "statistic_column_order": list(
+                    self._results_workspace.statistic_column_order()
+                ),
+                "statistic_column_widths": (
+                    self._results_workspace.statistic_column_widths()
+                ),
+            },
         }
 
         return project
@@ -2317,9 +2337,17 @@ class MainWindow(QMainWindow):
                 ),
                 population_ids=tuple(self._population_parent_map()),
                 statistic_definitions=tuple(
-                    (str(value.get("id")), str(value.get("population_id", "all_events")))
+                    (
+                        str(value.get("id")),
+                        str(population_id),
+                        bool(value.get("compute_enabled", True)),
+                    )
                     for value in self._statistics
                     if value.get("id")
+                    for population_id in value.get(
+                        "population_ids",
+                        [value.get("population_id", "all_events")],
+                    )
                 ),
             )
             self._results_workspace.set_result_state(self._result_state)
@@ -2551,6 +2579,27 @@ class MainWindow(QMainWindow):
 
         resolved_samples = resolve_sample_paths(manifest, project_path)
         display = manifest.get("plot_display_settings", {})
+        results_display = manifest.get("results_display_settings", {})
+        if isinstance(results_display, dict):
+            mode = results_display.get("mode")
+            if mode in {"Hierarchy", "Flat table", "Statistics detail"}:
+                self._results_workspace.set_mode(mode)
+            visibility = results_display.get("statistic_column_visibility")
+            if isinstance(visibility, dict):
+                self._results_workspace.set_statistic_column_visibility(
+                    {
+                        str(statistic_id): bool(is_visible)
+                        for statistic_id, is_visible in visibility.items()
+                    }
+                )
+            order = results_display.get("statistic_column_order")
+            if isinstance(order, list):
+                self._results_workspace.set_statistic_column_order(
+                    [str(statistic_id) for statistic_id in order]
+                )
+            widths = results_display.get("statistic_column_widths")
+            if isinstance(widths, dict):
+                self._results_workspace.set_statistic_column_widths(widths)
         self._sample_browser.add_project_samples(resolved_samples)
         integrated_overlay = display.get("integrated_overlay", {})
         if not integrated_overlay:

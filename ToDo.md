@@ -825,9 +825,9 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 
 #### Increment 3: Results wide matrixとQC detail
 
-- [ ] statistic child rowを廃止し、`Sample/Population | Events | % Parent | % Total | Population Status | <Statistic columns...>`へ変更する。mean等の値を割合列へ表示しない。
-- [ ] unassigned、disabled、not run、stale、undefined/error、valid zero、currentをcell単位で区別し、header/cell tooltipへstable ID、parameter、metric、value domain、unit、QC count、reason、revisionを表示する。色だけに依存しない。
-- [ ] standard列固定、横scroll、column chooser、順序/幅/visibility保存とlong-form Statistics Detailを、同じ`StatisticResult` snapshotの表示として実装する。Qtで値を再計算しない。
+- [x] statistic child rowを廃止し、`Sample/Population | Events | % Parent | % Total | Population Status | <Statistic columns...>`へ変更する。mean等の値を割合列へ表示しない。
+- [x] unassigned、disabled、not run、stale、undefined/error、valid zero、currentをcell単位で区別し、header/cell tooltipへstable ID、parameter、metric、value domain、unit、QC count、reason、revisionを表示する。色だけに依存しない。
+- [x] standard列固定、横scroll、column chooser、順序/幅/visibility保存とlong-form Statistics Detailを、同じ`StatisticResult` snapshotの表示として実装する。Qtで値を再計算しない。
 
 #### Increment 4: Population scopeとCompute/Show管理
 

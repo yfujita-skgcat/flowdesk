@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
   QAbstractItemView,
   QComboBox,
   QHeaderView,
+  QMenu,
   QToolButton,
   QTreeWidget,
   QTreeWidgetItem,
@@ -42,6 +43,7 @@ class ResultsWorkspace(QWidget):
     "undefined": "#6a1b9a",
     "missing": "#757575",
     "not run": "#757575",
+    "disabled": "#9e9e9e",
   }
 
   _HEADERS = [
@@ -49,7 +51,7 @@ class ResultsWorkspace(QWidget):
     "Events",
     "% Parent",
     "% Total",
-    "Status",
+    "Population Status",
   ]
 
   def __init__(self, parent: QWidget | None = None) -> None:
@@ -63,6 +65,14 @@ class ResultsWorkspace(QWidget):
     self._results_stale = False
     self._force_all_stale = False
     self._mode = "Hierarchy"
+    self._statistic_columns: list[str] = []
+    self._display_statistic_columns: list[str] = []
+    self._statistic_names: dict[str, str] = {}
+    self._statistic_headers: dict[str, str] = {}
+    self._statistic_header_tooltips: dict[str, str] = {}
+    self._visible_statistic_ids: set[str] | None = None
+    self._statistic_column_order: list[str] = []
+    self._statistic_column_widths: dict[str, int] = {}
     self._callbacks: list[Callable[[str, str, str], None]] = []
     self._add_statistic_callbacks: list[Callable[[str], None]] = []
 
@@ -81,6 +91,7 @@ class ResultsWorkspace(QWidget):
     self._mode_selector = QComboBox()
     self._mode_selector.setObjectName("resultsViewModeSelector")
     self._mode_selector.addItems(["Hierarchy", "Flat table"])
+    self._mode_selector.addItem("Statistics detail")
     self._mode_selector.currentTextChanged.connect(self.set_mode)
     layout.addWidget(self._mode_selector)
     self._add_statistic_button = QToolButton()
@@ -88,6 +99,13 @@ class ResultsWorkspace(QWidget):
     self._add_statistic_button.setText("Add Statistic...")
     self._add_statistic_button.clicked.connect(self._on_add_statistic)
     layout.addWidget(self._add_statistic_button)
+    self._column_button = QToolButton()
+    self._column_button.setObjectName("resultsStatisticColumnsButton")
+    self._column_button.setText("Columns...")
+    self._column_menu = QMenu(self._column_button)
+    self._column_button.setMenu(self._column_menu)
+    self._column_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+    layout.addWidget(self._column_button)
     layout.addWidget(self._tree)
 
   def on_selection_changed(
@@ -176,7 +194,7 @@ class ResultsWorkspace(QWidget):
     return self._mode
 
   def set_mode(self, mode: str) -> None:
-    if mode not in {"Hierarchy", "Flat table"}:
+    if mode not in {"Hierarchy", "Flat table", "Statistics detail"}:
       raise ValueError(f"unknown Results workspace mode: {mode!r}")
     self._mode = mode
     self._rebuild()
@@ -185,23 +203,67 @@ class ResultsWorkspace(QWidget):
     """Return the view tree for stable GUI tests and accessibility tooling."""
     return self._tree
 
+  def statistic_column_visibility(self) -> dict[str, bool]:
+    """Return display-only visibility for dynamic statistic columns."""
+    visible = self._visible_statistic_ids
+    return {
+      statistic_id: visible is None or statistic_id in visible
+      for statistic_id in self._statistic_columns
+    }
+
+  def set_statistic_column_visibility(self, visibility: Mapping[str, bool]) -> None:
+    """Set display-only visibility without changing analysis definitions."""
+    self._visible_statistic_ids = {
+      statistic_id for statistic_id, is_visible in visibility.items()
+      if is_visible
+    }
+    self._rebuild()
+
+  def statistic_column_order(self) -> tuple[str, ...]:
+    return tuple(self._statistic_column_order)
+
+  def set_statistic_column_order(self, order: Sequence[str]) -> None:
+    self._statistic_column_order = list(dict.fromkeys(str(value) for value in order))
+    self._rebuild()
+
+  def statistic_column_widths(self) -> dict[str, int]:
+    return dict(self._statistic_column_widths)
+
+  def set_statistic_column_widths(self, widths: Mapping[str, int]) -> None:
+    self._statistic_column_widths = {
+      str(statistic_id): int(width)
+      for statistic_id, width in widths.items()
+      if int(width) > 0
+    }
+    self._apply_statistic_column_widths()
+
   def _rebuild(self) -> None:
     blocked = self._tree.blockSignals(True)
     try:
       self._tree.clear()
       results = self._results_by_sample()
-      statistics = self._statistics_by_sample_population()
+      self._configure_statistic_columns()
+      self._refresh_column_menu()
+      if self._mode == "Statistics detail":
+        self._rebuild_statistics_detail()
+        return
       if self._mode == "Flat table":
         self._rebuild_flat(results)
         return
-      self._tree.setColumnCount(len(self._HEADERS))
-      self._tree.setHeaderLabels(self._HEADERS)
+      headers = self._result_headers()
+      self._tree.setColumnCount(len(headers))
+      self._tree.setHeaderLabels(headers)
+      self._set_header_tooltips()
       header = self._tree.header()
       header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-      for column in range(1, len(self._HEADERS)):
+      for column in range(1, len(headers)):
         header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+      self._apply_statistic_column_widths()
       for sample_id, sample_name in self._samples:
-        sample_item = QTreeWidgetItem([sample_name, "-", "-", "-", "sample"])
+        sample_item = QTreeWidgetItem(
+          [sample_name, "-", "-", "-", "sample"]
+          + ["-" for _ in self._statistic_columns]
+        )
         self._set_identity(sample_item, "sample", sample_id, sample_id)
         self._tree.addTopLevelItem(sample_item)
 
@@ -210,12 +272,13 @@ class ResultsWorkspace(QWidget):
            if value.key.result_id == "all_events"),
           None,
         )
-        all_item = self._population_item(all_result, sample_id, "all_events")
+        all_item = self._population_item(
+          all_result, sample_id, "all_events", results.get(sample_id, ())
+        )
         sample_item.addChild(all_item)
         self._add_population_children(
           all_item,
           results.get(sample_id, ()),
-          statistics,
           sample_id,
         )
         sample_item.setExpanded(True)
@@ -226,16 +289,18 @@ class ResultsWorkspace(QWidget):
   def _rebuild_flat(
     self, results: Mapping[str, Sequence[ResultRowState]]
   ) -> None:
-    self._tree.setColumnCount(7)
-    self._tree.setHeaderLabels([
+    headers = [
       "Sample",
       "Population",
       "Parent",
       "Events",
       "% Parent",
       "% Total",
-      "Status",
-    ])
+      "Population Status",
+    ] + [self._statistic_headers[stat_id] for stat_id in self._statistic_columns]
+    self._tree.setColumnCount(len(headers))
+    self._tree.setHeaderLabels(headers)
+    self._set_header_tooltips(base_column=7)
     sample_names = dict(self._samples)
     result_by_sample = {
       sample_id: tuple(values) for sample_id, values in results.items()
@@ -271,21 +336,24 @@ class ResultsWorkspace(QWidget):
           "-" if not isinstance(result, PopulationResult)
           else self._format_frequency(result.frequency_of_total),
           status,
-        ])
+        ] + self._statistic_values(sample_id, population_id, values))
         self._set_identity(item, "population", population_id, sample_id, value)
         self._set_status_color(item, status, 6)
+        self._apply_statistic_cell_state(item, sample_id, population_id)
         self._tree.addTopLevelItem(item)
     header = self._tree.header()
     header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
     header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-    for column in range(2, 7):
+    for column in range(2, len(headers)):
       header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+    self._apply_statistic_column_widths(base_column=7)
 
   def _population_item(
     self,
     row: ResultRowState | None,
     sample_id: str,
     population_id: str,
+    results: Sequence[ResultRowState] = (),
   ) -> QTreeWidgetItem:
     result = None if row is None else row.result
     population_result = result if isinstance(result, PopulationResult) else None
@@ -301,78 +369,20 @@ class ResultsWorkspace(QWidget):
       "-" if population_result is None
       else self._format_frequency(population_result.frequency_of_total),
       status,
-    ]
+    ] + self._statistic_values(sample_id, population_id, results)
     item = QTreeWidgetItem(values)
     self._set_identity(item, "population", population_id, sample_id, row)
     self._set_status_color(item, status, 4)
+    self._apply_statistic_cell_state(item, sample_id, population_id)
     return item
 
   def _add_population_children(
     self,
     parent_item: QTreeWidgetItem,
     results: Sequence[ResultRowState],
-    statistics: Mapping[tuple[str, str], Sequence[ResultRowState]],
     sample_id: str,
   ) -> None:
     parent_id = parent_item.data(0, Qt.UserRole)
-    # Statistics are population rows' children.  This must also run for the
-    # synthetic ``all_events`` root; previously the loop below only attached
-    # statistics while creating gated child populations, so a statistic
-    # defined for all events was computed but invisible in the Results tree.
-    for statistic_row in statistics.get((sample_id, parent_id), ()):
-      statistic = statistic_row.result
-      statistic_result = statistic if isinstance(statistic, StatisticResult) else None
-      statistic_name = (
-        statistic_result.statistic_name or statistic_result.statistic_id
-        if statistic_result is not None else statistic_row.key.result_id
-      )
-      statistic_value = (
-        "-" if statistic_result is None or statistic_result.value is None
-        else str(statistic_result.value)
-      )
-      statistic_item = QTreeWidgetItem(
-        [
-          statistic_name,
-          "-",
-          "-",
-          statistic_value,
-          self._row_status(statistic_row, statistic_result),
-        ]
-      )
-      self._set_identity(
-        statistic_item, "statistic", statistic_row.key.result_id, sample_id,
-        statistic_row,
-      )
-      self._set_status_color(
-        statistic_item,
-        self._row_status(statistic_row, statistic_result),
-        4,
-      )
-      if statistic_result is not None:
-        statistic_item.setToolTip(
-          0,
-          "unit=" + str(statistic_result.unit or "")
-          + "; undefined_reason=" + str(statistic_result.undefined_reason or "")
-          + "; n_total=" + str(
-            statistic_result.n_total
-            if statistic_result.n_total is not None else ""
-          )
-          + "; n_valid=" + str(
-            statistic_result.n_valid
-            if statistic_result.n_valid is not None else ""
-          )
-          + "; n_invalid=" + str(
-            statistic_result.n_invalid
-            if statistic_result.n_invalid is not None else ""
-          )
-          + "; invalid_fraction=" + str(
-            statistic_result.invalid_fraction
-            if statistic_result.invalid_fraction is not None else ""
-          )
-          + "; non_finite_policy=" + statistic_result.non_finite_policy
-          + "; revision=" + str(statistic_row.revision),
-        )
-      parent_item.addChild(statistic_item)
     child_ids = [
       population_id for population_id, value in self._population_parents.items()
       if population_id != "all_events"
@@ -386,9 +396,9 @@ class ResultsWorkspace(QWidget):
     result_by_id = {value.key.result_id: value for value in results}
     for population_id in child_ids:
       result = result_by_id.get(population_id)
-      item = self._population_item(result, sample_id, population_id)
+      item = self._population_item(result, sample_id, population_id, results)
       parent_item.addChild(item)
-      self._add_population_children(item, results, statistics, sample_id)
+      self._add_population_children(item, results, sample_id)
 
   def _results_by_sample(self) -> dict[str, tuple[ResultRowState, ...]]:
     if self._result_state is None:
@@ -399,19 +409,202 @@ class ResultsWorkspace(QWidget):
         result.setdefault(row.key.sample_id, []).append(row)
     return {sample_id: tuple(values) for sample_id, values in result.items()}
 
-  def _statistics_by_sample_population(
+  def _configure_statistic_columns(self) -> None:
+    """Build deterministic dynamic columns from the shared result snapshot."""
+    names: dict[str, str] = {}
+    order: list[str] = []
+    if self._report is not None:
+      for result in self._report.statistic_results:
+        if result.statistic_id not in names:
+          names[result.statistic_id] = (
+            result.statistic_name or result.statistic_id
+          )
+          order.append(result.statistic_id)
+    if self._result_state is not None:
+      for statistic_id in self._result_state.statistic_definitions:
+        if statistic_id not in names:
+          names[statistic_id] = statistic_id
+          order.append(statistic_id)
+      self._statistic_rows = {
+        (row.key.sample_id, row.key.result_id, row.key.population_id): row
+        for row in self._result_state.rows()
+        if row.key.kind == "statistic" and row.key.population_id
+      }
+    else:
+      self._statistic_rows = {}
+    self._statistic_columns = order
+    if self._statistic_column_order:
+      ordered = [
+        statistic_id for statistic_id in self._statistic_column_order
+        if statistic_id in order
+      ]
+      order = ordered + [statistic_id for statistic_id in order if statistic_id not in ordered]
+      self._statistic_columns = order
+    self._display_statistic_columns = [
+      statistic_id for statistic_id in order
+      if self._visible_statistic_ids is None
+      or statistic_id in self._visible_statistic_ids
+    ]
+    self._statistic_names = names
+    self._statistic_headers = {
+      statistic_id: names[statistic_id] for statistic_id in order
+    }
+    self._statistic_header_tooltips = {}
+    if self._report is not None:
+      for result in self._report.statistic_results:
+        self._statistic_header_tooltips.setdefault(
+          result.statistic_id,
+          "statistic_id=" + result.statistic_id
+          + "; metric=" + result.metric
+          + "; unit=" + str(result.unit or ""),
+        )
+
+  def _set_header_tooltips(self, *, base_column: int = len(_HEADERS)) -> None:
+    header = self._tree.headerItem()
+    for offset, statistic_id in enumerate(self._display_statistic_columns):
+      header.setToolTip(
+        base_column + offset,
+        self._statistic_header_tooltips.get(
+          statistic_id, "statistic_id=" + statistic_id
+        ),
+      )
+
+  def _result_headers(self) -> list[str]:
+    return self._HEADERS + [
+      self._statistic_headers[statistic_id]
+      for statistic_id in self._display_statistic_columns
+    ]
+
+  def _statistic_values(
     self,
-  ) -> dict[tuple[str, str], list[ResultRowState]]:
-    if self._result_state is None:
-      return {}
-    result: dict[tuple[str, str], list[ResultRowState]] = {}
-    for row in self._result_state.rows():
-      if row.key.kind != "statistic":
+    sample_id: str,
+    population_id: str,
+    _population_results: Sequence[ResultRowState],
+  ) -> list[str]:
+    """Render statistic cells without calculating or formatting core values."""
+    values: list[str] = []
+    for _offset, statistic_id in enumerate(self._display_statistic_columns):
+      row = self._statistic_rows.get((sample_id, statistic_id, population_id))
+      result = None if row is None else row.result
+      statistic_result = result if isinstance(result, StatisticResult) else None
+      value = (
+        "-" if statistic_result is None or statistic_result.value is None
+        else str(statistic_result.value)
+      )
+      values.append(value)
+    return values
+
+  def _apply_statistic_cell_state(
+    self, item: QTreeWidgetItem, sample_id: str, population_id: str
+  ) -> None:
+    for offset, statistic_id in enumerate(self._display_statistic_columns):
+      row = self._statistic_rows.get((sample_id, statistic_id, population_id))
+      result = None if row is None else row.result
+      statistic_result = result if isinstance(result, StatisticResult) else None
+      status = self._row_status(row, statistic_result)
+      column = len(self._HEADERS) + offset
+      self._set_status_color(item, status, column)
+      if row is None:
         continue
-      population_id = self._statistic_population_id(row)
-      if population_id is not None:
-        result.setdefault((row.key.sample_id, population_id), []).append(row)
-    return result
+      item.setToolTip(
+        column,
+        f"statistic_id={statistic_id}; status={status}; "
+        + "unit=" + str(statistic_result.unit if statistic_result else "")
+        + "; undefined_reason=" + str(
+          statistic_result.undefined_reason if statistic_result else ""
+        )
+        + "; n_total=" + str(
+          statistic_result.n_total if statistic_result else ""
+        )
+        + "; n_valid=" + str(
+          statistic_result.n_valid if statistic_result else ""
+        )
+        + "; n_invalid=" + str(
+          statistic_result.n_invalid if statistic_result else ""
+        )
+        + "; invalid_fraction=" + str(
+          statistic_result.invalid_fraction if statistic_result else ""
+        )
+        + "; non_finite_policy=" + str(
+          statistic_result.non_finite_policy if statistic_result else ""
+        )
+        + f"; revision={row.revision}; source={row.source}",
+      )
+
+  def _refresh_column_menu(self) -> None:
+    self._column_menu.clear()
+    for statistic_id in self._statistic_columns:
+      action = self._column_menu.addAction(self._statistic_headers[statistic_id])
+      action.setCheckable(True)
+      action.setChecked(
+        self._visible_statistic_ids is None
+        or statistic_id in self._visible_statistic_ids
+      )
+      action.setData(statistic_id)
+      action.triggered.connect(self._on_statistic_column_toggled)
+    self._column_button.setEnabled(bool(self._statistic_columns))
+
+  def _on_statistic_column_toggled(self, checked: bool) -> None:
+    action = self.sender()
+    statistic_id = action.data() if action is not None else None
+    if not isinstance(statistic_id, str):
+      return
+    visible = set(self._statistic_columns)
+    if self._visible_statistic_ids is not None:
+      visible = set(self._visible_statistic_ids)
+    if checked:
+      visible.add(statistic_id)
+    else:
+      visible.discard(statistic_id)
+    self._visible_statistic_ids = visible
+    self._rebuild()
+
+  def _apply_statistic_column_widths(self, *, base_column: int = len(_HEADERS)) -> None:
+    for offset, statistic_id in enumerate(self._display_statistic_columns):
+      width = self._statistic_column_widths.get(statistic_id)
+      if width is not None:
+        self._tree.setColumnWidth(base_column + offset, width)
+
+  def _rebuild_statistics_detail(self) -> None:
+    headers = [
+      "Sample", "Population", "Statistic", "Value", "Unit", "Status",
+      "n valid", "n total", "Reason", "Revision",
+    ]
+    self._tree.setColumnCount(len(headers))
+    self._tree.setHeaderLabels(headers)
+    self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+    self._tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+    self._tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+    for column in range(3, len(headers)):
+      self._tree.header().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+    if self._result_state is None:
+      return
+    sample_names = dict(self._samples)
+    rows = sorted(
+      (
+        row for row in self._result_state.rows()
+        if row.key.kind == "statistic"
+      ),
+      key=lambda row: (row.key.sample_id, row.key.population_id, row.key.result_id),
+    )
+    for row in rows:
+      result = row.result if isinstance(row.result, StatisticResult) else None
+      status = self._row_status(row, result)
+      item = QTreeWidgetItem([
+        sample_names.get(row.key.sample_id, row.key.sample_id),
+        self._population_names.get(row.key.population_id, row.key.population_id),
+        result.statistic_name if result is not None else row.key.result_id,
+        "-" if result is None or result.value is None else str(result.value),
+        "" if result is None else str(result.unit or ""),
+        status,
+        "" if result is None or result.n_valid is None else str(result.n_valid),
+        "" if result is None or result.n_total is None else str(result.n_total),
+        "" if result is None else str(result.undefined_reason or ""),
+        "" if row.revision is None else str(row.revision),
+      ])
+      self._set_identity(item, "statistic", row.key.result_id, row.key.sample_id, row)
+      self._set_status_color(item, status, 5)
+      self._tree.addTopLevelItem(item)
 
   def _statistic_population_id(self, row: ResultRowState) -> str | None:
     result = row.result
