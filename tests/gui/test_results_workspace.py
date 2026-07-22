@@ -56,6 +56,41 @@ def test_results_workspace_has_explicit_sample_and_all_events_rows(qapp) -> None
     qapp.processEvents()
 
 
+def test_results_workspace_shows_statistic_under_all_events(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy({"all_events": None})
+    workspace.set_report(
+      ExecutionReport(
+        project_id="project",
+        execution_profile_id="default",
+        pipeline_version="test",
+        status="success",
+        population_results=(
+          PopulationResult("sample-1", "all_events", 10, None, 1.0),
+        ),
+        statistic_results=(
+          StatisticResult(
+            "sample-1", "fsc-mean", "all_events", "mean", 123.5,
+            statistic_name="FSC-A mean",
+          ),
+        ),
+      )
+    )
+
+    all_events = workspace.tree().topLevelItem(0).child(0)
+    assert all_events.childCount() == 1
+    statistic = all_events.child(0)
+    assert statistic.text(0) == "FSC-A mean"
+    assert statistic.text(3) == "123.5"
+    assert statistic.data(0, Qt.UserRole + 1) == "statistic"
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
 def test_results_workspace_selection_distinguishes_sample_and_population(qapp) -> None:
   workspace = ResultsWorkspace()
   selected: list[tuple[str, str, str]] = []

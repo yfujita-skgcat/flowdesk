@@ -344,6 +344,13 @@ Every parameter selector uses the shared catalog, including derived outputs. Add
 duplicate/remove marks dependent results stale and refreshes only through canonical
 preview or Run Pipeline.
 
+Statistics are rendered beneath their target population, including the synthetic
+`all_events` root. A statistic may be present in the authoritative `ExecutionReport`
+without being a population row; the Results tree must still expose it immediately
+below the matching population and preserve its value, status, and QC tooltip. The
+rendering test must cover an `all_events` statistic because root-only statistics are
+valid and common for measurements such as FSC-A mean.
+
 ## 6. Unified Sample Sheet and annotation invalidation
 
 Use one normal GUI surface under `Data -> Sample Sheet...`:

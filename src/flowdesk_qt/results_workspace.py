@@ -315,6 +315,64 @@ class ResultsWorkspace(QWidget):
     sample_id: str,
   ) -> None:
     parent_id = parent_item.data(0, Qt.UserRole)
+    # Statistics are population rows' children.  This must also run for the
+    # synthetic ``all_events`` root; previously the loop below only attached
+    # statistics while creating gated child populations, so a statistic
+    # defined for all events was computed but invisible in the Results tree.
+    for statistic_row in statistics.get((sample_id, parent_id), ()):
+      statistic = statistic_row.result
+      statistic_result = statistic if isinstance(statistic, StatisticResult) else None
+      statistic_name = (
+        statistic_result.statistic_name or statistic_result.statistic_id
+        if statistic_result is not None else statistic_row.key.result_id
+      )
+      statistic_value = (
+        "-" if statistic_result is None or statistic_result.value is None
+        else str(statistic_result.value)
+      )
+      statistic_item = QTreeWidgetItem(
+        [
+          statistic_name,
+          "-",
+          "-",
+          statistic_value,
+          self._row_status(statistic_row, statistic_result),
+        ]
+      )
+      self._set_identity(
+        statistic_item, "statistic", statistic_row.key.result_id, sample_id,
+        statistic_row,
+      )
+      self._set_status_color(
+        statistic_item,
+        self._row_status(statistic_row, statistic_result),
+        4,
+      )
+      if statistic_result is not None:
+        statistic_item.setToolTip(
+          0,
+          "unit=" + str(statistic_result.unit or "")
+          + "; undefined_reason=" + str(statistic_result.undefined_reason or "")
+          + "; n_total=" + str(
+            statistic_result.n_total
+            if statistic_result.n_total is not None else ""
+          )
+          + "; n_valid=" + str(
+            statistic_result.n_valid
+            if statistic_result.n_valid is not None else ""
+          )
+          + "; n_invalid=" + str(
+            statistic_result.n_invalid
+            if statistic_result.n_invalid is not None else ""
+          )
+          + "; invalid_fraction=" + str(
+            statistic_result.invalid_fraction
+            if statistic_result.invalid_fraction is not None else ""
+          )
+          + "; non_finite_policy=" + statistic_result.non_finite_policy
+          + "; revision=" + str(statistic_row.revision),
+        )
+      parent_item.addChild(statistic_item)
     child_ids = [
       population_id for population_id, value in self._population_parents.items()
       if population_id != "all_events"
@@ -330,60 +388,6 @@ class ResultsWorkspace(QWidget):
       result = result_by_id.get(population_id)
       item = self._population_item(result, sample_id, population_id)
       parent_item.addChild(item)
-      for statistic_row in statistics.get((sample_id, population_id), ()):
-        statistic = statistic_row.result
-        statistic_result = statistic if isinstance(statistic, StatisticResult) else None
-        statistic_name = (
-          statistic_result.statistic_name or statistic_result.statistic_id
-          if statistic_result is not None else statistic_row.key.result_id
-        )
-        statistic_value = (
-          "-" if statistic_result is None or statistic_result.value is None
-          else str(statistic_result.value)
-        )
-        statistic_item = QTreeWidgetItem(
-          [
-            statistic_name,
-            "-",
-            "-",
-            statistic_value,
-            self._row_status(statistic_row, statistic_result),
-          ]
-        )
-        self._set_identity(
-          statistic_item, "statistic", statistic_row.key.result_id, sample_id,
-          statistic_row,
-        )
-        self._set_status_color(
-          statistic_item,
-          self._row_status(statistic_row, statistic_result),
-          4,
-        )
-        if statistic_result is not None:
-          statistic_item.setToolTip(
-            0,
-            "unit=" + str(statistic_result.unit or "")
-            + "; undefined_reason=" + str(statistic_result.undefined_reason or "")
-            + "; n_total=" + str(
-              statistic_result.n_total
-              if statistic_result.n_total is not None else ""
-            )
-            + "; n_valid=" + str(
-              statistic_result.n_valid
-              if statistic_result.n_valid is not None else ""
-            )
-            + "; n_invalid=" + str(
-              statistic_result.n_invalid
-              if statistic_result.n_invalid is not None else ""
-            )
-            + "; invalid_fraction=" + str(
-              statistic_result.invalid_fraction
-              if statistic_result.invalid_fraction is not None else ""
-            )
-            + "; non_finite_policy=" + statistic_result.non_finite_policy
-            + "; revision=" + str(statistic_row.revision),
-          )
-        item.addChild(statistic_item)
       self._add_population_children(item, results, statistics, sample_id)
 
   def _results_by_sample(self) -> dict[str, tuple[ResultRowState, ...]]:
