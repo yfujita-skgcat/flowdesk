@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 import pytest
@@ -680,6 +681,19 @@ def test_log_ticks_prefer_decades_and_keep_minor_ticks_unlabelled() -> None:
   assert [tick.event_value for tick in short if tick.level == "major"] == [
     5e5, 1e6, 2e6,
   ]
+
+
+def test_log_inverse_extreme_viewport_is_inf_without_runtime_warning() -> None:
+  spec = TransformSpec(
+    id="log-extreme", name="Log extreme", transform_type="log",
+    parameter="signal", settings={"base": 10.0},
+  )
+  with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    restored = inverse_transform(spec, np.array([0.0, 400.0]))
+  assert np.isfinite(restored[0])
+  assert np.isinf(restored[1])
+  assert not any(item.category is RuntimeWarning for item in caught)
 
 
 def test_log_ticks_include_exact_view_boundaries_after_float_conversion() -> None:

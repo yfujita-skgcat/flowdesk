@@ -609,7 +609,13 @@ def _inverse_log(
   values: NDArray[np.float64],
   settings: TransformSettings,
 ) -> NDArray[np.float64]:
-  return np.power(float(settings["base"]), values)
+  # A viewport can contain a finite coordinate whose inverse is outside the
+  # representable float64 range (for example a log10 coordinate above 308).
+  # ``inf`` is the correct numeric result for that inverse; it is filtered by
+  # tick generation.  Suppress NumPy's expected overflow warning here so a
+  # harmless extreme outlier does not pollute the GUI log.
+  with np.errstate(over="ignore", invalid="ignore"):
+    return np.power(float(settings["base"]), values)
 
 
 def _inverse_asinh(
