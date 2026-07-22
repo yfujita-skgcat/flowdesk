@@ -1459,6 +1459,7 @@ class PlotWidget(QWidget):
 
     def _dispose_plot_item(self, item: Any) -> None:
         """Remove a transient graphics item and defer destruction safely."""
+        self._reset_scene_interaction(item)
         try:
             self._plot_item.removeItem(item)
         except (RuntimeError, TypeError):
@@ -1472,6 +1473,28 @@ class PlotWidget(QWidget):
             QTimer.singleShot(50, self._dispose_retired_plot_items)
             return
         self._delete_plot_item(item)
+
+    def _reset_scene_interaction(self, item: Any) -> None:
+        """Drop pyqtgraph hover/drag references before removing an ROI.
+
+        GraphicsScene keeps the last hover event and uses it to preselect a
+        drag item on the next mouse move. Clearing the scene item while that
+        event still points at the ROI leaves a dead Shiboken wrapper in
+        ``acceptedItem``.
+        """
+        try:
+            scene = self._plot_item.scene()
+        except (AttributeError, RuntimeError):
+            return
+        if scene is None:
+            return
+        if getattr(scene, "lastHoverEvent", None) is not None:
+            scene.lastHoverEvent = None
+        if getattr(scene, "dragItem", None) is item:
+            scene.dragItem = None
+            scene.dragButtons = []
+            scene.clickEvents = []
+            scene.lastDrag = None
 
     def _dispose_retired_plot_items(self) -> None:
         if QApplication.mouseButtons() != Qt.MouseButton.NoButton:

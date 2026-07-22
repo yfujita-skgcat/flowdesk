@@ -64,6 +64,25 @@ def test_results_workspace_has_explicit_sample_and_all_events_rows(qapp) -> None
     qapp.processEvents()
 
 
+def test_results_workspace_exposes_auto_recalculate_preference(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    changes: list[bool] = []
+    workspace.on_auto_recalculate_changed(changes.append)
+    check = workspace.findChild(type(workspace._auto_recalculate_check))
+    assert check is workspace._auto_recalculate_check
+    assert check.objectName() == "resultsAutoRecalculateCheck"
+    assert check.text() == "Auto"
+    assert check.toolTip()
+    check.setChecked(True)
+    assert workspace.auto_recalculate_stale_results() is True
+    assert changes == [True]
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
 def test_results_workspace_shows_statistic_under_all_events(qapp) -> None:
   workspace = ResultsWorkspace()
   try:

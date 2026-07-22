@@ -268,6 +268,12 @@ class MainWindow(QMainWindow):
         self._worker: _PipelineWorker | None = None
         self._results_stale = False
         self._results_stale_reason: str | None = None
+        self._auto_recalculate_timer = QTimer(self)
+        self._auto_recalculate_timer.setSingleShot(True)
+        self._auto_recalculate_timer.setInterval(300)
+        self._auto_recalculate_timer.timeout.connect(
+            self._start_auto_recalculation
+        )
         self._project_dirty = False
         self._autosave_settings = AutosaveSettings(
             enabled=bool(QSettings().value("autosave/enabled", True, type=bool)),
@@ -1048,6 +1054,9 @@ class MainWindow(QMainWindow):
         )
         self._results_workspace.on_manage_statistics_requested(
             self._open_statistics_manager
+        )
+        self._results_workspace.on_auto_recalculate_changed(
+            self._on_auto_recalculate_changed
         )
         self._workspace_tree.on_selection_changed(self._on_workspace_tree_selected)
 
@@ -2214,6 +2223,30 @@ class MainWindow(QMainWindow):
         self._worker.finished.connect(self._on_pipeline_finished)
         self._worker.start()
 
+    def _on_auto_recalculate_changed(self, enabled: bool) -> None:
+        """Toggle automatic full-sample recalculation for stale Results."""
+        self._project_dirty = True
+        if enabled and self._results_stale:
+            self._preview_scheduler.cancel_pending()
+            self._request_auto_recalculation()
+
+    def _request_auto_recalculation(self) -> None:
+        """Coalesce stale changes before starting the canonical batch runner."""
+        if not self._results_workspace.auto_recalculate_stale_results():
+            return
+        self._auto_recalculate_timer.start()
+
+    def _start_auto_recalculation(self) -> None:
+        """Start one latest-definition pipeline after stale changes settle."""
+        if not self._results_workspace.auto_recalculate_stale_results():
+            return
+        if not self._results_stale:
+            return
+        if self._worker is not None and self._worker.isRunning():
+            self._request_auto_recalculation()
+            return
+        self._on_run_pipeline()
+
     def _build_project_manifest(self) -> dict[str, Any]:
         """Build a project manifest from current UI state.
 
@@ -2351,6 +2384,9 @@ class MainWindow(QMainWindow):
             },
             "results_display_settings": {
                 "mode": self._results_workspace.mode(),
+                "auto_recalculate_stale_results": (
+                    self._results_workspace.auto_recalculate_stale_results()
+                ),
                 "statistic_column_visibility": (
                     self._results_workspace.statistic_column_visibility()
                 ),
@@ -2392,6 +2428,8 @@ class MainWindow(QMainWindow):
             )
             self._release_pipeline_worker(worker)
             self._preview_scheduler.resume()
+            if self._results_workspace.auto_recalculate_stale_results():
+                self._request_auto_recalculation()
             return
         if report is not None:
             self._auto_gate_fits = deepcopy(report.auto_gate_fits)
@@ -2659,6 +2697,9 @@ class MainWindow(QMainWindow):
             mode = results_display.get("mode")
             if mode in {"Hierarchy", "Flat table", "Statistics detail"}:
                 self._results_workspace.set_mode(mode)
+            self._results_workspace.set_auto_recalculate_stale_results(
+                bool(results_display.get("auto_recalculate_stale_results", False))
+            )
             visibility = results_display.get("statistic_column_visibility")
             if isinstance(visibility, dict):
                 self._results_workspace.set_statistic_column_visibility(
@@ -3726,7 +3767,8 @@ class MainWindow(QMainWindow):
         self._mark_results_stale("Gate geometry changed", {gate.id})
         # sigRegionChangeFinished means interaction has ended, so the normal
         # debounce delay adds latency without coalescing any more drag events.
-        self._preview_scheduler.start_pending_now()
+        if not self._results_workspace.auto_recalculate_stale_results():
+            self._preview_scheduler.start_pending_now()
         self._project_dirty = True
         self._update_undo_actions()
 
@@ -4228,7 +4270,11 @@ class MainWindow(QMainWindow):
         self._refresh_parameter_catalog()
         self._refresh_override_statuses()
         self._update_status(f"{reason} (results stale; rerun pipeline)")
-        self._schedule_current_preview()
+        if self._results_workspace.auto_recalculate_stale_results():
+            self._preview_scheduler.cancel_pending()
+            self._request_auto_recalculation()
+        else:
+            self._schedule_current_preview()
 
     def _sync_statistic_result_definitions(self) -> None:
         """Expose persisted statistic columns before their next calculation."""

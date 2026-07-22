@@ -197,6 +197,13 @@ The ResultsWorkspace must show:
 - preview source, revision, and row freshness status
 - a global `Batch results stale` indicator when Run Pipeline has not accepted the current definitions
 
+An optional Results `Auto` preference may request automatic stale-result
+recalculation after definition changes. It is persisted with Results display
+settings; when enabled, the GUI debounces changes and invokes the same
+GUI-independent batch pipeline runner for the loaded samples. It must not
+calculate in Qt, use display-downsampled events, or accept a result whose
+analysis revision is no longer current.
+
 Recommended combined status examples:
 
 ```text

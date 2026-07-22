@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
   QAbstractItemView,
+  QCheckBox,
   QComboBox,
   QHeaderView,
   QMenu,
@@ -77,6 +78,7 @@ class ResultsWorkspace(QWidget):
     self._callbacks: list[Callable[[str, str, str], None]] = []
     self._add_statistic_callbacks: list[Callable[[str], None]] = []
     self._manage_statistic_callbacks: list[Callable[[], None]] = []
+    self._auto_recalculate_callbacks: list[Callable[[bool], None]] = []
 
     self._tree = QTreeWidget()
     self._tree.setObjectName("resultsWorkspaceTree")
@@ -90,6 +92,18 @@ class ResultsWorkspace(QWidget):
       header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
 
     layout = QVBoxLayout(self)
+    self._auto_recalculate_check = QCheckBox("Auto")
+    self._auto_recalculate_check.setObjectName("resultsAutoRecalculateCheck")
+    self._auto_recalculate_check.setToolTip(
+      "Automatically recalculate stale results after analysis changes"
+    )
+    self._auto_recalculate_check.setAccessibleName(
+      "Automatically recalculate stale results"
+    )
+    self._auto_recalculate_check.toggled.connect(
+      self._on_auto_recalculate_toggled
+    )
+    layout.addWidget(self._auto_recalculate_check)
     self._mode_selector = QComboBox()
     self._mode_selector.setObjectName("resultsViewModeSelector")
     self._mode_selector.addItems(["Hierarchy", "Flat table"])
@@ -128,6 +142,22 @@ class ResultsWorkspace(QWidget):
   def on_manage_statistics_requested(self, callback: Callable[[], None]) -> None:
     """Register the shared editor entry point for existing definitions."""
     self._manage_statistic_callbacks.append(callback)
+
+  def on_auto_recalculate_changed(self, callback: Callable[[bool], None]) -> None:
+    """Register the Results auto-recalculation preference callback."""
+    self._auto_recalculate_callbacks.append(callback)
+
+  def auto_recalculate_stale_results(self) -> bool:
+    return self._auto_recalculate_check.isChecked()
+
+  def set_auto_recalculate_stale_results(self, enabled: bool) -> None:
+    blocked = self._auto_recalculate_check.blockSignals(True)
+    self._auto_recalculate_check.setChecked(bool(enabled))
+    self._auto_recalculate_check.blockSignals(blocked)
+
+  def _on_auto_recalculate_toggled(self, enabled: bool) -> None:
+    for callback in self._auto_recalculate_callbacks:
+      invoke_callback(callback, enabled)
 
   def _on_manage_statistics(self) -> None:
     for callback in self._manage_statistic_callbacks:
