@@ -79,6 +79,7 @@ def _empty_statistic(
         "source_stage": "compensated",
         "transform_id": None,
         "value_policy": "full_events",
+        "non_finite_policy": "strict",
         "settings": {},
         "format": None,
         "notes": "",
@@ -225,6 +226,10 @@ class StatisticsEditorDialog(QDialog):
                 f"{transform.get('name', transform.get('id'))} [{transform.get('id')}]",
                 transform.get("id"),
             )
+        self._nonfinite_combo = QComboBox()
+        self._nonfinite_combo.setObjectName("statisticNonFinitePolicyCombo")
+        self._nonfinite_combo.addItem("Strict (undefined on any NaN/Inf)", "strict")
+        self._nonfinite_combo.addItem("Exclude invalid values (explicit)", "exclude_invalid")
 
         self._percentile_q_edit = QLineEdit("50")
         self._percentile_q_edit.setObjectName("statisticPercentileQEdit")
@@ -243,6 +248,7 @@ class StatisticsEditorDialog(QDialog):
         form.addRow("Metric:", self._metric_combo)
         form.addRow("Source Stage:", self._source_combo)
         form.addRow("Transform:", self._transform_combo)
+        form.addRow("Non-finite policy:", self._nonfinite_combo)
         form.addRow(self._percentile_q_label, self._percentile_q_edit)
         form.addRow("Format:", self._format_edit)
         form.addRow("Notes:", self._notes_edit)
@@ -330,6 +336,10 @@ class StatisticsEditorDialog(QDialog):
             self._source_combo.setCurrentText(source)
             transform_index = self._transform_combo.findData(value.get("transform_id"))
             self._transform_combo.setCurrentIndex(max(0, transform_index))
+            policy_index = self._nonfinite_combo.findData(
+                value.get("non_finite_policy", "strict")
+            )
+            self._nonfinite_combo.setCurrentIndex(max(0, policy_index))
 
             settings = value.get("settings", {})
             self._percentile_q_edit.setText(
@@ -377,6 +387,7 @@ class StatisticsEditorDialog(QDialog):
             "source_stage": self._source_combo.currentText(),
             "transform_id": str(self._transform_combo.currentData() or "") or None,
             "value_policy": "full_events",
+            "non_finite_policy": self._nonfinite_combo.currentData() or "strict",
             "settings": settings,
             "format": fmt_text,
             "notes": self._notes_edit.text().strip(),

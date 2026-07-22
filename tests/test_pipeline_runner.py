@@ -2162,6 +2162,33 @@ def test_pipeline_statistics_in_report() -> None:
   assert mean_r.status == "ok"
 
 
+def test_pipeline_statistic_nonfinite_policy_is_explicit_and_reported() -> None:
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    statistics=[{
+      "id": "strict_mean", "name": "Strict mean", "population_id": "all_events",
+      "parameter_id": "signal", "metric": "mean", "source_stage": "compensated",
+      "non_finite_policy": "strict",
+    }, {
+      "id": "excluded_mean", "name": "Excluded mean", "population_id": "all_events",
+      "parameter_id": "signal", "metric": "mean", "source_stage": "compensated",
+      "non_finite_policy": "exclude_invalid",
+    }],
+  )
+  sample = SampleData(
+    "s1", np.array([[2.0], [np.nan], [6.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),),
+  )
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+  results = {item.statistic_id: item for item in report.statistic_results}
+  assert results["strict_mean"].status == "undefined"
+  assert results["strict_mean"].n_invalid == 1
+  assert results["strict_mean"].invalid_fraction == pytest.approx(1 / 3)
+  assert results["excluded_mean"].value == pytest.approx(4.0)
+  assert results["excluded_mean"].non_finite_policy == "exclude_invalid"
+  assert results["excluded_mean"].n_valid == 2
+
+
 def test_pipeline_statistics_empty() -> None:
   """No statistics in manifest produces empty statistic_results."""
   project = _make_project(

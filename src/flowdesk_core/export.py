@@ -239,7 +239,7 @@ def write_statistic_results(
 
   Each statistic becomes one row with columns:
   ``sample_id``, ``statistic_id``, ``display_name``, ``population_id``, ``metric``,
-  ``value``, ``unit``, ``status``, ``undefined_reason``.
+  ``value``, ``unit``, ``status``, ``undefined_reason``, and non-finite QC counts.
 
   Args:
     results: Statistic results to write.
@@ -250,7 +250,7 @@ def write_statistic_results(
   Raises:
     ExportError: If the file cannot be written.
   """
-  header = [
+  base_header = [
     "sample_id",
     "statistic_id",
     "display_name",
@@ -261,6 +261,15 @@ def write_statistic_results(
     "status",
     "undefined_reason",
   ]
+  include_qc = any(
+    result.n_total is not None or result.n_invalid is not None
+    for result in results
+  )
+  qc_header = [
+    "n_total", "n_valid", "n_invalid", "invalid_fraction",
+    "non_finite_policy",
+  ]
+  header = base_header + (qc_header if include_qc else [])
 
   try:
     out_path = Path(path)
@@ -268,19 +277,26 @@ def write_statistic_results(
       writer = csv.writer(fh, delimiter=delimiter)
       writer.writerow(header)
       for rec in results:
-        writer.writerow(
-          [
-            rec.sample_id,
-            rec.statistic_id,
-            rec.statistic_name if rec.statistic_name is not None else "",
-            rec.population_id,
-            rec.metric,
-            _format_value(rec.value, nan_policy),
-            rec.unit if rec.unit is not None else "",
-            rec.status,
-            rec.undefined_reason if rec.undefined_reason is not None else "",
-          ]
-        )
+        row = [
+          rec.sample_id,
+          rec.statistic_id,
+          rec.statistic_name if rec.statistic_name is not None else "",
+          rec.population_id,
+          rec.metric,
+          _format_value(rec.value, nan_policy),
+          rec.unit if rec.unit is not None else "",
+          rec.status,
+          rec.undefined_reason if rec.undefined_reason is not None else "",
+        ]
+        if include_qc:
+          row.extend([
+            "" if rec.n_total is None else rec.n_total,
+            "" if rec.n_valid is None else rec.n_valid,
+            "" if rec.n_invalid is None else rec.n_invalid,
+            "" if rec.invalid_fraction is None else rec.invalid_fraction,
+            rec.non_finite_policy,
+          ])
+        writer.writerow(row)
   except OSError as exc:
     raise ExportError(f"Failed to write export file: {path}") from exc
   except Exception as exc:

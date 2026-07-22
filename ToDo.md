@@ -777,6 +777,12 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 - [ ] derived `log(x)`で`x = 0`、`log(x + 1)`、negative compensated value、division by zero、overflowをsynthetic fixtureでtestする。GUI preview、Run Pipeline、CLI/Python、CSV/TSV exportでvalue、status、QC count、raw immutabilityが一致することをE2E testする。
 - [ ] existing project migrationを用意し、旧StatisticSpecのNaN除外挙動をsilentに変更しない。migration policyとversionをmanifest/provenanceに記録し、旧projectは明示的な互換modeまたはupgrade確認を要求する。
 
+実装済みの下位項目:
+
+- [x] `StatisticSpec.non_finite_policy`（`strict`/`exclude_invalid`）をschema、manifest validator、pipeline、Statistics Editorへ接続し、persisted pipelineではstrictを既定にする。
+- [x] `StatisticResult`とQC-aware statistic exportへvalid/invalid event count、fraction、policyを追加する。旧QC情報なしの直接exportは従来headerを維持する。
+- [x] 極端なLog10 viewportの逆変換overflow warningを表示計算に限定して抑制し、解析値を変更しないfixtureを追加する。
+
 #### Phase B7.4 必須受け入れtest
 
 - [x] Derived ParameterがParameters、X/Y、Gate、Transform、Statistic、simple Overlay、exportで同じstable IDとして利用でき、reload後のCLI/Python結果と一致する。

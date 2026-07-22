@@ -1758,7 +1758,15 @@ class PipelineRunner:
           total_count=total_count,
           values=None,
         )
-        results.append(replace(result, statistic_name=spec.name))
+        results.append(replace(
+          result,
+          statistic_name=spec.name,
+          n_total=event_count,
+          n_valid=event_count,
+          n_invalid=0,
+          invalid_fraction=0.0,
+          non_finite_policy=spec.non_finite_policy,
+        ))
         continue
 
       # Value-based metrics need a parameter column.
@@ -1797,12 +1805,22 @@ class PipelineRunner:
         parent_count=parent_count,
         total_count=total_count,
         values=values,
+        non_finite_policy=spec.non_finite_policy,
       )
+      invalid_count = 0 if values is None else int(np.count_nonzero(~np.isfinite(values)))
+      total_values = None if values is None else int(values.size)
       results.append(
         replace(
           result,
           statistic_name=spec.name,
           unit=source_data.channels[col_idx].unit,
+          n_total=total_values,
+          n_valid=(None if total_values is None else total_values - invalid_count),
+          n_invalid=(None if total_values is None else invalid_count),
+          invalid_fraction=(
+            None if total_values in (None, 0) else invalid_count / total_values
+          ),
+          non_finite_policy=spec.non_finite_policy,
         )
       )
 
@@ -1856,6 +1874,7 @@ class PipelineRunner:
             source_stage=definition.get("source_stage", "compensated"),
             transform_id=definition.get("transform_id"),
             value_policy=definition.get("value_policy", "full_events"),
+            non_finite_policy=definition.get("non_finite_policy", "strict"),
             settings=dict(definition.get("settings", {})),
             format=definition.get("format"),
             notes=str(definition.get("notes", "")),

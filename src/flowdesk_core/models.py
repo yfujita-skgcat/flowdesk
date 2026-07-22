@@ -54,6 +54,7 @@ StatisticMetric = Literal[
 ]
 StatisticSource = Literal["raw", "compensated", "transformed"]
 StatisticValuePolicy = Literal["full_events"]
+StatisticNonFinitePolicy = Literal["strict", "exclude_invalid"]
 StatisticStatus = Literal["ok", "empty", "undefined", "error"]
 StatisticUndefinedReason = Literal[
     "empty_population",
@@ -1202,6 +1203,7 @@ class StatisticSpec:
   source_stage: StatisticSource = "compensated"
   transform_id: str | None = None
   value_policy: StatisticValuePolicy = "full_events"
+  non_finite_policy: StatisticNonFinitePolicy = "strict"
   settings: dict[str, Any] = field(default_factory=dict)
   format: str | None = None
   notes: str = ""
@@ -1244,6 +1246,10 @@ class StatisticSpec:
       raise ValueError(
         f"invalid statistic value_policy {self.value_policy!r}"
       )
+    if self.non_finite_policy not in {"strict", "exclude_invalid"}:
+      raise ValueError(
+        f"invalid statistic non_finite_policy {self.non_finite_policy!r}"
+      )
     if not isinstance(self.settings, dict):
       raise ValueError("statistic settings must be an object")
     if self.format is not None and not isinstance(self.format, str):
@@ -1284,3 +1290,8 @@ class StatisticResult:
   status: StatisticStatus = "ok"
   undefined_reason: StatisticUndefinedReason | None = None
   statistic_name: str | None = None
+  n_total: int | None = None
+  n_valid: int | None = None
+  n_invalid: int | None = None
+  invalid_fraction: float | None = None
+  non_finite_policy: StatisticNonFinitePolicy = "strict"

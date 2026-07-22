@@ -653,6 +653,10 @@
           "enum": ["raw", "compensated", "transformed"]
         },
         "transform_id": { "type": ["string", "null"] },
+        "non_finite_policy": {
+          "enum": ["strict", "exclude_invalid"],
+          "default": "strict"
+        },
         "settings": { "type": "object" },
         "format": { "type": ["string", "null"] },
         "notes": { "type": "string" }

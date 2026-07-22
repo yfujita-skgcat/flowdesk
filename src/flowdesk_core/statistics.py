@@ -329,6 +329,7 @@ def compute_statistic(
   parent_count: int | None,
   total_count: int | None,
   values: NDArray[np.float64] | None,
+  non_finite_policy: str | None = None,
 ) -> StatisticResult:
   """Dispatch a statistic computation based on a ``StatisticSpec``.
 
@@ -346,6 +347,60 @@ def compute_statistic(
   metric = spec.metric
   statistic_id = spec.id
   population_id = spec.population_id
+  # Direct callers historically used NaN-aware reductions.  The persisted
+  # pipeline path passes the StatisticSpec policy explicitly; retaining this
+  # compatibility default avoids changing old library callers silently.
+  if non_finite_policy is None:
+    # Preserve the historical direct-dispatch contract: NaN-only arrays use
+    # NaN-aware reductions, while an Inf remains a hard undefined result.
+    effective_policy = (
+      "strict"
+      if values is not None and np.any(np.isinf(values))
+      else "exclude_invalid"
+    )
+  else:
+    effective_policy = non_finite_policy
+  if effective_policy not in {"strict", "exclude_invalid"}:
+    raise PopulationStatsError(
+      f"invalid non_finite_policy {effective_policy!r}"
+    )
+  if values is not None:
+    values = np.asarray(values, dtype=np.float64)
+    invalid_mask = ~np.isfinite(values)
+    if np.any(invalid_mask):
+      if np.all(np.isnan(values)):
+        return StatisticResult(
+          sample_id=sample_id,
+          statistic_id=statistic_id,
+          population_id=population_id,
+          metric=metric,
+          value=None,
+          status="undefined",
+          undefined_reason="all_nan",
+          n_total=int(values.size),
+          n_valid=0,
+          n_invalid=int(values.size),
+          invalid_fraction=1.0,
+          non_finite_policy=effective_policy,  # type: ignore[arg-type]
+        )
+      if effective_policy == "strict":
+        invalid_count = int(np.count_nonzero(invalid_mask))
+        total_values = int(values.size)
+        return StatisticResult(
+          sample_id=sample_id,
+          statistic_id=statistic_id,
+          population_id=population_id,
+          metric=metric,
+          value=None,
+          status="undefined",
+          undefined_reason="nonfinite_values",
+          n_total=total_values,
+          n_valid=total_values - invalid_count,
+          n_invalid=invalid_count,
+          invalid_fraction=invalid_count / total_values,
+          non_finite_policy="strict",
+        )
+      values = values[~invalid_mask]
 
   if event_count == 0:
     if metric == "count":

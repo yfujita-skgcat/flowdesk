@@ -688,6 +688,35 @@ def test_value_statistics_reject_nonfinite_input(
   assert result.undefined_reason == "nonfinite_values"
 
 
+def test_nonfinite_policy_strict_and_explicit_exclusion_report_qc() -> None:
+  values = np.array([2.0, np.nan, 6.0], dtype=np.float64)
+  strict = compute_statistic(
+    spec=StatisticSpec(
+      id="strict", name="Strict", population_id="live", metric="mean",
+      non_finite_policy="strict",
+    ),
+    sample_id="s1", event_count=3, parent_count=3, total_count=3, values=values,
+    non_finite_policy="strict",
+  )
+  assert strict.status == "undefined"
+  assert strict.undefined_reason == "nonfinite_values"
+  assert strict.n_total == 3
+  assert strict.n_valid == 2
+  assert strict.n_invalid == 1
+  assert strict.invalid_fraction == pytest.approx(1 / 3)
+
+  excluded = compute_statistic(
+    spec=StatisticSpec(
+      id="excluded", name="Excluded", population_id="live", metric="mean",
+      non_finite_policy="exclude_invalid",
+    ),
+    sample_id="s1", event_count=3, parent_count=3, total_count=3, values=values,
+    non_finite_policy="exclude_invalid",
+  )
+  assert excluded.status == "ok"
+  assert excluded.value == pytest.approx(4.0)
+
+
 
 class TestComputeStatisticCount:
   def test_count_basic(self) -> None:

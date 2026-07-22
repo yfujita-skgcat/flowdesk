@@ -84,6 +84,21 @@ def test_statistics_editor_duplicate_creates_new_definition(qapp) -> None:
   assert dialog._statistics[1]["id"] == "mean-copy"
 
 
+def test_statistics_editor_persists_nonfinite_policy(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[{
+      "id": "mean", "name": "Mean", "population_id": "live",
+      "parameter_id": "FL1-A", "metric": "mean", "source_stage": "compensated",
+      "non_finite_policy": "exclude_invalid",
+    }],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("live",),
+  )
+  assert dialog._nonfinite_combo.currentData() == "exclude_invalid"
+  dialog._commit_current()
+  assert dialog._statistics[0]["non_finite_policy"] == "exclude_invalid"
+
+
 def test_statistics_are_population_child_nodes_and_clear_when_stale(qapp) -> None:
   tree = PopulationTree()
   tree.set_population_names({"live": "Live cells"})

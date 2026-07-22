@@ -905,6 +905,7 @@ def _validate_current_statistics(
   }
   valid_stages = {"raw", "compensated", "transformed"}
   valid_value_policies = {"full_events"}
+  valid_non_finite_policies = {"strict", "exclude_invalid"}
   value_metrics = valid_metrics - {
     "count",
     "frequency_of_parent",
@@ -963,6 +964,12 @@ def _validate_current_statistics(
     if value_policy not in valid_value_policies:
       raise ManifestValidationError(
         f"statistic {stat_id!r} has invalid value_policy {value_policy!r}"
+      )
+    non_finite_policy = stat.get("non_finite_policy", "strict")
+    if non_finite_policy not in valid_non_finite_policies:
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} has invalid non_finite_policy "
+        f"{non_finite_policy!r}"
       )
     parameter_id = stat.get("parameter_id")
     if parameter_id is not None and (
