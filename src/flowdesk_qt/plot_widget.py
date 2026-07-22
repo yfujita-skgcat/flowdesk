@@ -29,7 +29,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -41,7 +41,7 @@ from PySide6.QtGui import (
     QPdfWriter,
 )
 from PySide6.QtSvg import QSvgGenerator
-from PySide6.QtWidgets import QLabel, QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 
 from flowdesk_core.models import GateSpec, TransformSpec
 from flowdesk_core.plot_presentation import resolve_presentation_layers
@@ -86,6 +86,7 @@ class PlotWidget(QWidget):
         self._population_scatter_items: list[tuple[Any, str]] = []
         self._event_colors: NDArray[np.str_] | None = None
         self._gate_items: list[Any] = []
+        self._retired_plot_items: list[Any] = []
         self._gate_item_callbacks: dict[int, Any] = {}
         self._hidden_gate_reasons: list[str] = []
         self._preview_item: Any | None = None
@@ -1462,6 +1463,27 @@ class PlotWidget(QWidget):
             self._plot_item.removeItem(item)
         except (RuntimeError, TypeError):
             logger.debug("Plot item was already removed", exc_info=True)
+        # pyqtgraph's GraphicsScene can retain the item as ``acceptedItem``
+        # until the current mouse drag finishes. Deleting it during that drag
+        # makes the next mouseMoveEvent dereference a dead Shiboken wrapper.
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            if item not in self._retired_plot_items:
+                self._retired_plot_items.append(item)
+            QTimer.singleShot(50, self._dispose_retired_plot_items)
+            return
+        self._delete_plot_item(item)
+
+    def _dispose_retired_plot_items(self) -> None:
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            QTimer.singleShot(50, self._dispose_retired_plot_items)
+            return
+        items = self._retired_plot_items
+        self._retired_plot_items = []
+        for item in items:
+            self._delete_plot_item(item)
+
+    @staticmethod
+    def _delete_plot_item(item: Any) -> None:
         try:
             item.deleteLater()
         except (AttributeError, RuntimeError):
