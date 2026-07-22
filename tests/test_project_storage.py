@@ -2063,13 +2063,37 @@ class TestMigrationRegistry:
   def test_v0_1_migration_path(self) -> None:
     path = _get_migration_path("0.1")
     assert path == [
-      "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0",
+      "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0",
       CURRENT_PROJECT_VERSION,
     ]
 
   def test_v1_4_migration_path(self) -> None:
     path = _get_migration_path("1.4.0")
-    assert path == ["1.5.0", CURRENT_PROJECT_VERSION]
+    assert path == ["1.5.0", "1.6.0", CURRENT_PROJECT_VERSION]
+
+  def test_v1_6_statistic_targets_migrate_without_merging(self) -> None:
+    legacy = {
+      **MINIMAL_MANIFEST,
+      "project_version": "1.6.0",
+      "statistics": [{
+        "id": "mean-live",
+        "name": "Mean live",
+        "population_id": "live",
+        "parameter_id": "FL1-A",
+        "metric": "mean",
+      }],
+    }
+    migrated = migrate_manifest(legacy)
+    assert migrated["project_version"] == CURRENT_PROJECT_VERSION
+    assert migrated["statistics"] == [{
+      "id": "mean-live",
+      "name": "Mean live",
+      "population_id": "live",
+      "population_ids": ["live"],
+      "parameter_id": "FL1-A",
+      "metric": "mean",
+      "compute_enabled": True,
+    }]
 
   def test_every_adjacent_transition_has_a_registered_migration(self) -> None:
     for from_version, to_version in zip(

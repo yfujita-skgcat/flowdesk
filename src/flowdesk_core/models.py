@@ -1202,7 +1202,11 @@ class StatisticSpec:
 
   id: str
   name: str
-  population_id: str
+  # ``population_id`` remains as a compatibility alias for the first target.
+  # New persisted definitions use ``population_ids`` as the canonical ordered
+  # target set. Keeping the alias here allows old Python callers and manifests
+  # to round-trip without silently changing their meaning.
+  population_id: str = ""
   parameter_id: str | None = None
   metric: StatisticMetric = "count"
   source_stage: StatisticSource = "compensated"
@@ -1212,14 +1216,31 @@ class StatisticSpec:
   settings: dict[str, Any] = field(default_factory=dict)
   format: str | None = None
   notes: str = ""
+  population_ids: tuple[str, ...] = field(default_factory=tuple)
+  compute_enabled: bool = True
 
   def __post_init__(self) -> None:
     if not self.id:
       raise ValueError("statistic ID must be non-empty")
     if not self.name:
       raise ValueError("statistic name must be non-empty")
-    if not self.population_id:
-      raise ValueError("statistic population_id must be non-empty")
+    targets = tuple(self.population_ids)
+    if not targets:
+      if not self.population_id:
+        raise ValueError("statistic population_id must be non-empty")
+      targets = (self.population_id,)
+    if any(not isinstance(value, str) or not value for value in targets):
+      raise ValueError("statistic population_ids must contain non-empty strings")
+    if len(set(targets)) != len(targets):
+      raise ValueError("statistic population_ids must not contain duplicates")
+    if self.population_id and self.population_id != targets[0]:
+      raise ValueError(
+        "statistic population_id must match the first population_ids entry"
+      )
+    object.__setattr__(self, "population_ids", targets)
+    object.__setattr__(self, "population_id", targets[0])
+    if not isinstance(self.compute_enabled, bool):
+      raise ValueError("statistic compute_enabled must be a boolean")
     valid_metrics: set[str] = {
       "count",
       "frequency_of_parent",

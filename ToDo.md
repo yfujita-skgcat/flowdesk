@@ -813,9 +813,9 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 
 #### Increment 1: Model、migration、runtime identity
 
-- [ ] `StatisticSpec.population_id`を後方互換な明示的`population_ids`へ拡張し、一つのstable Statistic IDを複数Populationへ割り当てられるようにする。GUIのAll/Subtree選択はaccept時点のstable ID集合として保存し、後から追加したgateを暗黙に含めない。
-- [ ] `compute_enabled`を保存可能なanalysis stateとして追加する。legacy definitionは単一targetかつenabledとして移行し、同名definitionを自動mergeしない。
-- [ ] `(sample_id, statistic_id, population_id)`をResult/preview/runtime cacheの一意keyにし、同じStatisticを複数Populationへ適用しても上書きされないcore testを追加する。
+- [x] `StatisticSpec.population_id`を後方互換な明示的`population_ids`へ拡張し、一つのstable Statistic IDを複数Populationへ割り当てられるようにする。GUIのAll/Subtree選択はaccept時点のstable ID集合として保存し、後から追加したgateを暗黙に含めない。
+- [x] `compute_enabled`を保存可能なanalysis stateとして追加する。legacy definitionは単一targetかつenabledとして移行し、同名definitionを自動mergeしない。
+- [x] `(sample_id, statistic_id, population_id)`をResult/preview/runtime cacheの一意keyにし、同じStatisticを複数Populationへ適用しても上書きされないcore testを追加する。
 
 #### Increment 2: Headless multi-population executionと局所invalidation
 

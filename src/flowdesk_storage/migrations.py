@@ -11,7 +11,7 @@ from typing import Any
 from flowdesk_core.boolean_expression import migrate_boolean_thresholds
 from flowdesk_core.errors import FlowdeskError
 
-CURRENT_PROJECT_VERSION = "1.6.0"
+CURRENT_PROJECT_VERSION = "1.7.0"
 
 
 @dataclass
@@ -42,6 +42,7 @@ LEGACY_PROJECT_VERSIONS = frozenset({
   "1.3.0",
   "1.4.0",
   "1.5.0",
+  "1.6.0",
 })
 
 # Ordered list of all known versions from oldest to newest.
@@ -53,6 +54,7 @@ ALL_KNOWN_VERSIONS = [
   "1.3.0",
   "1.4.0",
   "1.5.0",
+  "1.6.0",
   CURRENT_PROJECT_VERSION,
 ]
 
@@ -540,6 +542,32 @@ def _migrate_statistic_nonfinite_policy(
       diagnostics.append(diagnostic)
 
 
+def _migrate_statistic_population_targets(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Normalize legacy one-population statistics for the B7.5 model.
+
+  A legacy ``population_id`` has exactly one meaning, so migration can safely
+  materialize it as a one-element ordered target list. ``compute_enabled``
+  defaults to true to preserve historical execution behavior. No
+  display-name based merging or implicit additional targets occurs.
+  """
+  del diagnostics  # Lossless field additions need no warning diagnostic.
+  statistics = migrated.get("statistics", [])
+  if not isinstance(statistics, list):
+    return
+  for statistic in statistics:
+    if not isinstance(statistic, dict):
+      continue
+    if "population_ids" not in statistic:
+      population_id = statistic.get("population_id")
+      if isinstance(population_id, str) and population_id:
+        statistic["population_ids"] = [population_id]
+    if "compute_enabled" not in statistic:
+      statistic["compute_enabled"] = True
+
+
 MigrationFunction = Callable[[dict[str, Any], list[dict[str, Any]]], None]
 
 
@@ -637,3 +665,4 @@ MIGRATION_REGISTRY: dict[tuple[str, str], MigrationFunction] = {
   )
 }
 MIGRATION_REGISTRY[("1.5.0", "1.6.0")] = _add_default_sample_group
+MIGRATION_REGISTRY[("1.6.0", "1.7.0")] = _migrate_statistic_population_targets

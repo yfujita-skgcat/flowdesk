@@ -181,3 +181,40 @@ def test_preview_statistic_overlay_is_current_without_changing_batch_baseline() 
   assert row.freshness == "current"
   assert row.source == "active_sample_preview"
   assert state.authoritative_report.statistic_results == ()
+
+
+def test_multi_population_statistic_keys_do_not_collide() -> None:
+  report = ExecutionReport(
+    project_id="project",
+    execution_profile_id="default",
+    pipeline_version="test",
+    status="success",
+    population_results=(
+      PopulationResult("sample-1", "all_events", 10, None, 1.0),
+      PopulationResult("sample-1", "child", 4, 0.4, 0.4),
+    ),
+    statistic_results=(
+      StatisticResult("sample-1", "mean-fl1", "all_events", "mean", 10.0),
+      StatisticResult("sample-1", "mean-fl1", "child", "mean", 20.0),
+    ),
+  )
+  state = RuntimeResultState(
+    report,
+    authoritative_revision=1,
+    sample_ids=("sample-1",),
+    population_ids=("all_events", "child"),
+    statistic_definitions=(
+      ("mean-fl1", "all_events"),
+      ("mean-fl1", "child"),
+    ),
+  )
+
+  all_events = state.row(
+    ResultRowKey.statistic("sample-1", "mean-fl1", "all_events")
+  )
+  child = state.row(
+    ResultRowKey.statistic("sample-1", "mean-fl1", "child")
+  )
+  assert all_events.result.value == 10.0
+  assert child.result.value == 20.0
+  assert len([row for row in state.rows() if row.key.kind == "statistic"]) == 2

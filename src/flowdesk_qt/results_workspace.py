@@ -417,11 +417,15 @@ class ResultsWorkspace(QWidget):
     result = row.result
     if isinstance(result, StatisticResult):
       return result.population_id
+    if row.key.population_id:
+      return row.key.population_id
     if self._result_state is None:
       return None
-    for definition_id, population_id in self._result_state.statistic_definitions.items():
+    for definition_id, population_ids in self._result_state.statistic_definitions.items():
       if definition_id == row.key.result_id:
-        return population_id
+        if len(population_ids) == 1:
+          return population_ids[0]
+        return None
     return None
 
   def _row_status(

@@ -1921,11 +1921,24 @@ class PipelineRunner:
         )
       try:
         stat_id = definition["id"]
+        legacy_population_id = definition.get("population_id", "")
+        population_ids = tuple(
+          str(value) for value in definition.get(
+            "population_ids",
+            [legacy_population_id],
+          )
+        )
         parsed.append(
           StatisticSpec(
             id=stat_id,
             name=definition.get("name", stat_id),
-            population_id=definition["population_id"],
+            population_id=(
+              str(legacy_population_id)
+              if legacy_population_id else (
+                population_ids[0] if population_ids else ""
+              )
+            ),
+            population_ids=population_ids,
             parameter_id=definition.get("parameter_id"),
             metric=definition.get("metric", "count"),
             source_stage=definition.get("source_stage", "compensated"),
@@ -1935,6 +1948,7 @@ class PipelineRunner:
             settings=dict(definition.get("settings", {})),
             format=definition.get("format"),
             notes=str(definition.get("notes", "")),
+            compute_enabled=definition.get("compute_enabled", True),
           )
         )
       except (KeyError, TypeError, ValueError) as exc:

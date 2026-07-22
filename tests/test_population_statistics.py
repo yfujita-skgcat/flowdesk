@@ -397,6 +397,38 @@ class TestStatisticSpec:
     assert spec.metric == "percentile"
     assert spec.settings["q"] == 50
 
+  def test_construct_multi_population_targets(self) -> None:
+    spec = StatisticSpec(
+      id="stat_multi",
+      name="Mean across populations",
+      population_ids=("all_events", "live", "singlets"),
+      parameter_id="FL1-A",
+      metric="mean",
+    )
+    assert spec.population_ids == ("all_events", "live", "singlets")
+    assert spec.population_id == "all_events"
+    assert spec.compute_enabled is True
+
+  def test_disabled_statistic_is_persistable(self) -> None:
+    spec = StatisticSpec(
+      id="stat_disabled",
+      name="Disabled mean",
+      population_id="live",
+      parameter_id="FL1-A",
+      metric="mean",
+      compute_enabled=False,
+    )
+    assert spec.population_ids == ("live",)
+    assert spec.compute_enabled is False
+
+  def test_reject_duplicate_population_targets(self) -> None:
+    with pytest.raises(ValueError, match="population_ids must not contain duplicates"):
+      StatisticSpec(
+        id="stat_duplicate_targets",
+        name="Duplicate targets",
+        population_ids=("live", "live"),
+      )
+
   def test_reject_empty_id(self) -> None:
     with pytest.raises(ValueError, match="statistic ID must be non-empty"):
       StatisticSpec(

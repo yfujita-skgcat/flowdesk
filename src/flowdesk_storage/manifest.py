@@ -937,11 +937,48 @@ def _validate_current_statistics(
       raise ManifestValidationError(
         f"statistic {stat_id!r} name must be a non-empty string"
       )
-    population_id = stat.get("population_id")
-    if not isinstance(population_id, str) or not population_id:
+    legacy_population_id = stat.get("population_id")
+    if legacy_population_id is not None and (
+      not isinstance(legacy_population_id, str) or not legacy_population_id
+    ):
       raise ManifestValidationError(
         f"statistic {stat_id!r} population_id must be a non-empty string"
       )
+    population_ids = stat.get("population_ids")
+    if population_ids is None:
+      if legacy_population_id is None:
+        raise ManifestValidationError(
+          f"statistic {stat_id!r} requires population_id or population_ids"
+        )
+      population_ids = [legacy_population_id]
+    if (
+      not isinstance(population_ids, list)
+      or not population_ids
+      or any(not isinstance(value, str) or not value for value in population_ids)
+    ):
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} population_ids must be a non-empty string array"
+      )
+    if len(set(population_ids)) != len(population_ids):
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} population_ids must not contain duplicates"
+      )
+    if legacy_population_id is not None and legacy_population_id != population_ids[0]:
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} population_id must match first population_ids entry"
+      )
+    compute_enabled = stat.get("compute_enabled", True)
+    if not isinstance(compute_enabled, bool):
+      raise ManifestValidationError(
+        f"statistic {stat_id!r} compute_enabled must be a boolean"
+      )
+    if gate_ids is not None:
+      unknown_populations = set(population_ids) - (set(gate_ids) | {"all_events"})
+      if unknown_populations:
+        raise ManifestValidationError(
+          f"statistic {stat_id!r} references unknown populations "
+          f"{sorted(unknown_populations)!r}"
+        )
     metric = stat.get("metric")
     if metric not in valid_metrics:
       raise ManifestValidationError(
