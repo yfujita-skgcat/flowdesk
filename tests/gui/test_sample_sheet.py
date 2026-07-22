@@ -104,3 +104,28 @@ def test_sample_sheet_exposes_workspace_columns_and_preserves_fcs_read_only(qapp
     value["keyword"] == "Dose" and value["source"] == "workspace"
     for value in model.annotations()
   )
+
+
+def test_sample_sheet_actions_have_stable_names_and_replace_preserves_fcs(qapp) -> None:
+  dialog = SampleSheetDialog(
+    [{"id": "s1", "name": "Sample", "path": "/tmp/sample.fcs"}],
+    [{"sample_id": "s1", "keyword": "Condition", "value": "control", "source": "fcs"}],
+  )
+  try:
+    for name in (
+      "sampleSheetAddAnnotationColumnButton", "sampleSheetImportCsvButton",
+      "sampleSheetPasteButton", "sampleSheetFindReplaceButton",
+      "sampleSheetFillSeriesButton", "sampleSheetUndoButton",
+      "sampleSheetRedoButton",
+    ):
+      assert dialog.findChild(type(dialog._columns_button), name) is not None
+    before = dialog.annotations()
+    dialog._model.replace_text("control", "treated")
+    assert dialog.annotations() == before
+    dialog._model.add_annotation_column("ConditionWorkspace")
+    column = dialog._model.index(0, 5)
+    assert dialog._model.setData(column, "control")
+    dialog._model.replace_text("control", "treated")
+    assert dialog._model.data(column, Qt.ItemDataRole.DisplayRole) == "treated"
+  finally:
+    dialog.reject()

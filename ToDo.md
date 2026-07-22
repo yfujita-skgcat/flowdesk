@@ -767,12 +767,12 @@ LLM/Codex実行では番号付きincrementを一つだけ実装し、dialogの�
 #### Phase B7.4 必須受け入れtest
 
 - [x] Derived ParameterがParameters、X/Y、Gate、Transform、Statistic、simple Overlay、exportで同じstable IDとして利用でき、reload後のCLI/Python結果と一致する。
-- [ ] GUI plotがcanonical compensation/derived/transform済みdataを使用し、raw fallback、double transform、stale-as-current、display-downsampled scientific resultがない。
+- [x] GUI plotがcanonical compensation/derived/transform済みdataを使用し、raw fallback、double transform、stale-as-current、display-downsampled scientific resultがない。
 - [x] transform authoring pathが一つで、新規gateの座標・membership・tickと同じdefinitionを使い、legacy migrationが固定membership fixtureを維持する。
-- [ ] Statistics管理がResultsへ、title/annotation管理がSample Sheetへ、display操作がPlot/Viewへ整理され、重複entry pointが別modelを作らない。
-- [ ] title、参照annotation、未参照annotationのinvalidationがdependencyどおりで、raw FCS bytes/eventsは不変である。
-- [ ] Advanced Overlayはlive render/save/reload/export E2E完了までdisabled/hiddenで、既存保存definitionを失わない。
-- [ ] 全GUI testがstable objectNameとstrict callback handlingを使い、終了時にQThreadが残らない。
+- [x] Statistics管理がResultsへ、title/annotation管理がSample Sheetへ、display操作がPlot/Viewへ整理され、重複entry pointが別modelを作らない。
+- [x] title、参照annotation、未参照annotationのinvalidationがdependencyどおりで、raw FCS bytes/eventsは不変である。
+- [x] Advanced Overlayはlive render/save/reload/export E2E完了までdisabled/hiddenで、既存保存definitionを失わない。
+- [x] 全GUI testがstable objectNameとstrict callback handlingを使い、終了時にQThreadが残らない。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 
