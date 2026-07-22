@@ -208,6 +208,13 @@ derived expression/source stage, transform ID, and invalid reason. Gate membersh
 non-finite coordinate is false for that gate; the exclusion count is QC/provenance, not
 a zero-event success or an unreported fallback.
 
+The renderer-neutral display preparation emits `display_nonfinite_excluded` diagnostics
+with `parameter_id`, expression, source stage, axis transform ID, and separate counts for
+`NaN`, `+Inf`, and `-Inf`. Geometric gating emits `gate_nonfinite_excluded` diagnostics
+with gate ID, axis parameters/transforms, and the number excluded from that gate. These
+diagnostics are attached to the headless `ExecutionReport`, so GUI and CLI adapters can
+show the same QC rather than inferring it from a downsampled image.
+
 `log(x + 1)` is not a generic error recovery. It is a separate persisted expression,
 appropriate only when `x` is a non-negative quantity and including zero has a documented
 scientific meaning. For compensation-corrected fluorescence, which can legitimately be

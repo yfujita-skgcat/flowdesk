@@ -116,6 +116,7 @@ def evaluate_gating_strategy(
   *,
   transforms: Sequence[TransformSpec] = (),
   default_transform_ids: Mapping[str, str] | None = None,
+  diagnostics: list[dict[str, object]] | None = None,
 ) -> list[PopulationResult]:
   """Evaluate a gating strategy on event data.
 
@@ -146,7 +147,8 @@ def evaluate_gating_strategy_with_membership(
   channel_names: list[str],
   *,
   transforms: Sequence[TransformSpec] = (),
-  default_transform_ids: Mapping[str, str] | None = None,
+    default_transform_ids: Mapping[str, str] | None = None,
+    diagnostics: list[dict[str, object]] | None = None,
 ) -> tuple[list[PopulationResult], PopulationMaskDict]:
   """Evaluate a gating strategy and return both results and membership masks.
 
@@ -209,6 +211,28 @@ def evaluate_gating_strategy_with_membership(
           default_transform_ids=default_ids,
           transformed_cache=transformed_cache,
         )
+
+      # Comparisons with NaN/Inf evaluate false in the geometric gate
+      # predicates.  Record that exclusion explicitly so it is not mistaken
+      # for a biological negative population.  The event mask remains the
+      # authoritative full-resolution membership result.
+      x_finite = np.isfinite(x_values)
+      y_finite = np.ones(n_events, dtype=np.bool_) if y_values is None else np.isfinite(y_values)
+      invalid = ~(x_finite & y_finite)
+      if diagnostics is not None and np.any(invalid):
+        diagnostics.append({
+          "code": "gate_nonfinite_excluded",
+          "gate_id": gate.id,
+          "x_parameter_id": gate.x_parameter,
+          "y_parameter_id": gate.y_parameter,
+          "x_transform_id": gate.x_transform_id or gate.transform_id,
+          "y_transform_id": gate.y_transform_id,
+          "source_stage": "transformed",
+          "event_count": int(np.count_nonzero(invalid)),
+          "x_invalid_count": int(np.count_nonzero(~x_finite)),
+          "y_invalid_count": int(np.count_nonzero(~y_finite)),
+          "reason": "nonfinite_coordinate",
+        })
 
     gate_mask = evaluate_gate(gate, x_values, y_values, population_masks)
 

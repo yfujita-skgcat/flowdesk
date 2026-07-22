@@ -22,6 +22,33 @@ def test_1d_views_handle_empty_and_nonfinite(plot_type: str) -> None:
   assert result.diagnostics[0]["finite_event_count"] == 0
 
 
+def test_display_nonfinite_diagnostic_keeps_parameter_provenance() -> None:
+  view = PlotViewSpec(
+    id="v", x_parameter="ratio", y_parameter="signal", plot_type="scatter",
+    x_transform_id="logicle-v1",
+  )
+  result = prepare_display_data(
+    view,
+    np.array([[np.nan, 1.0], [np.inf, 2.0], [3.0, np.inf]]),
+    ["ratio", "signal"],
+    parameter_metadata={
+      "ratio": {
+        "expression": "signal / reference",
+        "source_stage": "derived",
+      },
+      "signal": {"source_stage": "compensated"},
+    },
+  )
+  assert result.x.size == 0
+  assert result.diagnostics[0]["parameter_id"] == "ratio"
+  assert result.diagnostics[0]["expression"] == "signal / reference"
+  assert result.diagnostics[0]["transform_id"] == "logicle-v1"
+  assert result.diagnostics[0]["invalid_reason_counts"] == {
+    "nan": 1, "positive_inf": 1, "negative_inf": 0,
+  }
+  assert result.diagnostics[1]["parameter_id"] == "signal"
+
+
 def test_invalid_population_membership_is_explicit() -> None:
   view = PlotViewSpec(id="v", population_id="p", x_parameter="X", y_parameter="Y")
   with pytest.raises(ValueError, match="membership is missing"):

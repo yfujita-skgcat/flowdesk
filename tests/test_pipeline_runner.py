@@ -739,7 +739,18 @@ def test_numeric_invalid_derived_values_are_excluded_from_downstream_gate(
   }
   assert counts["all_events"] == len(events)
   assert counts["finite_result"] == expected_gate_count
-  assert report.diagnostics == ()
+  gate_diagnostics = [
+    item for item in report.diagnostics
+    if item.code == "gate_nonfinite_excluded"
+  ]
+  if expected_gate_count < len(events):
+    assert len(gate_diagnostics) == 1
+    assert 0 < gate_diagnostics[0].affected_event_count <= (
+      len(events) - expected_gate_count
+    )
+    assert gate_diagnostics[0].details["x_parameter_id"] == "result"
+  else:
+    assert gate_diagnostics == []
   np.testing.assert_array_equal(sample.events, source_before)
 
 

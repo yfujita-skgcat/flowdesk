@@ -715,11 +715,31 @@ class PipelineRunner:
             pop_membership,
             population_parent_ids,
             auto_gate_fits,
+            gating_diagnostics,
           ) = self._step_gating(
             sample_gating_strategy_id, transformed, sid
           )
           diagnostics.extend(
             diagnostic for fit in auto_gate_fits for diagnostic in fit["diagnostics"]
+          )
+          diagnostics.extend(
+            ExecutionDiagnostic(
+              code=str(item["code"]),
+              message=(
+                f"gate {item['gate_id']!r} excluded "
+                f"{item['event_count']} event(s) with non-finite coordinates"
+              ),
+              severity="warning",
+              stage="gating",
+              sample_id=sid,
+              parameter_id=(
+                str(item["x_parameter_id"])
+                if item.get("x_parameter_id") is not None else None
+              ),
+              affected_event_count=int(item["event_count"]),
+              details=dict(item),
+            )
+            for item in gating_diagnostics
           )
           all_auto_gate_fits.extend(
             auto_gate_fit_to_mapping(fit["result"])
@@ -1226,7 +1246,7 @@ class PipelineRunner:
         continue
       try:
         transformed = self._step_transforms(_AnalysisData(sample.events, sample.channels))
-        _, membership, _, _ = self._step_gating(
+        _, membership, _, _, _ = self._step_gating(
           gating_strategy_id, transformed, sample_id
         )
       except GatingStrategyError as exc:
@@ -1494,6 +1514,7 @@ class PipelineRunner:
     list[PopulationMembership],
     dict[str, str | None],
     tuple[dict[str, Any], ...],
+    tuple[dict[str, Any], ...],
   ]:
     """Evaluate the gating strategy on transformed data.
 
@@ -1511,6 +1532,7 @@ class PipelineRunner:
           self._fallback_root_population(sample_id, int(data.events.shape[0])),
           self._fallback_root_membership(sample_id, int(data.events.shape[0])),
           {"all_events": None},
+          (),
           (),
         )
 
@@ -1655,12 +1677,14 @@ class PipelineRunner:
         f"{exc.code}: {exc}", code=exc.code, details=exc.details
       ) from exc
 
+    gating_diagnostics: list[dict[str, object]] = []
     results, masks = evaluate_gating_strategy_with_membership(
       strat,
       data.events,
       data.channel_ids,
       transforms=data.transforms,
       default_transform_ids=data.default_transform_ids,
+      diagnostics=gating_diagnostics,
     )
 
     # Attach sample_id to results (frozen dataclass, so rebuild).
@@ -1692,7 +1716,13 @@ class PipelineRunner:
       gate.id: gate.parent_population_id or strat.root_population_id
       for gate in strat.gates
     })
-    return tagged_results, tagged_membership, population_parent_ids, tuple(auto_fit_records)
+    return (
+      tagged_results,
+      tagged_membership,
+      population_parent_ids,
+      tuple(auto_fit_records),
+      tuple(gating_diagnostics),
+    )
 
   def _step_statistics(
     self,

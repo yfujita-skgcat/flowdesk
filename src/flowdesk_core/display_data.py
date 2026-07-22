@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,6 +33,7 @@ def prepare_display_data(
   report: ExecutionReport | None = None,
   *,
   sample_id: str | None = None,
+  parameter_metadata: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> DisplayData:
   """Prepare a view from full events and report membership, with deterministic bins."""
   names = tuple(channel_names)
@@ -54,9 +56,15 @@ def prepare_display_data(
     mask = np.asarray(memberships[0].mask, dtype=np.bool_)
   selected_x = np.asarray(events[mask, x_index], dtype=np.float64)
   finite_x = selected_x[np.isfinite(selected_x)]
+  x_meta = dict((parameter_metadata or {}).get(view.x_parameter, {}))
   diagnostics = [{
     "code": "display_nonfinite_excluded", "event_count": int(len(selected_x)),
     "finite_event_count": int(len(finite_x)),
+    "parameter_id": view.x_parameter,
+    "expression": x_meta.get("expression"),
+    "source_stage": x_meta.get("source_stage"),
+    "transform_id": view.x_transform_id,
+    "invalid_reason_counts": _invalid_reason_counts(selected_x),
   }]
   if view.plot_type in {"histogram", "cdf"}:
     if view.plot_type == "cdf":
@@ -75,6 +83,17 @@ def prepare_display_data(
     raise ValueError(f"display Y parameter is missing: {view.y_parameter!r}") from exc
   selected_y = np.asarray(events[mask, y_index], dtype=np.float64)
   pair = np.isfinite(selected_x) & np.isfinite(selected_y)
+  if np.any(~np.isfinite(selected_y)):
+    diagnostics.append({
+      "code": "display_nonfinite_excluded",
+      "event_count": int(len(selected_y)),
+      "finite_event_count": int(np.count_nonzero(np.isfinite(selected_y))),
+      "parameter_id": view.y_parameter,
+      "expression": (parameter_metadata or {}).get(view.y_parameter, {}).get("expression"),
+      "source_stage": (parameter_metadata or {}).get(view.y_parameter, {}).get("source_stage"),
+      "transform_id": view.y_transform_id,
+      "invalid_reason_counts": _invalid_reason_counts(selected_y),
+    })
   x_values, y_values = selected_x[pair], selected_y[pair]
   if view.plot_type in {"scatter", "dot"}:
     max_points = int(view.rendering_downsample.get("max_points", 20_000))
@@ -115,3 +134,12 @@ def _histogram(
   if values.size == 0:
     return np.zeros(bins, dtype=np.float64), np.zeros(bins + 1, dtype=np.float64)
   return np.histogram(values, bins=bins)
+
+
+def _invalid_reason_counts(values: NDArray[np.float64]) -> dict[str, int]:
+  """Classify omitted coordinates without converting them into valid values."""
+  return {
+    "nan": int(np.count_nonzero(np.isnan(values))),
+    "positive_inf": int(np.count_nonzero(np.isposinf(values))),
+    "negative_inf": int(np.count_nonzero(np.isneginf(values))),
+  }
