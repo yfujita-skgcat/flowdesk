@@ -3262,11 +3262,17 @@ class MainWindow(QMainWindow):
 
     def _on_add_statistic_from_population_tree(self, population_id: str) -> None:
         """Open a new statistic definition scoped to a tree population."""
-        self._open_statistics_editor(population_id=population_id)
+        self._open_statistics_editor(
+            population_id=population_id,
+            parameter_id=self._channel_selector.x_channel_id() or None,
+        )
 
     def _on_add_statistic_from_results(self, population_id: str) -> None:
         """Open the shared statistic editor from the Results workspace."""
-        self._open_statistics_editor(population_id=population_id)
+        self._open_statistics_editor(
+            population_id=population_id,
+            parameter_id=self._channel_selector.x_channel_id() or None,
+        )
 
     def _on_add_statistic_from_graph(self) -> None:
         """Open a new statistic definition using the graph X parameter."""

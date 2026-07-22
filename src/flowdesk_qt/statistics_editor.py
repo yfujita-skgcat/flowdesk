@@ -281,6 +281,7 @@ class StatisticsEditorDialog(QDialog):
         self._duplicate_button.clicked.connect(self._duplicate_statistic)
         self._clear_button.clicked.connect(self._clear_all)
         self._metric_combo.currentTextChanged.connect(self._on_metric_changed)
+        self._metric_combo.currentIndexChanged.connect(self._on_metric_changed)
         self._source_combo.currentTextChanged.connect(self._on_source_changed)
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
@@ -354,6 +355,10 @@ class StatisticsEditorDialog(QDialog):
 
             self._notes_edit.setText(str(value.get("notes", "")))
             self._diag_label.clear()
+            self._on_metric_changed()
+            # Reapply after all row fields and enabled states have settled.  This
+            # prevents a persisted count definition from leaving the Parameter
+            # selector disabled when the user changes Metric to a value metric.
             self._on_metric_changed()
         finally:
             self._loading = False

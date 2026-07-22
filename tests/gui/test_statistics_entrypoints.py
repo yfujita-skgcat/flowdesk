@@ -69,6 +69,39 @@ def test_dialog_new_statistic_defaults_are_persisted_state(qapp) -> None:
   assert definition["value_policy"] == "full_events"
 
 
+def test_value_metric_enables_parameter_selector(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events",),
+  )
+  assert not dialog._parameter_combo.isEnabled()
+  dialog._metric_combo.setCurrentText("mean")
+  assert dialog._parameter_combo.isEnabled()
+
+
+def test_results_add_statistic_defaults_to_active_x_parameter(qapp, monkeypatch) -> None:
+  window = MainWindow()
+  captured: dict[str, object] = {}
+  window._channel_selector.set_channel_specs(
+    (ChannelSpec(id="FL1-A", name="FL1-A"),)
+  )
+  monkeypatch.setattr(
+    window,
+    "_open_statistics_editor",
+    lambda **kwargs: captured.update(kwargs),
+  )
+  try:
+    window._on_add_statistic_from_results("all_events")
+    assert captured == {
+      "population_id": "all_events",
+      "parameter_id": "FL1-A",
+    }
+  finally:
+    window.close()
+    window.deleteLater()
+
+
 def test_statistics_editor_duplicate_creates_new_definition(qapp) -> None:
   dialog = StatisticsEditorDialog(
     statistics=[{
