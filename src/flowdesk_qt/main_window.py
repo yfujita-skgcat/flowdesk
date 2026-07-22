@@ -2466,9 +2466,49 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        self._derived_parameters = dialog.definitions()
+        updated = dialog.definitions()
+        removed_outputs = {
+            str(value.get("output_channel_id") or value.get("id"))
+            for value in self._derived_parameters
+        } - {
+            str(value.get("output_channel_id") or value.get("id"))
+            for value in updated
+        }
+        references = self._derived_parameter_references(removed_outputs)
+        if references:
+            QMessageBox.warning(
+                self,
+                "Derived parameter is in use",
+                "Cannot delete a derived parameter while it is referenced by:\n- "
+                + "\n- ".join(references),
+            )
+            return
+        self._derived_parameters = updated
         self._refresh_parameter_catalog()
         self._mark_results_stale("Derived parameters changed")
+
+    def _derived_parameter_references(self, output_ids: set[str]) -> list[str]:
+        """List persisted dependencies before a derived output may be removed."""
+        if not output_ids:
+            return []
+        references: list[str] = []
+        for value in self._derived_parameters:
+            inputs = {str(item) for item in value.get("input_parameters", [])}
+            if inputs & output_ids:
+                references.append(f"derived parameter {value.get('name', value.get('id'))}")
+        for value in self._transforms:
+            if value.get("parameter") in output_ids:
+                references.append(f"transform {value.get('name', value.get('id'))}")
+        for gate in self._gate_editor.gates():
+            if {gate.x_parameter, gate.y_parameter} & output_ids:
+                references.append(f"gate {gate.name}")
+        for value in self._statistics:
+            if value.get("parameter_id") in output_ids:
+                references.append(f"statistic {value.get('name', value.get('id'))}")
+        for view in self._plot_views:
+            if {view.get("x_parameter"), view.get("y_parameter")} & output_ids:
+                references.append(f"plot view {view.get('name', view.get('id'))}")
+        return references
 
     def _on_edit_annotations(self) -> None:
         """Edit project annotations through a GUI-independent data contract."""
