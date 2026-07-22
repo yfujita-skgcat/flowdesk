@@ -50,7 +50,7 @@ def test_graph_add_statistic_button_emits_callback(qapp) -> None:
   assert calls == ["called"]
 
 
-def test_dialog_new_statistic_defaults_are_persisted_state(qapp) -> None:
+def test_dialog_open_does_not_create_statistic_until_new_is_clicked(qapp) -> None:
   dialog = StatisticsEditorDialog(
     statistics=[],
     available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
@@ -62,6 +62,8 @@ def test_dialog_new_statistic_defaults_are_persisted_state(qapp) -> None:
     },
   )
 
+  assert dialog._statistics == []
+  dialog._new_button.click()
   definition = dialog._statistics[-1]
   assert definition["population_id"] == "live"
   assert definition["parameter_id"] == "FL1-A"

@@ -335,6 +335,11 @@ project commands and validator. Selecting a Results population pre-fills its sta
 selecting a graph may pre-fill its parameter ID. There is one `StatisticSpec` collection
 and one editor contract.
 
+Opening the editor is side-effect free: entry-point defaults are retained as pending
+defaults and are applied only after the dialog's explicit `New` action. Reopening or
+cancelling the dialog must not append an unnamed `New statistic` definition to project
+state.
+
 `Events`, `% Parent`, and `% Total` remain normal Results columns. Named count/frequency
 specifications are created only when a persisted/exportable named result is requested.
 For many custom statistics, offer a long-form detail table rather than an unrelated

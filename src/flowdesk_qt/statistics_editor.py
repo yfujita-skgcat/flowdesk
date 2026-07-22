@@ -119,16 +119,20 @@ class StatisticsEditorDialog(QDialog):
         self._channels = tuple(available_channels)
         self._population_ids = tuple(population_ids)
         self._transforms = tuple(dict(value) for value in transforms)
+        # Defaults supplied by an entry point (for example Results -> Add
+        # Statistic...) are applied only when the user explicitly clicks New.
+        # Opening the editor must be side-effect free and must not create an
+        # uncommitted placeholder definition.
+        self._pending_new_defaults = (
+            dict(new_statistic_defaults)
+            if new_statistic_defaults is not None else None
+        )
         self._current_row = -1
         self._loading = False
 
         self._build_ui()
 
-        if new_statistic_defaults is not None:
-            self._statistics.append(_empty_statistic(new_statistic_defaults))
-        elif not self._statistics:
-            self._statistics.append(_empty_statistic())
-        self._refresh_list(len(self._statistics) - 1)
+        self._refresh_list(len(self._statistics) - 1 if self._statistics else -1)
 
     # -- Public API ----------------------------------------------------------
 
@@ -406,7 +410,9 @@ class StatisticsEditorDialog(QDialog):
 
     def _add_statistic(self) -> None:
         self._commit_current()
-        self._statistics.append(_empty_statistic())
+        defaults = self._pending_new_defaults
+        self._pending_new_defaults = None
+        self._statistics.append(_empty_statistic(defaults))
         self._refresh_list(len(self._statistics) - 1)
 
     def _delete_statistic(self) -> None:
