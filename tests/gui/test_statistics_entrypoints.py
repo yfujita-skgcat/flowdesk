@@ -11,7 +11,10 @@ from flowdesk_core.models import ChannelSpec, PopulationResult, StatisticResult
 from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.population_tree import PopulationTree
-from flowdesk_qt.statistics_editor import StatisticsEditorDialog
+from flowdesk_qt.statistics_editor import (
+  StatisticManagementDialog,
+  StatisticsEditorDialog,
+)
 
 pytestmark = pytest.mark.gui
 
@@ -144,6 +147,23 @@ def test_statistics_editor_reports_removed_population_dependency(qapp) -> None:
   assert "removed_gate" in dialog._diag_label.text()
   with pytest.raises(ValueError, match="missing population target"):
     dialog.definitions()
+
+
+def test_statistics_editor_blocks_delete_with_downstream_reference(qapp, monkeypatch) -> None:
+  messages: list[str] = []
+  monkeypatch.setattr(
+    "flowdesk_qt.statistics_editor.QMessageBox.information",
+    lambda _parent, _title, message: messages.append(str(message)),
+  )
+  dialog = StatisticsEditorDialog(
+    statistics=[{"id": "mean", "name": "Mean", "population_id": "all_events"}],
+    available_channels=(),
+    population_ids=("all_events",),
+    statistic_references={"mean": ("Group strategy binding: binding-1",)},
+  )
+  dialog._delete_button.click()
+  assert len(dialog._statistics) == 1
+  assert "binding-1" in messages[0]
 
 
 def test_statistics_editor_rejects_empty_selected_scope(qapp) -> None:
@@ -310,6 +330,32 @@ def test_results_manage_statistics_entrypoint_uses_shared_editor(qapp) -> None:
   workspace.on_manage_statistics_requested(lambda: calls.append("manage"))
   workspace._manage_statistics_button.click()
   assert calls == ["manage"]
+
+
+def test_statistic_management_dialog_separates_compute_and_show(qapp) -> None:
+  dialog = StatisticManagementDialog(
+    [{
+      "id": "mean",
+      "name": "Mean",
+      "population_ids": ["all_events", "live"],
+      "parameter_id": "FL1-A",
+      "metric": "mean",
+      "source_stage": "compensated",
+      "compute_enabled": True,
+    }],
+    {"mean": True},
+  )
+  compute = dialog.findChild(type(dialog._compute_checks["mean"]), "statisticComputeCheck_mean")
+  show = dialog.findChild(type(dialog._show_checks["mean"]), "statisticShowCheck_mean")
+  assert compute is not None and show is not None
+  compute.setChecked(False)
+  show.setChecked(False)
+  assert dialog.definitions()[0]["compute_enabled"] is False
+  assert dialog.visibility() == {"mean": False}
+  assert [dialog._table.horizontalHeaderItem(index).text() for index in range(8)] == [
+    "Compute", "Show", "Statistic", "Parameter", "Metric", "Value domain",
+    "Applies to", "Status",
+  ]
 
 
 def test_main_window_exposes_sample_sheet_and_batch_plot_actions(qapp) -> None:

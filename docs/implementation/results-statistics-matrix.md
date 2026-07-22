@@ -219,19 +219,25 @@ automatic warning threshold is chosen.
   list at commit time; a later gate is not implicitly added.
 - `Compute enabled` is persisted in the statistic definition and is honored by the
   headless runner. Results `Columns...` controls `Show` as display-only state, while
-  `Manage Statistics...` opens the same editor used by Add Statistic.
+  `Manage Statistics...` presents a table with `Compute`, `Show`, `Statistic`,
+  `Parameter`, `Metric`, `Value domain`, `Applies to`, and `Status` columns. Detailed
+  target/expression editing remains in the shared Add/definition editor.
 - Cancel, duplicate, save/reload, stable object-name coverage, statistics editor
   Undo/Redo, and missing-target/empty-selection validation are implemented. Removing a
   gate leaves its statistic definition intact but surfaces a blocking dependency
   diagnostic instead of silently retargeting it. Selected targets are rendered in a
-  checkable hierarchy and an empty selection is rejected by model validation.
+  checkable hierarchy and an empty selection is rejected by model validation. Deleting
+  a statistic with downstream Group strategy bindings is blocked and the references are
+  listed so the dependency command path can be handled explicitly.
 
 ### Increment 5: Export, preview, cleanup, and end-to-end acceptance
 
 - GUI wide/detail cells, authoritative report, preview, Python API, and long/wide
   CSV/TSV export now use the same `(sample, statistic, population)` identity. Long
   export retains status and non-finite QC fields; the new wide helper emits one row per
-  sample/population and one stable statistic-ID column per definition.
+  sample/population and one stable statistic-ID metadata block per definition
+  (value, unit, status, undefined reason, QC counts, non-finite policy, and optional
+  runtime revision). Missing metadata remains blank; no disabled value is fabricated.
 - The legacy statistic-child rendering path is removed; saved Results display state
   migrates through mode/visibility/order/width settings, with hidden columns kept
   distinct from disabled definitions.

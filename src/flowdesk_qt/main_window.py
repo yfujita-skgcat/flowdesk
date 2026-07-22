@@ -1044,7 +1044,7 @@ class MainWindow(QMainWindow):
             self._on_add_statistic_from_results
         )
         self._results_workspace.on_manage_statistics_requested(
-            self._open_statistics_editor
+            self._open_statistics_manager
         )
         self._workspace_tree.on_selection_changed(self._on_workspace_tree_selected)
 
@@ -3362,6 +3362,7 @@ class MainWindow(QMainWindow):
             catalog,
             population_ids,
             population_parents=self._population_parent_map(),
+            statistic_references=self._statistic_reference_map(),
             transforms=self._transforms,
             new_statistic_defaults=(
                 {
@@ -3378,6 +3379,40 @@ class MainWindow(QMainWindow):
             return
         self._statistics = dialog.definitions()
         self._mark_results_stale("Statistics changed")
+
+    def _statistic_reference_map(self) -> dict[str, tuple[str, ...]]:
+        """Describe persisted downstream bindings before a statistic is removed."""
+        references: dict[str, list[str]] = {}
+        for binding in self._group_strategy_bindings:
+            binding_id = str(binding.get("id", "binding"))
+            for statistic_id in binding.get("statistic_ids", ()):
+                references.setdefault(str(statistic_id), []).append(
+                    f"Group strategy binding: {binding_id}"
+                )
+        return {statistic_id: tuple(values) for statistic_id, values in references.items()}
+
+    def _open_statistics_manager(self) -> None:
+        """Edit Compute/Show flags without mixing display state with analysis."""
+        from flowdesk_qt.statistics_editor import StatisticManagementDialog
+
+        dialog = StatisticManagementDialog(
+            self._statistics,
+            self._results_workspace.statistic_column_visibility(),
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        updated = dialog.definitions()
+        compute_changed = [
+            value for old, value in zip(self._statistics, updated, strict=True)
+            if bool(old.get("compute_enabled", True))
+            != bool(value.get("compute_enabled", True))
+        ]
+        self._statistics = updated
+        self._results_workspace.set_statistic_column_visibility(dialog.visibility())
+        self._project_dirty = True
+        if compute_changed:
+            self._mark_results_stale("Statistic Compute settings changed")
 
     def _on_migrate_gate(self, gate) -> None:
         """Preview and explicitly duplicate or replace one geometric gate."""

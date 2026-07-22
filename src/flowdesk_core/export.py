@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import math
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -308,13 +309,16 @@ def write_statistic_results_wide(
   path: str | Path,
   delimiter: str = "\t",
   nan_policy: NaNPolicy = "string_nan",
+  revisions: Mapping[tuple[str, str, str], int | None] | None = None,
 ) -> None:
-  """Write one row per sample/population with one value column per statistic.
+  """Write one row per sample/population with metadata columns per statistic.
 
   The long-form :func:`write_statistic_results` remains the lossless export for
   status and QC metadata.  This view is intended for spreadsheet-style matrix
   analysis; column names use stable statistic IDs and duplicate target rows do
-  not overwrite one another.
+  not overwrite one another. ``revisions`` can supply runtime revision values
+  keyed by ``(sample_id, statistic_id, population_id)``; otherwise the revision
+  cell is empty rather than fabricated.
   """
   statistic_ids = list(dict.fromkeys(result.statistic_id for result in results))
   rows: dict[tuple[str, str], dict[str, StatisticResult]] = {}
@@ -322,7 +326,15 @@ def write_statistic_results_wide(
     rows.setdefault((result.sample_id, result.population_id), {})[
       result.statistic_id
     ] = result
-  header = ["sample_id", "population_id"] + statistic_ids
+  metadata_suffixes = (
+    "value", "unit", "status", "undefined_reason", "n_total", "n_valid",
+    "n_invalid", "invalid_fraction", "non_finite_policy", "revision",
+  )
+  header = ["sample_id", "population_id"] + [
+    f"{statistic_id}_{suffix}"
+    for statistic_id in statistic_ids
+    for suffix in metadata_suffixes
+  ]
   try:
     out_path = Path(path)
     with out_path.open("w", encoding="utf-8", newline="") as fh:
@@ -330,16 +342,26 @@ def write_statistic_results_wide(
       writer.writerow(header)
       for sample_id, population_id in sorted(rows):
         values = rows[(sample_id, population_id)]
-        writer.writerow([
-          sample_id,
-          population_id,
-          *[
-            _format_value(
-              values[statistic_id].value if statistic_id in values else None,
-              nan_policy,
-            )
-            for statistic_id in statistic_ids
-          ],
-        ])
+        row: list[object] = [sample_id, population_id]
+        for statistic_id in statistic_ids:
+          result = values.get(statistic_id)
+          if result is None:
+            row.extend([_nan_placeholder(nan_policy)] + [""] * 9)
+            continue
+          row.extend([
+            _format_value(result.value, nan_policy),
+            result.unit or "",
+            result.status,
+            result.undefined_reason or "",
+            "" if result.n_total is None else result.n_total,
+            "" if result.n_valid is None else result.n_valid,
+            "" if result.n_invalid is None else result.n_invalid,
+            "" if result.invalid_fraction is None else result.invalid_fraction,
+            result.non_finite_policy,
+            "" if revisions is None else revisions.get(
+              (sample_id, statistic_id, population_id), ""
+            ),
+          ])
+        writer.writerow(row)
   except OSError as exc:
     raise ExportError(f"Failed to write export file: {path}") from exc

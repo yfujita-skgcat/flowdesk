@@ -26,6 +26,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -111,6 +113,7 @@ class StatisticsEditorDialog(QDialog):
         population_ids: Sequence[str],
         *,
         population_parents: Mapping[str, str | None] | None = None,
+        statistic_references: Mapping[str, Sequence[str]] | None = None,
         transforms: Sequence[Mapping[str, Any]] = (),
         new_statistic_defaults: Mapping[str, Any] | None = None,
         parent: QWidget | None = None,
@@ -124,6 +127,10 @@ class StatisticsEditorDialog(QDialog):
         self._channels = tuple(available_channels)
         self._population_ids = tuple(population_ids)
         self._population_parents = dict(population_parents or {})
+        self._statistic_references = {
+            str(statistic_id): tuple(str(reference) for reference in references)
+            for statistic_id, references in (statistic_references or {}).items()
+        }
         self._transforms = tuple(dict(value) for value in transforms)
         # Defaults supplied by an entry point (for example Results -> Add
         # Statistic...) are applied only when the user explicitly clicks New.
@@ -483,6 +490,16 @@ class StatisticsEditorDialog(QDialog):
         row = self._list.currentRow()
         if row < 0:
             return
+        statistic_id = str(self._statistics[row].get("id", ""))
+        references = self._statistic_references.get(statistic_id, ())
+        if references:
+            QMessageBox.information(
+                self,
+                "Statistic has dependencies",
+                "Remove these references before deleting "
+                + statistic_id + ":\n- " + "\n- ".join(references),
+            )
+            return
         self._record_history()
         self._statistics.pop(row)
         self._current_row = -1
@@ -711,3 +728,98 @@ class StatisticsEditorDialog(QDialog):
             QMessageBox.warning(self, "Invalid statistic definition", str(exc))
             return
         self.accept()
+
+
+class StatisticManagementDialog(QDialog):
+    """Compact Compute/Show management table for persisted statistics.
+
+    This dialog only edits analysis flags and Results display state. Scientific
+    values are never calculated here; detailed definition editing remains in
+    :class:`StatisticsEditorDialog`.
+    """
+
+    _HEADERS = (
+        "Compute", "Show", "Statistic", "Parameter", "Metric",
+        "Value domain", "Applies to", "Status",
+    )
+
+    def __init__(
+        self,
+        statistics: Sequence[dict[str, Any]],
+        visibility: Mapping[str, bool] | None = None,
+        *,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("statisticManagementDialog")
+        self.setWindowTitle("Manage Statistics")
+        self.resize(900, 420)
+        self._statistics = deepcopy(list(statistics))
+        self._visibility = dict(visibility or {})
+        self._compute_checks: dict[str, QCheckBox] = {}
+        self._show_checks: dict[str, QCheckBox] = {}
+
+        layout = QVBoxLayout(self)
+        self._table = QTableWidget(0, len(self._HEADERS))
+        self._table.setObjectName("statisticManagementTable")
+        self._table.setHorizontalHeaderLabels(list(self._HEADERS))
+        self._table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self._table)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.setObjectName("statisticManagementDialogButtons")
+        layout.addWidget(buttons)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self._populate()
+
+    def _populate(self) -> None:
+        self._table.setRowCount(len(self._statistics))
+        for row, value in enumerate(self._statistics):
+            statistic_id = str(value.get("id", ""))
+            compute = QCheckBox()
+            compute.setObjectName(f"statisticComputeCheck_{statistic_id}")
+            compute.setChecked(bool(value.get("compute_enabled", True)))
+            show = QCheckBox()
+            show.setObjectName(f"statisticShowCheck_{statistic_id}")
+            show.setChecked(self._visibility.get(statistic_id, True))
+            self._compute_checks[statistic_id] = compute
+            self._show_checks[statistic_id] = show
+            self._table.setCellWidget(row, 0, compute)
+            self._table.setCellWidget(row, 1, show)
+            self._set_item(row, 2, value.get("name") or statistic_id)
+            self._set_item(row, 3, value.get("parameter_id") or "(none)")
+            self._set_item(row, 4, value.get("metric", "count"))
+            self._set_item(row, 5, value.get("transform_id") or value.get("source_stage", ""))
+            targets = value.get("population_ids") or [value.get("population_id", "")]
+            self._set_item(row, 6, str(len([target for target in targets if target])))
+            self._set_item(
+                row, 7, "enabled" if compute.isChecked() else "disabled"
+            )
+            compute.toggled.connect(
+                lambda checked, row=row: self._set_item(
+                    row, 7, "enabled" if checked else "disabled"
+                )
+            )
+
+    def _set_item(self, row: int, column: int, value: object) -> None:
+        self._table.setItem(row, column, QTableWidgetItem(str(value)))
+
+    def definitions(self) -> list[dict[str, Any]]:
+        result = deepcopy(self._statistics)
+        for value in result:
+            statistic_id = str(value.get("id", ""))
+            value["compute_enabled"] = self._compute_checks[statistic_id].isChecked()
+        return result
+
+    def visibility(self) -> dict[str, bool]:
+        return {
+            statistic_id: check.isChecked()
+            for statistic_id, check in self._show_checks.items()
+        }

@@ -377,12 +377,26 @@ def test_write_statistic_results_wide_keeps_population_rows_and_stable_columns(
     StatisticResult("s1", "count", "live", "count", 2),
   ]
   out = tmp_path / "wide.tsv"
-  write_statistic_results_wide(results, out)
+  write_statistic_results_wide(
+    results,
+    out,
+    revisions={("s1", "mean", "live"): 7},
+  )
   with out.open(encoding="utf-8") as fh:
     rows = list(csv.reader(fh, delimiter="\t"))
-  assert rows[0] == ["sample_id", "population_id", "mean", "count"]
-  assert rows[1] == ["s1", "all_events", "3.0", "NaN"]
-  assert rows[2] == ["s1", "live", "7.0", "2"]
+  assert rows[0] == [
+    "sample_id", "population_id",
+    "mean_value", "mean_unit", "mean_status", "mean_undefined_reason",
+    "mean_n_total", "mean_n_valid", "mean_n_invalid", "mean_invalid_fraction",
+    "mean_non_finite_policy", "mean_revision",
+    "count_value", "count_unit", "count_status", "count_undefined_reason",
+    "count_n_total", "count_n_valid", "count_n_invalid", "count_invalid_fraction",
+    "count_non_finite_policy", "count_revision",
+  ]
+  assert rows[1][0:5] == ["s1", "all_events", "3.0", "", "ok"]
+  assert rows[2][0:5] == ["s1", "live", "7.0", "", "ok"]
+  assert rows[2][12:15] == ["2", "", "ok"]
+  assert rows[2][11] == "7"
 
 
 def test_write_statistic_results_csv_delimiter(tmp_path: Path) -> None:

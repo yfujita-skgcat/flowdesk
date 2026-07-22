@@ -832,14 +832,14 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 #### Increment 4: Population scopeとCompute/Show管理
 
 - [x] Add/Manage Statisticへ`Current population`、`Current and descendants`、`Selected populations...`、`All current populations`を追加し、checkbox hierarchyで明示targetを編集する。既定は呼出元Populationとする。
-- [x] Manage Statisticsへ`Compute`（統計エディタ）と`Show`（ResultsのColumns...）を追加する。`Compute`はanalysis revisionと該当resultを更新し、`Show`はdisplay stateだけを変更してpipelineを実行しない。
+- [x] Manage Statisticsへ`Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to | Status`表と、Resultsの`Columns...`を追加する。`Compute`はanalysis revisionと該当resultを更新し、`Show`はdisplay stateだけを変更してpipelineを実行しない。
 - [x] Newの明示操作、cancel、duplicate、remove dependency、Undo/Redo、save/reload、missing target、empty selection、stable objectNameをGUI testする。
   - [x] Newの明示操作、cancel、duplicate、save/reload、および主要ウィジェットのstable objectNameをGUI testする。
   - [x] remove dependency、Undo/Redo、missing target、empty selectionの専用UIとGUI testを追加する。
 
 #### Increment 5: Export、preview、migration cleanup、E2E
 
-- [x] GUI wide/detail、authoritative Run Pipeline、current-sample preview、Python API、long/wide CSV/TSVが全`(sample, statistic, population)` key、値、unit、status、QC、revisionで一致するようにする。wide statistic exportはstable Statistic ID列とPopulation行を保持し、long形式はQCを保持する。
+- [x] GUI wide/detail、authoritative Run Pipeline、current-sample preview、Python API、long/wide CSV/TSVが全`(sample, statistic, population)` key、値、unit、status、QC、revisionで一致するようにする。wide statistic exportはstable Statistic ID metadata blockとPopulation行を保持し、long形式はQCを保持する。
 - [x] legacy child-row Results view stateを移行して旧描画経路を削除し、hiddenとdisabledを混同しない。disabled definitionを削除せず、exportで値を捏造しない。
 - [x] column hide/reorder、scroll、display downsampleがmembership/statisticsを変えないE2E test、full core/GUI test、thread shutdown、mean/median/percentile matrix benchmarkを完了する。
 
