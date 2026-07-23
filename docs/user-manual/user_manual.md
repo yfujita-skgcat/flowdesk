@@ -337,7 +337,7 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 |Gate type|`rectangle`、`range`、`polygon`、`ellipse`、`boolean`|
 |creation context label|parent、sample、current axes、scale/transform IDs を表示する。|
 |Create Gate|選択 gate type で新規作成。rectangle/polygon は plot interaction、range/ellipse/boolean は dialog。|
-|Delete Selected|選択 gate を削除する。child gate や Boolean source から参照される gate は削除拒否。|
+|Delete Selected|選択 gate を削除する。child gate や Boolean source から参照される gate は削除拒否。削除したgateのResults行と保持済み結果も直ちに除去され、Resultsはstaleになる。|
 
 ### 10.2 Gate hierarchy
 

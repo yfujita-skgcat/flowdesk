@@ -158,6 +158,23 @@ def test_new_population_has_no_fabricated_old_value() -> None:
   assert row.freshness == "recalculating"
 
 
+def test_removed_population_is_discarded_from_rows_and_authoritative_report() -> None:
+  state = _state()
+
+  state.remove_populations(("child",))
+
+  assert "child" not in state.defined_population_ids
+  assert state.authoritative_report is not None
+  assert all(
+    result.population_id != "child"
+    for result in state.authoritative_report.population_results
+  )
+  assert all(
+    row.key.population_id != "child"
+    for row in state.rows()
+  )
+
+
 def test_preview_statistic_overlay_is_current_without_changing_batch_baseline() -> None:
   state = _state()
   state.invalidate(

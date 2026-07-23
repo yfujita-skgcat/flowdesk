@@ -7,7 +7,7 @@ does not evaluate gates, memberships, frequencies, or statistics.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from flowdesk_core.execution_report import ExecutionReport
@@ -115,6 +115,62 @@ class RuntimeResultState:
     """Return statistic-to-population identities for missing overlay rows."""
     return dict(self._statistic_population_ids)
 
+  @property
+  def defined_population_ids(self) -> frozenset[str]:
+    """Return the population IDs currently represented by the result state."""
+    return frozenset(self._defined_population_ids)
+
+  def remove_populations(self, population_ids: Sequence[str]) -> None:
+    """Discard deleted populations from rows, definitions, and cached reports."""
+    removed = {str(population_id) for population_id in population_ids}
+    if not removed:
+      return
+
+    self._defined_population_ids.difference_update(removed)
+    self._statistic_population_ids = {
+      statistic_id: tuple(
+        population_id
+        for population_id in population_ids_for_statistic
+        if population_id not in removed
+      )
+      for statistic_id, population_ids_for_statistic
+      in self._statistic_population_ids.items()
+    }
+    self._statistic_population_ids = {
+      statistic_id: population_ids_for_statistic
+      for statistic_id, population_ids_for_statistic
+      in self._statistic_population_ids.items()
+      if population_ids_for_statistic
+    }
+    self._disabled_statistic_keys = {
+      key for key in self._disabled_statistic_keys if key[1] not in removed
+    }
+    self._rows = {
+      key: row
+      for key, row in self._rows.items()
+      if (key.population_id or key.result_id) not in removed
+    }
+
+    if self._authoritative_report is not None:
+      self._authoritative_report = replace(
+        self._authoritative_report,
+        population_results=tuple(
+          result
+          for result in self._authoritative_report.population_results
+          if result.population_id not in removed
+        ),
+        population_membership=tuple(
+          membership
+          for membership in self._authoritative_report.population_membership
+          if membership.population_id not in removed
+        ),
+        statistic_results=tuple(
+          result
+          for result in self._authoritative_report.statistic_results
+          if result.population_id not in removed
+        ),
+      )
+
   def _register_statistic_definitions(
     self,
     statistic_definitions: Sequence[tuple[str, str] | tuple[str, str, bool]],
@@ -122,6 +178,8 @@ class RuntimeResultState:
     grouped: dict[str, list[str]] = {}
     for definition in statistic_definitions:
       statistic_id, population_id = definition[:2]
+      if population_id not in self._defined_population_ids:
+        continue
       compute_enabled = len(definition) < 3 or bool(definition[2])
       grouped.setdefault(statistic_id, []).append(population_id)
       if not compute_enabled:

@@ -1209,16 +1209,23 @@ class MainWindow(QMainWindow):
 
         Refresh overlays and invalidate cached population results.
         """
-        self._population_tree.set_population_parents(self._population_parent_map())
+        population_parents = self._population_parent_map()
+        removed_population_ids = (
+            self._result_state.defined_population_ids
+            - set(population_parents)
+        )
+        self._result_state.remove_populations(removed_population_ids)
+        self._last_result_report = None
+        self._population_tree.set_population_parents(population_parents)
         self._workspace_tree.set_population_hierarchy(
-            self._population_parent_map(), self._population_name_map()
+            population_parents, self._population_name_map()
         )
         self._results_workspace.set_population_hierarchy(
-            self._population_parent_map(), self._population_name_map()
+            population_parents, self._population_name_map()
         )
         self._result_state.update_definitions(
             sample_ids=tuple(sample.id for sample in self._sample_browser.samples()),
-            population_ids=tuple(self._population_parent_map()),
+            population_ids=tuple(population_parents),
             statistic_definitions=tuple(
                 (
                     str(value.get("id")),
