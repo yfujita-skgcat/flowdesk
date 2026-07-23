@@ -10,12 +10,14 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 authors = [{ name = "Flowdesk contributors" }]
-dependencies = []
+dependencies = [
+  "numpy",
+  "flowio",
+]
 
 [project.optional-dependencies]
-io = ["flowio", "flowkit"]
-gui = ["PySide6", "pyqtgraph", "datashader"]
-dev = ["pytest", "ruff", "mypy"]
+gui = ["PySide6", "pyqtgraph"]
+dev = ["pytest", "ruff", "mypy", "pyinstaller"]
 gui-test = ["pytest-qt"]
 
 [project.scripts]

@@ -86,6 +86,8 @@ from flowdesk_core.project_commands import (
     UndoStack,
 )
 from flowdesk_core.sample import SampleData
+from flowdesk_qt.app_info import APP_NAME, application_version
+from flowdesk_qt.app_paths import cache_directory
 from flowdesk_qt.channel_metadata import ChannelMetadataWorkspace
 from flowdesk_qt.channel_selector import DEFAULT_DISPLAY_MAX_POINTS, ChannelSelector
 from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
@@ -284,7 +286,7 @@ class MainWindow(QMainWindow):
             interval_seconds=int(QSettings().value("autosave/interval_seconds", 300)),
             retention=int(QSettings().value("autosave/retention", 5)),
         )
-        self._recovery_manager = RecoveryManager(Path.home() / ".cache" / "flowdesk" / "recovery")
+        self._recovery_manager = RecoveryManager(cache_directory() / "recovery")
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setInterval(self._autosave_settings.interval_seconds * 1000)
         self._autosave_timer.timeout.connect(self._autosave_tick)
@@ -409,7 +411,7 @@ class MainWindow(QMainWindow):
         report = self._population_tree.last_report()
         worker_error = None if worker is None else worker._error
         return {
-            "application": {"name": "Flowdesk", "version": "0.1.0"},
+            "application": {"name": APP_NAME, "version": application_version()},
             "window": {
                 "title": self.windowTitle(),
                 "visible": self.isVisible(),
@@ -4620,9 +4622,9 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About Flowdesk",
-            "Flowdesk\n\n"
+            f"{APP_NAME}\n\n"
             "Linux-first FlowJo-like flow cytometry analysis application.\n"
-            "Version 0.1.0",
+            f"Version {application_version()}",
         )
 
     # -- status bar ----------------------------------------------------------

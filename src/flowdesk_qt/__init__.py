@@ -13,6 +13,8 @@ from typing import Any
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication
 
+from flowdesk_qt.app_info import APP_NAME, ORGANIZATION_NAME, application_version
+from flowdesk_qt.app_paths import debug_artifacts_directory
 from flowdesk_qt.diagnostics import configure_gui_logging, default_run_id, install_exception_hook
 from flowdesk_qt.main_window import MainWindow
 
@@ -50,18 +52,19 @@ def run_app(
     Returns:
       Application exit code.
     """
-    artifacts_dir = Path(
-        debug_artifacts_dir or Path("artifacts/gui") / default_run_id()
-    )
-    configure_gui_logging(artifacts_dir, log_level)
-    install_exception_hook()
-
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
 
-    app.setApplicationName("Flowdesk")
-    app.setOrganizationName("Flowdesk")
+    app.setApplicationName(APP_NAME)
+    app.setOrganizationName(ORGANIZATION_NAME)
+    app.setApplicationVersion(application_version())
+
+    artifacts_dir = Path(
+        debug_artifacts_dir or debug_artifacts_directory() / default_run_id()
+    )
+    configure_gui_logging(artifacts_dir, log_level)
+    install_exception_hook()
 
     window = MainWindow()
     window.show()

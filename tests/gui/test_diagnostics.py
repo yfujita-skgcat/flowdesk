@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QPushButton
 
+from flowdesk_qt.app_info import APP_NAME, application_version
 from flowdesk_qt.diagnostics import invoke_callback
 from flowdesk_qt.main_window import MainWindow
 from tests.gui.helpers import sanitize_node_id, save_failure_artifacts
@@ -21,6 +22,10 @@ def test_main_window_object_names_and_debug_state(qapp) -> None:
     assert window.findChild(QPushButton, "createGateButton") is not None
     assert window.action_run_pipeline.objectName() == "actionRunPipeline"
     state = window.debug_state()
+    assert state["application"] == {
+      "name": APP_NAME,
+      "version": application_version(),
+    }
     assert state["status"] == "Ready"
     assert state["pipeline"] == {
       "worker_present": False,

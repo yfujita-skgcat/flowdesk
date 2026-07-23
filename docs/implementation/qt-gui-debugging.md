@@ -118,16 +118,15 @@ GUI全体の書き直しは禁止します。既存の公開メソッドとテ�
 
 ```toml
 [project.optional-dependencies]
-io = ["flowio", "flowkit"]
-gui = ["PySide6", "pyqtgraph", "datashader"]
-dev = ["pytest", "ruff", "mypy"]
+gui = ["PySide6", "pyqtgraph"]
+dev = ["pytest", "ruff", "mypy", "pyinstaller"]
 gui-test = ["pytest-qt"]
 ```
 
 インストール例をREADMEへ追加してください。
 
 ```bash
-python -m pip install -e '.[io,gui,dev,gui-test]'
+python -m pip install -e '.[gui,dev,gui-test]'
 ```
 
 `pytest-qt`導入後も、既存テストを一度に全面書換えしないでください。新規テストから`qtbot`と`qapp`を使用し、
@@ -302,10 +301,12 @@ pytest終了時の強制GCまで破棄待ちQObjectを残さないでくださ�
 現在は各モジュールにloggerがありますが、GUI起動時のファイルログ設定がありません。
 `src/flowdesk_qt/diagnostics.py`にGUI用ログ初期化を実装してください。
 
-保存先例:
+通常起動時の保存先は Qt の OS 標準ユーザー領域であり、保存先例は次の構成になる。
+テストや開発時は `--debug-artifacts-dir` または `FLOWDESK_GUI_ARTIFACT_DIR` で
+明示的なディレクトリを指定できる。
 
 ```text
-artifacts/gui/<run-id>/logs/application.log
+<AppLocalDataLocation>/debug-artifacts/<run-id>/logs/application.log
 ```
 
 ログには以下を含めてください。

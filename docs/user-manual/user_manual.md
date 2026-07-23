@@ -61,7 +61,7 @@ Gate、compensation、derived parameter、analysis transform、statistic definit
 GUI 依存関係を含めてインストールする。
 
 ```bash
-python -m pip install -e '.[io,gui,dev]'
+python -m pip install -e '.[gui,dev]'
 ```
 
 空の状態で起動する。
@@ -75,6 +75,10 @@ python -m flowdesk_qt
 ```bash
 python -m flowdesk_qt --data-dir data/
 ```
+
+通常起動時のログ・デバッグ情報と recovery copy は、カレントディレクトリではなく
+OSごとのユーザー書込み可能なアプリケーションデータ領域へ保存される。
+開発時に保存先を指定する場合は `--debug-artifacts-dir` を使用する。
 
 ---
 

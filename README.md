@@ -32,7 +32,7 @@ python -m pip install -e '.[dev]'
 Optional groups:
 
 ```bash
-python -m pip install -e '.[io,gui,dev,gui-test]'
+python -m pip install -e '.[gui,dev,gui-test]'
 ```
 
 ## Tests
@@ -86,7 +86,7 @@ The CLI `run` command exports population statistics as TSV by default. Use `--cs
 The PySide6-based GUI is available as an optional dependency. Install the `gui` extra:
 
 ```bash
-python -m pip install -e '.[io,gui,dev]'
+python -m pip install -e '.[gui,dev]'
 ```
 
 ### Launching the GUI
@@ -109,8 +109,11 @@ make test-all
 ```
 
 GUI tests use the offscreen Qt backend by default. For X11-specific behavior, use
-`FLOWDESK_GUI_BACKEND=xvfb ./tools/run-gui-tests.sh`. Failure artifacts and run
-metadata are written under `artifacts/gui/<run-id>/`.
+`FLOWDESK_GUI_BACKEND=xvfb ./tools/run-gui-tests.sh`. When the GUI is launched
+normally, logs and debug artifacts are written below the OS-specific user
+application-data directory. Use `--debug-artifacts-dir` to select an explicit
+directory during development or CI. Recovery copies use the OS-specific user
+cache directory.
 
 ### GUI Layout
 
