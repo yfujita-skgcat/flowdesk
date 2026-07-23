@@ -98,25 +98,19 @@ def test_population_filter_reduces_scatter_points(
         assert window._plot_widget._scatter is not None
         assert len(window._plot_widget._scatter.xData) == 4
 
+        # Select the gated population before changing only the display scale.
+        window._on_population_selected("pos", sample.id)
+        qapp.processEvents()
+        assert window._plot_widget._scatter is not None
+        assert len(window._plot_widget._scatter.xData) == 3
+
         # Changing one display scale must not recalculate the linear gate.
         window._channel_selector.set_analysis_transform_choice("x", "log")
         window._on_axis_analysis_transform_requested("x", "log")
         assert not window._results_stale
-        assert window._plot_widget._scatter is not None
-        assert len(window._plot_widget._scatter.xData) == 4
-
-        # Select gate population -> 3 points
-        table = window._population_tree._table
-        table.selectRow(1)
-        qapp.processEvents()
-        # _replot() creates a new scatter object; re-fetch the reference
+        assert window._plot_widget._x_transform == "log10"
         assert window._plot_widget._scatter is not None
         assert len(window._plot_widget._scatter.xData) == 3
-
-        # Select all_events -> 4 points
-        table.selectRow(0)
-        qapp.processEvents()
-        assert len(window._plot_widget._scatter.xData) == 4
     finally:
         window.close()
         window.deleteLater()

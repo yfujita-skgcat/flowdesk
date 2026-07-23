@@ -1193,6 +1193,33 @@ def test_gui_created_logicle_rectangle_binds_ids_and_matches_headless() -> None:
     app.processEvents()
 
 
+def test_gui_created_rectangle_uses_active_display_coordinate_context() -> None:
+  """New gates use the same coordinates as the plot that received the drag."""
+  app = _app()
+  window = MainWindow()
+  try:
+    window._current_sample_id = "sample"
+    window._channel_names = ["X", "Y"]
+    window._channel_selector.set_channels(["X", "Y"])
+    window._gate_editor.set_plot_scales("log10", "linear")
+    window._gate_editor.set_plot_transforms(None, None)
+
+    window._create_rectangle_gate(2.0, 10.0, 4.0, 20.0)
+
+    gate = window._gate_editor.gates()[0]
+    assert gate.x_scale == "log10"
+    assert gate.y_scale == "linear"
+    assert gate.x_transform_id is None
+    assert gate.y_transform_id is None
+    window._plot_widget.set_axis_transforms("log10", "linear")
+    window._plot_widget.add_gate_overlay(gate)
+    assert len(window._plot_widget._gate_items) == 1
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_gui_created_logicle_polygon_binds_ids_and_matches_headless() -> None:
   app = _app()
   editor = GateEditor()

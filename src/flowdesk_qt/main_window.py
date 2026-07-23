@@ -1279,7 +1279,7 @@ class MainWindow(QMainWindow):
         )
         if not parameter_id or parameter_id == "__count__":
             return
-        if self._gate_editor.gates():
+        if self._gate_editor.gates() and choice in {"linear", "log", "asinh"}:
             # Axis changes are display-only while gate definitions exist.  The
             # gate membership remains in its stored coordinate space; the plot
             # widget hides overlays whose coordinate scales no longer match.
@@ -1574,22 +1574,26 @@ class MainWindow(QMainWindow):
             )
         self._plot_widget.set_axis_transform_specs(x_spec, y_spec)
 
+        x_display_scale = (
+            "linear"
+            if x_spec is not None
+            else self._channel_selector.x_analysis_display_transform()
+        )
+        y_display_scale = (
+            "linear"
+            if y_spec is not None
+            else self._channel_selector.y_analysis_display_transform()
+        )
+
         # Sync gate editor with current channels
         self._gate_editor.set_plot_channels(x_id, y_id)
-        analysis_x_spec = self._transform_for_parameter(x_id)
-        analysis_y_spec = (
-            None if self._channel_selector.is_count_mode()
-            else self._transform_for_parameter(y_id)
-        )
         self._gate_editor.set_plot_scales(
-            "linear" if analysis_x_spec is not None
-            else self._channel_selector.x_transform(),
-            "linear" if analysis_y_spec is not None
-            else self._channel_selector.y_transform(),
+            x_display_scale,
+            "linear" if self._channel_selector.is_count_mode() else y_display_scale,
         )
         self._gate_editor.set_plot_transforms(
-            None if analysis_x_spec is None else analysis_x_spec.id,
-            None if analysis_y_spec is None else analysis_y_spec.id,
+            None if x_spec is None else x_spec.id,
+            None if y_spec is None else y_spec.id,
         )
 
         request = self._processed_display_request(
@@ -1635,8 +1639,7 @@ class MainWindow(QMainWindow):
             # 1D histogram: only X channel data is needed.
             x_data = x_data[processed.display_mask]
 
-            x_transform = self._channel_selector.x_transform()
-            self._plot_widget.set_axis_transforms(x_transform, "linear")
+            self._plot_widget.set_axis_transforms(x_display_scale, "linear")
             self._plot_widget.plot_histogram(x_data, x_label=x_name)
 
             # No 2D gate overlays in histogram mode.
@@ -1667,9 +1670,7 @@ class MainWindow(QMainWindow):
             marginal_y = y_data
 
             # Apply axis transform settings to the plot widget.
-            x_transform = self._channel_selector.x_transform()
-            y_transform = self._channel_selector.y_transform()
-            self._plot_widget.set_axis_transforms(x_transform, y_transform)
+            self._plot_widget.set_axis_transforms(x_display_scale, y_display_scale)
 
             self._plot_widget.plot_events(
                 x_data, y_data,
@@ -3889,6 +3890,17 @@ class MainWindow(QMainWindow):
         x_name = self._channel_selector.x_channel_id()
         y_name = self._channel_selector.y_channel_id()
 
+        x_scale, y_scale, x_transform_id, y_transform_id = (
+            self._gate_editor.plot_coordinate_context()
+        )
+        if not self._gate_editor.has_plot_coordinate_context():
+            # This fallback supports programmatic creation before a plot refresh.
+            # Normal interactive creation always uses the exact context synced
+            # by ``_replot`` above.
+            x_transform = self._transform_for_parameter(x_name)
+            y_transform = self._transform_for_parameter(y_name)
+            x_transform_id = None if x_transform is None else x_transform.id
+            y_transform_id = None if y_transform is None else y_transform.id
         gate = GateSpec(
             id=f"gate_{uuid.uuid4().hex[:8]}",
             name=f"rect_{len(self._gate_editor.gates()) + 1}",
@@ -3898,20 +3910,10 @@ class MainWindow(QMainWindow):
             ),
             x_parameter=x_name,
             y_parameter=y_name,
-            x_scale="linear" if self._transform_for_parameter(x_name) else (
-                self._channel_selector.x_transform()
-            ),
-            y_scale="linear" if self._transform_for_parameter(y_name) else (
-                self._channel_selector.y_transform()
-            ),
-            x_transform_id=(
-                None if self._transform_for_parameter(x_name) is None
-                else self._transform_for_parameter(x_name).id
-            ),
-            y_transform_id=(
-                None if self._transform_for_parameter(y_name) is None
-                else self._transform_for_parameter(y_name).id
-            ),
+            x_scale=x_scale,
+            y_scale=y_scale,
+            x_transform_id=x_transform_id,
+            y_transform_id=y_transform_id,
             thresholds={
                 "x_min": x_min,
                 "x_max": x_max,

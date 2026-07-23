@@ -426,6 +426,7 @@ class GateEditor(QWidget):
         self._y_scale: str = "linear"
         self._x_transform_id: str | None = None
         self._y_transform_id: str | None = None
+        self._plot_coordinate_context_ready = False
         self._parent_population_id: str = "all_events"
         self._polygon_vertices: list[tuple[float, float]] = []
         self._collecting_polygon: bool = False
@@ -459,7 +460,26 @@ class GateEditor(QWidget):
         """Bind exact analysis coordinate IDs used by newly drawn gates."""
         self._x_transform_id = x_transform_id
         self._y_transform_id = y_transform_id
+        self._plot_coordinate_context_ready = True
         self._update_creation_banner()
+
+    def plot_coordinate_context(self) -> tuple[str, str, str | None, str | None]:
+        """Return the coordinate system currently used by the plot.
+
+        Geometric gates must be stored in precisely the same coordinate system
+        that was used to draw them.  This is display metadata only; the core
+        pipeline evaluates the resulting ``GateSpec`` independently of Qt.
+        """
+        return (
+            self._x_scale,
+            self._y_scale,
+            self._x_transform_id,
+            self._y_transform_id,
+        )
+
+    def has_plot_coordinate_context(self) -> bool:
+        """Return whether the current coordinate context came from a plot refresh."""
+        return self._plot_coordinate_context_ready
 
     def set_current_sample_id(self, sample_id: str | None) -> None:
         self._current_sample_id = sample_id or ""

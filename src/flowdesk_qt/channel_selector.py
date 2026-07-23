@@ -230,6 +230,16 @@ class ChannelSelector(QWidget):
         """Return the currently selected Y axis transform."""
         return self._y_transform_combo.currentText()  # type: ignore[return-value]
 
+    def x_analysis_display_transform(self) -> AxisTransform:
+        """Return the X transform choice in PlotWidget display terminology."""
+        choice = str(self._x_analysis_transform_combo.currentData() or "linear")
+        return {"log": "log10"}.get(choice, "linear")  # type: ignore[return-value]
+
+    def y_analysis_display_transform(self) -> AxisTransform:
+        """Return the Y transform choice in PlotWidget display terminology."""
+        choice = str(self._y_analysis_transform_combo.currentData() or "linear")
+        return {"log": "log10"}.get(choice, "linear")  # type: ignore[return-value]
+
     def set_x_transform(self, transform: AxisTransform) -> None:
         """Set the X axis transform programmatically."""
         idx = self._x_transform_combo.findText(transform)
