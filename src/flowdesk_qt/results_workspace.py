@@ -503,7 +503,8 @@ class ResultsWorkspace(QWidget):
       for result in self._report.statistic_results:
         self._statistic_header_tooltips.setdefault(
           result.statistic_id,
-          "statistic_id=" + result.statistic_id
+          (result.statistic_name or result.statistic_id)
+          + " [ID=" + result.statistic_id + "]"
           + "; metric=" + result.metric
           + "; unit=" + str(result.unit or ""),
         )

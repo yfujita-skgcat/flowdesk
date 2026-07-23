@@ -874,6 +874,10 @@ class StatisticManagementDialog(QDialog):
             self._table.setCellWidget(row, 0, compute)
             self._table.setCellWidget(row, 1, show)
             self._set_item(row, 2, value.get("name") or statistic_id)
+            self._table.item(row, 2).setToolTip(
+                f"name={value.get('name') or statistic_id}; "
+                f"metric={value.get('metric', 'count')}; ID={statistic_id}"
+            )
             parameter_id = str(value.get("parameter_id") or "")
             self._set_item(
                 row, 3,

@@ -32,6 +32,7 @@ raw FCS events
 - Every body line must start with `- ` and describe a concrete change.
 - Use Japanese for the first title and body, then a line containing exactly `----`, followed by the English title and body.
 - When the current model name is available, include it as a standalone line immediately below each corresponding title, as in the project’s commit examples; otherwise omit it.
+- Don't add a space line between each item.
 
 Japanese title (≤ 50 chars)
 

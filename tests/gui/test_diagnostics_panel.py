@@ -68,3 +68,33 @@ def test_diagnostics_panel_discards_old_rows_when_stale(qapp) -> None:
   assert panel._table.rowCount() == 0
   assert panel._detail_edit.toPlainText() == ""
   assert panel._status_label.text() == "Diagnostics stale; rerun pipeline"
+
+
+def test_diagnostics_panel_adds_readable_gate_and_statistic_references(qapp) -> None:
+  panel = DiagnosticsPanel()
+  report = ExecutionReport(
+    project_id="project",
+    execution_profile_id="default",
+    pipeline_version="0.1",
+    status="partial_success",
+    diagnostics=(
+      ExecutionDiagnostic(
+        code="gate_problem",
+        message="gate 'gate-123' and statistic 'stat-123' could not be evaluated",
+        severity="warning",
+        stage="gating",
+      ),
+    ),
+  )
+
+  panel.set_report(
+    report,
+    gate_labels={"gate-123": "rect_1 [rectangle; ID=gate-123]"},
+    statistic_labels={
+      "stat-123": "FSC-A Mean [mean; parameter=FSC-A; ID=stat-123]"
+    },
+  )
+
+  message = panel._table.item(0, 4).text()
+  assert "rect_1 [rectangle; ID=gate-123]" in message
+  assert "FSC-A Mean [mean; parameter=FSC-A; ID=stat-123]" in message

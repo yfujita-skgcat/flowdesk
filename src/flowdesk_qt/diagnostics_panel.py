@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
   QAbstractItemView,
@@ -26,16 +29,28 @@ class DiagnosticsPanel(QWidget):
     self.setObjectName("diagnosticsPanel")
     self._build_ui()
 
-  def set_report(self, report: ExecutionReport) -> None:
+  def set_report(
+    self,
+    report: ExecutionReport,
+    *,
+    gate_labels: Mapping[str, str] | None = None,
+    statistic_labels: Mapping[str, str] | None = None,
+  ) -> None:
     """Display diagnostics from one completed headless pipeline run."""
     self._table.setRowCount(len(report.diagnostics))
+    labels = dict(gate_labels or {})
+    labels.update({
+      key: value for key, value in (statistic_labels or {}).items()
+      if key not in labels
+    })
     for row, diagnostic in enumerate(report.diagnostics):
+      message = _annotate_reference_ids(diagnostic.message, labels)
       values = (
         diagnostic.severity,
         diagnostic.code,
         diagnostic.stage,
         diagnostic.sample_id or "",
-        diagnostic.message,
+        message,
       )
       for column, value in enumerate(values):
         item = QTableWidgetItem(value)
@@ -108,3 +123,20 @@ class DiagnosticsPanel(QWidget):
       return
     self._detail_edit.setPlaceholderText("")
     self._detail_edit.setPlainText(item.text())
+
+
+def _annotate_reference_ids(message: str, labels: Mapping[str, str]) -> str:
+  """Add human-readable names to stable IDs without changing the report."""
+  if not message or not labels:
+    return message
+  identifiers = sorted(
+    (str(value) for value in labels if value), key=len, reverse=True
+  )
+  if not identifiers:
+    return message
+  pattern = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?:"
+    + "|".join(re.escape(value) for value in identifiers)
+    + r")(?![A-Za-z0-9_.-])"
+  )
+  return pattern.sub(lambda match: labels[match.group(0)], message)

@@ -953,6 +953,7 @@ class GateEditor(QWidget):
                     item = self._list_widget.item(index)
                     if item is not None:
                         item.setText(self._gate_label(gate))
+                        item.setToolTip(self._gate_list_tooltip(gate))
             finally:
                 self._updating_list_item = False
         self._refresh_all_views(select_gate_id=select_gate_id)
@@ -1255,7 +1256,12 @@ class GateEditor(QWidget):
     def _gate_tooltip(
         self, gate: GateSpec, parent_id: str, expression: str
     ) -> str:
-        lines = [f"id={gate.id}", f"parent={parent_id}"]
+        lines = [
+            f"name={gate.name}",
+            f"type={gate.gate_type}",
+            f"ID={gate.id}",
+            f"parent={parent_id}",
+        ]
         if expression:
             lines.append(expression)
         stats = self._population_stats.get(gate.id)
@@ -1545,11 +1551,19 @@ class GateEditor(QWidget):
         from PySide6.QtWidgets import QListWidgetItem  # noqa: N812
 
         item = QListWidgetItem(self._gate_label(gate))
+        item.setToolTip(self._gate_list_tooltip(gate))
         item.setFlags(item.flags() | Qt.ItemIsEditable)
         self._list_widget.addItem(item)
 
     def _gate_label(self, gate: GateSpec) -> str:
         return f"{gate.name} ({gate.gate_type})"
+
+    @staticmethod
+    def _gate_list_tooltip(gate: GateSpec) -> str:
+        return (
+            f"name={gate.name}; type={gate.gate_type}; ID={gate.id}; "
+            f"parent={gate.parent_population_id or 'all_events'}"
+        )
 
     def _name_from_item_text(self, text: str, gate_type: str) -> str:
         value = text.strip()

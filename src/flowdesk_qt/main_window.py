@@ -2462,7 +2462,11 @@ class MainWindow(QMainWindow):
             )
             self._results_workspace.set_result_state(self._result_state)
             self._refresh_override_statuses()
-            self._diagnostics_panel.set_report(report)
+            self._diagnostics_panel.set_report(
+                report,
+                gate_labels=self._diagnostic_gate_labels(),
+                statistic_labels=self._diagnostic_statistic_labels(),
+            )
             self._gate_editor.set_population_results(report.population_results)
             self._results_stale = False
             self._results_stale_reason = None
@@ -3714,6 +3718,28 @@ class MainWindow(QMainWindow):
         names = {"all_events": "All Events"}
         names.update({gate.id: gate.name for gate in self._gate_editor.gates()})
         return names
+
+    def _diagnostic_gate_labels(self) -> dict[str, str]:
+        """Build readable gate references for diagnostic presentation only."""
+        return {
+            gate.id: f"{gate.name} [{gate.gate_type}; ID={gate.id}]"
+            for gate in self._gate_editor.gates()
+        }
+
+    def _diagnostic_statistic_labels(self) -> dict[str, str]:
+        """Build readable statistic references for diagnostic presentation only."""
+        labels: dict[str, str] = {}
+        for value in self._statistics:
+            statistic_id = str(value.get("id") or "")
+            if not statistic_id:
+                continue
+            name = str(value.get("name") or statistic_id)
+            metric = str(value.get("metric") or "count")
+            parameter = str(value.get("parameter_id") or "no parameter")
+            labels[statistic_id] = (
+                f"{name} [{metric}; parameter={parameter}; ID={statistic_id}]"
+            )
+        return labels
 
     def _validate_population_selection(self, report: Any) -> None:
         """Ensure the currently selected population ID is valid for the current sample.
