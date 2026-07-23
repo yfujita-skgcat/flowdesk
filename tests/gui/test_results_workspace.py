@@ -209,6 +209,34 @@ def test_results_workspace_column_chooser_and_statistics_detail_share_state(qapp
     qapp.processEvents()
 
 
+def test_results_workspace_uses_statistic_definition_name_for_column(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy({"all_events": None})
+    workspace.set_statistic_definition_names({"stat-1": "Cells Mean"})
+    workspace.set_result_state(
+      RuntimeResultState(
+        ExecutionReport(
+          project_id="project",
+          execution_profile_id="default",
+          pipeline_version="test",
+          status="success",
+          population_results=(PopulationResult("sample-1", "all_events", 10, None, 1.0),),
+          statistic_results=(),
+        ),
+        statistic_definitions=(("stat-1", "all_events"),),
+        sample_ids=("sample-1",),
+        population_ids=("all_events",),
+      )
+    )
+    assert workspace.tree().headerItem().text(4) == "Cells Mean"
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
 def test_results_workspace_selection_distinguishes_sample_and_population(qapp) -> None:
   workspace = ResultsWorkspace()
   selected: list[tuple[str, str, str]] = []

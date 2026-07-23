@@ -151,12 +151,15 @@ def _statistic_identity_parts(
     value: Mapping[str, Any],
     population_labels: Mapping[str, str],
 ) -> tuple[str, str]:
-    """Suggest ``name`` and ID components from the target population and metric."""
-    targets = value.get("population_ids") or [value.get("population_id", "all_events")]
-    target_id = next((str(target) for target in targets if target), "all_events")
-    population_name = population_labels.get(target_id, target_id)
+    """Suggest ``name`` and ID components from parameter and metric."""
     metric = str(value.get("metric") or "count")
-    name = f"{_slug_identity(population_name)}_{_slug_identity(metric)}"
+    parameter_id = str(value.get("parameter_id") or "").strip()
+    if parameter_id:
+        identity = _slug_identity(parameter_id)
+        name = f"{identity}_{_slug_identity(metric)}"
+    else:
+        # Count/frequency metrics have no parameter, so use the metric itself.
+        name = _slug_identity(metric)
     return name, f"stat_{name}"
 
 

@@ -70,6 +70,7 @@ class ResultsWorkspace(QWidget):
     self._statistic_columns: list[str] = []
     self._display_statistic_columns: list[str] = []
     self._statistic_names: dict[str, str] = {}
+    self._statistic_definition_names: dict[str, str] = {}
     self._statistic_headers: dict[str, str] = {}
     self._statistic_header_tooltips: dict[str, str] = {}
     self._visible_statistic_ids: set[str] | None = None
@@ -219,6 +220,15 @@ class ResultsWorkspace(QWidget):
     self._report = None if state is None else state.authoritative_report
     self._results_stale = False if state is None else state.batch_stale
     self._force_all_stale = False
+    self._rebuild()
+
+  def set_statistic_definition_names(self, names: Mapping[str, str]) -> None:
+    """Use persisted Statistic names for dynamic Results column headers."""
+    self._statistic_definition_names = {
+      str(statistic_id): str(name)
+      for statistic_id, name in names.items()
+      if str(name).strip()
+    }
     self._rebuild()
 
   def mark_results_stale(self) -> None:
@@ -472,7 +482,9 @@ class ResultsWorkspace(QWidget):
     if self._result_state is not None:
       for statistic_id in self._result_state.statistic_definitions:
         if statistic_id not in names:
-          names[statistic_id] = statistic_id
+          names[statistic_id] = self._statistic_definition_names.get(
+            statistic_id, statistic_id
+          )
           order.append(statistic_id)
       self._statistic_rows = {
         (row.key.sample_id, row.key.result_id, row.key.population_id): row
@@ -495,6 +507,9 @@ class ResultsWorkspace(QWidget):
       or statistic_id in self._visible_statistic_ids
     ]
     self._statistic_names = names
+    for statistic_id, name in self._statistic_definition_names.items():
+      if statistic_id in names:
+        names[statistic_id] = name
     self._statistic_headers = {
       statistic_id: names[statistic_id] for statistic_id in order
     }

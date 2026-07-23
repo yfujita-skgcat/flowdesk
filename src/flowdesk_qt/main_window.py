@@ -2543,6 +2543,13 @@ class MainWindow(QMainWindow):
                     )
                 ),
             )
+            self._results_workspace.set_statistic_definition_names(
+                {
+                    str(value.get("id")): str(value.get("name"))
+                    for value in self._statistics
+                    if value.get("id") and value.get("name")
+                }
+            )
             self._results_workspace.set_result_state(self._result_state)
             self._refresh_override_statuses()
             self._diagnostics_panel.set_report(
@@ -4478,6 +4485,13 @@ class MainWindow(QMainWindow):
             return
         self._preview_report = report
         self._old_membership_banner = False
+        self._results_workspace.set_statistic_definition_names(
+            {
+                str(value.get("id")): str(value.get("name"))
+                for value in self._statistics
+                if value.get("id") and value.get("name")
+            }
+        )
         self._results_workspace.set_result_state(self._result_state)
         self._refresh_override_statuses()
         self._replot()
@@ -4514,6 +4528,13 @@ class MainWindow(QMainWindow):
         self._results_stale = True
         self._population_tree.clear()
         self._population_tree.mark_results_stale()
+        self._results_workspace.set_statistic_definition_names(
+            {
+                str(value.get("id")): str(value.get("name"))
+                for value in self._statistics
+                if value.get("id") and value.get("name")
+            }
+        )
         self._results_workspace.set_result_state(self._result_state)
         self._diagnostics_panel.clear(stale=True)
         self._gate_editor.clear_population_results()
