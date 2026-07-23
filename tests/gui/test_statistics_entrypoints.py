@@ -72,7 +72,7 @@ def test_dialog_open_does_not_create_statistic_until_new_is_clicked(qapp) -> Non
   assert definition["parameter_id"] == "FL1-A"
   assert definition["metric"] == "mean"
   assert definition["value_policy"] == "full_events"
-  assert definition["name"] == "fl1_a_mean"
+  assert definition["name"] == "FL1-A_mean"
   assert definition["id"] == "stat_fl1_a_mean"
   assert not dialog._id_edit.isReadOnly()
 

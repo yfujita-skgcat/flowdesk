@@ -136,7 +136,7 @@ but it remains labelled preview and cannot replace missing authoritative batch r
 `Add Statistic...` opens the existing side-effect-free editor. A definition is created
 only after explicit `New`. The form includes:
 
-New definitions receive a readable initial name such as `fsc_a_mean` from the parameter
+New definitions receive a readable initial name such as `FSC-A_mean` from the parameter
 and metric. A suggested Statistic ID is generated for editing (for example
 `stat_fsc_a_mean`). Metrics without a parameter use the metric name itself. The ID becomes stable and read-only when the dialog is accepted;
 changing the display name or target in a later edit does not rewrite the ID.

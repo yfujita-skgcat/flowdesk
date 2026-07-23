@@ -149,18 +149,22 @@ def _slug_identity(value: object) -> str:
 
 def _statistic_identity_parts(
     value: Mapping[str, Any],
-    population_labels: Mapping[str, str],
+    parameter_labels: Mapping[str, str],
 ) -> tuple[str, str]:
     """Suggest ``name`` and ID components from parameter and metric."""
     metric = str(value.get("metric") or "count")
     parameter_id = str(value.get("parameter_id") or "").strip()
     if parameter_id:
-        identity = _slug_identity(parameter_id)
-        name = f"{identity}_{_slug_identity(metric)}"
+        parameter_label = parameter_labels.get(parameter_id, parameter_id).strip()
+        display_parameter = re.sub(r"\s+", "-", parameter_label)
+        name = f"{display_parameter}_{metric}"
+        identity = _slug_identity(display_parameter)
+        identity = f"{identity}_{_slug_identity(metric)}"
     else:
         # Count/frequency metrics have no parameter, so use the metric itself.
         name = _slug_identity(metric)
-    return name, f"stat_{name}"
+        identity = name
+    return name, f"stat_{identity}"
 
 
 def _is_blank_statistic(value: Mapping[str, Any]) -> bool:
@@ -243,6 +247,18 @@ class StatisticsEditorDialog(QDialog):
             if str(value.get("id") or "").strip()
         }
         self._channels = tuple(available_channels)
+        self._parameter_labels = {
+            (
+                channel.parameter_id
+                if isinstance(channel, ParameterCatalogEntry)
+                else channel.id
+            ): (
+                channel.display_name
+                if isinstance(channel, ParameterCatalogEntry)
+                else channel.name
+            )
+            for channel in self._channels
+        }
         self._population_ids = tuple(population_ids)
         self._population_labels = dict(population_labels or {})
         self._population_parents = dict(population_parents or {})
@@ -634,7 +650,7 @@ class StatisticsEditorDialog(QDialog):
     def _initialize_statistic_identity(self, value: dict[str, Any]) -> None:
         """Assign a collision-free immutable ID and a readable initial name."""
         suggested_name, suggested_id = _statistic_identity_parts(
-            value, self._population_labels
+            value, self._parameter_labels
         )
         if not str(value.get("name") or "").strip():
             value["name"] = suggested_name
