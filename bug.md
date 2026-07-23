@@ -1,6 +1,4 @@
-- analysis -> derived parameters を定義したつもりだがどこに定義されたものが確認できるかわからない.
-- analysis -> derived parameters で定義したパラメータが x axis, y axis で使用できない。
-- analysis -> transforms はなんのためにあるのか?
-- analysis -> population statisitics はなんのためにあるの?
-- analysis -> sample sheet と sample annotation の違いは? まとめたほうがいいのか、現状のように分けている方がいいのか?
-- analysis -> overlay source はなんのためにあるのか?
+- plot の色(Plot Appearance から開かれる Plot Presentation で色指定が数値指定しかできないのでカラーパレットでも指定できるようにしてほしい
+- 現在の解析状態を保存、再開は、Save Project, Open Project でよいか?
+- Go to gate を選択したときに、gate作成時の x, y scale (log, linear など)が正しく設定されないものがある。
+- 左のoverlay の色をクリアする方法はあるか? なければ実装して。例えば左のサンプルを選んで、右クリックして clear color など。

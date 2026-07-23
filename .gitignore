@@ -13,3 +13,4 @@ dist/
 *.flowdesk/cache/
 *.flowdesk/exports/
 artifacts/
+data/
