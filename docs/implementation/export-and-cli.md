@@ -4,10 +4,10 @@
 
 Implement population statistics export and CLI commands for running saved projects.
 
-The remaining unified export and population full-path work is specified in
+The unified export and population full-path implementation is specified in
 [`unified-results-export-and-population-paths.md`](unified-results-export-and-population-paths.md).
-Until that guide is completed, the existing population-only and statistic-only
-writers remain the current behavior.
+The existing population-only and statistic-only writers remain compatibility
+APIs; standard GUI/CLI Results export uses the unified writer.
 
 ## Target Files
 

@@ -658,6 +658,27 @@ class GateSpec:
   thresholds: dict[str, Any] = field(default_factory=dict)
   notes: str = ""
 
+  def __post_init__(self) -> None:
+    object.__setattr__(self, "name", validate_gate_name(self.name))
+
+
+def validate_gate_name(name: str) -> str:
+  """Validate and normalize a user-visible gate name.
+
+  ASCII ``/`` is reserved for display-only population hierarchy paths.
+  Full-width slash remains a valid gate character.
+  """
+  if not isinstance(name, str):
+    raise ValueError("gate name must be a string")
+  normalized = name.strip()
+  if not normalized:
+    raise ValueError("gate name must not be empty")
+  if "/" in normalized:
+    raise ValueError(
+      "Gate name must not contain '/'; '/' is reserved for population paths."
+    )
+  return normalized
+
 
 @dataclass(frozen=True)
 class GatingStrategySpec:

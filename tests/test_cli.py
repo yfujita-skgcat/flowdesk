@@ -85,24 +85,18 @@ def test_run_project_with_output(tmp_path: Path) -> None:
     reader = csv.reader(fh, delimiter="\t")
     rows = list(reader)
 
-  assert rows[0] == [
-    "sample_id",
-    "population_id",
-    "event_count",
-    "frequency_of_parent",
-    "frequency_of_total",
-  ]
+  assert rows[0] == ["Sample", "Population", "Events", "% Parent", "% Total"]
   assert len(rows) >= 2  # header + at least one data row
 
 
-def test_run_project_output_nan_policy(tmp_path: Path) -> None:
-  """Verify that None frequencies are exported as 'NaN' by default."""
+def test_run_project_output_missing_frequency_is_blank(tmp_path: Path) -> None:
+  """Verify that missing frequencies are blank in unified export."""
   proj_dir = _create_minimal_project(
     tmp_path,
     population_results=[
       {
         "sample_id": "s1",
-        "population_id": "root",
+        "population_id": "all_events",
         "event_count": 100,
         "frequency_of_parent": None,
         "frequency_of_total": 1.0,
@@ -117,9 +111,9 @@ def test_run_project_output_nan_policy(tmp_path: Path) -> None:
     reader = csv.reader(fh, delimiter="\t")
     rows = list(reader)
 
-  # The root population has frequency_of_parent = None -> "NaN"
-  assert rows[1][3] == "NaN"
-  assert rows[1][4] == "1.0"
+  # The root population has no parent frequency and total percentage is 100.
+  assert rows[1][3] == ""
+  assert rows[1][4] == "100.0"
 
 
 def test_run_project_invalid_manifest(tmp_path: Path) -> None:

@@ -115,8 +115,8 @@ def test_column_headers_are_percent_labels(qapp) -> None:
   ]
 
 
-def test_frequency_values_unchanged(qapp) -> None:
-  """Cell values for frequency columns must remain 0-1 fractions."""
+def test_frequency_values_are_displayed_as_percentages(qapp) -> None:
+  """Results cells display frequencies as percentages without a percent sign."""
   tree = PopulationTree()
   report = _make_report(["all_events", "gate_ab12"], [100, 30])
   tree.set_population_parents({"all_events": None, "gate_ab12": "all_events"})
@@ -128,8 +128,8 @@ def test_frequency_values_unchanged(qapp) -> None:
   freq_total_item = tree._table.item(1, 5)
   assert freq_parent_item is not None
   assert freq_total_item is not None
-  assert freq_parent_item.text() == "0.3000"
-  assert freq_total_item.text() == "0.3000"
+  assert freq_parent_item.text() == "30"
+  assert freq_total_item.text() == "30"
 
 
 def test_parent_child_indent_maintained(qapp) -> None:

@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
-from flowdesk_core.models import GateSpec, GatingStrategySpec
+from flowdesk_core.models import GateSpec, GatingStrategySpec, validate_gate_name
 from flowdesk_core.project_commands import (
     CopySubtreeCommand,
     CreateGateCommand,
@@ -393,6 +393,12 @@ class _GateDialog(QDialog):
 
     def _on_ok(self) -> None:
         self._collect_ok_values()
+        try:
+            self._name = validate_gate_name(self._name_edit.text())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid gate name", str(exc))
+            self._name_edit.setFocus()
+            return
         if getattr(self, "_expression_error", ""):
             QMessageBox.warning(self, "Invalid Boolean expression", self._expression_error)
             return
@@ -828,19 +834,23 @@ class GateEditor(QWidget):
             return
 
         name = gate_name or "gate_polygon"
-        gate = GateSpec(
-            id=self._next_gate_id(),
-            name=name,
-            gate_type="polygon",
-            parent_population_id=self._parent_population_id,
-            x_parameter=self._x_channel,
-            y_parameter=self._y_channel,
-            x_scale=self._x_scale,
-            y_scale=self._y_scale,
-            x_transform_id=self._x_transform_id,
-            y_transform_id=self._y_transform_id,
-            coordinates=coords,
-        )
+        try:
+            gate = GateSpec(
+                id=self._next_gate_id(),
+                name=validate_gate_name(name),
+                gate_type="polygon",
+                parent_population_id=self._parent_population_id,
+                x_parameter=self._x_channel,
+                y_parameter=self._y_channel,
+                x_scale=self._x_scale,
+                y_scale=self._y_scale,
+                x_transform_id=self._x_transform_id,
+                y_transform_id=self._y_transform_id,
+                coordinates=coords,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid gate name", str(exc))
+            return
         # Keep the visible gate list and the command-stack project state in
         # lockstep.  Directly appending here leaves CreateGateCommand absent,
         # so the first ROI edit cannot find this gate in EditGateCommand.
@@ -1167,6 +1177,11 @@ class GateEditor(QWidget):
             )
         except ProjectCommandError as exc:
             QMessageBox.warning(self, "Invalid gate rename", str(exc))
+            self._updating_list_item = True
+            try:
+                item.setText(self._gate_label(gate))
+            finally:
+                self._updating_list_item = False
 
     def _refresh_all_views(self, select_gate_id: str | None = None) -> None:
         self._refresh_parent_population_combo()
@@ -1404,6 +1419,7 @@ class GateEditor(QWidget):
             )
         except ProjectCommandError as exc:
             QMessageBox.warning(self, "Invalid gate rename", str(exc))
+            self._refresh_hierarchy_tree(gate_id)
 
     def _on_create_child_clicked(self) -> None:
         item = self._tree_widget.currentItem()

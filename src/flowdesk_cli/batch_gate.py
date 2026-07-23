@@ -8,7 +8,7 @@ from pathlib import Path
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.export import (
   ExportError,
-  write_population_results_wide,
+  write_results_wide,
 )
 from flowdesk_core.pipeline_runner import PipelineError, run_project_pipeline
 from flowdesk_storage.manifest import ManifestValidationError
@@ -102,9 +102,9 @@ def batch_gate_command(
   # ------------------------------------------------------------------
   if output is not None:
     try:
-      results = list(report.population_results)
-      write_population_results_wide(results, output)
-      print(f"Exported {len(results)} population rows to {output}")
+      delimiter = "," if output.lower().endswith(".csv") else "\t"
+      write_results_wide(report, project, output, delimiter=delimiter)
+      print(f"Exported unified Results to {output}")
     except ExportError as exc:
       print("Error: export failed:", file=sys.stderr)
       print(f"  {exc}", file=sys.stderr)

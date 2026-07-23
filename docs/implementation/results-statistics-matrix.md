@@ -241,11 +241,11 @@ automatic warning threshold is chosen.
 
 ### Increment 5: Export, preview, cleanup, and end-to-end acceptance
 
-The existing matrix export contract is the foundation for
-`unified-results-export-and-population-paths.md`. The unified Results export
-remains a follow-up increment: it must add population full paths and combine
-population metrics with custom statistics without changing the authoritative
-report or recalculating values in Qt.
+The existing matrix export contract is the foundation for the implemented
+`unified-results-export-and-population-paths.md` increment. The unified Results
+export adds population full paths and combines population metrics with custom
+statistics without changing the authoritative report or recalculating values
+in Qt.
 
 - GUI wide/detail cells, authoritative report, preview, Python API, and long/wide
   CSV/TSV export now use the same `(sample, statistic, population)` identity. Long

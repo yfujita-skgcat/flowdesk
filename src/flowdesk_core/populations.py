@@ -6,7 +6,81 @@ management, and tree-building utilities.
 
 from __future__ import annotations
 
-from flowdesk_core.models import PopulationResult
+from collections.abc import Sequence
+
+from flowdesk_core.gating_strategy import GatingStrategyError
+from flowdesk_core.models import GateSpec, PopulationResult
+
+
+def build_population_paths(
+  gates: Sequence[GateSpec],
+  *,
+  root_population_id: str = "all_events",
+  root_name: str = "All Events",
+) -> dict[str, str]:
+  """Build display paths from a saved gate hierarchy.
+
+  IDs resolve relationships; path strings are never parsed to infer them.
+  Original gate order is used as the stable sibling order.
+  """
+  if not root_population_id or not root_name:
+    raise GatingStrategyError("population path root identity and name are required")
+  by_id: dict[str, GateSpec] = {}
+  order: dict[str, int] = {}
+  for index, gate in enumerate(gates):
+    if gate.id == root_population_id:
+      raise GatingStrategyError(f"gate id conflicts with root population: {gate.id!r}")
+    if gate.id in by_id:
+      raise GatingStrategyError(f"duplicate gate id: {gate.id!r}")
+    by_id[gate.id] = gate
+    order[gate.id] = index
+
+  for gate in gates:
+    seen: set[str] = set()
+    current = gate.id
+    while current in by_id:
+      if current in seen:
+        raise GatingStrategyError(
+          f"population hierarchy cycle detected at {current!r}"
+        )
+      seen.add(current)
+      current = by_id[current].parent_population_id or root_population_id
+
+  children: dict[str, list[GateSpec]] = {root_population_id: []}
+  for gate in gates:
+    parent = gate.parent_population_id or root_population_id
+    if parent != root_population_id and parent not in by_id:
+      raise GatingStrategyError(
+        f"gate {gate.id!r} references unknown parent population: {parent!r}"
+      )
+    children.setdefault(parent, []).append(gate)
+    children.setdefault(gate.id, [])
+  for values in children.values():
+    values.sort(key=lambda gate: order[gate.id])
+
+  paths: dict[str, str] = {root_population_id: root_name}
+  visiting: set[str] = set()
+
+  def visit(parent_id: str) -> None:
+    if parent_id in visiting:
+      raise GatingStrategyError(
+        f"population hierarchy cycle detected at {parent_id!r}"
+      )
+    visiting.add(parent_id)
+    for gate in children.get(parent_id, []):
+      if gate.id in paths:
+        raise GatingStrategyError(f"duplicate population path identity: {gate.id!r}")
+      paths[gate.id] = f"{paths[parent_id]}/{gate.name}"
+      visit(gate.id)
+    visiting.remove(parent_id)
+
+  visit(root_population_id)
+  if len(paths) != len(by_id) + 1:
+    missing = sorted(set(by_id) - set(paths))
+    raise GatingStrategyError(
+      "population hierarchy contains unreachable gates: " + ", ".join(missing)
+    )
+  return paths
 
 
 def find_root_populations(

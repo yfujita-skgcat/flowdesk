@@ -524,7 +524,10 @@ def test_boolean_hierarchy_project_round_trip_and_cli(
         assert headless_counts["double-positive"] == 2
 
         assert run_project_command(str(project_path), output=str(output_path)) == 0
-        assert "double-positive\t2\t" in output_path.read_text(encoding="utf-8")
+        assert (
+            "All Events/Positive/Double Positive\t2\t"
+            in output_path.read_text(encoding="utf-8")
+        )
     finally:
         window.close()
         window.deleteLater()

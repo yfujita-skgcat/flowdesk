@@ -514,13 +514,9 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        self.action_export_results = QAction("Export Population &Results...", self)
+        self.action_export_results = QAction("Export &Results...", self)
         self.action_export_results.setObjectName("actionExportResults")
-        self.action_export_results.triggered.connect(self._on_export_population_results)
-
-        self.action_export_statistics = QAction("Export &Statistics...", self)
-        self.action_export_statistics.setObjectName("actionExportStatistics")
-        self.action_export_statistics.triggered.connect(self._on_export_statistics)
+        self.action_export_results.triggered.connect(self._on_export_results)
 
         self.action_quit = QAction("E&xit", self)
         self.action_quit.setObjectName("actionQuit")
@@ -634,7 +630,6 @@ class MainWindow(QMainWindow):
         results_menu.addAction(self.action_statistics)
         results_menu.addSeparator()
         results_menu.addAction(self.action_export_results)
-        results_menu.addAction(self.action_export_statistics)
         self.action_batch_plot_export = QAction("Batch Plot E&xport...", self)
         self.action_batch_plot_export.setObjectName("actionBatchPlotExport")
         self.action_batch_plot_export.triggered.connect(self._on_batch_plot_export)
@@ -713,7 +708,8 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         action_export_results = QAction("Export Results", self)
-        action_export_results.triggered.connect(self._on_export_population_results)
+        action_export_results.setObjectName("toolbarExportResults")
+        action_export_results.triggered.connect(self._on_export_results)
         toolbar.addAction(action_export_results)
 
     # -- central widget ------------------------------------------------------
@@ -4145,6 +4141,72 @@ class MainWindow(QMainWindow):
             self._update_status(f"Population Results exported to {path_str}")
         except Exception as exc:
             logger.error("Population Results export failed: %s", exc)
+            QMessageBox.critical(self, "Export Error", str(exc))
+
+    def _on_export_results(self) -> None:
+        """Export the authoritative population/statistic report together."""
+        report = self._last_result_report or self._population_tree.last_report()
+        if report is None or not report.population_results:
+            QMessageBox.information(
+                self,
+                "No results",
+                "Run Pipeline before exporting Results.",
+            )
+            return
+        if self._results_stale:
+            QMessageBox.information(
+                self,
+                "Results stale",
+                "Results are stale. Run Pipeline again before exporting.",
+            )
+            return
+
+        from flowdesk_qt.results_export_dialog import ResultsExportDialog
+
+        options_dialog = ResultsExportDialog(self)
+        if options_dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        options = options_dialog.options()
+        path_str, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export Results",
+            "",
+            "TSV files (*.tsv);;CSV files (*.csv);;All files (*)",
+        )
+        if not path_str:
+            return
+        delimiter = "," if selected_filter.startswith("CSV") or path_str.endswith(".csv") else "\t"
+        try:
+            project = self._build_project_manifest()
+            if options.layout == "long":
+                from flowdesk_core.export import write_results_long
+
+                write_results_long(
+                    report,
+                    project,
+                    path_str,
+                    delimiter=delimiter,
+                    include_population_metrics=options.include_population_metrics,
+                    include_custom_statistics=options.include_custom_statistics,
+                    include_internal_ids=options.include_internal_ids,
+                    include_qc=options.include_qc,
+                )
+            else:
+                from flowdesk_core.export import write_results_wide
+
+                write_results_wide(
+                    report,
+                    project,
+                    path_str,
+                    delimiter=delimiter,
+                    include_population_metrics=options.include_population_metrics,
+                    include_custom_statistics=options.include_custom_statistics,
+                    include_internal_ids=options.include_internal_ids,
+                    include_qc=options.include_qc,
+                )
+            self._update_status(f"Results exported to {path_str}")
+        except Exception as exc:
+            logger.error("Results export failed: %s", exc)
             QMessageBox.critical(self, "Export Error", str(exc))
 
     def _export_population_results_to_path(

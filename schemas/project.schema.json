@@ -367,10 +367,10 @@
     },
     "gate": {
       "type": "object",
-      "required": ["id", "gate_type"],
+      "required": ["id", "name", "gate_type"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "name": { "type": "string" },
+        "name": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
         "gate_type": { "enum": ["rectangle", "polygon", "range", "ellipse", "boolean"] },
         "parent_population_id": { "type": ["string", "null"] },
         "x_parameter": { "type": ["string", "null"] },

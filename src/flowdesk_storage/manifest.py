@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import TransformSpec
+from flowdesk_core.models import TransformSpec, validate_gate_name
 from flowdesk_core.transforms import TransformError, validate_transform
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION, migrate_manifest
 
@@ -46,6 +46,8 @@ def validate_manifest(data: dict[str, Any]) -> None:
 
   if not isinstance(data["samples"], list):
     raise ManifestValidationError("samples must be an array")
+
+  _validate_gate_names(data.get("gating_strategies_data", {}))
 
   # Statistic definitions use the same stable contract across the legacy
   # 1.5 manifest and the current format.  Validate them whenever present so
@@ -887,6 +889,26 @@ def _collect_gate_ids(strategy_data: Any) -> set[str]:
   return gate_ids
 
 
+def _validate_gate_names(strategy_data: Any) -> None:
+  """Validate gate names before version-specific migration handling."""
+  if not isinstance(strategy_data, Mapping):
+    return
+  for strategy_id, strategy in strategy_data.items():
+    if not isinstance(strategy, Mapping):
+      continue
+    for gate in strategy.get("gates", []):
+      if not isinstance(gate, Mapping):
+        continue
+      gate_id = gate.get("id", "unknown")
+      try:
+        validate_gate_name(gate.get("name", ""))
+      except ValueError as exc:
+        raise ManifestValidationError(
+          f"gating strategy {strategy_id!r} gate {gate_id!r} has invalid name "
+          f"{gate.get('name')!r}; {exc}"
+        ) from exc
+
+
 def _validate_current_statistics(
   statistics: Any,
   gate_ids: set[str] | None = None,
@@ -1096,6 +1118,13 @@ def _validate_current_gate_parent_references(
       if not isinstance(gate, dict):
         continue
       gate_id = gate.get("id", "unknown")
+      try:
+        validate_gate_name(gate.get("name", ""))
+      except ValueError as exc:
+        raise ManifestValidationError(
+          f"gating strategy {strategy_id!r} gate {gate_id!r} has invalid name "
+          f"{gate.get('name')!r}; {exc}"
+        ) from exc
       parent = gate.get("parent_population_id")
       if parent is None:
         continue  # Root gate.

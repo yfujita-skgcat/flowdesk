@@ -27,12 +27,28 @@ def main() -> int:
   run_parser.add_argument(
     "--output",
     default=None,
-    help="Path for the TSV export file.",
+    help="Path for the unified Results export file.",
+  )
+  run_parser.add_argument(
+    "--layout",
+    choices=("wide", "long"),
+    default="wide",
+    help="Unified Results layout (default: wide).",
+  )
+  run_parser.add_argument(
+    "--include-internal-ids",
+    action="store_true",
+    help="Include stable sample/population IDs and hierarchy metadata.",
+  )
+  run_parser.add_argument(
+    "--include-qc",
+    action="store_true",
+    help="Include status and statistic quality-control metadata.",
   )
   run_parser.add_argument(
     "--statistics-output",
     default=None,
-    help="Path for the statistics TSV export file.",
+    help=argparse.SUPPRESS,
   )
   run_parser.add_argument(
     "--execution-profile",
@@ -90,7 +106,8 @@ def main() -> int:
 
   if args.command == "run":
     return run_project_command(
-      args.project, args.output, args.statistics_output, args.execution_profile
+      args.project, args.output, args.statistics_output, args.execution_profile,
+      args.layout, args.include_internal_ids, args.include_qc,
     )
   if args.command == "inspect":
     return inspect_fcs_command(args.fcs_file)

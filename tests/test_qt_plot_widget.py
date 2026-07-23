@@ -2013,7 +2013,7 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     output_path = tmp_path / "cli-results.tsv"
     assert run_project_command(str(project_path), output=str(output_path)) == 0
     output_text = output_path.read_text(encoding="utf-8")
-    assert f"{sample.id}\tpositive\t2\t" in output_text
+    assert "All Events/positive\t2\t" in output_text
   finally:
     window.close()
     reloaded_window.close()

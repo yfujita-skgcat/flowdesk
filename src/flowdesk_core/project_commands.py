@@ -14,7 +14,12 @@ from dataclasses import asdict
 from typing import Any
 
 from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
-from flowdesk_core.models import GateOverrideSpec, GateSpec, GatingStrategySpec
+from flowdesk_core.models import (
+  GateOverrideSpec,
+  GateSpec,
+  GatingStrategySpec,
+  validate_gate_name,
+)
 from flowdesk_core.overrides import (
   GateOverrideError,
   gate_version_hash,
@@ -273,6 +278,10 @@ class CreateGateCommand(_GateListCommand):
   def _validate_gate(self, gate: dict[str, Any]) -> None:
     if not gate.get("id"):
       raise ProjectCommandError("gate id must not be empty")
+    try:
+      gate["name"] = validate_gate_name(gate.get("name", ""))
+    except ValueError as exc:
+      raise ProjectCommandError(str(exc)) from exc
 
   def apply(self, state: ProjectState) -> ProjectState:
     gates = _strategy_gates(state, self.strategy_id)
@@ -302,6 +311,11 @@ class EditGateCommand(_GateListCommand):
     self.gate = (
       _gate_data(gate) if isinstance(gate, GateSpec) else deepcopy(dict(gate))
     )
+    if "name" in self.gate:
+      try:
+        self.gate["name"] = validate_gate_name(self.gate["name"])
+      except ValueError as exc:
+        raise ProjectCommandError(str(exc)) from exc
     if self.gate.get("id") != gate_id:
       raise ProjectCommandError("edited gate id must match gate_id")
     self._before: dict[str, Any] | None = None
@@ -334,9 +348,10 @@ class RenameGateCommand(EditGateCommand):
   type = "gate.rename"
 
   def __init__(self, strategy_id: str, gate_id: str, name: str) -> None:
-    if not name.strip():
-      raise ProjectCommandError("gate name must not be empty")
-    self._name = name.strip()
+    try:
+      self._name = validate_gate_name(name)
+    except ValueError as exc:
+      raise ProjectCommandError(str(exc)) from exc
     super().__init__(strategy_id, gate_id, {"id": gate_id, "name": self._name})
 
   def apply(self, state: ProjectState) -> ProjectState:
@@ -426,6 +441,11 @@ class DuplicateGateCommand(_GateListCommand):
     self.source_gate_id = source_gate_id
     self.new_gate_id = new_gate_id
     self.name = name
+    if name is not None:
+      try:
+        self.name = validate_gate_name(name)
+      except ValueError as exc:
+        raise ProjectCommandError(str(exc)) from exc
     self.parent_id = parent_id
     self._inserted: dict[str, Any] | None = None
 

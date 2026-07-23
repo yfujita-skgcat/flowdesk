@@ -9,7 +9,8 @@ from pathlib import Path
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.export import (
   ExportError,
-  write_population_results_wide,
+  write_results_long,
+  write_results_wide,
   write_statistic_results,
 )
 from flowdesk_core.fcs_io import read_fcs_sample
@@ -23,6 +24,9 @@ def run_project_command(
   output: str | None = None,
   statistics_output: str | None = None,
   execution_profile_id: str = "default",
+  layout: str = "wide",
+  include_internal_ids: bool = False,
+  include_qc: bool = False,
 ) -> int:
   """CLI adapter for headless project execution.
 
@@ -105,9 +109,24 @@ def run_project_command(
   # ------------------------------------------------------------------
   if output is not None:
     try:
-      results = list(report.population_results)
-      write_population_results_wide(results, output)
-      print(f"Exported {len(results)} population rows to {output}")
+      delimiter = "," if output.lower().endswith(".csv") else "\t"
+      if layout == "long":
+        write_results_long(
+          report, project, output,
+          delimiter=delimiter,
+          execution_profile_id=execution_profile_id,
+          include_internal_ids=include_internal_ids,
+          include_qc=include_qc,
+        )
+      else:
+        write_results_wide(
+          report, project, output,
+          delimiter=delimiter,
+          execution_profile_id=execution_profile_id,
+          include_internal_ids=include_internal_ids,
+          include_qc=include_qc,
+        )
+      print(f"Exported unified Results to {output}")
     except ExportError as exc:
       print("Error: export failed:", file=sys.stderr)
       print(f"  {exc}", file=sys.stderr)
@@ -115,6 +134,10 @@ def run_project_command(
 
   if statistics_output is not None:
     try:
+      print(
+        "Warning: --statistics-output is deprecated; use --output instead.",
+        file=sys.stderr,
+      )
       stats = list(report.statistic_results)
       write_statistic_results(stats, statistics_output)
       print(f"Exported {len(stats)} statistic rows to {statistics_output}")

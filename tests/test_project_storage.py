@@ -532,6 +532,7 @@ class TestChannelIdentityMigration:
         "id": "default",
         "gates": [{
           "id": "double",
+          "name": "double",
           "gate_type": "range",
           "x_parameter": "signal",
           "x_scale": "log10",
@@ -1886,6 +1887,14 @@ class TestReferenceIntegrity:
       ],
       **kwargs,
     }
+    strategies = manifest.get("gating_strategies_data", {})
+    if isinstance(strategies, dict):
+      for strategy in strategies.values():
+        if not isinstance(strategy, dict):
+          continue
+        for gate in strategy.get("gates", []):
+          if isinstance(gate, dict) and "name" not in gate:
+            gate["name"] = gate.get("id", "gate")
     return manifest
 
   def test_gate_parent_all_events_is_allowed(self) -> None:

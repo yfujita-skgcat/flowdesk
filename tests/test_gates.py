@@ -22,17 +22,17 @@ from flowdesk_core.gating_strategy import (
   evaluate_gating_strategy_with_membership,
   ordered_gates,
 )
-from flowdesk_core.models import GateOverrideSpec
+from flowdesk_core.models import (
+  GateOverrideSpec,
+  GateSpec,
+  GatingStrategySpec,
+  TransformSpec,
+)
 from flowdesk_core.overrides import (
   GateOverrideError,
   gate_version_hash,
   inspect_gate_override_statuses,
   resolve_gate_overrides,
-)
-from flowdesk_core.models import (
-  GateSpec,
-  GatingStrategySpec,
-  TransformSpec,
 )
 from flowdesk_core.transforms import LOGICLE_IMPLEMENTATION_VERSION, apply_transform
 
@@ -1216,7 +1216,11 @@ def test_sample_gate_override_rejects_stale_base_hash() -> None:
 def test_gate_override_statuses_distinguish_shared_stale_and_missing() -> None:
   gate = GateSpec(id="gate", name="Gate", gate_type="range", x_parameter="x")
   strategy = GatingStrategySpec(id="strategy", name="Strategy", gates=(gate,))
-  def override(sample_id: str, gate_id: str = "gate", base_hash: str | None = None) -> GateOverrideSpec:
+  def override(
+    sample_id: str,
+    gate_id: str = "gate",
+    base_hash: str | None = None,
+  ) -> GateOverrideSpec:
     return GateOverrideSpec(
       id=f"{sample_id}-{gate_id}", sample_id=sample_id, base_gate_id=gate_id,
       base_version_hash=base_hash or gate_version_hash(gate), geometry_mode="full",

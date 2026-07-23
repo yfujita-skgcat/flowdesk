@@ -861,19 +861,19 @@ incrementでは両者を一つの authoritative report から統合し、GUI・C
 
 #### 未実装項目
 
-- [ ] coreに共通の`validate_gate_name()`を追加し、空白名とASCII `/`をGateSpec、全gate command、manifest、schema、GUI入力、CLI/project loadで拒否する。legacyのslash名はsilent migrationせず、strategy ID、gate ID、gate名を含む診断を返す。
-- [ ] coreにpopulation hierarchyの保存順preorderを使うfull-path builderを追加する。親子解決はIDだけで行い、unknown parent、cycle、duplicate IDを明示的に拒否する。sampleごとの実適用strategy/group bindingを解決する。
-- [ ] population resultとstatistic resultを`sample_id × population_id`のtyped row modelへ統合し、full path、root頻度、百分率、blank/zero、sample title、custom statistic列、重複表示名、internal ID metadata、QCをwide/long writerで出力する。
-- [ ] GUIの2つのResults export actionを`Export Results...`へ統合し、toolbarも同じhandlerへ接続する。Wide/Long、population/custom、internal ID、QC、TSV/CSV、stale/no-result/hierarchy failureのdialogを実装する。
-- [ ] `flowdesk run --output`を統合wideの標準動作にし、`--layout`、`--include-internal-ids`、`--include-qc`を追加する。`--statistics-output`を残す場合はstderrへdeprecated warningを出し、互換APIとしてのみ扱う。batch-gateも可能な範囲で同じwriterに合わせる。
-- [ ] GateSpec、commands、manifest/schema、path、wide/long、GUI、CLIのbehavior testを追加し、既存の科学計算結果とpopulation ID生成規則を変更しないことを確認する。
+- [x] coreに共通の`validate_gate_name()`を追加し、空白名とASCII `/`をGateSpec、全gate command、manifest、schema、GUI入力、CLI/project loadで拒否する。legacyのslash名はsilent migrationせず、strategy ID、gate ID、gate名を含む診断を返す。
+- [x] coreにpopulation hierarchyの保存順preorderを使うfull-path builderを追加する。親子解決はIDだけで行い、unknown parent、cycle、duplicate IDを明示的に拒否する。sampleごとの実適用strategy/group bindingを解決する。
+- [x] population resultとstatistic resultを`sample_id × population_id`のtyped row modelへ統合し、full path、root頻度、百分率、blank/zero、sample title、custom statistic列、重複表示名、internal ID metadata、QCをwide/long writerで出力する。
+- [x] GUIの2つのResults export actionを`Export Results...`へ統合し、toolbarも同じhandlerへ接続する。Wide/Long、population/custom、internal ID、QC、TSV/CSV、stale/no-result/hierarchy failureのdialogを実装する。
+- [x] `flowdesk run --output`を統合wideの標準動作にし、`--layout`、`--include-internal-ids`、`--include-qc`を追加する。`--statistics-output`を残す場合はstderrへdeprecated warningを出し、互換APIとしてのみ扱う。batch-gateも可能な範囲で同じwriterに合わせる。
+- [x] GateSpec、commands、manifest/schema、path、wide/long、GUI、CLIのbehavior testを追加し、既存の科学計算結果とpopulation ID生成規則を変更しないことを確認する。
 
 #### 完了条件
 
-- [ ] GUIのResults exportが1項目だけになり、Population full pathとcustom statisticsが同一ファイルに出力される。
-- [ ] GUIとCLIが同一core export implementationを使用し、stale resultsを出力しない。
-- [ ] schema、manifest、core API、commands、GUI、CLIのいずれからもASCII `/`付きgate名を保存できない。
-- [ ] `pyenv exec pytest`、`pyenv exec ruff check src tests`、`pyenv exec mypy src`、正式なGUI検証commandが通る。
+- [x] GUIのResults exportが1項目だけになり、Population full pathとcustom statisticsが同一ファイルに出力される。
+- [x] GUIとCLIが同一core export implementationを使用し、stale resultsを出力しない。
+- [x] schema、manifest、core API、commands、GUI、CLIのいずれからもASCII `/`付きgate名を保存できない。
+- [ ] `pyenv exec pytest`、`pyenv exec ruff check src tests`、`pyenv exec mypy src`、正式なGUI検証commandが通る。mypyは既存未解消エラーのため保留。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

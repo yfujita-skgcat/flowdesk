@@ -88,8 +88,21 @@ python -m flowdesk_qt --data-dir data/
 6. Results → `Add Statistic...` または `Manage Statistics...` で統計定義を作る。
 7. **Run Pipeline** を実行する。
 8. Results タブで event count、frequency、統計値、status を確認する。
-9. **Export Population Results...**、**Export Statistics...**、またはプロットの PNG/SVG/PDF export を行う。
+9. **Export Results...**、またはプロットの PNG/SVG/PDF export を行う。
 10. **Save Project...** で `.flowdesk` directory bundle として保存する。
+
+### 3.1 CLIでResultsを出力する
+
+保存済みprojectはGUIと同じcore pipeline・export writerを使って実行できる。
+
+```bash
+flowdesk run project.flowdesk --output results.tsv
+flowdesk run project.flowdesk --output results.tsv --layout long --include-qc
+```
+
+`--include-internal-ids` はstable sample/population IDとhierarchy metadataを追加する。
+`--statistics-output` は互換用のdeprecated statistic-only exportであり、新規用途では
+統合された `--output` を使用する。
 
 ---
 
@@ -162,8 +175,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |---|---|
 |Add Statistic...|新しい persisted statistic definition を作成する。初期 population は All Events。|
 |Manage Statistics...|既存 statistics の Compute/Show と適用 population をまとめて管理する。|
-|Export Population Results...|最新かつ non-stale な population results を TSV/CSV に書き出す。|
-|Export Statistics...|最新かつ non-stale な custom statistic results を TSV/CSV に書き出す。|
+|Export Results...|最新かつ non-stale な population metrics と custom statistics を wide/long TSV/CSV に書き出す。|
 |Batch Plot Export...|保存済み `BatchPlotExportSpec` を使って batch export する。project の保存と定義済み spec が必要。|
 
 ### 5.5 Data
@@ -195,7 +207,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |---|---|
 |Open Samples|ディレクトリを選び、直下の FCS を読み込む。個別ファイル選択は File → Open Files... または Add FCS Files... を使う。|
 |Run Pipeline|Analysis → Run Pipeline と同じ。|
-|Export Results|Results → Export Population Results... と同じ。custom statistics ではなく population results を出力する。|
+|Export Results|Results → Export Results... と同じ。population metrics と custom statistics を統合して出力する。|
 
 ---
 
@@ -818,13 +830,24 @@ Title font、Axis label font、Tick font、Legend font のそれぞれに `famil
 
 ### 15.2 Population Results / Statistics
 
-TSV または CSV を選ぶ。Results がない、または stale の場合は export できない。
+Results → **Export Results...** を選び、Wide table または Long detail table、
+population metrics、custom statistics、internal ID、QC/status metadata を選択する。
+population metrics と custom statistics の少なくとも一方を選ぶ必要がある。
+TSV または CSV を選び、Results がない、または stale の場合は export できない。
 
-現在のGUIには Population Results と Statistics の2つのexportが残っている。
-これらを `Export Results...` に統合し、Population full path と population
-metrics・custom statistics を同じ wide/long 出力へまとめる機能は未実装で、
-次の実装対象として [統合Results Exportの実装ガイド](../implementation/unified-results-export-and-population-paths.md)
-に定義している。現時点ではこの統合仕様を現行機能として扱わない。
+Wide形式は1行を Sample × Population とし、Populationは `All Events/Live/GFP+`
+のようなgate階層full pathで出力する。内部の安定識別子はPopulation pathではなく
+`Population ID`であり、`Include internal IDs and hierarchy metadata`で追加できる。
+% Parent と % Total は百分率として出力され、rootの% Parentは空欄、rootの% Totalは
+100になる。欠損値は空欄で、数値0とは区別される。
+
+Long形式はpopulation metricsとcustom statisticsを同じ表に出力し、`Result Type`
+で `population` と `statistic` を区別する。status、undefined reason、statisticの
+QC情報も保持する。
+
+gate名にはASCII `/`を使用できない。これは `/`をpopulation full pathの区切り文字として
+予約しているためである。全角の`／`は禁止対象ではない。gate名変更時も内部の
+Population IDは変わらない。
 
 ### 15.3 Plot PNG/SVG/PDF
 
@@ -896,6 +919,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |AnnotationEditorDialog|main menu に未接続。Sample Sheet が current UI。|
 |gate migration canonical preview|compensation/derived parameter を含む場合は安全のため停止する。|
 |large-file rendering / FlowJo compatibility|完全対応ではない。|
+|統合Results exportのCLI|`flowdesk run --output`、`--layout`、internal ID、QC optionを提供する。旧`--statistics-output`は互換用deprecated option。|
 
 ---
 
@@ -1042,7 +1066,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`main_window.py`|`actionOpenProject`|
 |`main_window.py`|`actionSaveProject`|
 |`main_window.py`|`actionExportResults`|
-|`main_window.py`|`actionExportStatistics`|
+|`main_window.py`|`toolbarExportResults`|
 |`main_window.py`|`actionQuit`|
 |`main_window.py`|`actionUndoGateChange`|
 |`main_window.py`|`actionRedoGateChange`|
@@ -1059,6 +1083,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`main_window.py`|`actionAddStatistic`|
 |`main_window.py`|`actionStatistics`|
 |`main_window.py`|`actionBatchPlotExport`|
+|`results_export_dialog.py`|`resultsExportDialog`, `resultsExportLayoutCombo`, `resultsExportPopulationCheck`, `resultsExportStatisticsCheck`, `resultsExportInternalIdsCheck`, `resultsExportQcCheck`, `resultsExportDialogButtons`|
 |`main_window.py`|`actionSampleSheet`|
 |`main_window.py`|`actionParameterInformation`|
 |`main_window.py`|`actionOverlaySamples`|

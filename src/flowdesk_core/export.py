@@ -9,11 +9,22 @@ from __future__ import annotations
 import csv
 import math
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
+from flowdesk_core.annotations import resolve_sample_title
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.models import ExportRecord, PopulationResult, StatisticResult
+from flowdesk_core.execution_report import ExecutionReport
+from flowdesk_core.groups import annotation_specs_from_mapping
+from flowdesk_core.models import (
+  ExportRecord,
+  GateSpec,
+  PopulationResult,
+  StatisticResult,
+)
+from flowdesk_core.pipeline_runner import PipelineRunner
+from flowdesk_core.populations import build_population_paths
 from flowdesk_core.statistics import population_results_to_export_records
 
 NaNPolicy = Literal["string_nan", "empty", "zero"]
@@ -21,6 +32,399 @@ NaNPolicy = Literal["string_nan", "empty", "zero"]
 
 class ExportError(FlowdeskError):
   """Raised when export cannot complete."""
+
+
+@dataclass(frozen=True)
+class UnifiedResultsRow:
+  """One sample/population row for the integrated wide export."""
+
+  sample_id: str
+  population_id: str
+  population_name: str
+  population_path: str
+  parent_population_id: str | None
+  depth: int
+  event_count: int | None
+  frequency_of_parent: float | None
+  frequency_of_total: float | None
+  statistics: Mapping[str, StatisticResult] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PopulationPathInfo:
+  """Resolved display metadata for one population."""
+
+  population_id: str
+  population_name: str
+  population_path: str
+  parent_population_id: str | None
+  depth: int
+
+
+def _sample_order(project: Mapping[str, Any], sample_ids: set[str]) -> list[str]:
+  ordered = [
+    str(sample.get("id"))
+    for sample in project.get("samples", [])
+    if isinstance(sample, Mapping) and str(sample.get("id", "")) in sample_ids
+  ]
+  ordered.extend(sorted(sample_ids - set(ordered)))
+  return ordered
+
+
+def _strategy_path_info(
+  project: Mapping[str, Any],
+  sample_ids: set[str],
+  execution_profile_id: str,
+) -> dict[str, dict[str, PopulationPathInfo]]:
+  """Resolve each sample's applied strategy without executing analysis."""
+  try:
+    assignments = PipelineRunner(project).resolve_group_assignments(
+      execution_profile_id
+    )
+  except Exception as exc:
+    raise ExportError(f"failed to resolve sample strategy for export: {exc}") from exc
+  strategies = project.get("gating_strategies_data", {})
+  result: dict[str, dict[str, PopulationPathInfo]] = {}
+  for sample_id in _sample_order(project, sample_ids):
+    strategy_id = assignments.get(sample_id, {}).get("strategy_id")
+    if not strategy_id:
+      if not strategies or all(
+        isinstance(value, Mapping) and not value.get("gates", [])
+        for value in strategies.values()
+      ):
+        result[sample_id] = {
+          "all_events": PopulationPathInfo(
+            "all_events", "All Events", "All Events", None, 0
+          )
+        }
+        continue
+      raise ExportError(f"no gating strategy is applied to sample {sample_id!r}")
+    strategy = strategies.get(strategy_id) if isinstance(strategies, Mapping) else None
+    if not isinstance(strategy, Mapping):
+      raise ExportError(
+        f"sample {sample_id!r} references unknown gating strategy {strategy_id!r}"
+      )
+    try:
+      gates = tuple(GateSpec(**gate) for gate in strategy.get("gates", []))
+      paths = build_population_paths(
+        gates,
+        root_population_id=str(strategy.get("root_population_id", "all_events")),
+      )
+    except Exception as exc:
+      raise ExportError(
+        f"cannot resolve population hierarchy for sample {sample_id!r}: {exc}"
+      ) from exc
+    parent_ids = {
+      gate.id: (gate.parent_population_id or str(strategy.get("root_population_id", "all_events")))
+      for gate in gates
+    }
+    names = {gate.id: gate.name for gate in gates}
+    info: dict[str, PopulationPathInfo] = {}
+    for population_id, path in paths.items():
+      depth = path.count("/")
+      info[population_id] = PopulationPathInfo(
+        population_id=population_id,
+        population_name=names.get(population_id, "All Events"),
+        population_path=path,
+        parent_population_id=parent_ids.get(population_id),
+        depth=depth,
+      )
+    result[sample_id] = info
+  return result
+
+
+def _statistic_headers(
+  results: list[StatisticResult],
+  project: Mapping[str, Any],
+) -> dict[str, str]:
+  configured = [
+    str(value.get("id"))
+    for value in project.get("statistics", [])
+    if isinstance(value, Mapping) and value.get("id")
+  ]
+  configured.extend(
+    result.statistic_id
+    for result in results
+    if result.statistic_id not in configured
+  )
+  by_id = {result.statistic_id: result for result in results}
+  names: dict[str, str] = {}
+  used: set[str] = set()
+  for statistic_id in configured:
+    result = by_id.get(statistic_id)
+    name = (result.statistic_name if result else None) or statistic_id
+    header = str(name).strip() or statistic_id
+    if header in used:
+      header = f"{header} [{statistic_id}]"
+    while header in used:
+      header += "_"
+    used.add(header)
+    names[statistic_id] = header
+  return names
+
+
+def build_results_wide_rows(
+  report: ExecutionReport,
+  project: Mapping[str, Any],
+  *,
+  execution_profile_id: str = "default",
+) -> tuple[UnifiedResultsRow, ...]:
+  """Build unified rows from one authoritative execution report."""
+  population_results = list(report.population_results)
+  statistic_results = list(report.statistic_results)
+  sample_ids = {result.sample_id for result in population_results}
+  sample_ids.update(result.sample_id for result in statistic_results)
+  path_info = _strategy_path_info(project, sample_ids, execution_profile_id)
+  pop_by_key = {
+    (result.sample_id, result.population_id): result
+    for result in population_results
+  }
+  stats_by_key: dict[tuple[str, str], dict[str, StatisticResult]] = {}
+  for result in statistic_results:
+    stats_by_key.setdefault((result.sample_id, result.population_id), {})[
+      result.statistic_id
+    ] = result
+  rows: list[UnifiedResultsRow] = []
+  for sample_id in _sample_order(project, sample_ids):
+    info_for_sample = path_info.get(sample_id, {})
+    population_ids: set[str] = set()
+    population_ids.update(
+      population_id for sid, population_id in pop_by_key if sid == sample_id
+    )
+    population_ids.update(
+      population_id for sid, population_id in stats_by_key if sid == sample_id
+    )
+    ordered_ids = [
+      population_id for population_id in info_for_sample
+      if population_id in population_ids
+    ]
+    ordered_ids.extend(
+      sorted(population_ids - set(ordered_ids))
+    )
+    for population_id in ordered_ids:
+      info = info_for_sample.get(
+        population_id,
+        PopulationPathInfo(population_id, population_id, population_id, None, 0),
+      )
+      population = pop_by_key.get((sample_id, population_id))
+      rows.append(UnifiedResultsRow(
+        sample_id=sample_id,
+        population_id=population_id,
+        population_name=info.population_name,
+        population_path=info.population_path,
+        parent_population_id=info.parent_population_id,
+        depth=info.depth,
+        event_count=population.event_count if population else None,
+        frequency_of_parent=(population.frequency_of_parent if population else None),
+        frequency_of_total=(population.frequency_of_total if population else None),
+        statistics=stats_by_key.get((sample_id, population_id), {}),
+      ))
+  return tuple(rows)
+
+
+def _project_sample_title(project: Mapping[str, Any], sample_id: str) -> str:
+  sample = next(
+    (value for value in project.get("samples", [])
+     if isinstance(value, Mapping) and value.get("id") == sample_id),
+    {},
+  )
+  annotations = annotation_specs_from_mapping(project.get("annotations", []))
+  return resolve_sample_title(
+    sample_id,
+    str(sample.get("name", "")) or None,
+    str(sample.get("path", "")) or None,
+    annotations,
+  )
+
+
+def _format_export_number(value: int | float | None, nan_policy: NaNPolicy) -> str:
+  if value is None:
+    return ""
+  if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+    return _nan_placeholder(nan_policy)
+  return str(value)
+
+
+def write_results_wide(
+  report: ExecutionReport,
+  project: Mapping[str, Any],
+  path: str | Path,
+  *,
+  delimiter: str = "\t",
+  execution_profile_id: str = "default",
+  include_population_metrics: bool = True,
+  include_custom_statistics: bool = True,
+  include_internal_ids: bool = False,
+  include_qc: bool = False,
+  nan_policy: NaNPolicy = "empty",
+) -> None:
+  """Write the integrated sample-by-population wide table."""
+  rows = build_results_wide_rows(
+    report, project, execution_profile_id=execution_profile_id
+  )
+  stat_results = list(report.statistic_results)
+  stat_headers = _statistic_headers(stat_results, project) if include_custom_statistics else {}
+  header: list[str] = ["Sample", "Population"]
+  if include_internal_ids:
+    header.extend([
+      "Sample ID", "Population ID", "Population Name",
+      "Parent Population ID", "Population Depth",
+    ])
+  if include_population_metrics:
+    header.extend(["Events", "% Parent", "% Total"])
+  header.extend(stat_headers.values())
+  if include_qc:
+    if include_population_metrics:
+      header.append("Population Status")
+    for statistic_header in stat_headers.values():
+      header.extend([
+        f"{statistic_header} Status",
+        f"{statistic_header} Undefined Reason",
+        f"{statistic_header} n valid",
+        f"{statistic_header} n total",
+        f"{statistic_header} n invalid",
+        f"{statistic_header} invalid fraction",
+        f"{statistic_header} non-finite policy",
+      ])
+  try:
+    with Path(path).open("w", encoding="utf-8", newline="") as fh:
+      writer = csv.writer(fh, delimiter=delimiter)
+      writer.writerow(header)
+      for row in rows:
+        values: list[object] = [_project_sample_title(project, row.sample_id), row.population_path]
+        if include_internal_ids:
+          values.extend([
+            row.sample_id, row.population_id, row.population_name,
+            row.parent_population_id or "", row.depth,
+          ])
+        if include_population_metrics:
+          values.extend([
+            _format_export_number(row.event_count, nan_policy),
+            _format_export_number(
+              None if row.frequency_of_parent is None else row.frequency_of_parent * 100,
+              nan_policy,
+            ),
+            _format_export_number(
+              100.0 if row.population_id == "all_events"
+              else (None if row.frequency_of_total is None
+                    else row.frequency_of_total * 100),
+              nan_policy,
+            ),
+          ])
+        for statistic_id in stat_headers:
+          result = row.statistics.get(statistic_id)
+          values.append(_format_export_number(result.value if result else None, nan_policy))
+        if include_qc:
+          if include_population_metrics:
+            values.append("current")
+          for statistic_id in stat_headers:
+            result = row.statistics.get(statistic_id)
+            values.extend([
+              result.status if result else "",
+              result.undefined_reason if result and result.undefined_reason else "",
+              result.n_valid if result and result.n_valid is not None else "",
+              result.n_total if result and result.n_total is not None else "",
+              result.n_invalid if result and result.n_invalid is not None else "",
+              result.invalid_fraction if result and result.invalid_fraction is not None else "",
+              result.non_finite_policy if result else "",
+            ])
+        writer.writerow(values)
+  except OSError as exc:
+    raise ExportError(f"Failed to write export file: {path}") from exc
+
+
+def write_results_long(
+  report: ExecutionReport,
+  project: Mapping[str, Any],
+  path: str | Path,
+  *,
+  delimiter: str = "\t",
+  execution_profile_id: str = "default",
+  include_population_metrics: bool = True,
+  include_custom_statistics: bool = True,
+  include_internal_ids: bool = False,
+  include_qc: bool = True,
+  nan_policy: NaNPolicy = "empty",
+) -> None:
+  """Write population metrics and custom statistics as one long table."""
+  rows = build_results_wide_rows(
+    report, project, execution_profile_id=execution_profile_id
+  )
+  statistic_ids = (
+    _statistic_headers(list(report.statistic_results), project)
+    if include_custom_statistics else {}
+  )
+  header = [
+    "Sample", "Population", "Result Type", "Statistic ID", "Statistic",
+    "Metric", "Value", "Unit", "Status", "Undefined Reason",
+  ]
+  if include_internal_ids:
+    header.extend([
+      "Sample ID", "Population ID", "Parent Population ID", "Population Depth",
+    ])
+  if include_qc:
+    header.extend(["n valid", "n total", "n invalid", "invalid fraction", "non-finite policy"])
+  try:
+    with Path(path).open("w", encoding="utf-8", newline="") as fh:
+      writer = csv.writer(fh, delimiter=delimiter)
+      writer.writerow(header)
+      for row in rows:
+        prefix = [_project_sample_title(project, row.sample_id), row.population_path]
+        if include_population_metrics:
+          metrics = (
+            ("Events", "event_count", row.event_count, "", "current", ""),
+            (
+              "% Parent", "frequency_of_parent",
+              None if row.frequency_of_parent is None else row.frequency_of_parent * 100,
+              "%", "current", "",
+            ),
+            (
+              "% Total", "frequency_of_total",
+              100.0 if row.population_id == "all_events"
+              else (None if row.frequency_of_total is None
+                    else row.frequency_of_total * 100),
+              "%", "current", "",
+            ),
+          )
+          for name, metric, value, unit, status, reason in metrics:
+            values: list[object] = [
+              *prefix, "population", "", name, metric,
+              _format_export_number(value, nan_policy), unit, status, reason,
+            ]
+            if include_internal_ids:
+              values.extend([
+                row.sample_id, row.population_id,
+                row.parent_population_id or "", row.depth,
+              ])
+            if include_qc:
+              values.extend(["", "", "", "", ""])
+            writer.writerow(values)
+        for statistic_id in statistic_ids:
+          result = row.statistics.get(statistic_id)
+          if result is None:
+            continue
+          values = [
+            *prefix, "statistic", result.statistic_id,
+            result.statistic_name or statistic_id, result.metric,
+            _format_export_number(result.value, nan_policy), result.unit or "",
+            result.status, result.undefined_reason or "",
+          ]
+          if include_internal_ids:
+            values.extend([
+              row.sample_id, row.population_id,
+              row.parent_population_id or "", row.depth,
+            ])
+          if include_qc:
+            values.extend([
+              result.n_valid if result.n_valid is not None else "",
+              result.n_total if result.n_total is not None else "",
+              result.n_invalid if result.n_invalid is not None else "",
+              result.invalid_fraction if result.invalid_fraction is not None else "",
+              result.non_finite_policy,
+            ])
+          writer.writerow(values)
+  except OSError as exc:
+    raise ExportError(f"Failed to write export file: {path}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +682,7 @@ def write_statistic_results(
       writer = csv.writer(fh, delimiter=delimiter)
       writer.writerow(header)
       for rec in results:
-        row = [
+        row: list[object] = [
           rec.sample_id,
           rec.statistic_id,
           rec.statistic_name if rec.statistic_name is not None else "",
@@ -344,20 +748,20 @@ def write_statistic_results_wide(
         values = rows[(sample_id, population_id)]
         row: list[object] = [sample_id, population_id]
         for statistic_id in statistic_ids:
-          result = values.get(statistic_id)
-          if result is None:
+          stat_result = values.get(statistic_id)
+          if stat_result is None:
             row.extend([_nan_placeholder(nan_policy)] + [""] * 9)
             continue
           row.extend([
-            _format_value(result.value, nan_policy),
-            result.unit or "",
-            result.status,
-            result.undefined_reason or "",
-            "" if result.n_total is None else result.n_total,
-            "" if result.n_valid is None else result.n_valid,
-            "" if result.n_invalid is None else result.n_invalid,
-            "" if result.invalid_fraction is None else result.invalid_fraction,
-            result.non_finite_policy,
+            _format_value(stat_result.value, nan_policy),
+            stat_result.unit or "",
+            stat_result.status,
+            stat_result.undefined_reason or "",
+            "" if stat_result.n_total is None else stat_result.n_total,
+            "" if stat_result.n_valid is None else stat_result.n_valid,
+            "" if stat_result.n_invalid is None else stat_result.n_invalid,
+            "" if stat_result.invalid_fraction is None else stat_result.invalid_fraction,
+            stat_result.non_finite_policy,
             "" if revisions is None else revisions.get(
               (sample_id, statistic_id, population_id), ""
             ),

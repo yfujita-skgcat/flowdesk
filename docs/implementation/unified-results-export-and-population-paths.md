@@ -2,8 +2,8 @@
 
 ## Status
 
-Planned. This guide records the remaining work; the current GUI still has
-separate population and statistics exports.
+Implemented in the current B7.6 increment. The legacy core writers remain as
+compatibility APIs, while the GUI and standard CLI use the unified writer.
 
 ## Goal and invariants
 
