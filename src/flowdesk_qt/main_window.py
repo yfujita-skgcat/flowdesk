@@ -97,6 +97,7 @@ from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.preview_scheduler import PreviewScheduler
 from flowdesk_qt.processed_display_scheduler import ProcessedDisplayScheduler
+from flowdesk_qt.results_export_dialog import ResultsExportOptions
 from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
@@ -268,6 +269,9 @@ class MainWindow(QMainWindow):
         self._worker: _PipelineWorker | None = None
         self._results_stale = False
         self._results_stale_reason: str | None = None
+        self._pending_results_export: tuple[
+            ResultsExportOptions, str, str
+        ] | None = None
         self._auto_recalculate_timer = QTimer(self)
         self._auto_recalculate_timer.setSingleShot(True)
         self._auto_recalculate_timer.setInterval(300)
@@ -2494,6 +2498,13 @@ class MainWindow(QMainWindow):
             logger.error("Pipeline execution failed: %s", exc)
             self._update_status(f"Pipeline error: {exc}")
             QMessageBox.critical(self, "Pipeline Error", str(exc))
+            if self._pending_results_export is not None:
+                self._pending_results_export = None
+                QMessageBox.critical(
+                    self,
+                    "Export Error",
+                    "Pipeline failed; Results were not exported.",
+                )
             self._release_pipeline_worker(worker)
             self._preview_scheduler.resume()
             return
@@ -2510,7 +2521,12 @@ class MainWindow(QMainWindow):
             )
             self._release_pipeline_worker(worker)
             self._preview_scheduler.resume()
-            if self._results_workspace.auto_recalculate_stale_results():
+            if self._pending_results_export is not None:
+                self._update_status(
+                    "Analysis changed during Pipeline; rerunning before export..."
+                )
+                self._on_run_pipeline()
+            elif self._results_workspace.auto_recalculate_stale_results():
                 self._request_auto_recalculation()
             return
         if report is not None:
@@ -2572,8 +2588,16 @@ class MainWindow(QMainWindow):
             # Replot to apply the now-valid population membership mask.
             self._replot()
             self._update_compensation_status()
+            self._complete_pending_results_export()
         else:
             self._update_status("Pipeline finished with no report")
+            if self._pending_results_export is not None:
+                self._pending_results_export = None
+                QMessageBox.critical(
+                    self,
+                    "Export Error",
+                    "Pipeline produced no Results; the export was not written.",
+                )
 
         self._release_pipeline_worker(worker)
         self._preview_scheduler.resume()
@@ -4282,20 +4306,13 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Export Error", str(exc))
 
     def _on_export_results(self) -> None:
-        """Export the authoritative population/statistic report together."""
+        """Export Results, rerunning the pipeline when the report is stale."""
         report = self._last_result_report or self._population_tree.last_report()
-        if report is None or not report.population_results:
+        if not self._sample_data and (report is None or not report.population_results):
             QMessageBox.information(
                 self,
                 "No results",
                 "Run Pipeline before exporting Results.",
-            )
-            return
-        if self._results_stale:
-            QMessageBox.information(
-                self,
-                "Results stale",
-                "Results are stale. Run Pipeline again before exporting.",
             )
             return
 
@@ -4314,34 +4331,63 @@ class MainWindow(QMainWindow):
         if not path_str:
             return
         delimiter = "," if selected_filter.startswith("CSV") or path_str.endswith(".csv") else "\t"
+        pipeline_running = self._worker is not None and self._worker.isRunning()
+        needs_pipeline = (
+            pipeline_running
+            or self._results_stale
+            or report is None
+            or not report.population_results
+        )
+        if needs_pipeline and not self._sample_data:
+            QMessageBox.information(
+                self,
+                "No samples",
+                "Load samples before exporting Results.",
+            )
+            return
+        self._pending_results_export = (options, path_str, delimiter)
+        if needs_pipeline:
+            if pipeline_running:
+                self._update_status(
+                    "Pipeline is running; export will continue when it finishes..."
+                )
+            else:
+                self._update_status("Results stale; running Pipeline before export...")
+                self._on_run_pipeline()
+            return
+        self._complete_pending_results_export()
+
+    def _complete_pending_results_export(self) -> None:
+        """Write a queued Results export from the current authoritative report."""
+        pending = self._pending_results_export
+        if pending is None:
+            return
+        self._pending_results_export = None
+        options, path_str, delimiter = pending
+        report = self._last_result_report or self._population_tree.last_report()
+        if report is None or not report.population_results or self._results_stale:
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                "No current Results are available; the export was not written.",
+            )
+            return
         try:
             project = self._build_project_manifest()
             if options.layout == "long":
-                from flowdesk_core.export import write_results_long
-
-                write_results_long(
-                    report,
-                    project,
-                    path_str,
-                    delimiter=delimiter,
-                    include_population_metrics=options.include_population_metrics,
-                    include_custom_statistics=options.include_custom_statistics,
-                    include_internal_ids=options.include_internal_ids,
-                    include_qc=options.include_qc,
-                )
+                from flowdesk_core.export import write_results_long as writer
             else:
-                from flowdesk_core.export import write_results_wide
-
-                write_results_wide(
-                    report,
-                    project,
-                    path_str,
-                    delimiter=delimiter,
-                    include_population_metrics=options.include_population_metrics,
-                    include_custom_statistics=options.include_custom_statistics,
-                    include_internal_ids=options.include_internal_ids,
-                    include_qc=options.include_qc,
-                )
+                from flowdesk_core.export import write_results_wide as writer
+            writer(
+                report,
+                project,
+                path_str,
+                delimiter=delimiter,
+                include_population_metrics=options.include_population_metrics,
+                include_custom_statistics=options.include_custom_statistics,
+                include_internal_ids=options.include_internal_ids,
+                include_qc=options.include_qc,
+            )
             self._update_status(f"Results exported to {path_str}")
         except Exception as exc:
             logger.error("Results export failed: %s", exc)

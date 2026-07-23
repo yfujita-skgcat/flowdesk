@@ -74,9 +74,13 @@ Remove the two user-facing Results export actions and any hidden dead action;
 keep old core writers only as compatibility APIs after reference audit. The
 new dialog supports Wide/Long, population metrics, custom statistics, internal
 IDs, QC/status metadata, and TSV/CSV. At least one result category is required.
-No run, absent authoritative results, stale results, or path-resolution errors
-must block export with an understandable dialog message. Population-only data
-must still export when zero custom statistics exist.
+If no samples are loaded, export must remain unavailable with an understandable
+dialog. When authoritative results are absent or stale but samples are loaded,
+the GUI must retain the selected export options and destination, run the
+canonical Pipeline automatically, and continue the export only after a current
+report is available. Pipeline or path-resolution failures must block writing
+with an understandable dialog. Population-only data must still export when
+zero custom statistics exist.
 
 `flowdesk run project.flowdesk --output results.tsv` is the standard unified
 wide export. Add `--layout wide|long`, `--include-internal-ids`, and

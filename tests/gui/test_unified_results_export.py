@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from flowdesk_qt.main_window import MainWindow
-from flowdesk_qt.results_export_dialog import ResultsExportDialog
+from flowdesk_qt.results_export_dialog import ResultsExportDialog, ResultsExportOptions
 
 pytestmark = pytest.mark.gui
 
@@ -41,6 +41,48 @@ def test_results_menu_has_only_unified_result_export(qapp) -> None:
     assert "Export &Results..." in texts
     assert all("Population" not in text for text in texts)
     assert all("Export" not in text or "Statistics" not in text for text in texts)
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_stale_results_export_queues_export_and_runs_pipeline(qapp, monkeypatch, tmp_path) -> None:
+  window = MainWindow()
+  try:
+    window._sample_data = {"sample-1": object()}
+    window._results_stale = True
+    pipeline_calls: list[bool] = []
+
+    class FakeExportDialog:
+      def __init__(self, parent) -> None:
+        self.parent = parent
+
+      def exec(self) -> int:
+        return 1
+
+      def options(self) -> ResultsExportOptions:
+        return ResultsExportOptions()
+
+    monkeypatch.setattr(
+      "flowdesk_qt.results_export_dialog.ResultsExportDialog",
+      FakeExportDialog,
+    )
+    monkeypatch.setattr(
+      "flowdesk_qt.main_window.QFileDialog.getSaveFileName",
+      lambda *args: (str(tmp_path / "results.tsv"), "TSV files (*.tsv)"),
+    )
+    monkeypatch.setattr(
+      window,
+      "_on_run_pipeline",
+      lambda: pipeline_calls.append(True),
+    )
+
+    window._on_export_results()
+
+    assert pipeline_calls == [True]
+    assert window._pending_results_export is not None
+    assert window._pending_results_export[1].endswith("results.tsv")
   finally:
     window.close()
     window.deleteLater()

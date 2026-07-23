@@ -175,7 +175,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |---|---|
 |Add Statistic...|新しい persisted statistic definition を作成する。初期 population は All Events。|
 |Manage Statistics...|既存 statistics の Compute/Show と適用 population をまとめて管理する。|
-|Export Results...|最新かつ non-stale な population metrics と custom statistics を wide/long TSV/CSV に書き出す。|
+|Export Results...|population metrics と custom statistics を wide/long TSV/CSV に書き出す。Results が stale または未計算の場合は、保存先と形式を確認した後に Pipeline を自動実行し、完了後に最新結果を出力する。Pipeline が失敗した場合は出力しない。|
 |Batch Plot Export...|保存済み `BatchPlotExportSpec` を使って batch export する。project の保存と定義済み spec が必要。|
 
 ### 5.5 Data
@@ -837,7 +837,7 @@ Title font、Axis label font、Tick font、Legend font のそれぞれに `famil
 Results → **Export Results...** を選び、Wide table または Long detail table、
 population metrics、custom statistics、internal ID、QC/status metadata を選択する。
 population metrics と custom statistics の少なくとも一方を選ぶ必要がある。
-TSV または CSV を選び、Results がない、または stale の場合は export できない。
+TSV または CSV を選ぶ。Results が stale または未計算の場合は、Export の保存先と形式を確定した後に Pipeline が自動実行され、完了後にExportが継続される。Pipeline が失敗した場合は出力されない。
 
 Wide形式は1行を Sample × Population とし、Populationは `All Events/Live/GFP+`
 のようなgate階層full pathで出力する。内部の安定識別子はPopulation pathではなく
