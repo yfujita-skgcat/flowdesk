@@ -470,6 +470,78 @@ def test_statistic_management_edits_population_targets(qapp, monkeypatch) -> Non
   assert dialog._table.item(0, 6).text() == "All Events, Live cells"
 
 
+def test_statistic_definition_fields_are_editable(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[{
+      "id": "stat_mean",
+      "name": "Old name",
+      "population_id": "all_events",
+      "population_ids": ["all_events"],
+      "parameter_id": "FL1-A",
+      "metric": "mean",
+      "source_stage": "raw",
+      "value_policy": "full_events",
+    }],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events",),
+  )
+  dialog._name_edit.setText("Renamed statistic")
+  dialog._parameter_combo.setCurrentIndex(
+    dialog._parameter_combo.findData("FL1-A")
+  )
+  dialog._metric_combo.setCurrentText("median")
+  dialog._source_combo.setCurrentText("compensated")
+
+  definition = dialog.definitions()[0]
+  assert definition["id"] == "stat_mean"
+  assert definition["name"] == "Renamed statistic"
+  assert definition["parameter_id"] == "FL1-A"
+  assert definition["metric"] == "median"
+  assert definition["source_stage"] == "compensated"
+
+
+def test_statistic_management_opens_definition_editor(qapp, monkeypatch) -> None:
+  dialog = StatisticManagementDialog(
+    [{
+      "id": "stat_mean",
+      "name": "Old name",
+      "population_ids": ["all_events"],
+      "parameter_id": "FL1-A",
+      "metric": "mean",
+      "source_stage": "raw",
+    }],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events",),
+  )
+
+  class AcceptedEditor:
+    def __init__(self, statistics, *_args, **_kwargs) -> None:
+      self._definition = dict(statistics[0])
+
+    def exec(self):
+      return QDialog.DialogCode.Accepted
+
+    def definitions(self):
+      updated = dict(self._definition)
+      updated["name"] = "Edited name"
+      updated["parameter_id"] = "FL1-A"
+      updated["metric"] = "median"
+      updated["source_stage"] = "transformed"
+      return [updated]
+
+  monkeypatch.setattr(
+    "flowdesk_qt.statistics_editor.StatisticsEditorDialog", AcceptedEditor,
+  )
+  dialog._table.selectRow(0)
+  dialog._edit_selected_definition()
+
+  updated = dialog.definitions()[0]
+  assert updated["id"] == "stat_mean"
+  assert updated["name"] == "Edited name"
+  assert updated["metric"] == "median"
+  assert updated["source_stage"] == "transformed"
+
+
 def test_main_window_exposes_sample_sheet_and_batch_plot_actions(qapp) -> None:
   window = MainWindow()
   try:

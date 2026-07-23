@@ -418,7 +418,7 @@ class StatisticsEditorDialog(QDialog):
         form.addRow("Population targets:", population_row)
         form.addRow("Parameter:", self._parameter_combo)
         form.addRow("Metric:", self._metric_combo)
-        form.addRow("Source Stage:", self._source_combo)
+        form.addRow("Value domain:", self._source_combo)
         form.addRow("Transform:", self._transform_combo)
         form.addRow("Non-finite policy:", self._nonfinite_combo)
         form.addRow(self._percentile_q_label, self._percentile_q_edit)
@@ -888,6 +888,9 @@ class StatisticManagementDialog(QDialog):
         population_labels: Mapping[str, str] | None = None,
         population_ids: Sequence[str] = (),
         population_parents: Mapping[str, str | None] | None = None,
+        available_channels: Sequence[ChannelSpec | ParameterCatalogEntry] = (),
+        transforms: Sequence[Mapping[str, Any]] = (),
+        statistic_references: Mapping[str, Sequence[str]] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -900,6 +903,9 @@ class StatisticManagementDialog(QDialog):
         self._population_labels = dict(population_labels or {})
         self._population_ids = tuple(str(value) for value in population_ids)
         self._population_parents = dict(population_parents or {})
+        self._available_channels = tuple(available_channels)
+        self._transforms = tuple(dict(value) for value in transforms)
+        self._statistic_references = dict(statistic_references or {})
         self._compute_checks: dict[str, QCheckBox] = {}
         self._show_checks: dict[str, QCheckBox] = {}
         self._target_ids: dict[str, tuple[str, ...]] = {}
@@ -915,8 +921,13 @@ class StatisticManagementDialog(QDialog):
             QTableWidget.SelectionBehavior.SelectRows
         )
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.cellDoubleClicked.connect(self._edit_targets_at)
+        self._table.cellDoubleClicked.connect(self._edit_row_at)
         layout.addWidget(self._table)
+
+        edit_definition = QPushButton("Edit Definition...")
+        edit_definition.setObjectName("statisticEditDefinitionButton")
+        edit_definition.clicked.connect(self._edit_selected_definition)
+        layout.addWidget(edit_definition)
 
         edit_targets = QPushButton("Edit Applies to...")
         edit_targets.setObjectName("statisticEditTargetsButton")
@@ -976,9 +987,40 @@ class StatisticManagementDialog(QDialog):
         if row >= 0:
             self._edit_targets(row)
 
-    def _edit_targets_at(self, row: int, column: int) -> None:
+    def _edit_row_at(self, row: int, column: int) -> None:
         if column == 6:
             self._edit_targets(row)
+        else:
+            self._edit_definition(row)
+
+    def _edit_selected_definition(self) -> None:
+        row = self._table.currentRow()
+        if row >= 0:
+            self._edit_definition(row)
+
+    def _edit_definition(self, row: int) -> None:
+        if not (0 <= row < len(self._statistics)):
+            return
+        statistic_id = str(self._statistics[row].get("id", ""))
+        dialog = StatisticsEditorDialog(
+            [self._statistics[row]],
+            self._available_channels,
+            self._population_ids,
+            population_parents=self._population_parents,
+            population_labels=self._population_labels,
+            statistic_references={
+                statistic_id: self._statistic_references.get(statistic_id, ())
+            },
+            transforms=self._transforms,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        updated = dialog.definitions()
+        if updated:
+            self._statistics[row] = updated[0]
+            self._populate()
+            self._table.selectRow(row)
 
     def _edit_targets(self, row: int) -> None:
         if not self._population_ids or not (0 <= row < len(self._statistics)):

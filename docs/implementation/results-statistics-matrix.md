@@ -167,6 +167,10 @@ Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to
 - `Applies to` is editable from Manage Statistics through the shared stable-ID
   population chooser; changing targets invalidates the affected statistic cells
   and requires canonical recalculation.
+- Manage Statistics opens the shared definition editor from `Edit Definition...`
+  or a double-click on a definition row. Name, parameter, metric, source/value
+  domain, and transform can be edited there; the persisted statistic ID remains
+  fixed after the definition has been accepted.
 - `Parameter` shows the user-facing parameter name (for example `FSC-A`), not only
   the stable internal parameter ID.
 - `Applies to` shows the user-facing names of the explicit target populations. A

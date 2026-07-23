@@ -710,6 +710,7 @@ population hierarchy の各 row に checkbox があり、statistic target を st
 |Parameter|parameter label。|
 |Metric|metric。|
 |Value domain|transform ID または source stage。|
+|Edit Definition...|選択 row の定義 editor を開く。Statistic ID は固定のまま、Name、Parameter、Metric、Value domain（source stage / transform）を変更できる。|
 |Applies to|target population 一覧。double click または Edit Applies to... で変更。|
 |Edit Applies to...|選択 row の target chooser を開く。|
 |OK / Cancel|Compute/Show/targets を commit、または破棄。|
@@ -1261,6 +1262,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`statistics_editor.py`|`statisticDialogButtons`|
 |`statistics_editor.py`|`statisticManagementDialog`|
 |`statistics_editor.py`|`statisticManagementTable`|
+|`statistics_editor.py`|`statisticEditDefinitionButton`|
 |`statistics_editor.py`|`statisticEditTargetsButton`|
 |`statistics_editor.py`|`statisticManagementDialogButtons`|
 |`statistics_editor.py`|`f'statisticComputeCheck_{statistic_id}'`|
