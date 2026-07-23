@@ -7,17 +7,26 @@
 #   make check      - Run lint + type-check
 #   make fmt        - Run ruff formatter
 #   make all        - Run fmt + check + test
+#   make package    - Build a native PyInstaller onedir artifact
+#   make package-smoke - Smoke-test the native package artifact
 #   make clean      - Remove build artifacts and caches
 #   make help       - Show this help
 
-.PHONY: test test-core test-gui test-all gui-debug lint type-check check fmt all clean help
+FLOWDESK_PYTHON ?= .direnv/python-3.12.13/bin/python
+PYINSTALLER = $(FLOWDESK_PYTHON) -m PyInstaller
+PACKAGE_SPEC ?= packaging/flowdesk.spec
+PACKAGE_GUI ?= dist/flowdesk/flowdesk
+PACKAGE_SMOKE_DIR ?= artifacts/package-smoke
+
+.PHONY: test test-core test-gui test-all gui-debug lint type-check check fmt all \
+	package package-smoke clean help
 
 gui:
 	flowdesk-gui
 
 zip:
 	if [ -e rep.zip ]; then rm rep.zip; fi
-	zip -r rep.zip *.md Makefile  docs/ examples/ logs/ pyproject.toml  schemas/ src/ tests/ tools/
+	zip -r rep.zip *.md Makefile  packaging/ .github/ docs/ examples/ logs/ pyproject.toml  schemas/ src/ tests/ tools/
 
 help:
 	@echo "Flowdesk Makefile targets:"
@@ -31,6 +40,8 @@ help:
 	@echo "  check       - Run lint + type-check"
 	@echo "  fmt         - Run ruff formatter (src/ tests/)"
 	@echo "  all         - Run fmt + check + test"
+	@echo "  package     - Build native PyInstaller onedir artifact"
+	@echo "  package-smoke - Smoke-test the native package artifact"
 	@echo "  clean       - Remove build artifacts and caches"
 	@echo "  help        - Show this help"
 
@@ -63,7 +74,20 @@ fmt:
 
 all: fmt check test
 
+package:
+	$(PYINSTALLER) --clean --noconfirm $(PACKAGE_SPEC)
+	echo "For windows."
+	echo python tools/package.py build
+	echo python tools/package.py smoke
+
+package-smoke: package
+	QT_QPA_PLATFORM=offscreen $(FLOWDESK_PYTHON) packaging/smoke_test.py \
+		--gui $(PACKAGE_GUI) \
+		--output-dir $(PACKAGE_SMOKE_DIR)
+
 clean:
+	rm -rf build/
+	rm -rf dist/
 	rm -rf .pytest_cache/
 	rm -rf .mypy_cache/
 	rm -rf .ruff_cache/

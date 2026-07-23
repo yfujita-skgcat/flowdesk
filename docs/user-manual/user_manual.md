@@ -76,6 +76,12 @@ python -m flowdesk_qt
 python -m flowdesk_qt --data-dir data/
 ```
 
+インストール済みGUIの実装versionは次で確認できる。
+
+```bash
+flowdesk-gui --version
+```
+
 通常起動時のログ・デバッグ情報と recovery copy は、カレントディレクトリではなく
 OSごとのユーザー書込み可能なアプリケーションデータ領域へ保存される。
 開発時に保存先を指定する場合は `--debug-artifacts-dir` を使用する。

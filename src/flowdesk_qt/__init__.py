@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication, QTimer
 from PySide6.QtWidgets import QApplication
 
 from flowdesk_qt.app_info import APP_NAME, ORGANIZATION_NAME, application_version
@@ -43,11 +43,14 @@ def run_app(
     data_dir: str | Path | None = None,
     debug_artifacts_dir: str | Path | None = None,
     log_level: str = "INFO",
+    test_mode: bool = False,
 ) -> int:
     """Launch the Flowdesk Qt application.
 
     Args:
       data_dir: Optional directory to pre-load FCS samples from.
+      test_mode: Start and close after the event loop becomes active. This is
+        intended for packaged-build smoke tests.
 
     Returns:
       Application exit code.
@@ -70,6 +73,9 @@ def run_app(
     window.show()
     previous_sigint_handler = _install_terminal_interrupt_handler(app, window)
 
+    if test_mode:
+        QTimer.singleShot(0, app.quit)
+
     try:
         if data_dir is not None:
             count = window.load_samples_from_directory(data_dir)
@@ -91,6 +97,11 @@ def main() -> None:
         description="Flowdesk - Flow cytometry analysis GUI",
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=application_version(),
+    )
+    parser.add_argument(
         "-d",
         "--data-dir",
         type=str,
@@ -106,6 +117,7 @@ def main() -> None:
         data_dir=args.data_dir,
         debug_artifacts_dir=args.debug_artifacts_dir,
         log_level=args.log_level,
+        test_mode=args.test_mode,
     )
     sys.exit(exit_code)
 
