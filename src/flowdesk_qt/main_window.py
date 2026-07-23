@@ -3533,6 +3533,7 @@ class MainWindow(QMainWindow):
             catalog,
             population_ids,
             population_parents=self._population_parent_map(),
+            population_labels=self._population_name_map(),
             statistic_references=self._statistic_reference_map(),
             transforms=self._transforms,
             new_statistic_defaults=(

@@ -141,6 +141,25 @@ def _empty_statistic(
     return statistic
 
 
+def _slug_identity(value: object) -> str:
+    """Return a deterministic human-readable token for a generated ID/name."""
+    slug = re.sub(r"[^a-z0-9]+", "_", str(value).lower()).strip("_")
+    return slug or "statistic"
+
+
+def _statistic_identity_parts(
+    value: Mapping[str, Any],
+    population_labels: Mapping[str, str],
+) -> tuple[str, str]:
+    """Suggest ``name`` and ID components from the target population and metric."""
+    targets = value.get("population_ids") or [value.get("population_id", "all_events")]
+    target_id = next((str(target) for target in targets if target), "all_events")
+    population_name = population_labels.get(target_id, target_id)
+    metric = str(value.get("metric") or "count")
+    name = f"{_slug_identity(population_name)}_{_slug_identity(metric)}"
+    return name, f"stat_{name}"
+
+
 def _is_blank_statistic(value: Mapping[str, Any]) -> bool:
     """Return whether a definition is only an uncommitted editor placeholder."""
     return not any(
@@ -201,6 +220,7 @@ class StatisticsEditorDialog(QDialog):
         population_ids: Sequence[str],
         *,
         population_parents: Mapping[str, str | None] | None = None,
+        population_labels: Mapping[str, str] | None = None,
         statistic_references: Mapping[str, Sequence[str]] | None = None,
         transforms: Sequence[Mapping[str, Any]] = (),
         new_statistic_defaults: Mapping[str, Any] | None = None,
@@ -211,9 +231,12 @@ class StatisticsEditorDialog(QDialog):
         self.setWindowTitle("Population Statistics")
         self.resize(850, 560)
 
-        self._statistics = deepcopy(list(statistics))
+        # Existing definitions keep their persisted IDs; only definitions created
+        # through New receive the new population/metric-based suggestion.
+        self._statistics = repair_statistic_definitions(deepcopy(list(statistics)))
         self._channels = tuple(available_channels)
         self._population_ids = tuple(population_ids)
+        self._population_labels = dict(population_labels or {})
         self._population_parents = dict(population_parents or {})
         self._statistic_references = {
             str(statistic_id): tuple(str(reference) for reference in references)
@@ -375,7 +398,10 @@ class StatisticsEditorDialog(QDialog):
         self._compute_check.setObjectName("statisticComputeEnabledCheck")
         self._compute_check.setChecked(True)
 
-        form.addRow("Statistic ID:", self._id_edit)
+        self._id_edit.setToolTip(
+            "Generated once when the statistic is created; fixed thereafter."
+        )
+        form.addRow("Statistic ID (fixed):", self._id_edit)
         form.addRow("Name:", self._name_edit)
         form.addRow("Population targets:", population_row)
         form.addRow("Parameter:", self._parameter_combo)
@@ -466,7 +492,12 @@ class StatisticsEditorDialog(QDialog):
         try:
             self._current_row = row
             value = self._statistics[row]
-            self._id_edit.setText(str(value.get("id", "")))
+            statistic_id = str(value.get("id", ""))
+            if not statistic_id:
+                self._initialize_statistic_identity(value)
+                statistic_id = str(value.get("id", ""))
+            self._id_edit.setText(statistic_id)
+            self._id_edit.setReadOnly(bool(statistic_id))
             self._name_edit.setText(str(value.get("name", "")))
 
             pop_id = str(value.get("population_id", ""))
@@ -544,8 +575,12 @@ class StatisticsEditorDialog(QDialog):
         if not target_ids and scope != "selected":
             current_population = str(self._population_combo.currentData() or "")
             target_ids = (current_population,) if current_population else ()
+        current = self._statistics[self._current_row]
+        if not str(current.get("id") or "").strip():
+            self._initialize_statistic_identity(current)
         self._statistics[self._current_row] = {
-            "id": self._id_edit.text().strip(),
+            # IDs are generated once and never taken from the editable form.
+            "id": str(current.get("id") or ""),
             "name": self._name_edit.text().strip(),
             "population_id": target_ids[0] if target_ids else "",
             "population_ids": list(target_ids),
@@ -572,8 +607,30 @@ class StatisticsEditorDialog(QDialog):
         self._commit_current()
         defaults = self._pending_new_defaults
         self._pending_new_defaults = None
-        self._statistics.append(_empty_statistic(defaults))
+        value = _empty_statistic(defaults)
+        self._initialize_statistic_identity(value)
+        self._statistics.append(value)
         self._refresh_list(len(self._statistics) - 1)
+
+    def _initialize_statistic_identity(self, value: dict[str, Any]) -> None:
+        """Assign a collision-free immutable ID and a readable initial name."""
+        suggested_name, suggested_id = _statistic_identity_parts(
+            value, self._population_labels
+        )
+        if not str(value.get("name") or "").strip():
+            value["name"] = suggested_name
+        if str(value.get("id") or "").strip():
+            return
+        used_ids = {
+            str(item.get("id")) for item in self._statistics
+            if str(item.get("id") or "").strip() and item is not value
+        }
+        statistic_id = suggested_id
+        suffix = 2
+        while statistic_id in used_ids:
+            statistic_id = f"{suggested_id}_{suffix}"
+            suffix += 1
+        value["id"] = statistic_id
 
     def _delete_statistic(self) -> None:
         row = self._list.currentRow()
@@ -611,7 +668,9 @@ class StatisticsEditorDialog(QDialog):
         self._record_history()
         self._statistics.clear()
         self._current_row = -1
-        self._statistics.append(_empty_statistic())
+        value = _empty_statistic()
+        self._initialize_statistic_identity(value)
+        self._statistics.append(value)
         self._refresh_list(0)
 
     def _record_history(self) -> None:

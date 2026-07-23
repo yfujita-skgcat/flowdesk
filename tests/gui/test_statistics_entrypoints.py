@@ -72,6 +72,29 @@ def test_dialog_open_does_not_create_statistic_until_new_is_clicked(qapp) -> Non
   assert definition["parameter_id"] == "FL1-A"
   assert definition["metric"] == "mean"
   assert definition["value_policy"] == "full_events"
+  assert definition["name"] == "live_mean"
+  assert definition["id"] == "stat_live_mean"
+  assert dialog._id_edit.isReadOnly()
+
+
+def test_new_statistic_id_is_immutable_after_creation(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events", "rect_1"),
+    population_labels={"all_events": "All Events", "rect_1": "rect_1"},
+    new_statistic_defaults={
+      "population_id": "rect_1",
+      "parameter_id": "FL1-A",
+      "metric": "mean",
+    },
+  )
+
+  dialog._new_button.click()
+  generated_id = dialog._statistics[0]["id"]
+  dialog._id_edit.setText("manually_changed")
+
+  assert dialog.definitions()[0]["id"] == generated_id
 
 
 def test_value_metric_enables_parameter_selector(qapp) -> None:

@@ -136,6 +136,11 @@ but it remains labelled preview and cannot replace missing authoritative batch r
 `Add Statistic...` opens the existing side-effect-free editor. A definition is created
 only after explicit `New`. The form includes:
 
+New definitions receive a readable initial name such as `rect_1_mean` from the target
+population name and metric. A stable Statistic ID is generated once (for example
+`stat_rect_1_mean`) and is read-only after creation; changing the display name or target
+does not rewrite the ID.
+
 ```text
 Parameter / Metric / Source stage / Transform / Non-finite policy / Format
 
