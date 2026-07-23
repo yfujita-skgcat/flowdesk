@@ -4,6 +4,11 @@
 
 Implement population statistics export and CLI commands for running saved projects.
 
+The remaining unified export and population full-path work is specified in
+[`unified-results-export-and-population-paths.md`](unified-results-export-and-population-paths.md).
+Until that guide is completed, the existing population-only and statistic-only
+writers remain the current behavior.
+
 ## Target Files
 
 - `src/flowdesk_core/export.py`
@@ -21,6 +26,8 @@ Implement population statistics export and CLI commands for running saved projec
 - Support TSV first; CSV can share the same writer with delimiter selection.
 - Handle `NaN` explicitly according to export settings.
 - Do not import Qt or GUI modules.
+- Build a unified row model before writing wide or long output; do not join
+  separate files or recalculate values in Qt.
 
 ## Required Behavior
 

@@ -820,6 +820,12 @@ Title font、Axis label font、Tick font、Legend font のそれぞれに `famil
 
 TSV または CSV を選ぶ。Results がない、または stale の場合は export できない。
 
+現在のGUIには Population Results と Statistics の2つのexportが残っている。
+これらを `Export Results...` に統合し、Population full path と population
+metrics・custom statistics を同じ wide/long 出力へまとめる機能は未実装で、
+次の実装対象として [統合Results Exportの実装ガイド](../implementation/unified-results-export-and-population-paths.md)
+に定義している。現時点ではこの統合仕様を現行機能として扱わない。
+
 ### 15.3 Plot PNG/SVG/PDF
 
 current view、presentation、visible overlays、population colors、display sampling definition 等を使って export する。`Export 1:1` は export-only aspect option。visible advanced overlay が incompatible なら export は拒否される。
