@@ -1006,7 +1006,8 @@ class GateEditor(QWidget):
         gate_type = self._type_combo.currentText()
         x_ch = self._x_channel or "X"
         y_ch = self._y_channel or "Y"
-        self._parent_population_id = self._parent_combo.currentData() or "all_events"
+        parent_id = self._creation_parent_population_id()
+        self.set_parent_population(parent_id)
 
         if gate_type in {"rectangle", "polygon"}:
             if not self._emit_interactive_gate_requested(gate_type):
@@ -1078,6 +1079,13 @@ class GateEditor(QWidget):
         except GatingStrategyError as exc:
             QMessageBox.warning(self, "Invalid gate", str(exc))
             self.cancel_child_gate_mode()
+
+    def _creation_parent_population_id(self) -> str:
+        """Return the parent selected in the hierarchy, or the combo fallback."""
+        item = self._tree_widget.currentItem()
+        if item is not None:
+            return str(item.data(0, Qt.UserRole) or "all_events")
+        return str(self._parent_combo.currentData() or "all_events")
 
     def _on_edit_geometry_clicked(self) -> None:
         """Edit geometric thresholds/vertices in data coordinates."""
@@ -1429,14 +1437,6 @@ class GateEditor(QWidget):
             QMessageBox.warning(self, "Invalid gate rename", str(exc))
             self._refresh_hierarchy_tree(gate_id)
 
-    def _on_create_child_clicked(self) -> None:
-        item = self._tree_widget.currentItem()
-        if item is None:
-            return
-        parent_id = item.data(0, Qt.UserRole)
-        if self.begin_child_gate(parent_id):
-            self._create_gate_dialog()
-
     def _on_show_gate_clicked(self) -> None:
         gate = self.selected_gate()
         if gate is None:
@@ -1619,10 +1619,6 @@ class GateEditor(QWidget):
         self._btn_delete.setObjectName("deleteGateButton")
         self._btn_delete.clicked.connect(self._delete_selected_gate)
 
-        self._btn_create_child = QPushButton("Create Child Gate")
-        self._btn_create_child.setObjectName("createChildGateButton")
-        self._btn_create_child.clicked.connect(self._on_create_child_clicked)
-
         self._btn_show_gate = QPushButton("Show Gate")
         self._btn_show_gate.setObjectName("showGateButton")
         self._btn_show_gate.clicked.connect(self._on_show_gate_clicked)
@@ -1684,7 +1680,6 @@ class GateEditor(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.addWidget(self._btn_create)
-        btn_row.addWidget(self._btn_create_child)
         btn_row.addWidget(self._btn_delete)
 
         box_layout.addWidget(QLabel("Gate type:"))

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog, QPushButton
 
 from flowdesk_cli.main import run_project_command
 from flowdesk_core.execution_context import ExecutionContext
@@ -225,6 +225,48 @@ def test_explicit_child_mode_sets_parent_and_context(qapp) -> None:
         editor.cancel_child_gate_mode()
         assert editor.parent_population() == "all_events"
         assert editor.gates() == _three_level_gates()[:1]
+    finally:
+        editor.close()
+        editor.deleteLater()
+        qapp.processEvents()
+
+
+def test_create_gate_uses_selected_hierarchy_population_as_parent(qapp, monkeypatch) -> None:
+    class AcceptedEllipseDialog:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def exec(self) -> int:
+            return QDialog.DialogCode.Accepted
+
+        def name(self) -> str:
+            return "Child ellipse"
+
+        def thresholds(self) -> dict[str, float]:
+            return {
+                "center_x": 10.0,
+                "center_y": 20.0,
+                "radius_x": 4.0,
+                "radius_y": 6.0,
+                "rotation": 0.0,
+            }
+
+        def coordinates(self) -> list[tuple[float, float]]:
+            return []
+
+    editor = GateEditor()
+    try:
+        editor.set_gates(_three_level_gates()[:1], notify=False)
+        editor.select_gate("cells")
+        monkeypatch.setattr(
+            "flowdesk_qt.gate_editor._GateDialog", AcceptedEllipseDialog
+        )
+        editor._type_combo.setCurrentText("ellipse")
+        editor._create_gate_dialog()
+
+        created = editor.gates()[-1]
+        assert created.parent_population_id == "cells"
+        assert editor.findChild(QPushButton, "createChildGateButton") is None
     finally:
         editor.close()
         editor.deleteLater()

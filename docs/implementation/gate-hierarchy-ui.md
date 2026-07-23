@@ -21,8 +21,8 @@ source ids and operations, parameters, axis scales, and coordinates. Every
 scientific edit invalidates membership and statistics and must be persisted.
 
 Display state consists of selected/expanded rows, viewport, displayed sample
-and population, and displayed channels/scales. Selection alone never changes a
-gate parent.
+and population, and displayed channels/scales. Selection alone never changes an
+existing gate parent; it only determines the parent for a newly requested gate.
 
 Keep `selected_gate_id` separate from `display_population_id`. Selecting a gate definition
 changes the editing target and outline highlight only; it must not implicitly filter the
@@ -32,8 +32,11 @@ plot to that gate's child population.
 
 1. A definition tree rooted at All Events stores gate ids in `Qt.UserRole`; label the
    first column `Gate` or `Gate definition`, not `Population`.
-2. Create Child Gate explicitly fixes the selected population as parent and
-   shows parent id, sample, parameters, and scales before drawing.
+2. Create Gate uses the selected hierarchy population as parent. Selecting a gate
+   creates a child under it; selecting All Events creates a root gate. When the
+   hierarchy has no selection, the Parent population combo is used as a fallback.
+   The creation context shows parent details, with sample, parameters, and scales
+   available in its tooltip before drawing.
 3. Reparent validates the complete graph before committing and rolls back on
    self/descendant/missing-parent/cycle failures.
 4. Boolean AND/OR require at least two sources; NOT requires exactly one.

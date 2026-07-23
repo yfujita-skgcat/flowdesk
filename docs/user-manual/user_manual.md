@@ -84,7 +84,7 @@ python -m flowdesk_qt --data-dir data/
 2. Samples リストで active sample を選ぶ。
 3. `X axis`、`Y axis`、必要なら analysis transform を選ぶ。
 4. Gating タブで gate type と parent population を選び、`Create Gate` を実行する。
-5. 子 gate は parent を選ぶか、対象 gate を選択して `Create Child Gate` を使う。
+5. 子 gate は Gate hierarchy で親gateを選択して `Create Gate` を使う。何も選択していない場合は `Parent population` の選択を使用する。
 6. Results → `Add Statistic...` または `Manage Statistics...` で統計定義を作る。
 7. **Run Pipeline** を実行する。
 8. Results タブで event count、frequency、統計値、status を確認する。
@@ -335,10 +335,9 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 |control|選択肢・説明|
 |---|---|
 |Gate type|`rectangle`、`range`、`polygon`、`ellipse`、`boolean`|
-|Parent population|All Events または既存 gate population。新しい gate の評価対象。|
+|Parent population|Gate hierarchyでゲートを選択している場合はそのゲートが親になる。未選択時はこの欄で指定したPopulationが新しいgateの評価対象になる。|
 |creation context label|parent、sample、current axes、scale/transform IDs を表示する。|
 |Create Gate|選択 gate type で新規作成。rectangle/polygon は plot interaction、range/ellipse/boolean は dialog。|
-|Create Child Gate|選択 gate を parent とする child-gate mode に入り、その後 Create Gate と同様の作成へ進む。|
 |Delete Selected|選択 gate を削除する。child gate や Boolean source から参照される gate は削除拒否。|
 
 ### 10.2 Gate hierarchy
@@ -1041,7 +1040,6 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`gate_editor.py`|`gateCreationContextLabel`|
 |`gate_editor.py`|`createGateButton`|
 |`gate_editor.py`|`deleteGateButton`|
-|`gate_editor.py`|`createChildGateButton`|
 |`gate_editor.py`|`showGateButton`|
 |`gate_editor.py`|`showPopulationButton`|
 |`gate_editor.py`|`migrateGateTransformButton`|
