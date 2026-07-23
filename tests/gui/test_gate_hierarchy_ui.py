@@ -440,6 +440,8 @@ def test_show_gate_is_display_only(qapp) -> None:
         before = editor.gates()
         editor._on_show_gate_clicked()
         assert shown == [gate]
+        editor._emit_show_gate("log-gate")
+        assert shown == [gate, gate]
         assert editor.gates() == before
     finally:
         editor.close()

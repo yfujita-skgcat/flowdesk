@@ -372,6 +372,7 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 
 |項目|説明|
 |---|---|
+|Go to Gate|選択したgateの保存済みX/Y channel、Scale、Transformをplotへ適用し、gateを表示する。|
 |Population Color...|population 内 event の display color を選ぶ。|
 |Gate Outline Color...|gate outline 専用色を選ぶ。|
 |Use Population Color for Outline|outline 色を population color と連動させる toggle。|
@@ -1029,6 +1030,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`gate_editor.py`|`booleanSourcePopulationTree`|
 |`gate_editor.py`|`booleanExpressionEditor`|
 |`gate_editor.py`|`populationColorContextMenu`|
+|`gate_editor.py`|`gotoGateAction`|
 |`gate_editor.py`|`populationColorAction`|
 |`gate_editor.py`|`gateOutlineColorAction`|
 |`gate_editor.py`|`usePopulationColorForOutlineAction`|

@@ -1242,8 +1242,20 @@ class GateEditor(QWidget):
         population_id = str(item.data(0, Qt.UserRole) or "")
         if not population_id:
             return
+        if population_id != "all_events":
+            self._tree_widget.setCurrentItem(item)
         menu = QMenu(self)
         menu.setObjectName("populationColorContextMenu")
+        gate = next(
+            (value for value in self._gates if value.id == population_id), None
+        )
+        if gate is not None:
+            goto_action = menu.addAction("Go to Gate")
+            goto_action.setObjectName("gotoGateAction")
+            goto_action.triggered.connect(
+                lambda: self._emit_show_gate(gate.id)
+            )
+            menu.addSeparator()
         population_action = menu.addAction("Population Color...")
         population_action.setObjectName("populationColorAction")
         population_action.triggered.connect(
@@ -1377,6 +1389,12 @@ class GateEditor(QWidget):
 
     def _on_show_gate_clicked(self) -> None:
         gate = self.selected_gate()
+        if gate is None:
+            return
+        self._emit_show_gate(gate.id)
+
+    def _emit_show_gate(self, gate_id: str) -> None:
+        gate = next((value for value in self._gates if value.id == gate_id), None)
         if gate is None:
             return
         for callback in self._show_gate_callbacks:

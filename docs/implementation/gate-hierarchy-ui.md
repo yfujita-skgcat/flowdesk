@@ -47,6 +47,8 @@ plot to that gate's child population.
    non-stale pipeline results exist.
 8. The Gating All Events root clears gate editing selection; Results owns explicit
    `all_events` population display selection.
+9. The hierarchy context menu's Go to Gate action navigates the plot to the gate's
+   stored X/Y parameters and coordinate transforms, then displays its outline.
 
 ## Required Tests
 
