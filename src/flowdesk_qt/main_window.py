@@ -317,6 +317,7 @@ class MainWindow(QMainWindow):
         self._gate_overrides: list[dict[str, Any]] = []
         self._override_undo_stack = UndoStack({"gate_overrides": []})
         self._display_population_id: str = "all_events"
+        self._plot_transform_overrides: dict[str, str | None] = {}
         self._selected_gate_id: str | None = None
         self._pending_gate_geometry_updates: dict[str, Any] = {}
         self._preview_revision = PreviewRevisionState()
@@ -1277,7 +1278,24 @@ class MainWindow(QMainWindow):
         )
         if not parameter_id or parameter_id == "__count__":
             return
+        self._plot_transform_overrides.pop(parameter_id, None)
         existing = self._transform_for_parameter(parameter_id)
+        if choice == "linear" and existing is not None:
+            # A transform referenced by a gate is part of the analysis definition.
+            # Switching the plot to linear is display-only; keep that definition
+            # and hide incompatible gate overlays instead of blocking the view.
+            self._plot_transform_overrides[parameter_id] = None
+            if axis == "x":
+                self._channel_selector.set_x_transform("linear")
+            else:
+                self._channel_selector.set_y_transform("linear")
+            self._channel_selector.set_analysis_transform_choice(axis, "linear")
+            self._replot()
+            self._update_status(
+                f"{axis.upper()} display transform set to Linear; "
+                "incompatible gate overlays are hidden"
+            )
+            return
         if choice == "linear":
             if existing is not None:
                 if not self._replaceable_axis_transform(existing, axis):
@@ -1512,10 +1530,18 @@ class MainWindow(QMainWindow):
         x_id = self._channel_selector.x_channel_id()
         y_id = self._channel_selector.y_channel_id()
 
-        x_spec = self._transform_for_parameter(x_id)
-        y_spec = None if self._channel_selector.is_count_mode() else (
-            self._transform_for_parameter(y_id)
-        )
+        if x_id in self._plot_transform_overrides:
+            x_transform_id = self._plot_transform_overrides[x_id]
+            x_spec = self._transform_by_id(x_transform_id)
+        else:
+            x_spec = self._transform_for_parameter(x_id)
+        if self._channel_selector.is_count_mode():
+            y_spec = None
+        elif y_id in self._plot_transform_overrides:
+            y_transform_id = self._plot_transform_overrides[y_id]
+            y_spec = self._transform_by_id(y_transform_id)
+        else:
+            y_spec = self._transform_for_parameter(y_id)
         self._channel_selector.set_analysis_transform_bound(
             x_spec is not None, y_spec is not None
         )
@@ -1530,13 +1556,20 @@ class MainWindow(QMainWindow):
 
         # Sync gate editor with current channels
         self._gate_editor.set_plot_channels(x_id, y_id)
+        analysis_x_spec = self._transform_for_parameter(x_id)
+        analysis_y_spec = (
+            None if self._channel_selector.is_count_mode()
+            else self._transform_for_parameter(y_id)
+        )
         self._gate_editor.set_plot_scales(
-            self._channel_selector.x_transform(),
-            self._channel_selector.y_transform(),
+            "linear" if analysis_x_spec is not None
+            else self._channel_selector.x_transform(),
+            "linear" if analysis_y_spec is not None
+            else self._channel_selector.y_transform(),
         )
         self._gate_editor.set_plot_transforms(
-            None if x_spec is None else x_spec.id,
-            None if y_spec is None else y_spec.id,
+            None if analysis_x_spec is None else analysis_x_spec.id,
+            None if analysis_y_spec is None else analysis_y_spec.id,
         )
 
         request = self._processed_display_request(
@@ -2079,25 +2112,45 @@ class MainWindow(QMainWindow):
             self._channel_selector.set_selected_channels(
                 gate.x_parameter, y_parameter
             )
-        if gate.x_transform_id or gate.transform_id:
-            self._channel_selector.set_x_transform("linear")
-            transform = self._transform_by_id(gate.x_transform_id or gate.transform_id)
-            if transform is not None:
-                self._channel_selector.set_analysis_transform_choice(
-                    "x", str(transform.transform_type)
-                )
-        else:
-            self._channel_selector.set_x_transform(gate.x_scale)
-        if gate.y_transform_id:
-            self._channel_selector.set_y_transform("linear")
-        else:
-            self._channel_selector.set_y_transform(gate.y_scale)
+        x_transform_id = gate.x_transform_id or gate.transform_id
+        self._plot_transform_overrides[gate.x_parameter or ""] = x_transform_id
+        self._restore_gate_axis_transform(
+            "x", x_transform_id, gate.x_scale
+        )
+        self._plot_transform_overrides[gate.y_parameter or ""] = gate.y_transform_id
+        self._restore_gate_axis_transform(
+            "y", gate.y_transform_id, gate.y_scale
+        )
         self._replot()
         self._update_status(
             f"Showing gate: {gate.name} [{gate.id}] on "
             f"{self._gate_transform_status(gate, 'x')}/"
             f"{self._gate_transform_status(gate, 'y')}"
         )
+
+    def _restore_gate_axis_transform(
+        self, axis: str, transform_id: str | None, legacy_scale: str
+    ) -> None:
+        """Restore one gate axis using its exact transform ID when available."""
+        transform = self._transform_by_id(transform_id)
+        if transform is not None:
+            setter = (
+                self._channel_selector.set_x_transform
+                if axis == "x"
+                else self._channel_selector.set_y_transform
+            )
+            setter("linear")
+            self._channel_selector.set_analysis_transform_choice(
+                axis, str(transform.transform_type)
+            )
+            return
+        setter = (
+            self._channel_selector.set_x_transform
+            if axis == "x"
+            else self._channel_selector.set_y_transform
+        )
+        setter(legacy_scale)
+        self._channel_selector.set_analysis_transform_choice(axis, "linear")
 
     @staticmethod
     def _legacy_transform_status(scale: str) -> str:

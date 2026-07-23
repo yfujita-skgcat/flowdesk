@@ -265,13 +265,13 @@ status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel
 |---|---|---|
 |X axis|acquired/available derived parameter|横軸 parameter。invalid derived definition は一覧に見えても disabled になる場合がある。|
 |Y axis|parameter / Count|通常は縦軸 parameter。`Count` を選ぶと 1D histogram mode になる。|
-|X transform|Linear / Log10 / Asinh / Logicle / Custom…|X parameter に formal analysis transform を作成または選択する。|
-|Y transform|Linear / Log10 / Asinh / Logicle / Custom…|Y parameter に formal analysis transform を作成または選択する。Count mode では意味を持たない。|
+|X transform|Linear / Log10 / Asinh / Logicle / Custom…|X parameter の表示座標を選ぶ。ゲートが別の座標で作成されている場合、そのゲート輪郭は表示しない。|
+|Y transform|Linear / Log10 / Asinh / Logicle / Custom…|Y parameter の表示座標を選ぶ。ゲートが別の座標で作成されている場合、そのゲート輪郭は表示しない。Count mode では意味を持たない。|
 |Display max points|0–10,000,000、step 5,000|scatter の layer ごとに描画する最大点数。`0 (all events)` は全有限 event を描画。解析結果は常に全 event。|
 
 ### 8.1 transform selector の挙動
 
-`Linear` は当該 parameter の置換可能な transform を外す。`Log10`、`Asinh`、`Logicle` は既定 settings で新しい persisted transform definition を作る。`Custom…` は Analysis Transforms dialog を開く。
+`Linear`、`Log10`、`Asinh`、`Logicle` はプロットの表示座標を切り替える。現在のゲートと座標が一致しない場合、ゲート輪郭は非表示になるが、ゲート定義、membership、Resultsは変更されない。ゲートが参照するanalysis transformを変更する操作は、`Manage Parameter Transforms...` と明示的な `Migrate Transform` で行う。`Custom…` は Analysis Transforms dialog を開く。
 
 既存 transform が gate 等から参照されている場合、quick selector から in-place replacement は拒否される。新しい transform ID を作り、gate の `Migrate Transform` を使う。
 

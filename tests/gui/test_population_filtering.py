@@ -116,6 +116,61 @@ def test_population_filter_reduces_scatter_points(
         qapp.processEvents()
 
 
+def test_show_gate_restores_both_axis_transforms_by_id(qapp) -> None:
+    window = MainWindow()
+    gate = GateSpec(
+        id="transformed-gate",
+        name="Transformed gate",
+        gate_type="rectangle",
+        x_parameter="X",
+        y_parameter="Y",
+        x_transform_id="transform-x-log",
+        y_transform_id="transform-y-asinh",
+        thresholds={"x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0},
+    )
+    try:
+        window._channel_selector.set_channels(["X", "Y"])
+        window._transforms = [
+            {
+                "id": "transform-x-log",
+                "name": "X log",
+                "transform_type": "log",
+                "parameter": "X",
+                "settings": {"base": 10.0},
+            },
+            {
+                "id": "transform-y-asinh",
+                "name": "Y asinh",
+                "transform_type": "asinh",
+                "parameter": "Y",
+                "settings": {"cofactor": 1.0},
+            },
+        ]
+        window._replot = lambda: None
+
+        window._on_show_gate(gate)
+
+        assert window._channel_selector.x_channel_id() == "X"
+        assert window._channel_selector.y_channel_id() == "Y"
+        assert window._channel_selector._x_analysis_transform_combo.currentData() == "log"
+        assert window._channel_selector._y_analysis_transform_combo.currentData() == "asinh"
+        assert window._plot_transform_overrides == {
+            "X": "transform-x-log",
+            "Y": "transform-y-asinh",
+        }
+
+        window._on_axis_analysis_transform_requested("x", "linear")
+        assert window._plot_transform_overrides["X"] is None
+        assert {value["id"] for value in window._transforms} == {
+            "transform-x-log",
+            "transform-y-asinh",
+        }
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
 # ---------------------------------------------------------------------------
 # 3-3b: Membership mask persists across channel switches
 # ---------------------------------------------------------------------------
