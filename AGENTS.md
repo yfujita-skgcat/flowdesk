@@ -24,6 +24,35 @@ raw FCS events
 - Use 2 spaces for Python indentation.
 - Do not commit large FCS files. Use small synthetic fixtures or documented external data references.
 
+## Commit Message Rule
+
+- Write commit messages in the exact format below, returning only the message lines without labels, headings, backticks, or code fences.
+- The Japanese and English titles must each be 50 characters or fewer.
+- Keep exactly one blank line between the title, body, separator, and English section as shown.
+- Every body line must start with `- ` and describe a concrete change.
+- Use Japanese for the first title and body, then a line containing exactly `----`, followed by the English title and body.
+- When the current model name is available, include it as a standalone line immediately below each corresponding title, as in the project’s commit examples; otherwise omit it.
+
+Japanese title (≤ 50 chars)
+
+[current model name, when available]
+
+- Japanese body line
+
+----
+
+English title (≤ 50 chars)
+
+[current model name, when available]
+
+- English body line
+
+## User Manual Rule
+
+- When adding or changing a user-visible feature, update `docs/user-manual/user_manual.md` in the same change.
+- Document the user-facing behavior, relevant settings or workflow, and any limitations needed to reproduce the feature.
+- Keep the manual consistent with the current implementation; do not defer the documentation update to a separate change.
+
 ## Before Changes
 
 Before making a substantial change, summarize the purpose, files expected to change, and acceptance criteria.
@@ -64,3 +93,4 @@ make test-all
 ## Implementation Guides
 
 Before implementing a feature, read the matching guide under `docs/implementation/`. Each guide defines target files, implementation rules, required tests, and acceptance criteria. If no guide exists for the task, add or update one before writing production code.
+docs/user-manual/user_manual.md
