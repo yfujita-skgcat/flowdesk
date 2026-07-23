@@ -1059,6 +1059,27 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 - [ ] scatter downsampling変更でscientific count/statisticsが変わらないことをtestする。
 - [ ] rare-event visibilityの限界をGUIへ表示する。
 
+## Release E: OS配布とリリース自動化 [P1]
+
+配布準備のPhase 1（必須依存、`python -m flowdesk_qt`、OS標準のユーザー領域、
+パッケージmetadataからのversion取得）は完了済みである。以下は、Python未導入の
+ユーザーへWindows、macOS、Linux用アプリを配布するための未実装項目である。
+一度の作業では、下記Phaseを複数同時に実装しない。
+
+- [ ] `docs/implementation/packaging-and-release.md`を読み、PyInstallerの対象module、Qt plugin、NumPy/flowioのnative library、metadata収集方針を確定する。
+- [ ] `packaging/flowdesk.spec`を追加し、PyInstaller `onedir` buildをLinux、Windows、macOSで再現できるようにする。
+- [ ] PyInstaller成果物をPython未導入のclean環境で起動するpackage smoke testを追加する。GUI起動、FCS読込、Pipeline、project save/load、TSV/CSV/PNG/SVG/PDF exportを確認する。
+- [ ] Windows向けにInno Setupまたは同等のinstallerを追加する。ユーザー領域へのインストール、Start Menu、uninstaller、upgrade、必要なら`.fcs`関連付けを確認する。
+- [ ] macOS向けに`.app`とDMGを追加する。arm64を先行対象とし、必要に応じてx86_64またはuniversal buildを定義する。
+- [ ] macOSのDeveloper ID code signing、Hardened Runtime、notarization、ticket stapleをCIで実行できるようにする。秘密情報がない場合は署名工程を安全にskipして理由を記録する。
+- [ ] Linux向けにUbuntu 22.04相当をbuild baselineとするAppImageを追加し、Ubuntu 22.04/24.04、Debian、Fedoraで起動確認する。
+- [ ] OSごとのpackage smoke testをGitHub Actionsまたは同等のnative runnerで実行する。Windows、macOS、Linuxをcross-compileで代用しない。
+- [ ] tagから3 OSのbuild、artifact upload、GitHub Release作成までを自動化するrelease workflowを追加する。
+- [ ] 配布物へLICENSE、Qt/PySide6、NumPy、FlowIO、pyqtgraph等のthird-party licenseと入手方法を含める。
+- [ ] 各配布物のSHA-256 checksum、build version、source commit、build OSをrelease metadataへ記録する。
+- [ ] 配布物を実機またはclean VMでinstall、起動、更新、uninstallし、ユーザー書込み領域、Unicode/空白を含むFCS path、Ctrl-C、QThread終了を確認する。
+- [ ] Windows SmartScreen、macOS Gatekeeper、Linux executable permission/AppImage制約を含む既知の制限とユーザー向け手順を`README.md`と`docs/user-manual/user_manual.md`へ追記する。
+
 ## 各Phaseの最終確認template
 
 Phaseを完了扱いにする前に、次を実行して結果を作業報告へ記載する。

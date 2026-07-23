@@ -32,6 +32,7 @@ Recommended implementation order:
 12. `qt-gui-debugging.md`
 13. `performance-and-review.md`
 14. `population-filtering-and-histograms.md`
+15. `packaging-and-release.md`
 15. `gate-hierarchy-ui.md`
 
 The list above documents the implemented MVP foundation. New work follows the
@@ -89,6 +90,12 @@ release order below.
 | D6 | `extension-api.md` | A7 |
 | D7 | `preferences-and-accessibility.md` | B8 |
 | all releases | `performance-and-review.md` | continuous |
+
+## Release E: packaging and distribution
+
+| ToDo phase | Guide | Prerequisite |
+|---|---|---|
+| P1 | `packaging-and-release.md` | Phase 1 application packaging foundation |
 
 ## Choosing a guide
 
