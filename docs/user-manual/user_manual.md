@@ -448,6 +448,8 @@ status text は色分けされるが、値自体の意味を色で変更しな�
 |Sample|対象 sample ID|
 |Message|詳細 message|
 
+長いMessageは列幅に依存せず、Messageセルへマウスを置くとtooltipで全文を確認できる。診断行を選択すると、表の下の読み取り専用詳細欄にも全文が表示され、コピーできる。選択を解除した場合は詳細欄が空になる。
+
 status label は diagnostic 件数と report status、または `Diagnostics stale; rerun pipeline` / `No diagnostics` を表示する。
 
 ---
@@ -1020,6 +1022,8 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`derived_parameter_editor.py`|`derivedParameterDialogButtons`|
 |`diagnostics_panel.py`|`diagnosticsPanel`|
 |`diagnostics_panel.py`|`pipelineDiagnosticsTable`|
+|`diagnostics_panel.py`|`pipelineDiagnosticsDetailLabel`|
+|`diagnostics_panel.py`|`pipelineDiagnosticsDetailEdit`|
 |`diagnostics_panel.py`|`pipelineDiagnosticsStatusLabel`|
 |`gate_editor.py`|`polygonCoordinatesTable`|
 |`gate_editor.py`|`booleanSourcePopulationTree`|

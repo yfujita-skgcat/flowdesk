@@ -12,6 +12,7 @@ pytestmark = pytest.mark.gui
 
 def test_diagnostics_panel_displays_execution_report_diagnostics(qapp) -> None:
   panel = DiagnosticsPanel()
+  message = "A long diagnostic message that should remain available in full."
   report = ExecutionReport(
     project_id="project",
     execution_profile_id="default",
@@ -20,7 +21,7 @@ def test_diagnostics_panel_displays_execution_report_diagnostics(qapp) -> None:
     diagnostics=(
       ExecutionDiagnostic(
         code="derived_parameter_evaluation_failed",
-        message="Division by zero",
+        message=message,
         severity="warning",
         stage="derived_parameters",
         sample_id="sample-1",
@@ -36,8 +37,10 @@ def test_diagnostics_panel_displays_execution_report_diagnostics(qapp) -> None:
     "derived_parameter_evaluation_failed",
     "derived_parameters",
     "sample-1",
-    "Division by zero",
+    message,
   ]
+  assert panel._table.item(0, 4).toolTip() == message
+  assert panel._detail_edit.toPlainText() == message
   assert panel._status_label.text() == "Diagnostics: 1 (partial_success)"
 
 
@@ -63,4 +66,5 @@ def test_diagnostics_panel_discards_old_rows_when_stale(qapp) -> None:
   panel.clear(stale=True)
 
   assert panel._table.rowCount() == 0
+  assert panel._detail_edit.toPlainText() == ""
   assert panel._status_label.text() == "Diagnostics stale; rerun pipeline"
