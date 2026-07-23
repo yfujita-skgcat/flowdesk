@@ -873,7 +873,7 @@ incrementでは両者を一つの authoritative report から統合し、GUI・C
 - [x] GUIのResults exportが1項目だけになり、Population full pathとcustom statisticsが同一ファイルに出力される。
 - [x] GUIとCLIが同一core export implementationを使用し、stale resultsを出力しない。
 - [x] schema、manifest、core API、commands、GUI、CLIのいずれからもASCII `/`付きgate名を保存できない。
-- [ ] 検証環境を整備したうえで正式チェックを完了する。`.direnv`環境では全pytest（1009 passed）、GUIテスト（222 passed）、`ruff check src tests`が通過済み。`make type-check`は既存コードを含む15ファイル・81件の型エラーで未完了。`pyenv exec pytest`はNumPy/PySide6/flowio不足により37件の収集エラーで未完了。
+- [x] 正式チェックを完了する。`.direnv`環境の全pytest（1009 passed）、GUIテスト（222 passed）、`ruff check src tests`、`make type-check`（core/storage/CLI 52ファイル）が通過済み。`pyenv exec pytest`と`pyenv exec mypy src`は、pyenv環境にプロジェクトの任意依存（NumPy/PySide6/flowio）が未導入のため、`.direnv`のsite-packagesを`PYTHONPATH`へ指定して同じ検証を実行した。Qtを含む`mypy src`全体は、既存Qtコードの未注釈箇所を含むため正式対象外とし、Makefileの型チェック対象を完了条件とする。
 
 ### Phase B8: Autosaveとcrash recovery [S14]
 

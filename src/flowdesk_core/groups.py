@@ -247,20 +247,20 @@ def _matches_rule(rule: Mapping[str, Any], metadata: Mapping[str, Any]) -> bool:
   if actual is None:
     return False
   if comparison == "equals":
-    return actual == value
+    return bool(actual == value)
   if comparison == "in":
     if not isinstance(value, list):
       raise GroupResolutionError("invalid_group_rule", "in comparison value must be an array")
-    return actual in value
+    return bool(actual in value)
   if not _is_finite_number(actual) or not _is_finite_number(value):
     return False
   if comparison == "gt":
-    return actual > value
+    return bool(actual > value)
   if comparison == "gte":
-    return actual >= value
+    return bool(actual >= value)
   if comparison == "lt":
-    return actual < value
-  return actual <= value
+    return bool(actual < value)
+  return bool(actual <= value)
 
 
 def _is_finite_number(value: Any) -> bool:

@@ -15,6 +15,8 @@ from flowdesk_core.models import (
   PopulationResult,
   StatisticResult,
   StatisticSpec,
+  StatisticStatus,
+  StatisticUndefinedReason,
 )
 
 
@@ -254,7 +256,7 @@ def population_results_to_export_records(
 
 def compute_geometric_mean(
   values: NDArray[np.float64],
-) -> tuple[float, str, str | None]:
+) -> tuple[float, StatisticStatus, StatisticUndefinedReason | None]:
   """Compute the geometric mean of a 1-D array (NaN-aware).
 
   Returns:
@@ -290,7 +292,7 @@ def compute_geometric_mean(
 
 def compute_cv(
   values: NDArray[np.float64],
-) -> tuple[float, str, str | None]:
+) -> tuple[float, StatisticStatus, StatisticUndefinedReason | None]:
   """Compute the coefficient of variation (stddev / |mean|).
 
   Returns:
@@ -511,8 +513,8 @@ def compute_statistic(
 
   if metric == "mean":
     val = compute_mean(values)
-    status = "undefined" if np.isnan(val) else "ok"
-    reason = "all_nan" if status == "undefined" else None
+    status: StatisticStatus = "undefined" if np.isnan(val) else "ok"
+    reason: StatisticUndefinedReason | None = "all_nan" if status == "undefined" else None
     return StatisticResult(
       sample_id=sample_id,
       statistic_id=statistic_id,

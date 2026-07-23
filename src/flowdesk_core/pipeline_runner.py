@@ -75,11 +75,13 @@ from flowdesk_core.models import (
   DerivedParameterSpec,
   GateSpec,
   GatingStrategySpec,
+  MagneticGateTemplateSpec,
   PopulationMembership,
   PopulationResult,
   SampleSpec,
   StatisticResult,
   StatisticSpec,
+  TetheredGateTemplateSpec,
   TransformSpec,
 )
 from flowdesk_core.overrides import (
@@ -915,7 +917,9 @@ class PipelineRunner:
           continue
         thresholds = gate.get("thresholds", {})
         if gate.get("gate_type") == "range":
-          axis_thresholds = ((gate.get("x_parameter"), "min", "max"),)
+          axis_thresholds: tuple[tuple[Any, str, str], ...] = (
+            (gate.get("x_parameter"), "min", "max"),
+          )
         else:
           axis_thresholds = (
             (gate.get("x_parameter"), "x_min", "x_max"),
@@ -1627,8 +1631,10 @@ class PipelineRunner:
       if not isinstance(value, Mapping):
         continue
       try:
-        template = magnetic_gate_template_from_mapping(value)
-        fit = fit_magnetic_gate(template, data.events, data.channel_ids, sample_id)
+        magnetic_template: MagneticGateTemplateSpec = magnetic_gate_template_from_mapping(value)
+        magnetic_fit = fit_magnetic_gate(
+          magnetic_template, data.events, data.channel_ids, sample_id
+        )
       except MagneticGateFitError as exc:
         raise PipelineError(
           f"magnetic_gate_fit_invalid: {exc}", code="magnetic_gate_fit_invalid",
@@ -1639,32 +1645,39 @@ class PipelineRunner:
           code=str(item.get("code", "magnetic_gate_diagnostic")),
           message=str(item.get("reason", item.get("code", "magnetic gate fit"))),
           severity=str(item.get("severity", "info")), stage="magnetic_gate_fit",
-          sample_id=sample_id, parameter_id=template.id, details=dict(item),
-        ) for item in fit.diagnostics
+          sample_id=sample_id, parameter_id=magnetic_template.id, details=dict(item),
+        ) for item in magnetic_fit.diagnostics
       )
-      if fit.status == "failed" or fit.gate is None:
+      if magnetic_fit.status == "failed" or magnetic_fit.gate is None:
         raise PipelineError(
-          f"magnetic_gate_fit_failed: {fit.failure_reason}",
+          f"magnetic_gate_fit_failed: {magnetic_fit.failure_reason}",
           code="magnetic_gate_fit_failed",
-          details={"template_id": template.id, "sample_id": sample_id,
-                   "input_hash": fit.input_hash, "diagnostics": list(fit.diagnostics)},
+          details={
+            "template_id": magnetic_template.id, "sample_id": sample_id,
+            "input_hash": magnetic_fit.input_hash,
+            "diagnostics": list(magnetic_fit.diagnostics),
+          },
         )
-      if fit.gate.id in existing_gate_ids:
+      if magnetic_fit.gate.id in existing_gate_ids:
         raise PipelineError(
-          f"magnetic_gate_id_conflict: {fit.gate.id!r}",
+          f"magnetic_gate_id_conflict: {magnetic_fit.gate.id!r}",
           code="magnetic_gate_id_conflict",
-          details={"template_id": template.id, "sample_id": sample_id},
+          details={"template_id": magnetic_template.id, "sample_id": sample_id},
         )
-      auto_gates.append(fit.gate)
-      existing_gate_ids.add(fit.gate.id)
-      auto_fit_records.append({"kind": "magnetic", "result": fit, "diagnostics": fit_diagnostics})
+      auto_gates.append(magnetic_fit.gate)
+      existing_gate_ids.add(magnetic_fit.gate.id)
+      auto_fit_records.append({
+        "kind": "magnetic", "result": magnetic_fit, "diagnostics": fit_diagnostics,
+      })
     for value in self._project.get("tethered_gate_templates", []):
       if not isinstance(value, Mapping):
         continue
       try:
-        template = tethered_gate_template_from_mapping(value)
-        anchor = next((gate for gate in auto_gates if gate.id == template.anchor_gate_id), None)
-        fit = fit_tethered_gate(template, anchor, sample_id)
+        tethered_template: TetheredGateTemplateSpec = tethered_gate_template_from_mapping(value)
+        anchor = next(
+          (gate for gate in auto_gates if gate.id == tethered_template.anchor_gate_id), None
+        )
+        tethered_fit = fit_tethered_gate(tethered_template, anchor, sample_id)
       except TetheredGateFitError as exc:
         raise PipelineError(
           f"tethered_gate_fit_invalid: {exc}", code="tethered_gate_fit_invalid",
@@ -1675,22 +1688,25 @@ class PipelineRunner:
           code=str(item.get("code", "tethered_gate_diagnostic")),
           message=str(item.get("reason", item.get("code", "tethered gate fit"))),
           severity=str(item.get("severity", "info")), stage="tethered_gate_fit",
-          sample_id=sample_id, parameter_id=template.id, details=dict(item),
-        ) for item in fit.diagnostics
+          sample_id=sample_id, parameter_id=tethered_template.id, details=dict(item),
+        ) for item in tethered_fit.diagnostics
       )
-      if fit.status == "failed" or fit.gate is None:
+      if tethered_fit.status == "failed" or tethered_fit.gate is None:
         raise PipelineError(
-          f"tethered_gate_fit_failed: {fit.failure_reason}", code="tethered_gate_fit_failed",
-          details={"template_id": template.id, "sample_id": sample_id},
+          f"tethered_gate_fit_failed: {tethered_fit.failure_reason}",
+          code="tethered_gate_fit_failed",
+          details={"template_id": tethered_template.id, "sample_id": sample_id},
         )
-      if fit.gate.id in existing_gate_ids:
+      if tethered_fit.gate.id in existing_gate_ids:
         raise PipelineError(
-          f"tethered_gate_id_conflict: {fit.gate.id!r}", code="tethered_gate_id_conflict",
-          details={"template_id": template.id, "sample_id": sample_id},
+          f"tethered_gate_id_conflict: {tethered_fit.gate.id!r}", code="tethered_gate_id_conflict",
+          details={"template_id": tethered_template.id, "sample_id": sample_id},
         )
-      auto_gates.append(fit.gate)
-      existing_gate_ids.add(fit.gate.id)
-      auto_fit_records.append({"kind": "tethered", "result": fit, "diagnostics": fit_diagnostics})
+      auto_gates.append(tethered_fit.gate)
+      existing_gate_ids.add(tethered_fit.gate.id)
+      auto_fit_records.append({
+        "kind": "tethered", "result": tethered_fit, "diagnostics": fit_diagnostics,
+      })
     if auto_gates != list(strat.gates):
       strat = GatingStrategySpec(**{
         **asdict(strat),
@@ -1743,7 +1759,7 @@ class PipelineRunner:
         )
       )
 
-    population_parent_ids = {strat.root_population_id: None}
+    population_parent_ids: dict[str, str | None] = {strat.root_population_id: None}
     population_parent_ids.update({
       gate.id: gate.parent_population_id or strat.root_population_id
       for gate in strat.gates
@@ -1824,6 +1840,8 @@ class PipelineRunner:
         col_idx = column_index.get(spec.parameter_id)
         if col_idx is None:
           continue
+        if source_data is None:
+          raise PipelineError("statistics source data is unavailable")
 
       for population_id in spec.population_ids:
         pop_result = parent_by_population.get(population_id)
@@ -1864,6 +1882,8 @@ class PipelineRunner:
           ))
           continue
 
+        if source_data is None or col_idx is None:
+          raise PipelineError("statistics source data is unavailable")
         values: NDArray[np.float64] | None = None
         if mask is not None:
           values = source_data.events[mask, col_idx].copy()
@@ -1883,6 +1903,10 @@ class PipelineRunner:
         )
         invalid_count = 0 if values is None else int(np.count_nonzero(~np.isfinite(values)))
         total_values = None if values is None else int(values.size)
+        invalid_fraction = (
+          None if total_values is None or total_values == 0
+          else invalid_count / total_values
+        )
         results.append(
           replace(
             result,
@@ -1892,9 +1916,7 @@ class PipelineRunner:
             n_total=total_values,
             n_valid=(None if total_values is None else total_values - invalid_count),
             n_invalid=(None if total_values is None else invalid_count),
-            invalid_fraction=(
-              None if total_values in (None, 0) else invalid_count / total_values
-            ),
+            invalid_fraction=invalid_fraction,
             non_finite_policy=spec.non_finite_policy,
           )
         )

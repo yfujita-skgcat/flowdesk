@@ -14,7 +14,7 @@ from flowdesk_core.batch_plot_export import (
   run_batch_plot_export,
 )
 from flowdesk_core.fcs_io import read_fcs_sample
-from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec
+from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import (
   prepare_plot_export,
@@ -132,19 +132,19 @@ def _normalize(values: np.ndarray) -> np.ndarray:
   return (values - low) / (high - low)
 
 
-def _transform_spec(transform_by_id: Mapping[str, Mapping[str, Any]], transform_id: str):
+def _transform_spec(
+  transform_by_id: Mapping[str, Mapping[str, Any]], transform_id: str,
+) -> TransformSpec:
   """Build a typed transform for canonical headless plot coordinates."""
-  from flowdesk_core.models import TransformSpec
-
   definition = transform_by_id.get(transform_id)
   if definition is None:
     raise ValueError(f"plot transform is missing: {transform_id!r}")
   return TransformSpec(
     id=str(definition["id"]),
     name=str(definition.get("name", definition["id"])),
-    transform_type=str(definition["transform_type"]),
+    transform_type=cast(Any, str(definition["transform_type"])),
     parameter=str(definition["parameter"]),
     settings=dict(definition.get("settings", {})),
-    role=str(definition.get("role", "analysis")),
+    role="analysis",
     notes=str(definition.get("notes", "")),
   )

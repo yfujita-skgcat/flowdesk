@@ -58,8 +58,9 @@ def prepare_overlay_1d(
       values = np.zeros(spec.bins, dtype=np.float64)
       diagnostic = {"code": "overlay_empty_population", "population_id": population_id}
     else:
-      values, edges = np.histogram(finite, bins=spec.bins)
-      values = values.astype(np.float64)
+      raw_values, raw_edges = np.histogram(finite, bins=spec.bins)
+      values = np.asarray(raw_values, dtype=np.float64)
+      edges = np.asarray(raw_edges, dtype=np.float64)
       if spec.normalization == "mode" and values.size:
         maximum = float(values.max())
         values = np.divide(values, maximum) if maximum else values

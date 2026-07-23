@@ -121,7 +121,7 @@ def evaluate_expression(
       ref_id = node.get("id")
       if ref_id == "all_events":
         return root
-      if ref_id not in masks:
+      if not isinstance(ref_id, str) or ref_id not in masks:
         raise BooleanExpressionError(f"Boolean expression references unknown id: {ref_id!r}")
       return masks[ref_id]
     if op == "not":

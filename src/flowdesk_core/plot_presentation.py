@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass
-from typing import Literal
+from typing import Any, Literal, cast
 
 from flowdesk_core.channels import AmbiguousChannelReferenceError, resolve_channel_index
 from flowdesk_core.models import (
@@ -152,12 +152,17 @@ def _presentation_fields() -> tuple[str, ...]:
 
 def _typed_presentation(value: Mapping[str, object]) -> PlotPresentationSpec:
   """Convert JSON presentation data to the validated core type."""
-  fonts = {
-    key: FontSpec(**dict(value.get(key, {})))
-    for key in ("title_font", "axis_label_font", "tick_font", "legend_font")
-  }
+  fonts: dict[str, Any] = {}
+  for key in ("title_font", "axis_label_font", "tick_font", "legend_font"):
+    raw_font = value.get(key, {})
+    if not isinstance(raw_font, Mapping):
+      raise PresentationValidationError(f"{key} must be an object")
+    fonts[key] = FontSpec(**dict(raw_font))
   source_styles: list[SourceStyleSpec] = []
-  for raw in value.get("source_styles", []):
+  raw_source_styles = value.get("source_styles", [])
+  if not isinstance(raw_source_styles, (list, tuple)):
+    raise PresentationValidationError("source_styles must be an array")
+  for raw in raw_source_styles:
     if not isinstance(raw, Mapping):
       raise PresentationValidationError("source_styles entries must be objects")
     source_styles.append(SourceStyleSpec(
@@ -167,14 +172,13 @@ def _typed_presentation(value: Mapping[str, object]) -> PlotPresentationSpec:
         "provenance": dict(raw.get("provenance", {})),
       }
     ))
-  return PlotPresentationSpec(
-    **{
+  presentation_values: dict[str, Any] = {
       **{field: value[field] for field in _presentation_fields() if field in value},
       **fonts,
-      "legend_source_ids": tuple(value.get("legend_source_ids", ())),
+      "legend_source_ids": tuple(cast(Any, value.get("legend_source_ids", ()))),
       "source_styles": tuple(source_styles),
-    }
-  )
+  }
+  return PlotPresentationSpec(**presentation_values)
 
 
 def resolve_presentation_layers(
@@ -230,13 +234,18 @@ def resolve_presentation_layers(
           for field in raw["manual_fields"]:
             target_provenance[str(field)] = layer_name
   if source_ids:
+    current_source_ids = tuple(
+      str(source_id)
+      for source_id in cast(Any, merged.get("legend_source_ids", source_ids))
+    )
     merged["legend_source_ids"] = tuple(
-      source_id for source_id in merged.get("legend_source_ids", source_ids)
+      source_id for source_id in current_source_ids
       if source_id in source_ids
     )
-    merged["legend_source_ids"] += tuple(
+    existing_source_ids = cast(tuple[str, ...], merged["legend_source_ids"])
+    merged["legend_source_ids"] = existing_source_ids + tuple(
       source_id for source_id in source_ids
-      if source_id not in merged["legend_source_ids"]
+      if source_id not in existing_source_ids
     )
   merged["source_styles"] = [
     {
@@ -265,7 +274,7 @@ def _diagnostic(
     source_id=source.source_id,
     sample_id=source.sample_id,
     population_id=source.population_id,
-    **kwargs,
+    **cast(Any, kwargs),
   )
 
 
@@ -368,11 +377,15 @@ def resolve_overlay_sources(
       ))
       continue
     x_index, x_diagnostic = _resolve_parameter(source, context, source.x_parameter_id)
-    diagnostics = [x_diagnostic] if x_diagnostic is not None else []
+    diagnostics: list[PresentationDiagnostic] = (
+      [x_diagnostic] if x_diagnostic is not None else []
+    )
     if x_diagnostic is None:
-      diagnostics.append(_resolve_transform(
+      transform_diagnostic = _resolve_transform(
         source, context, source.x_transform_id, source.x_parameter_id
-      ))
+      )
+      if transform_diagnostic is not None:
+        diagnostics.append(transform_diagnostic)
     y_index: int | None = None
     if source.y_parameter_id is not None and not diagnostics:
       y_index, y_diagnostic = _resolve_parameter(source, context, source.y_parameter_id)
@@ -384,7 +397,6 @@ def resolve_overlay_sources(
         )
         if transform_diagnostic is not None:
           diagnostics.append(transform_diagnostic)
-    diagnostics = [item for item in diagnostics if item is not None]
     if diagnostics:
       status: CompatibilityStatus = (
         "ambiguous" if diagnostics[0].code.startswith("overlay_ambiguous")

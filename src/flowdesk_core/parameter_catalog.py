@@ -102,6 +102,8 @@ def build_parameter_catalog(
     try:
       spec = raw if isinstance(raw, DerivedParameterSpec) else DerivedParameterSpec(**raw)
     except (TypeError, ValueError) as exc:
+      if isinstance(raw, DerivedParameterSpec):
+        raise
       raw_id = str(raw.get("output_channel_id") or raw.get("id") or "invalid-derived")
       raw_name = str(raw.get("output_label") or raw.get("name") or raw_id)
       derived_entries.append(

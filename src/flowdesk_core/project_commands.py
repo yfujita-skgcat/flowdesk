@@ -384,9 +384,10 @@ class DeleteGateCommand(_GateListCommand):
       if gate.get("parent_population_id") == self.gate_id
       or self.gate_id in gate.get("thresholds", {}).get("source_ids", [])
     ]
-    if dependents:
+    dependent_ids = [gate_id for gate_id in dependents if isinstance(gate_id, str)]
+    if dependent_ids:
       raise ProjectCommandError(
-        f"gate {self.gate_id!r} is referenced by: {', '.join(dependents)}"
+        f"gate {self.gate_id!r} is referenced by: {', '.join(dependent_ids)}"
       )
     self._deleted = deepcopy(gates.pop(self._index))
     return self._updated(state, gates)
@@ -500,7 +501,10 @@ class CopySubtreeCommand(_GateListCommand):
 
   def apply(self, state: ProjectState) -> ProjectState:
     gates = _strategy_gates(state, self.strategy_id)
-    by_id = {gate.get("id"): gate for gate in gates}
+    by_id = {
+      gate_id: gate for gate in gates
+      if isinstance((gate_id := gate.get("id")), str)
+    }
     if self.source_gate_id not in by_id:
       raise ProjectCommandError(f"gate not found: {self.source_gate_id!r}")
     descendants = {
@@ -533,7 +537,9 @@ class CopySubtreeCommand(_GateListCommand):
           self.id_map.get(source_id, source_id) for source_id in source_ids
         ]
       copied.append(value)
-    self._inserted_ids = tuple(value["id"] for value in copied)
+    self._inserted_ids = tuple(
+      value["id"] for value in copied if isinstance(value.get("id"), str)
+    )
     return self._updated(state, [*gates, *copied])
 
   def _is_descendant(self, gate_id: str, by_id: dict[str, dict[str, Any]]) -> bool:
@@ -605,12 +611,15 @@ class CopySubtreeAnalysisCommand(ProjectCommand):
     for target_id in self.target_strategy_ids:
       target_gates = _strategy_gates(state, target_id)
       mapping = self.id_maps.get(target_id, {})
-      required = {gate.get("id") for gate in subtree}
+      required = {
+        gate_id for gate in subtree
+        if isinstance((gate_id := gate.get("id")), str)
+      }
       if required - set(mapping):
         raise ProjectCommandError(
           f"id_map for {target_id!r} misses: {sorted(required - set(mapping))}"
         )
-      new_ids = [mapping[gate.get("id")] for gate in subtree]
+      new_ids = [mapping[gate_id] for gate_id in required]
       if len(set(new_ids)) != len(new_ids):
         raise ProjectCommandError(f"copied gate IDs for {target_id!r} are not unique")
       if any(gate.get("id") in new_ids for gate in target_gates):
@@ -653,7 +662,10 @@ class CopySubtreeAnalysisCommand(ProjectCommand):
       changed = False
       for gate in gates:
         if gate.get("parent_population_id") in selected and gate.get("id") not in selected:
-          selected.add(gate.get("id"))
+          gate_id = gate.get("id")
+          if not isinstance(gate_id, str):
+            raise ProjectCommandError("gate ID must be a non-empty string")
+          selected.add(gate_id)
           changed = True
     return [gate for gate in gates if gate.get("id") in selected]
 

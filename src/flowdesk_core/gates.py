@@ -217,7 +217,7 @@ def _eval_ellipse(
   local_x = cos_rotation * dx + sin_rotation * dy
   local_y = -sin_rotation * dx + cos_rotation * dy
   value = (local_x / radius_x) ** 2 + (local_y / radius_y) ** 2
-  return np.isfinite(value) & (value <= 1.0)
+  return np.asarray(np.isfinite(value) & (value <= 1.0), dtype=np.bool_)
 
 
 # Polygon gate (ray-casting algorithm)

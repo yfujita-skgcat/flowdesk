@@ -114,20 +114,20 @@ def resolve_gate_overrides(
 
   resolved: list[GateSpec] = []
   for gate in strategy.gates:
-    override = by_gate.get(gate.id)
-    if override is None:
+    gate_override = by_gate.get(gate.id)
+    if gate_override is None:
       resolved.append(gate)
       continue
     actual_hash = gate_version_hash(gate)
-    if actual_hash != override.base_version_hash:
+    if actual_hash != gate_override.base_version_hash:
       raise GateOverrideError(
-        "stale_override", f"override {override.id!r} has a stale base gate",
-        override_id=override.id, gate_id=gate.id,
-        expected_hash=override.base_version_hash, actual_hash=actual_hash,
+        "stale_override", f"override {gate_override.id!r} has a stale base gate",
+        override_id=gate_override.id, gate_id=gate.id,
+        expected_hash=gate_override.base_version_hash, actual_hash=actual_hash,
       )
-    if override.geometry_mode == "full":
-      coordinates = override.coordinates
-      thresholds = dict(override.thresholds)
+    if gate_override.geometry_mode == "full":
+      coordinates = gate_override.coordinates
+      thresholds = dict(gate_override.thresholds)
     else:
       coordinates = override.coordinates or gate.coordinates
       thresholds = dict(gate.thresholds)

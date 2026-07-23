@@ -98,6 +98,8 @@ def migrate_manifest(data: dict[str, Any]) -> dict[str, Any]:
   """
 
   result = migrate_manifest_with_report(data)
+  if result.migrated is None:
+    raise ProjectMigrationError("invalid_migration_result", "migration did not produce a manifest")
   return result.migrated
 
 

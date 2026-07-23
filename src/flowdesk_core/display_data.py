@@ -133,7 +133,8 @@ def _histogram(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
   if values.size == 0:
     return np.zeros(bins, dtype=np.float64), np.zeros(bins + 1, dtype=np.float64)
-  return np.histogram(values, bins=bins)
+  counts, edges = np.histogram(values, bins=bins)
+  return np.asarray(counts, dtype=np.float64), np.asarray(edges, dtype=np.float64)
 
 
 def _invalid_reason_counts(values: NDArray[np.float64]) -> dict[str, int]:

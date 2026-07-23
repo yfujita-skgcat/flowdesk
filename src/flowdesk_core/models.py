@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -324,7 +324,7 @@ class IntegratedOverlayState:
         return [json_value(item) for item in value]
       return value
 
-    return json_value(asdict(self))
+    return cast(dict[str, Any], json_value(asdict(self)))
 
   @classmethod
   def from_mapping(cls, value: dict[str, Any] | None) -> IntegratedOverlayState:
@@ -335,7 +335,10 @@ class IntegratedOverlayState:
         id=str(item["id"]),
         name=str(item.get("name", item["id"])),
         members=tuple(
-          ComparisonMemberSpec(str(member["sample_id"]), str(member.get("role", "target")))
+          ComparisonMemberSpec(
+            str(member["sample_id"]),
+            cast(ComparisonRole, str(member.get("role", "target"))),
+          )
           for member in item.get("members", [])
         ),
         role_colors=dict(item.get("role_colors", {})),
@@ -380,7 +383,7 @@ class IntegratedOverlayState:
       manual_overlay_colors=dict(raw.get("manual_overlay_colors", {})),
       automatic_overlay_sources=automatic_sources,
       comparison_set_definitions=comparisons,
-      overlay_mode=str(raw.get("overlay_mode", "manual_only")),
+      overlay_mode=cast(OverlayMode, str(raw.get("overlay_mode", "manual_only"))),
       population_display_colors=population_colors,
       plot_presentation=plot_presentation,
     )

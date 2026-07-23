@@ -21,14 +21,15 @@ def sync_clone_gate(
   if leader is None or leader.id != group.gate_id:
     raise CloneSyncError("clone leader gate is missing or has a different ID")
   before = {
-    sample_id: asdict(gates_by_sample[sample_id])
-    for sample_id in group.sample_ids if gates_by_sample.get(sample_id) is not None
+    sample_id: asdict(gate)
+    for sample_id in group.sample_ids
+    if (gate := gates_by_sample.get(sample_id)) is not None
   }
   conflicts = tuple(
     sample_id for sample_id in group.sample_ids
     if sample_id != group.leader_sample_id
-    and gates_by_sample.get(sample_id) is not None
-    and asdict(gates_by_sample[sample_id]) != asdict(leader)
+    and (gate := gates_by_sample.get(sample_id)) is not None
+    and asdict(gate) != asdict(leader)
   )
   if conflicts and group.conflict_policy == "reject_conflict":
     raise CloneSyncError(f"clone conflicts require resolution: {', '.join(conflicts)}")
