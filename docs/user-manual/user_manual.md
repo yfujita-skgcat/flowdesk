@@ -676,7 +676,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 |control|説明|
 |---|---|
-|Statistic ID (fixed)|作成時に自動生成されるstable definition ID。作成後は変更できない。|
+|Statistic ID (fixed)|新規作成時に候補が自動入力される。OKで登録した後はstable definition IDとして固定され、変更できない。|
 |Name|Results column/detail に表示する名称。新規作成時は`<Population名>_<Metric>`（例:`rect_1_mean`）を初期値にする。後から編集可能。|
 |Population targets|base population、scope、Targets... の組み合わせ。|
 |scope: Current population|base population のみ。|

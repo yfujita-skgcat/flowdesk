@@ -234,6 +234,11 @@ class StatisticsEditorDialog(QDialog):
         # Existing definitions keep their persisted IDs; only definitions created
         # through New receive the new population/metric-based suggestion.
         self._statistics = repair_statistic_definitions(deepcopy(list(statistics)))
+        self._fixed_statistic_ids = {
+            str(value.get("id"))
+            for value in self._statistics
+            if str(value.get("id") or "").strip()
+        }
         self._channels = tuple(available_channels)
         self._population_ids = tuple(population_ids)
         self._population_labels = dict(population_labels or {})
@@ -268,6 +273,13 @@ class StatisticsEditorDialog(QDialog):
         self._commit_current()
         self._statistics = repair_statistic_definitions(self._statistics)
         self._validate_all()
+        self._fixed_statistic_ids.update(
+            str(value.get("id"))
+            for value in self._statistics
+            if str(value.get("id") or "").strip()
+        )
+        if 0 <= self._current_row < len(self._statistics):
+            self._id_edit.setReadOnly(True)
         return deepcopy(self._statistics)
 
     # -- UI construction -----------------------------------------------------
@@ -497,7 +509,7 @@ class StatisticsEditorDialog(QDialog):
                 self._initialize_statistic_identity(value)
                 statistic_id = str(value.get("id", ""))
             self._id_edit.setText(statistic_id)
-            self._id_edit.setReadOnly(bool(statistic_id))
+            self._id_edit.setReadOnly(statistic_id in self._fixed_statistic_ids)
             self._name_edit.setText(str(value.get("name", "")))
 
             pop_id = str(value.get("population_id", ""))
@@ -578,9 +590,13 @@ class StatisticsEditorDialog(QDialog):
         current = self._statistics[self._current_row]
         if not str(current.get("id") or "").strip():
             self._initialize_statistic_identity(current)
+        statistic_id = str(current.get("id") or "")
+        if statistic_id not in self._fixed_statistic_ids:
+            statistic_id = self._id_edit.text().strip()
         self._statistics[self._current_row] = {
-            # IDs are generated once and never taken from the editable form.
-            "id": str(current.get("id") or ""),
+            # New definitions may edit the generated suggestion until accepted.
+            # Existing definitions use their persisted, fixed ID.
+            "id": statistic_id,
             "name": self._name_edit.text().strip(),
             "population_id": target_ids[0] if target_ids else "",
             "population_ids": list(target_ids),
