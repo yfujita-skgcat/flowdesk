@@ -33,10 +33,9 @@ plot to that gate's child population.
 1. A definition tree rooted at All Events stores gate ids in `Qt.UserRole`; label the
    first column `Gate` or `Gate definition`, not `Population`.
 2. Create Gate uses the selected hierarchy population as parent. Selecting a gate
-   creates a child under it; selecting All Events creates a root gate. When the
-   hierarchy has no selection, the Parent population combo is used as a fallback.
-   The creation context shows parent details, with sample, parameters, and scales
-   available in its tooltip before drawing.
+   creates a child under it; selecting All Events or leaving the hierarchy without
+   a selection creates a root gate. The creation context shows parent details,
+   with sample, parameters, and scales available in its tooltip before drawing.
 3. Reparent validates the complete graph before committing and rolls back on
    self/descendant/missing-parent/cycle failures.
 4. Boolean AND/OR require at least two sources; NOT requires exactly one.

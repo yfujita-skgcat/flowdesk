@@ -231,7 +231,6 @@ os.environ.setdefault("PYTHONFAULTHANDLER", "1")
 
 - `gateEditor`
 - `gateTypeCombo`
-- `parentPopulationCombo`
 - `createGateButton`
 - `deleteGateButton`
 - `gateList`

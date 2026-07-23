@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QDialog, QPushButton
+from PySide6.QtWidgets import QComboBox, QDialog, QPushButton
 
 from flowdesk_cli.main import run_project_command
 from flowdesk_core.execution_context import ExecutionContext
@@ -206,15 +206,14 @@ def test_all_events_root_clears_gate_definition_selection(qapp) -> None:
         qapp.processEvents()
 
 
-def test_explicit_child_mode_sets_parent_and_context(qapp) -> None:
+def test_hierarchy_selection_sets_gate_creation_parent_and_context(qapp) -> None:
     editor = GateEditor()
     try:
         editor.set_gates(_three_level_gates()[:1], notify=False)
         editor.set_current_sample_id("sample-1")
         editor.set_plot_channels("FSC-A", "SSC-A")
         editor.set_plot_scales("log10", "asinh")
-        assert editor.begin_child_gate("cells")
-        assert editor.parent_population() == "cells"
+        assert editor.select_gate("cells")
         context = editor._creation_banner.text()
         assert context == "Parent: Cells"
         details = editor._creation_banner.toolTip()
@@ -222,8 +221,8 @@ def test_explicit_child_mode_sets_parent_and_context(qapp) -> None:
         assert "sample-1" in details
         assert "FSC-A / SSC-A" in details
         assert "log10/asinh" in details
-        editor.cancel_child_gate_mode()
-        assert editor.parent_population() == "all_events"
+        editor._tree_widget.setCurrentItem(editor._tree_widget.topLevelItem(0))
+        assert editor._creation_banner.text() == "Parent: All Events"
         assert editor.gates() == _three_level_gates()[:1]
     finally:
         editor.close()
@@ -267,6 +266,7 @@ def test_create_gate_uses_selected_hierarchy_population_as_parent(qapp, monkeypa
         created = editor.gates()[-1]
         assert created.parent_population_id == "cells"
         assert editor.findChild(QPushButton, "createChildGateButton") is None
+        assert editor.findChild(QComboBox, "parentPopulationCombo") is None
     finally:
         editor.close()
         editor.deleteLater()

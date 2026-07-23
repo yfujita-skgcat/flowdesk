@@ -3811,7 +3811,9 @@ class MainWindow(QMainWindow):
             id=f"gate_{uuid.uuid4().hex[:8]}",
             name=f"rect_{len(self._gate_editor.gates()) + 1}",
             gate_type="rectangle",
-            parent_population_id=self._gate_editor.parent_population(),
+            parent_population_id=(
+                self._gate_editor.creation_parent_population_id()
+            ),
             x_parameter=x_name,
             y_parameter=y_name,
             x_scale="linear" if self._transform_for_parameter(x_name) else (
@@ -3901,7 +3903,7 @@ class MainWindow(QMainWindow):
             return False
 
         if gate_type == "rectangle":
-            self._gate_editor.cancel_polygon(preserve_child_mode=True)
+            self._gate_editor.cancel_polygon()
             self._plot_widget.begin_gate_creation("rectangle")
             self._update_status("Drag on the plot to create a rectangle gate.")
             return True

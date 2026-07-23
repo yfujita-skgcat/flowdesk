@@ -434,8 +434,6 @@ class GateEditor(QWidget):
         self._population_display_colors: dict[str, str] = {}
         self._gate_outline_colors: dict[str, str] = {}
         self._use_population_color_for_outline: set[str] = set()
-        self._child_gate_mode = False
-        self._previous_parent_population_id = "all_events"
         self._build_ui()
         self._reset_undo_stack()
 
@@ -539,20 +537,13 @@ class GateEditor(QWidget):
                 self._use_population_color_for_outline.add(population_id)
         self._refresh_hierarchy_tree(self.selected_gate().id if self.selected_gate() else None)
 
-    def set_parent_population(self, population_id: str) -> None:
-        """Set the parent population id for new gates."""
-        self._parent_population_id = population_id
-        idx = self._parent_combo.findData(population_id)
-        if idx >= 0:
-            self._parent_combo.setCurrentIndex(idx)
-
-    def parent_population(self) -> str:
-        """Return the parent population id for new gates."""
-        return self._parent_population_id
-
     def gates(self) -> list[GateSpec]:
         """Return all defined gates."""
         return list(self._gates)
+
+    def creation_parent_population_id(self) -> str:
+        """Return the hierarchy-selected parent for a new gate."""
+        return self._creation_parent_population_id()
 
     def can_undo(self) -> bool:
         return self._undo_stack.can_undo
@@ -694,35 +685,6 @@ class GateEditor(QWidget):
         self._tree_widget.setCurrentItem(item)
         return True
 
-    def begin_child_gate(self, parent_id: str) -> bool:
-        """Explicitly choose a population as parent for the next gate."""
-        if parent_id != "all_events" and not any(
-            gate.id == parent_id for gate in self._gates
-        ):
-            return False
-        if not self._child_gate_mode:
-            self._previous_parent_population_id = self._parent_population_id
-        self._child_gate_mode = True
-        self.set_parent_population(parent_id)
-        self._update_creation_banner()
-        self._status_label.setText("Child-gate mode ready")
-        return True
-
-    def cancel_child_gate_mode(self) -> None:
-        if not self._child_gate_mode:
-            return
-        previous = self._previous_parent_population_id
-        self._child_gate_mode = False
-        self.set_parent_population(previous)
-        self._status_label.setText("Ready")
-
-    def _finish_child_gate_mode(self) -> None:
-        if not self._child_gate_mode:
-            return
-        previous = self._previous_parent_population_id
-        self._child_gate_mode = False
-        self.set_parent_population(previous)
-
     def reparent_gate(self, gate_id: str, parent_id: str | None) -> None:
         """Atomically reparent a gate after validating the complete graph."""
         try:
@@ -772,7 +734,6 @@ class GateEditor(QWidget):
             state = self._undo_stack.execute(CreateGateCommand("gui_strategy", gate))
             self._apply_command_state(state, select_gate_id=gate.id)
             self._status_label.setText("Ready")
-            self._finish_child_gate_mode()
         except ProjectCommandError as exc:
             raise GatingStrategyError(str(exc)) from exc
 
@@ -866,11 +827,9 @@ class GateEditor(QWidget):
     def is_collecting_polygon(self) -> bool:
         return self._collecting_polygon
 
-    def cancel_polygon(self, preserve_child_mode: bool = False) -> None:
+    def cancel_polygon(self) -> None:
         """Cancel in-progress polygon collection."""
         self._cancel_polygon()
-        if not preserve_child_mode:
-            self.cancel_child_gate_mode()
 
     # -- callbacks -----------------------------------------------------------
 
@@ -986,33 +945,16 @@ class GateEditor(QWidget):
             (gate.id, gate.name) for gate in self._gates
         ]
 
-    def _refresh_parent_population_combo(self) -> None:
-        current = self._parent_population_id
-        self._parent_combo.blockSignals(True)
-        try:
-            self._parent_combo.clear()
-            for pop_id, label in self._available_populations():
-                self._parent_combo.addItem(label, pop_id)
-            idx = self._parent_combo.findData(current)
-            if idx < 0:
-                idx = 0
-            self._parent_combo.setCurrentIndex(idx)
-            self._parent_population_id = self._parent_combo.currentData()
-        finally:
-            self._parent_combo.blockSignals(False)
-
     def _create_gate_dialog(self) -> None:
         """Show gate creation dialog."""
         gate_type = self._type_combo.currentText()
         x_ch = self._x_channel or "X"
         y_ch = self._y_channel or "Y"
-        parent_id = self._creation_parent_population_id()
-        self.set_parent_population(parent_id)
+        self._parent_population_id = self._creation_parent_population_id()
 
         if gate_type in {"rectangle", "polygon"}:
             if not self._emit_interactive_gate_requested(gate_type):
                 self._status_label.setText("Ready")
-                self.cancel_child_gate_mode()
                 return
             if gate_type == "rectangle":
                 self._status_label.setText("Drag on plot to create rectangle gate...")
@@ -1031,7 +973,6 @@ class GateEditor(QWidget):
             y_scale=self._y_scale,
         )
         if dlg.exec() != QDialog.Accepted:
-            self.cancel_child_gate_mode()
             return
 
         name = dlg.name()
@@ -1046,7 +987,6 @@ class GateEditor(QWidget):
                     "Boolean gate incomplete",
                     "Select enough source populations for the boolean operation.",
                 )
-                self.cancel_child_gate_mode()
                 return
         gate_id = self._next_gate_id()
 
@@ -1071,21 +1011,19 @@ class GateEditor(QWidget):
             self._validate_gates([*self._gates, gate])
         except GatingStrategyError as exc:
             QMessageBox.warning(self, "Invalid gate", str(exc))
-            self.cancel_child_gate_mode()
             return
 
         try:
             self.add_gate(gate)
         except GatingStrategyError as exc:
             QMessageBox.warning(self, "Invalid gate", str(exc))
-            self.cancel_child_gate_mode()
 
     def _creation_parent_population_id(self) -> str:
-        """Return the parent selected in the hierarchy, or the combo fallback."""
+        """Return the selected hierarchy population or the All Events root."""
         item = self._tree_widget.currentItem()
         if item is not None:
             return str(item.data(0, Qt.UserRole) or "all_events")
-        return str(self._parent_combo.currentData() or "all_events")
+        return "all_events"
 
     def _on_edit_geometry_clicked(self) -> None:
         """Edit geometric thresholds/vertices in data coordinates."""
@@ -1193,7 +1131,6 @@ class GateEditor(QWidget):
                 self._updating_list_item = False
 
     def _refresh_all_views(self, select_gate_id: str | None = None) -> None:
-        self._refresh_parent_population_combo()
         self._refresh_reparent_combo()
         self._refresh_hierarchy_tree(select_gate_id)
         self._update_creation_banner()
@@ -1392,7 +1329,7 @@ class GateEditor(QWidget):
 
     def _update_creation_banner(self) -> None:
         labels = dict(self._available_populations())
-        parent_id = self._parent_population_id or "all_events"
+        parent_id = self._creation_parent_population_id()
         parent_label = labels.get(parent_id, parent_id)
         self._creation_banner.setText(f"Parent: {parent_label}")
         self._creation_banner.setToolTip(
@@ -1414,6 +1351,7 @@ class GateEditor(QWidget):
             # target instead of leaving the previously selected gate active.
             self._list_widget.setCurrentRow(-1)
         self._refresh_reparent_combo()
+        self._update_creation_banner()
 
     def _on_tree_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         if self._updating_tree or column != 0:
@@ -1595,17 +1533,6 @@ class GateEditor(QWidget):
             ["rectangle", "range", "polygon", "ellipse", "boolean"]
         )
 
-        self._parent_combo = QComboBox()
-        self._parent_combo.setObjectName("parentPopulationCombo")
-        self._parent_combo.currentIndexChanged.connect(
-            lambda *_args: setattr(
-                self,
-                "_parent_population_id",
-                self._parent_combo.currentData() or "all_events",
-            )
-        )
-        self._parent_combo.currentIndexChanged.connect(self._update_creation_banner)
-
         self._creation_banner = QLabel()
         self._creation_banner.setObjectName("gateCreationContextLabel")
         self._creation_banner.setWordWrap(True)
@@ -1684,8 +1611,6 @@ class GateEditor(QWidget):
 
         box_layout.addWidget(QLabel("Gate type:"))
         box_layout.addWidget(self._type_combo)
-        box_layout.addWidget(QLabel("Parent population:"))
-        box_layout.addWidget(self._parent_combo)
         box_layout.addWidget(self._creation_banner)
         box_layout.addLayout(btn_row)
         box_layout.addWidget(QLabel("Gate hierarchy:"))
