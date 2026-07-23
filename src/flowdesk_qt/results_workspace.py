@@ -67,6 +67,8 @@ class ResultsWorkspace(QWidget):
     self._results_stale = False
     self._force_all_stale = False
     self._mode = "Hierarchy"
+    self._rendered_mode = "Hierarchy"
+    self._expanded_state: dict[tuple[str, str], bool] | None = None
     self._statistic_columns: list[str] = []
     self._display_statistic_columns: list[str] = []
     self._statistic_names: dict[str, str] = {}
@@ -251,6 +253,8 @@ class ResultsWorkspace(QWidget):
   def set_mode(self, mode: str) -> None:
     if mode not in {"Hierarchy", "Flat table", "Statistics detail"}:
       raise ValueError(f"unknown Results workspace mode: {mode!r}")
+    if self._mode == "Hierarchy":
+      self._capture_expanded_state()
     self._mode = mode
     self._rebuild()
 
@@ -293,6 +297,8 @@ class ResultsWorkspace(QWidget):
     self._apply_statistic_column_widths()
 
   def _rebuild(self) -> None:
+    if self._rendered_mode == "Hierarchy":
+      self._capture_expanded_state()
     blocked = self._tree.blockSignals(True)
     try:
       self._tree.clear()
@@ -337,10 +343,52 @@ class ResultsWorkspace(QWidget):
           results.get(sample_id, ()),
           sample_id,
         )
-        sample_item.setExpanded(True)
-        all_item.setExpanded(True)
+        self._restore_expanded_state()
     finally:
       self._tree.blockSignals(blocked)
+      self._rendered_mode = self._mode
+
+  def _capture_expanded_state(self) -> None:
+    """Remember hierarchy expansion by stable sample/population identity."""
+    if self._tree.topLevelItemCount() == 0:
+      return
+    expanded: dict[tuple[str, str], bool] = {}
+
+    def visit(item: QTreeWidgetItem) -> None:
+      kind = item.data(0, Qt.UserRole + 1)
+      stable_id = item.data(0, Qt.UserRole)
+      sample_id = item.data(0, Qt.UserRole + 2)
+      if kind in {"sample", "population"} and stable_id is not None and sample_id is not None:
+        expanded[(str(sample_id), str(stable_id))] = item.isExpanded()
+      for index in range(item.childCount()):
+        visit(item.child(index))
+
+    for index in range(self._tree.topLevelItemCount()):
+      visit(self._tree.topLevelItem(index))
+    self._expanded_state = expanded
+
+  def _restore_expanded_state(self) -> None:
+    """Restore expansion, defaulting new sample/root rows to expanded."""
+    if self._expanded_state is None:
+      for index in range(self._tree.topLevelItemCount()):
+        sample_item = self._tree.topLevelItem(index)
+        sample_item.setExpanded(True)
+        if sample_item.childCount():
+          sample_item.child(0).setExpanded(True)
+      return
+
+    def visit(item: QTreeWidgetItem) -> None:
+      kind = item.data(0, Qt.UserRole + 1)
+      stable_id = item.data(0, Qt.UserRole)
+      sample_id = item.data(0, Qt.UserRole + 2)
+      key = (str(sample_id), str(stable_id))
+      if kind in {"sample", "population"}:
+        item.setExpanded(self._expanded_state.get(key, False))
+      for index in range(item.childCount()):
+        visit(item.child(index))
+
+    for index in range(self._tree.topLevelItemCount()):
+      visit(self._tree.topLevelItem(index))
 
   def _rebuild_flat(
     self, results: Mapping[str, Sequence[ResultRowState]]

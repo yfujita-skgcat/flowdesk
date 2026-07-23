@@ -237,6 +237,46 @@ def test_results_workspace_uses_statistic_definition_name_for_column(qapp) -> No
     qapp.processEvents()
 
 
+def test_results_workspace_preserves_nested_population_expansion(qapp) -> None:
+  workspace = ResultsWorkspace()
+  try:
+    workspace.set_samples([("sample-1", "1_A1")])
+    workspace.set_population_hierarchy({
+      "all_events": None, "rect-1": "all_events", "rect-2": "rect-1",
+    })
+    report = ExecutionReport(
+      project_id="project",
+      execution_profile_id="default",
+      pipeline_version="test",
+      status="success",
+      population_results=(
+        PopulationResult("sample-1", "all_events", 10, None, 1.0),
+        PopulationResult("sample-1", "rect-1", 8, 0.8, 0.8),
+        PopulationResult("sample-1", "rect-2", 4, 0.5, 0.4),
+      ),
+    )
+    workspace.set_report(report)
+    sample = workspace.tree().topLevelItem(0)
+    all_events = sample.child(0)
+    rect_1 = all_events.child(0)
+    rect_2 = rect_1.child(0)
+    rect_1.setExpanded(True)
+    rect_2.setExpanded(True)
+
+    workspace.set_mode("Flat table")
+    workspace.set_mode("Hierarchy")
+    workspace.set_report(report)
+
+    sample = workspace.tree().topLevelItem(0)
+    assert sample.child(0).isExpanded()
+    assert sample.child(0).child(0).isExpanded()
+    assert sample.child(0).child(0).child(0).isExpanded()
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+    qapp.processEvents()
+
+
 def test_results_workspace_selection_distinguishes_sample_and_population(qapp) -> None:
   workspace = ResultsWorkspace()
   selected: list[tuple[str, str, str]] = []
