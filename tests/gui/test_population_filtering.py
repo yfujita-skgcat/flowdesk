@@ -98,6 +98,13 @@ def test_population_filter_reduces_scatter_points(
         assert window._plot_widget._scatter is not None
         assert len(window._plot_widget._scatter.xData) == 4
 
+        # Changing one display scale must not recalculate the linear gate.
+        window._channel_selector.set_analysis_transform_choice("x", "log")
+        window._on_axis_analysis_transform_requested("x", "log")
+        assert not window._results_stale
+        assert window._plot_widget._scatter is not None
+        assert len(window._plot_widget._scatter.xData) == 4
+
         # Select gate population -> 3 points
         table = window._population_tree._table
         table.selectRow(1)

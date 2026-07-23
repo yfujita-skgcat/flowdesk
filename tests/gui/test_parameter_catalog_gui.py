@@ -285,7 +285,7 @@ def test_axis_transform_selector_replaces_an_unreferenced_definition(qapp, tmp_p
     qapp.processEvents()
 
 
-def test_axis_transform_selector_keeps_a_gate_referenced_definition(
+def test_axis_transform_selector_is_display_only_with_gates(
   qapp, tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   path = tmp_path / "transform-gate-reference.fcs"
@@ -311,13 +311,14 @@ def test_axis_transform_selector_keeps_a_gate_referenced_definition(
       parent_population_id="all_events", x_parameter=parameter_id,
       x_transform_id=transform.id, thresholds={"min": 1.0},
     )])
+    stale_before = window._results_stale
 
     combo.setCurrentIndex(combo.findData("log"))
 
     assert window._transform_for_parameter(parameter_id).id == transform.id
-    assert combo.currentData() == "asinh"
-    assert len(messages) == 1
-    assert "gate Keep Asinh (X axis)" in messages[0]
+    assert combo.currentData() == "log"
+    assert len(messages) == 0
+    assert window._results_stale == stale_before
   finally:
     window.close()
     window.deleteLater()

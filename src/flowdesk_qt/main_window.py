@@ -318,6 +318,7 @@ class MainWindow(QMainWindow):
         self._override_undo_stack = UndoStack({"gate_overrides": []})
         self._display_population_id: str = "all_events"
         self._plot_transform_overrides: dict[str, str | None] = {}
+        self._display_transform_overrides: dict[str, str] = {}
         self._selected_gate_id: str | None = None
         self._pending_gate_geometry_updates: dict[str, Any] = {}
         self._preview_revision = PreviewRevisionState()
@@ -1278,7 +1279,20 @@ class MainWindow(QMainWindow):
         )
         if not parameter_id or parameter_id == "__count__":
             return
+        if self._gate_editor.gates():
+            # Axis changes are display-only while gate definitions exist.  The
+            # gate membership remains in its stored coordinate space; the plot
+            # widget hides overlays whose coordinate scales no longer match.
+            self._plot_transform_overrides.pop(parameter_id, None)
+            self._display_transform_overrides[parameter_id] = choice
+            self._replot()
+            self._update_status(
+                f"{axis.upper()} display transform set to "
+                f"{choice.capitalize()}; gate memberships unchanged"
+            )
+            return
         self._plot_transform_overrides.pop(parameter_id, None)
+        self._display_transform_overrides.pop(parameter_id, None)
         existing = self._transform_for_parameter(parameter_id)
         if choice == "linear" and existing is not None:
             # A transform referenced by a gate is part of the analysis definition.
@@ -1546,11 +1560,17 @@ class MainWindow(QMainWindow):
             x_spec is not None, y_spec is not None
         )
         self._channel_selector.set_analysis_transform_choice(
-            "x", "linear" if x_spec is None else x_spec.transform_type
+            "x",
+            self._display_transform_overrides.get(
+                x_id, "linear" if x_spec is None else x_spec.transform_type
+            ),
         )
         if not self._channel_selector.is_count_mode():
             self._channel_selector.set_analysis_transform_choice(
-                "y", "linear" if y_spec is None else y_spec.transform_type
+                "y",
+                self._display_transform_overrides.get(
+                    y_id, "linear" if y_spec is None else y_spec.transform_type
+                ),
             )
         self._plot_widget.set_axis_transform_specs(x_spec, y_spec)
 
@@ -2113,6 +2133,8 @@ class MainWindow(QMainWindow):
                 gate.x_parameter, y_parameter
             )
         x_transform_id = gate.x_transform_id or gate.transform_id
+        self._display_transform_overrides.pop(gate.x_parameter or "", None)
+        self._display_transform_overrides.pop(gate.y_parameter or "", None)
         self._plot_transform_overrides[gate.x_parameter or ""] = x_transform_id
         self._restore_gate_axis_transform(
             "x", x_transform_id, gate.x_scale

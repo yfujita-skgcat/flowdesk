@@ -41,10 +41,10 @@ Separate display state from analysis state.
   background color, dot color, selected-population highlight color, dot size,
   opacity, density mode, viewport range, robust-auto-range toggle, grid visibility,
   and PNG export dimensions.
-  Changing the X/Y transform selector is also display-only when a gate-referenced
-  analysis transform is active. Gate overlays whose stored coordinate scales do not
-  match the current display scales remain hidden; the analysis transform definition
-  and gate membership are not changed.
+  Changing the X/Y transform selector is also display-only when gate definitions
+  exist. Gate overlays whose stored coordinate scales do not match the current
+  display scales remain hidden; the analysis transform definition and gate
+  membership are not changed.
 - GUI code may edit project state and display state, but must not implement FCS parsing,
   compensation, derived parameter calculation, gate membership, population statistics,
   or export statistics.

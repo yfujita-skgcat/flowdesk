@@ -271,7 +271,7 @@ status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel
 
 ### 8.1 transform selector の挙動
 
-`Linear`、`Log10`、`Asinh`、`Logicle` はプロットの表示座標を切り替える。現在のゲートと座標が一致しない場合、ゲート輪郭は非表示になるが、ゲート定義、membership、Resultsは変更されない。ゲートが参照するanalysis transformを変更する操作は、`Manage Parameter Transforms...` と明示的な `Migrate Transform` で行う。`Custom…` は Analysis Transforms dialog を開く。
+`Linear`、`Log10`、`Asinh`、`Logicle` は、ゲート定義が存在する場合はプロットの表示座標だけを切り替える。現在のゲートと座標が一致しない場合、ゲート輪郭は非表示になるが、ゲート定義、membership、Resultsは変更されない。ゲートが参照するanalysis transformを変更する操作は、`Manage Parameter Transforms...` と明示的な `Migrate Transform` で行う。ゲート定義がない場合は、従来どおり選択したanalysis transformを作成または切り替える。`Custom…` は Analysis Transforms dialog を開く。
 
 既存 transform が gate 等から参照されている場合、quick selector から in-place replacement は拒否される。新しい transform ID を作り、gate の `Migrate Transform` を使う。
 
