@@ -137,22 +137,26 @@ def _statistic_headers(
   results: list[StatisticResult],
   project: Mapping[str, Any],
 ) -> dict[str, str]:
-  configured = [
-    str(value.get("id"))
+  configured: list[tuple[str, str | None]] = [
+    (str(value.get("id")), str(value.get("name")) if value.get("name") else None)
     for value in project.get("statistics", [])
     if isinstance(value, Mapping) and value.get("id")
   ]
   configured.extend(
-    result.statistic_id
+    (result.statistic_id, result.statistic_name)
     for result in results
-    if result.statistic_id not in configured
+    if result.statistic_id not in {statistic_id for statistic_id, _name in configured}
   )
   by_id = {result.statistic_id: result for result in results}
   names: dict[str, str] = {}
   used: set[str] = set()
-  for statistic_id in configured:
+  for statistic_id, configured_name in configured:
     result = by_id.get(statistic_id)
-    name = (result.statistic_name if result else None) or statistic_id
+    name = (
+      (result.statistic_name if result else None)
+      or configured_name
+      or statistic_id
+    )
     header = str(name).strip() or statistic_id
     if header in used:
       header = f"{header} [{statistic_id}]"
