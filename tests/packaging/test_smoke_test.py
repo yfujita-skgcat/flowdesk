@@ -1,4 +1,5 @@
 import importlib.util
+import platform
 from pathlib import Path
 
 import pytest
@@ -24,8 +25,13 @@ def test_smoke_runs_gui_and_cli_contracts(tmp_path: Path) -> None:
   gui = _write_executable(
     tmp_path / "gui",
     "#!/bin/sh\n"
-    "if [ \"$1\" = \"--version\" ]; then exit 0; fi\n"
-    "mkdir -p \"$3\"\n",
+    "report=''\n"
+    "while [ $# -gt 0 ]; do\n"
+    "  if [ \"$1\" = \"--smoke-report\" ]; then report=\"$2\"; shift 2; continue; fi\n"
+    "  shift\n"
+    "done\n"
+    f"printf '{{\"status\":\"ok\",\"platform\":\"{platform.system().lower()}\","
+    "\"main_window_created\":true}' > \"$report\"\n",
   )
   cli = _write_executable(
     tmp_path / "cli",

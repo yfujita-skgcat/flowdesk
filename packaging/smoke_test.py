@@ -10,7 +10,9 @@ headless scientific execution logic.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -39,32 +41,33 @@ def run_smoke(
   fcs_file: Path | None,
   output_dir: Path,
   timeout: int = 60,
+  qt_platform: str | None = None,
 ) -> None:
   """Validate GUI startup and optional headless package operations."""
   output_dir.mkdir(parents=True, exist_ok=True)
   env = os.environ.copy()
-  # This is harmless on Windows/macOS and allows Linux CI without X11.
-  env.setdefault("QT_QPA_PLATFORM", "offscreen")
+  if qt_platform is not None:
+    env["QT_QPA_PLATFORM"] = qt_platform
 
   if gui_executable is not None:
-    _run(
-      [
-        str(gui_executable),
-        "--version",
-      ],
-      timeout=timeout,
-      env=env,
-    )
+    report_path = output_dir / "gui-smoke-report.json"
     _run(
       [
         str(gui_executable),
         "--test-mode",
         "--debug-artifacts-dir",
         str(output_dir / "gui-artifacts"),
+        "--smoke-report",
+        str(report_path),
       ],
       timeout=timeout,
       env=env,
     )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if report.get("status") != "ok" or report.get("main_window_created") is not True:
+      raise RuntimeError(f"invalid GUI smoke report: {report}")
+    if report.get("platform") != platform.system().lower():
+      raise RuntimeError(f"unexpected smoke platform: {report}")
 
   if cli_executable is None:
     return
@@ -99,10 +102,19 @@ def main() -> int:
   parser.add_argument("--fcs", type=Path)
   parser.add_argument("--output-dir", type=Path, required=True)
   parser.add_argument("--timeout", type=int, default=60)
+  parser.add_argument("--qt-platform", default=None)
   args = parser.parse_args()
 
   try:
-    run_smoke(args.gui, args.cli, args.project, args.fcs, args.output_dir, args.timeout)
+    run_smoke(
+      args.gui,
+      args.cli,
+      args.project,
+      args.fcs,
+      args.output_dir,
+      args.timeout,
+      args.qt_platform,
+    )
   except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
     print(f"package smoke test failed: {exc}", file=sys.stderr)
     return 1

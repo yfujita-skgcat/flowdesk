@@ -9,6 +9,11 @@ Phase 1の配布準備は実装済みである。
 - `python -m flowdesk_qt`のmodule entry pointを追加した。
 - `QStandardPaths`を使い、recovery、ログ、debug artifactの保存先をOS標準のユーザー領域へ移した。
 - アプリversionを`importlib.metadata`から取得し、GUI表示とdebug stateで共有するようにした。
+- `tools/package.py`をOS共通のnative build/smoke/manifest入口として追加した。
+- GUI用`flowdesk`とheadless用`flowdesk-cli`を別のonedir成果物として生成する。
+- Makefileは`tools/package.py`を呼ぶLinux/macOS向けの便利なラッパーとし、WindowsではPythonから直接実行できる。
+- GUI smoke testはJSON reportでQt version、platform、MainWindow生成を検証し、Qt platformの指定は明示時だけ行う。
+- PyInstallerの標準hookを優先し、collectorではpyqtgraphのデータだけを追加収集する。
 
 次のPhase 2以降は未実装であり、PyInstaller specやOS installerを追加する前に、各Phaseを個別に完了させる。
 

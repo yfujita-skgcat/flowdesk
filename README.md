@@ -35,6 +35,92 @@ Optional groups:
 python -m pip install -e '.[gui,dev,gui-test]'
 ```
 
+## Building desktop packages
+
+Flowdesk currently builds native PyInstaller `onedir` packages. The build
+produces both the GUI (`flowdesk`) and headless CLI (`flowdesk-cli`) artifacts
+under `dist/`. These are development/portable directory packages; Windows
+installers and signed/notarized macOS DMG files are not generated yet.
+
+PyInstaller is not a cross-compiler. Build on the same OS and CPU architecture
+that the package will run on. Use a clean virtual environment with Python
+3.11 or newer (Python 3.12 is used by the repository's development setup).
+The build machine needs Git, a working C/C++ toolchain for any native wheels,
+and enough disk space for the temporary `build/` directory and `dist/`
+artifacts. On macOS, install Apple's Command Line Tools (`xcode-select
+--install`) before creating the environment. On Windows, use a current
+64-bit Python installation and PowerShell or Command Prompt.
+
+Install the package and packaging dependencies from the repository root:
+
+```bash
+python -m venv .venv
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# Windows cmd.exe:    .venv\Scripts\activate.bat
+# macOS/Linux:        source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[gui,dev]"
+```
+
+Build both artifacts:
+
+```bash
+python tools/package.py build
+```
+
+On macOS or Linux, the equivalent Make target is:
+
+```bash
+make package
+```
+
+On Windows, run the Python command directly because the repository Makefile
+is intended for POSIX shells. The resulting directories are:
+
+```text
+dist/flowdesk/       GUI application (flowdesk or flowdesk.exe)
+dist/flowdesk-cli/   headless CLI (flowdesk-cli or flowdesk-cli.exe)
+```
+
+Run the package smoke test after building. It checks that the GUI starts with
+the packaged Qt plugins. If a project and FCS file are supplied, it also runs
+the packaged CLI pipeline:
+
+```bash
+python tools/package.py smoke
+python tools/package.py smoke \
+  --project path/to/project.flowdesk \
+  --fcs path/to/sample.fcs
+```
+
+Smoke-test reports are written to `artifacts/package-smoke/` by default. A
+build provenance file can be created with:
+
+```bash
+python tools/package.py manifest \
+  --output artifacts/package-smoke/build-manifest.json
+```
+
+For a single build-and-smoke operation, use `make package-check` on macOS or
+Linux. The package must be tested on a clean machine for the target OS before
+distribution. In particular, verify Japanese and space-containing paths,
+project save/load, exports, recovery/log directories, and that GUI population
+counts agree with headless `PipelineRunner` results.
+
+Platform-specific signing and installer steps are not part of the current
+build entry point:
+
+- Windows: `dist/flowdesk/` can be wrapped by an installer such as Inno Setup,
+  but no installer configuration is included yet.
+- macOS: the onedir output can be assembled into an `.app`; Developer ID
+  signing, hardened runtime, notarization, and DMG creation still require a
+  separate release workflow.
+- Linux: AppImage generation is not included yet.
+
+Do not commit `build/`, `dist/`, or package smoke artifacts. Use a native
+runner for each supported OS and keep the Python, PySide6, NumPy, and FlowIO
+versions recorded in the manifest when sharing a package.
+
 ## Tests
 
 ```bash

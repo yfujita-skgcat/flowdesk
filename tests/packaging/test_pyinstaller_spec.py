@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 SPEC = ROOT / "packaging" / "flowdesk.spec"
+CLI_SPEC = ROOT / "packaging" / "flowdesk-cli.spec"
 COLLECTOR = ROOT / "packaging" / "collect_qt.py"
 
 
@@ -20,20 +21,9 @@ def test_onedir_spec_has_native_build_entrypoint_and_collection() -> None:
 def test_collection_covers_runtime_and_native_dependencies() -> None:
   text = COLLECTOR.read_text(encoding="utf-8")
 
-  for package_name in (
-    "flowdesk_core",
-    "flowdesk_storage",
-    "flowdesk_cli",
-    "flowdesk_qt",
-    "numpy",
-    "flowio",
-    "PySide6",
-    "pyqtgraph",
-  ):
-    assert f'"{package_name}"' in text
-  assert "collect_all" in text
-  assert "package_binaries" in text
-  assert "package_hiddenimports" in text
+  assert 'collect_data_files("pyqtgraph")' in text
+  assert "collect_all" not in text
+  assert "collect_submodules" not in text
 
 
 def test_spec_does_not_place_runtime_state_in_install_directory() -> None:
@@ -42,3 +32,12 @@ def test_spec_does_not_place_runtime_state_in_install_directory() -> None:
   assert "app_paths" not in text
   assert "Path.home()" not in text
   assert "debug-artifacts" not in text
+
+
+def test_headless_cli_spec_is_a_console_artifact() -> None:
+  text = CLI_SPEC.read_text(encoding="utf-8")
+
+  assert "flowdesk_cli" in text
+  assert 'name="flowdesk-cli"' in text
+  assert "console=True" in text
+  assert "copy_metadata(\"flowdesk\")" in text

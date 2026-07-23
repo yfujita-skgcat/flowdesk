@@ -5,12 +5,14 @@ Qt modules must call core APIs instead of implementing scientific execution.
 
 from __future__ import annotations
 
+import json
+import platform
 import signal
 import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QCoreApplication, QTimer
+from PySide6.QtCore import QCoreApplication, QTimer, qVersion
 from PySide6.QtWidgets import QApplication
 
 from flowdesk_qt.app_info import APP_NAME, ORGANIZATION_NAME, application_version
@@ -44,6 +46,7 @@ def run_app(
     debug_artifacts_dir: str | Path | None = None,
     log_level: str = "INFO",
     test_mode: bool = False,
+    smoke_report: str | Path | None = None,
 ) -> int:
     """Launch the Flowdesk Qt application.
 
@@ -51,6 +54,7 @@ def run_app(
       data_dir: Optional directory to pre-load FCS samples from.
       test_mode: Start and close after the event loop becomes active. This is
         intended for packaged-build smoke tests.
+      smoke_report: Optional JSON report path for packaged-build smoke tests.
 
     Returns:
       Application exit code.
@@ -72,6 +76,25 @@ def run_app(
     window = MainWindow()
     window.show()
     previous_sigint_handler = _install_terminal_interrupt_handler(app, window)
+
+    if smoke_report is not None:
+        report_path = Path(smoke_report)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "version": application_version(),
+                    "qt_version": qVersion(),
+                    "platform": platform.system().lower(),
+                    "main_window_created": True,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     if test_mode:
         QTimer.singleShot(0, app.quit)
@@ -111,6 +134,7 @@ def main() -> None:
     parser.add_argument("--debug-artifacts-dir", default=None)
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument("--test-mode", action="store_true")
+    parser.add_argument("--smoke-report", default=None)
 
     args = parser.parse_args()
     exit_code = run_app(
@@ -118,6 +142,7 @@ def main() -> None:
         debug_artifacts_dir=args.debug_artifacts_dir,
         log_level=args.log_level,
         test_mode=args.test_mode,
+        smoke_report=args.smoke_report,
     )
     sys.exit(exit_code)
 
