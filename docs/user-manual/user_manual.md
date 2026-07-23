@@ -353,6 +353,8 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 
 `All Events` は root で削除・geometry edit できない。Gate hierarchy の選択は selected gate を変更するが、display population を自動的に同じものへ変えるとは限らない。
 
+ゲート作成欄のコンテキスト表示は通常、親Population名だけを表示する。対象Sample、軸、Scale、Transform ID、親Populationの内部IDなどの詳細は、表示欄のツールチップで確認できる。これらはゲート作成条件の確認やトラブル調査に使用する。
+
 ### 10.3 selected gate detail controls
 
 |control|説明|

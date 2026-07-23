@@ -216,10 +216,12 @@ def test_explicit_child_mode_sets_parent_and_context(qapp) -> None:
         assert editor.begin_child_gate("cells")
         assert editor.parent_population() == "cells"
         context = editor._creation_banner.text()
-        assert "Cells [cells]" in context
-        assert "sample-1" in context
-        assert "FSC-A / SSC-A" in context
-        assert "log10/asinh" in context
+        assert context == "Parent: Cells"
+        details = editor._creation_banner.toolTip()
+        assert "Cells [cells]" in details
+        assert "sample-1" in details
+        assert "FSC-A / SSC-A" in details
+        assert "log10/asinh" in details
         editor.cancel_child_gate_mode()
         assert editor.parent_population() == "all_events"
         assert editor.gates() == _three_level_gates()[:1]

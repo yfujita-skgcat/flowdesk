@@ -1385,7 +1385,9 @@ class GateEditor(QWidget):
     def _update_creation_banner(self) -> None:
         labels = dict(self._available_populations())
         parent_id = self._parent_population_id or "all_events"
-        self._creation_banner.setText(
+        parent_label = labels.get(parent_id, parent_id)
+        self._creation_banner.setText(f"Parent: {parent_label}")
+        self._creation_banner.setToolTip(
             f"Parent: {labels.get(parent_id, parent_id)} [{parent_id}] | "
             f"Sample: {self._current_sample_id or '-'} | "
             f"Axes: {self._x_channel or '-'} / {self._y_channel or '-'} | "
