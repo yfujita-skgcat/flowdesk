@@ -190,3 +190,54 @@ def test_batch_plot_applies_persisted_transform_once(
     next((tmp_path / "exports").glob("*.svg.json")).read_text(encoding="utf-8")
   )
   assert len(sidecar["gate_overlays"]) == 1
+
+
+def test_batch_plot_current_view_uses_persisted_labels_and_range(
+  tmp_path: Path, monkeypatch
+) -> None:
+  project = {
+    "project_id": "batch-current-view",
+    "project_version": CURRENT_PROJECT_VERSION,
+    "pipeline_version": "0.1",
+    "execution_profiles": [{"id": "default", "name": "Default"}],
+    "samples": [{"id": "s1", "path": "sample.fcs", "channels": []}],
+    "plot_views": [{
+      "id": "view", "plot_type": "scatter", "population_id": "all_events",
+      "x_parameter": "x", "y_parameter": "y", "rendering_downsample": {"max_points": 0},
+      "display_scene": {
+        "x_axis_label": "FITC B525-A", "y_axis_label": "APC R660-A",
+        "view_range": [[0.0, 4.0], [0.0, 4.0]],
+      },
+    }],
+    "batch_plot_exports": [{
+      "id": "export", "name": "Export", "target": "all", "plot_view_id": "view",
+      "formats": ["svg"], "layout_policy": "current_view",
+    }],
+  }
+  project_path = tmp_path / "batch-current-view.flowdesk"
+  save_project(project_path, project)
+  sample = SampleData(
+    "s1", np.array([[1.0, 1.0], [2.0, 2.0], [8.0, 8.0]]),
+    (ChannelSpec(id="x", name="FL1-A"), ChannelSpec(id="y", name="FL3-A")),
+  )
+  monkeypatch.setattr(
+    "flowdesk_cli.batch_plot.resolve_sample_paths",
+    lambda *_args: [{"id": "s1", "path": "sample.fcs", "name": "Sample"}],
+  )
+  monkeypatch.setattr(
+    "flowdesk_cli.batch_plot.read_fcs_sample", lambda *_args: (None, sample)
+  )
+  captured: dict[str, object] = {}
+
+  def capture(*args, **kwargs):
+    captured["layers"] = kwargs["layers"]
+    return write_plot_svg(*args, **kwargs)
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.write_plot_svg", capture)
+  assert batch_plot_command(str(project_path), "export", str(tmp_path / "exports")) == 0
+  assert captured["layers"]["s1"] == ((0.25, 0.5), (0.25, 0.5))
+  sidecar = json.loads(
+    next((tmp_path / "exports").glob("*.svg.json")).read_text(encoding="utf-8")
+  )
+  assert sidecar["presentation"]["x_axis_display_label"] == "FITC B525-A"
+  assert sidecar["presentation"]["y_axis_display_label"] == "APC R660-A"

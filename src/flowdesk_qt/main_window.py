@@ -2627,6 +2627,8 @@ class MainWindow(QMainWindow):
             else self._active_plot_transform(y_parameter)
         )
         overlay_state = self._sample_browser.overlay_state()
+        x_label, y_label = self._plot_widget.axis_display_labels()
+        view_range = self._plot_widget.view_range()
         view.update({
             "population_id": self._display_population_id or "all_events",
             "x_parameter": x_parameter or "",
@@ -2643,6 +2645,13 @@ class MainWindow(QMainWindow):
             "overlay_mode": overlay_state.get("overlay_mode", "manual_only"),
             "rendering_downsample": {
                 "max_points": self._channel_selector.display_max_points()
+            },
+            "display_scene": {
+                "x_axis_label": x_label,
+                "y_axis_label": y_label,
+                "view_range": view_range,
+                "x_tick_policy": self._plot_widget.tick_policy(),
+                "y_tick_policy": self._plot_widget.tick_policy(),
             },
         })
 

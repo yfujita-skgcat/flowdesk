@@ -715,6 +715,7 @@ items so future changes do not regress the behavior.
 #### Phase B7.3.E: Plot image export completion [docs/bug.md]
 
 - [ ] Batch Plot Exportのheadless rendererをGUI表示契約へ揃える。PNG/JPG/SVG/PDFで小さい半透明円、タイトル行とsource色、軸ラベル、transform由来のtick、実線gateを同じrenderer-neutral sceneから出力し、Qt screenshot/captureに依存しないことをtestする。詳細は`docs/implementation/plot-export-completion.md` Increment 7。
+- [ ] `current_view` Batch ExportでGUI ViewBox範囲、表示済み軸ラベル、tick書式、font requestをsnapshotし、raw FCS名や全data範囲へfallbackしない。上付き指数・縦Y軸labelを含め、詳細は`docs/implementation/plot-export-completion.md` Increment 8。
 
 `docs/bug.md` のplot画像export要求は、既存のsingle PNG/SVG/PDF exportと
 `BatchPlotExportSpec`だけでは完了していない。実装前に

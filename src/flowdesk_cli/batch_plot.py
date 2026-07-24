@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 
@@ -74,6 +74,7 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
     prepared_layers: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     layer_metadata: dict[str, dict[str, Any]] = {}
     shared_bounds: tuple[float, float, float, float] | None = None
+    display_scene = dict(view.get("display_scene", {}))
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
       _info, sample_data = read_fcs_sample(sample["path"], str(sample["id"]))
@@ -153,11 +154,18 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       x_values, y_values = prepared_layers[sample_id]
       metadata = layer_metadata[sample_id]
       x_id, y_id = metadata["x_id"], metadata["y_id"]
+      persisted_bounds = _scene_view_range(display_scene)
       active_bounds = (
-        shared_bounds[:2], shared_bounds[2:]
-      ) if shared_bounds else (
-        (float(np.min(x_values)), float(np.max(x_values))),
-        (float(np.min(y_values)), float(np.max(y_values))),
+        (shared_bounds[:2], shared_bounds[2:])
+        if shared_bounds is not None
+        else (
+          persisted_bounds
+          if spec.layout_policy == "current_view" and persisted_bounds is not None
+          else (
+            (float(np.min(x_values)), float(np.max(x_values))),
+            (float(np.min(y_values)), float(np.max(y_values))),
+          )
+        )
       )
       advanced_overlay_ids = [
         str(source.get("sample_id"))
@@ -186,10 +194,13 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         source_sample = source_by_id[source_id]
         source_metadata = layer_metadata[source_id]
         source_x, source_y = prepared_layers[source_id]
-        layers[source_id] = (
-          tuple(_normalize(source_x, active_bounds[0])),
-          tuple(_normalize(source_y, active_bounds[1])),
+        normalized_x = _normalize(source_x, active_bounds[0])
+        normalized_y = _normalize(source_y, active_bounds[1])
+        visible = (
+          (normalized_x >= 0.0) & (normalized_x <= 1.0)
+          & (normalized_y >= 0.0) & (normalized_y <= 1.0)
         )
+        layers[source_id] = (tuple(normalized_x[visible]), tuple(normalized_y[visible]))
         sources.append({
           "source_id": source_id, "sample_id": source_id,
           "population_id": str(view.get("population_id", "all_events")),
@@ -206,10 +217,12 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
           ),
         })
       presentation = dict(view.get("presentation", {}))
-      if not presentation.get("x_axis_display_label"):
-        presentation["x_axis_display_label"] = metadata["x_label"]
-      if not presentation.get("y_axis_display_label"):
-        presentation["y_axis_display_label"] = metadata["y_label"]
+      presentation["x_axis_display_label"] = str(
+        display_scene.get("x_axis_label") or metadata["x_label"]
+      )
+      presentation["y_axis_display_label"] = str(
+        display_scene.get("y_axis_label") or metadata["y_label"]
+      )
       source_styles = {
         str(style.get("source_id")): dict(style)
         for style in presentation.get("source_styles", [])
@@ -257,10 +270,12 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       presentation["source_styles"] = list(source_styles.values())
       scene = {
         "x_ticks": _normalized_ticks(
-          active_bounds[0], view.get("x_transform_id"), transform_by_id
+          active_bounds[0], view.get("x_transform_id"), transform_by_id,
+          str(display_scene.get("x_tick_policy", "auto")),
         ),
         "y_ticks": _normalized_ticks(
-          active_bounds[1], view.get("y_transform_id"), transform_by_id
+          active_bounds[1], view.get("y_transform_id"), transform_by_id,
+          str(display_scene.get("y_tick_policy", "auto")),
         ),
       }
       prepared = prepare_plot_export(
@@ -320,14 +335,17 @@ def _normalized_ticks(
   bounds: tuple[float, float],
   transform_id: object,
   transforms: Mapping[str, Mapping[str, Any]],
+  policy: str = "auto",
 ) -> list[dict[str, object]]:
   """Build renderer-neutral axis ticks in normalized transformed coordinates."""
   low, high = bounds
   if high == low:
     return []
   if transform_id:
+    tick_policy = policy if policy in {"auto", "decades", "one_two_five"} else "auto"
     ticks = generate_transform_ticks(
-      _transform_spec(transforms, str(transform_id)), low, high, "auto"
+      _transform_spec(transforms, str(transform_id)), low, high,
+      cast(Literal["auto", "decades", "one_two_five"], tick_policy),
     )
     return [
       {
@@ -345,6 +363,27 @@ def _normalized_ticks(
     }
     for index in range(5)
   ]
+
+
+def _scene_view_range(
+  scene: Mapping[str, Any],
+) -> tuple[tuple[float, float], tuple[float, float]] | None:
+  """Read the GUI's persisted transformed ViewBox range without a fallback."""
+  raw = scene.get("view_range")
+  if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+    return None
+  try:
+    x_range = tuple(float(value) for value in raw[0])
+    y_range = tuple(float(value) for value in raw[1])
+  except (TypeError, ValueError):
+    return None
+  if len(x_range) != 2 or len(y_range) != 2:
+    return None
+  if not all(np.isfinite((*x_range, *y_range))):
+    return None
+  if x_range[0] >= x_range[1] or y_range[0] >= y_range[1]:
+    return None
+  return (x_range[0], x_range[1]), (y_range[0], y_range[1])
 
 
 def _gate_overlays(

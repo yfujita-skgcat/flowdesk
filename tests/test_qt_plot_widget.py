@@ -482,6 +482,9 @@ def test_project_manifest_persists_complete_active_plot_view() -> None:
     window._plot_views = [{"id": "main-view"}]
     window._display_population_id = "gate-1"
     window._plot_transform_overrides = {"x": "tx", "y": "ty"}
+    window._plot_widget._x_label = "FITC B525-A"
+    window._plot_widget._y_label = "APC R660-A"
+    window._plot_widget.set_manual_view_range((1.0, 6.0), (0.5, 4.5))
     window._transforms = [
       {
         "id": "tx", "name": "X log", "transform_type": "log",
@@ -500,6 +503,9 @@ def test_project_manifest_persists_complete_active_plot_view() -> None:
     assert view["y_transform_id"] == "ty"
     assert view["population_id"] == "gate-1"
     assert view["plot_type"] == "scatter"
+    assert view["display_scene"]["x_axis_label"] == "FITC B525-A"
+    assert view["display_scene"]["y_axis_label"] == "APC R660-A"
+    assert view["display_scene"]["view_range"] == ((1.0, 6.0), (0.5, 4.5))
   finally:
     window.close()
     window.deleteLater()

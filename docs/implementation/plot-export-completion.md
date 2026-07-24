@@ -401,6 +401,40 @@ The core adapters render the scene without importing Qt or capturing the GUI.
   scene, and gate geometry; no format reverts to opaque square scatter points.
 - The headless renderer remains deterministic and independent of PySide6.
 
+### Increment 8: Current viewport and Qt-equivalent axis presentation
+
+#### Observed failure
+
+Increment 7 still derives `current_view` bounds from all finite batch data and
+uses raw FCS channel names. Consequently the exported image can have a wider
+range and labels such as `FL1-A`/`FL3-A` while the live view shows
+`FITC B525-A`/`APC R660-A`. Raster Y labels are horizontal and tick labels use
+plain `1e3` rather than the GUI's `1 × 10³` display form.
+
+#### Work
+
+1. Persist the active plot widget's current transformed ViewBox bounds,
+   resolved visible X/Y label strings, tick policy, and resolved font request
+   in the active plot-view snapshot. These are display/export state only.
+2. For `current_view`, normalize batch data and gate geometry against the
+   persisted ViewBox bounds; retain `shared_ranges` as the explicit global
+   range mode. Do not calculate gates or statistics from clipped display data.
+3. Render tick labels using the same Unicode scientific notation as the Qt
+   widget and rotate the raster Y-axis label by 90 degrees. Use the persisted
+   presentation font sizes for title, axis, and ticks at the requested output
+   resolution.
+4. Test GUI snapshot persistence and CLI scene consumption for labels/ranges,
+   plus headless raster helpers for superscript ticks, vertical Y labels, and
+   font-size metadata.
+
+#### Acceptance
+
+- A `current_view` batch export has the same visible X/Y range and labels as
+  the saved GUI view, including when FCS raw names differ from display labels.
+- Log tick labels use `1 × 10ⁿ` formatting and raster Y labels are vertical.
+- Font requests in output sidecars equal the saved resolved presentation;
+  rendering remains Qt-independent and does not change scientific results.
+
 ## Non-goals
 
 - Report/layout editing belongs to Phase C2.

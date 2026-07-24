@@ -12,6 +12,7 @@ from flowdesk_core.models import (
 )
 from flowdesk_core.plot_export import (
   PlotExportError,
+  _display_tick_label,
   prepare_plot_export,
   write_plot_jpg,
   write_plot_pdf,
@@ -148,6 +149,11 @@ def test_png_export_scene_preserves_colored_titles_and_labeled_ticks(tmp_path) -
   assert metadata["scene"]["title_colors"] == ["#4c78a8", "#f8e45c"]
   assert metadata["scene"]["x_ticks"][0]["label"] == "1e3"
   assert path.stat().st_size > 1_000
+
+
+def test_export_tick_labels_use_gui_superscript_notation() -> None:
+  assert _display_tick_label("1e3") == "1 × 10³"
+  assert _display_tick_label("-1e-2") == "-1 × 10⁻²"
 
 
 def test_export_options_control_svg_elements_and_aspect(tmp_path) -> None:

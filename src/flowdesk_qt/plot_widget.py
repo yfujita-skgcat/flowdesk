@@ -316,6 +316,15 @@ class PlotWidget(QWidget):
         except Exception:
             return None
 
+    def axis_display_labels(self) -> tuple[str, str]:
+        """Return the resolved labels currently visible on the two plot axes."""
+        try:
+            bottom = str(self._plot_item.getAxis("bottom").labelText or self._x_label)
+            left = str(self._plot_item.getAxis("left").labelText or self._y_label)
+            return bottom, left
+        except Exception:
+            return self._x_label, self._y_label
+
     def axis_range_input_hint(self, axis: Literal["x", "y"]) -> str:
         """Describe the numeric coordinate system used by range entry."""
         transform = self._x_transform if axis == "x" else self._y_transform

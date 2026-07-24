@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import struct
 import zlib
 from dataclasses import asdict, dataclass
@@ -642,7 +643,7 @@ def _draw_raster_text(
       for tick in ticks:
         if not isinstance(tick, dict) or not tick.get("major", True):
           continue
-        label = str(tick.get("label", ""))
+        label = _display_tick_label(str(tick.get("label", "")))
         if not label:
           continue
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
@@ -661,14 +662,40 @@ def _draw_raster_text(
                    selected.x_axis_display_label or "", axis_font, (176, 199, 255, 255))
     label = selected.y_axis_display_label or ""
     if label:
-      bbox = draw.textbbox((0, 0), label, font=axis_font)
-      draw.text((8 * scale, top + plot_height // 2 - (bbox[3] - bbox[1]) // 2),
-                label, font=axis_font, fill=(176, 199, 255, 255))
+      _draw_vertical(
+        draw, 18 * scale, top + plot_height // 2, label, axis_font,
+        (176, 199, 255, 255),
+      )
 
 
 def _draw_centered(draw: Any, x: int, y: int, text: str, font: Any, fill: Any) -> None:
   bbox = draw.textbbox((0, 0), text, font=font)
   draw.text((x - (bbox[2] - bbox[0]) // 2, y), text, font=font, fill=fill)
+
+
+def _draw_vertical(draw: Any, x: int, y: int, text: str, font: Any, fill: Any) -> None:
+  """Draw one label rotated 90 degrees counterclockwise around its center."""
+  from PIL import Image, ImageDraw
+
+  bbox = draw.textbbox((0, 0), text, font=font)
+  text_width = bbox[2] - bbox[0]
+  text_height = bbox[3] - bbox[1]
+  label = Image.new("RGBA", (text_width + 4, text_height + 4), (0, 0, 0, 0))
+  ImageDraw.Draw(label).text((2, 2), text, font=font, fill=fill)
+  rotated = label.rotate(90, expand=True)
+  draw._image.alpha_composite(rotated, (x - rotated.width // 2, y - rotated.height // 2))
+
+
+def _display_tick_label(label: str) -> str:
+  """Match the GUI's compact scientific labels without importing Qt."""
+  match = re.fullmatch(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))e([+-]?\d+)", label.strip(), re.I)
+  if match is None:
+    return label
+  mantissa, exponent = match.groups()
+  superscript = str(int(exponent)).translate(str.maketrans(
+    "0123456789-+", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺"
+  ))
+  return f"{mantissa} × 10{superscript}"
 
 
 def _pdf_axes(left: int, top: int, width: int, plot_height: int, height: int) -> list[str]:
