@@ -1,5 +1,10 @@
 # flowdesk
 
+<p align="center">
+  <strong>English</strong> |
+  <a href="README.ja.md">日本語</a>
+</p>
+
 Flowdesk is an early-stage Python project for a Linux-first FlowJo-like flow cytometry analysis application.
 
 ## MVP Scope

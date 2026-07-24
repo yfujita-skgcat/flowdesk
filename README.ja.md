@@ -1,77 +1,85 @@
 # flowdesk
 
-Flowdeskは、FlowJoに似たフローサイトメトリー解析アプリケーションを目指す、開発初期段階のPythonプロジェクトです。Linuxを主対象としていますが、クロスプラットフォームでの動作を想定しています。
+<p align="center">
+  <a href="README.md">English</a> |
+  <strong>日本語</strong>
+</p>
 
-## MVPの範囲
+Flowdesk は、Linux-first の FlowJo 類似フローサイトメトリー解析アプリケーションを
+開発するための初期段階の Python プロジェクトです。
 
-- FCSサンプル、チャンネル、補償行列、派生パラメータ、変換、ゲート、母集団ツリー、エクスポート記録を表現します。
-- 科学計算をGUIから独立したコアモジュールで実行します。
-- プロジェクトをGUI、CLI、Python APIから実行できる`.flowdesk`ディレクトリバンドルとして保存します。
-- 初期ドキュメント、スキーマ、エージェント向けガイド、合成データのテストを提供します。
+## MVP の範囲
+
+- FCS sample、channel、compensation matrix、derived parameter、transform、gate、population tree、export recordを扱う。
+- 科学的な解析処理を GUI 非依存の core module に保持する。
+- project を `.flowdesk` directory bundle として保存し、GUI、CLI、Python API から実行する。
+- schema、実装ガイド、agent guidance、synthetic test を提供する。
 
 ## 対象外
 
-- 完全なFlowJo互換性
-- 完全なGatingML対応
-- 本番品質のGUI動作
-- 本番用FCSパーサーや大規模ファイルの描画
+- FlowJo 完全互換
+- GatingML 完全対応
+- production GUI の完成
+- production FCS parser と大規模ファイル描画
 
-## 想定技術スタック
+## クレジットとライセンス
 
-Python 3.11以降、NumPy、Polarsまたはpandas、FlowIOおよび/またはFlowKit、PySide6、pyqtgraph、Datashader、pytest、ruff、mypyを使用します。
+Copyright (c) 2026 Yoshihiko Fujita (`yfujita.skgcat@gmail.com`)。
 
-## 開発環境のセットアップ
+Flowdesk は BSD 3-Clause License で配布されます。完全な本文は [LICENSE](LICENSE) を
+参照してください。クレジットは `flowdesk --help`、`flowdesk --credits`、GUI の Help
+メニューからも確認できます。
+
+## 想定する技術スタック
+
+Python 3.11+、NumPy、FlowIO または FlowKit、PySide6、pyqtgraph、pytest、ruff、mypy など。
+
+## 開発環境
 
 ```bash
 direnv allow
-# まだ有効になっていない場合は仮想環境を有効化
 . .direnv/python-3.12.13/bin/activate
 python -m pip install -e '.[dev]'
 ```
 
-GUIテストを含む追加グループは次のようにインストールします。
+GUI と GUI test の依存も入れる場合:
 
 ```bash
 python -m pip install -e '.[gui,dev,gui-test]'
 ```
 
-## Windows/macOS向けデスクトップパッケージのビルド
+## Desktop package の build
 
-現在のFlowdeskは、PyInstallerのOSネイティブな`onedir`形式をビルドします。GUI用の`flowdesk`とヘッドレスCLI用の`flowdesk-cli`が`dist/`以下に生成されます。これは開発用・ポータブルなディレクトリ形式であり、Windowsインストーラーや署名・公証済みmacOS DMGはまだ生成しません。
+現在は PyInstaller の native `onedir` package を作成します。GUI (`flowdesk`) と
+headless CLI (`flowdesk-cli`) が `dist/` 以下に生成されます。Windows installer、
+署名済み macOS DMG、Linux AppImage はまだ提供していません。
 
-PyInstallerはクロスコンパイラーではありません。実行対象と同じOS・CPUアーキテクチャ上でビルドしてください。Python 3.11以降のクリーンな仮想環境を使用します（リポジトリの開発環境ではPython 3.12を使用）。ビルド環境にはGit、ネイティブwheelに必要なC/C++ツールチェーン、`build/`と`dist/`を作成できるディスク容量が必要です。macOSでは環境作成前にApple Command Line Toolsを`xcode-select --install`で導入してください。Windowsでは64-bit版の最新PythonとPowerShellまたはコマンドプロンプトを使用します。
-
-リポジトリのルートで、パッケージとビルド依存をインストールします。
+PyInstaller は cross-compiler ではありません。実行対象と同じ OS、CPU architecture
+で build してください。
 
 ```bash
 python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
-# Windows cmd.exe:    .venv\Scripts\activate.bat
-# macOS/Linux:        source .venv/bin/activate
+# macOS/Linux: source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[gui,dev]"
-```
-
-GUIとCLIの両方をビルドします。
-
-```bash
 python tools/package.py build
 ```
 
-macOSまたはLinuxでは、同じ処理を次でも実行できます。
+macOS/Linux では次も使用できます。
 
 ```bash
 make package
 ```
 
-Windowsでは、リポジトリのMakefileがPOSIXシェル向けのため、Pythonコマンドを直接実行します。成果物は次の場所に作られます。
+生成物:
 
 ```text
-dist/flowdesk/       GUIアプリケーション（flowdeskまたはflowdesk.exe）
-dist/flowdesk-cli/   ヘッドレスCLI（flowdesk-cliまたはflowdesk-cli.exe）
+dist/flowdesk/       GUI application (flowdesk または flowdesk.exe)
+dist/flowdesk-cli/   headless CLI (flowdesk-cli または flowdesk-cli.exe)
 ```
 
-ビルド後にパッケージのsmoke testを実行してください。Qtプラグインを含めてGUIが起動することを確認します。プロジェクトとFCSファイルを渡すと、パッケージ化されたCLIのパイプラインも実行します。
+package smoke test:
 
 ```bash
 python tools/package.py smoke
@@ -80,92 +88,94 @@ python tools/package.py smoke \
   --fcs path/to/sample.fcs
 ```
 
-レポートは既定で`artifacts/package-smoke/`に保存されます。ビルド来歴は次のように保存できます。
+test report は既定で `artifacts/package-smoke/` に保存されます。
 
 ```bash
 python tools/package.py manifest \
   --output artifacts/package-smoke/build-manifest.json
 ```
 
-macOSまたはLinuxでは`make package-check`でビルドとsmoke testを一括実行できます。配布前には対象OSのクリーンなマシンでテストしてください。特に、日本語や空白を含むパス、プロジェクトの保存・再読込、各種エクスポート、recovery・ログの保存先、GUIの母集団数とヘッドレス`PipelineRunner`の結果が一致することを確認します。
+build と smoke test を続けて行う場合:
 
-OS固有の署名やインストーラー作成は、現在のビルド入口には含まれません。
+```bash
+make package-check
+```
 
-- Windows: `dist/flowdesk/`をInno Setupなどで包むことはできますが、インストーラー設定はまだありません。
-- macOS: `onedir`成果物から`.app`を構成できますが、Developer ID署名、Hardened Runtime、公証、DMG作成は別のリリースワークフローが必要です。
-- Linux: AppImage生成はまだ含まれていません。
+各 OS の native runner で検証し、日本語や空白を含む path、project save/load、export、
+recovery、GUI と headless `PipelineRunner` の population count を確認してください。
+`build/`、`dist/`、package smoke artifact は commit しないでください。
 
-`build/`、`dist/`、パッケージsmoke testの成果物はコミットしないでください。対応OSごとにネイティブrunnerを使い、配布時にはmanifestに記録されたPython、PySide6、NumPy、FlowIOのバージョンを保管してください。
+GitHub Actions には Windows、Linux、macOS の native package workflow があります。
+現状は portable artifact であり、installer、AppImage、署名、notarization は別の release
+workflow が必要です。
 
-### GitHub ActionsでWindows版をビルドする
+patch version の更新:
 
-リポジトリには`.github/workflows/package-windows.yml`を用意しています。ネイティブな`windows-latest` runner上でGUIとCLIをビルドし、coreテストとパッケージsmoke testを実行し、ビルドmanifestを作成して、`Flowdesk-Windows-x64.zip`をActions artifactとしてアップロードします。
+```bash
+make upversion
+```
 
-GitHubの**Actions → Package Windows → Run workflow**から手動実行できます。また、`v0.1.0`のようなタグをpushした場合にも実行されます。生成されるのはポータブルZIPであり、インストーラーではありません。成果物はworkflow完了後の実行結果からダウンロードできます。パッケージは未署名のため、コード署名、SmartScreenの評価、Inno Setupインストーラーは今後のリリースworkflowで対応します。
-
-Linux用の`package-linux.yml`とmacOS用の`package-macos.yml`も用意しています。それぞれ`ubuntu-22.04`と`macos-14`上で実行し、`Flowdesk-Linux-x86_64.tar.gz`と`Flowdesk-macOS-arm64.zip`を別々のartifactとしてアップロードします。これらはPyInstallerのnativeディレクトリパッケージです。AppImage、macOSの`.app`/DMG、署名、公証はまだ対応していません。
-
-`pyproject.toml`に記載されたversionからタグを作成してpushするには、version変更を先にcommitしてから次を実行します。
+version source は `src/flowdesk_qt/_version.py` です。setuptools、GUI、CLI が同じ source
+を使用します。version を commit した後、tag を作成・pushする場合:
 
 ```bash
 make pushtag
 ```
 
-`v<project version>`形式のタグを作成してpushします。既存タグを上書きすることはありません。
-
-## テスト
+## Test
 
 ```bash
 pytest
 ```
 
-### Makefileの利用
+Makefile の主な target:
 
 ```bash
-make test        # 全テスト（pytest -v）
-make lint        # src/とtests/のruff
-make type-check  # core、storage、CLIのmypy
-make check       # lint + type-check
-make fmt         # src/とtests/のruff formatter
-make all         # fmt + check + test
-make clean       # ビルド成果物とキャッシュを削除
-make help        # 利用可能なターゲットを表示
+make test
+make lint
+make type-check
+make check
+make fmt
+make test-all
+make clean
+make help
 ```
 
-## CLIの利用
+## CLI の使い方
 
-パッケージを`pip install -e .`でインストールすると、`flowdesk`コマンドを利用できます。
+package を install すると `flowdesk` command が使用できます。
 
 ```bash
-# 保存済みプロジェクトを実行して結果を出力
+# 保存済み project を headless 実行して Results を出力
 flowdesk run path/to/project.flowdesk --output results.tsv
 
-# FCSファイルのメタデータを確認
+# FCS metadata を確認
 flowdesk inspect path/to/sample.fcs
 
-# 複数のFCSファイルへゲートを一括適用
-flowdesk batch-gate path/to/project.flowdesk --fcs file1.fcs file2.fcs
+# 複数 FCS に gate を適用
+flowdesk batch-gate path/to/project.flowdesk file1.fcs file2.fcs
+
+# クレジットと license を表示
+flowdesk --credits
 ```
 
-### エクスポート形式
+`flowdesk --help` の末尾にもクレジットが表示されます。
 
-CLIの`run`は既定で母集団統計をTSVとして出力します。`--csv`でCSVにできます。未定義の頻度などの`NaN`は`--nan-policy`で制御できます。
+## GUI の使い方
 
-- `string_nan`（既定）: 文字列`NaN`を書き込む
-- `empty`: セルを空にする
-- `zero`: `0`を書き込む
-
-## GUIの利用
-
-PySide6ベースのGUIはオプション依存です。
+GUI は optional dependency です。
 
 ```bash
 python -m pip install -e '.[gui,dev]'
+
+# data なしで起動
 python -m flowdesk_qt
+
+# directory の FCS を読み込んで起動
 python -m flowdesk_qt --data-dir data/
 ```
 
-GUIテストとデバッグは次のコマンドで実行します。
+GUI test と debug:
 
 ```bash
 ./tools/run-gui-tests.sh
@@ -174,38 +184,10 @@ make test-all
 ./tools/run-gui-debug.sh --data-dir data/
 ```
 
-GUIテストは既定でoffscreen Qt backendを使用します。X11固有の動作には`FLOWDESK_GUI_BACKEND=xvfb ./tools/run-gui-tests.sh`を使用します。通常起動時のログとdebug artifactはOS固有のユーザーアプリケーションデータ領域に保存され、`--debug-artifacts-dir`で明示的な保存先を指定できます。
+GUI の Help メニューには About と Credits があり、copyright、連絡先、年、BSD 3-Clause
+License を表示します。
 
-### 主なGUI操作
-
-派生パラメータは**Analysis → Derived Parameters**から作成します。定義ID、表示名、安定した出力チャンネルID、式、入力元ステージ（`raw`または`compensated`）、単位、失敗時ポリシーを指定し、**Validate**で検証、**Preview**で最大200イベントを診断できます。Previewは診断用であり、ゲート・統計・エクスポートは常に全イベントを使います。
-
-分析変換は**Analysis → Analysis Transforms**から作成します。`linear`、`log`、`asinh`、Gating-MLの`logicle`を選択できます。変換IDを参照するゲートは同じ変換をCLIとPython runnerでも使用します。ゲートが参照中の変換は直接変更・削除できないため、新しい変換IDを作成して**Migrate Transform**を使用します。非線形変換でのポリゴン移行は近似です。
-
-キーボードショートカットは次のとおりです。
-
-| ショートカット | 操作 |
-|---|---|
-| `Ctrl+O` | FCSを含むディレクトリを開く |
-| `Ctrl+Shift+O` | FCSファイルを指定して開く |
-| `Ctrl+R` | 解析パイプラインを実行 |
-| `Ctrl+G` | すべてのゲートをクリア |
-| `Ctrl+Q` | アプリケーションを終了 |
-
-### ゲートと母集団階層
-
-ゲートは親子の母集団階層として評価されます。表示用に間引いた点は母集団数に使用されません。
-
-1. サンプルを読み込み、X/Yチャンネルと軸スケールを選択します。
-2. **Gate Editor**で`rectangle`、`polygon`、`range`のいずれかを選び、親を`All Events`に設定します。
-3. **Create Gate**でゲートを作成し、`Ctrl+R`または**Run Pipeline**で実行します。
-4. 子ゲートは階層ツリーで親を選び、**Create Child Gate**から作成します。
-
-`boolean`ゲートでは既存の母集団を`and`、`or`、`not`で組み合わせます。`AND`はすべてのソースに存在するイベント、`OR`は少なくとも1つに存在するイベント、`NOT`は選択ソースに存在しないイベントです。Boolean結果も指定した親母集団に制限されます。親の変更は**Apply Parent**で検証され、自己参照・子孫参照・循環は拒否されます。
-
-従来の幾何ゲートは作成時の`linear`、`log10`、`asinh`軸を保存します。新しい分析変換は軸ごとの安定した変換IDを保存します。どちらも全解像度の値を同じ座標系へ変換してからゲートを評価するため、CLIとGUIで結果を再現できます。
-
-## アーキテクチャ
+## Architecture
 
 ```text
 raw FCS events
@@ -217,15 +199,19 @@ raw FCS events
   -> export
 ```
 
-- `flowdesk_core`: 科学計算ロジック（GUI非依存）
-- `flowdesk_storage`: `.flowdesk`ディレクトリの入出力
-- `flowdesk_cli`: `run`、`inspect`、`batch-gate`のCLI入口
-- `flowdesk_qt`: PySide6 GUI（オプション依存）
+- `flowdesk_core`: GUI 非依存の科学計算
+- `flowdesk_storage`: `.flowdesk` directory の project I/O
+- `flowdesk_cli`: `run`、`inspect`、`batch-gate` などの CLI entry point
+- `flowdesk_qt`: optional な PySide6 GUI
 
-## 現在の状態
+raw event data は不変として扱い、表示用 downsampling は gate count、frequency、statistics
+には使用しません。
 
-コアのデータクラス、パイプラインrunner、FCS入出力、補償、派生パラメータ、変換、ゲート、母集団統計、TSV/CSV出力、CLIコマンド、合成データテストを実装済みです。PySide6 GUIでは、サンプルブラウザー、scatter/histogram plot、階層ツリーとBooleanゲート編集、母集団フィルター、検証付き親変更、パイプライン実行を利用できます。
+## 現在の状況
 
-未実装なのは、完全なFlowJo互換性、完全なGatingML対応、本番品質のGUI動作、大規模FCS描画です。
+compensation、derived parameter、transform、gate、population statistics、TSV/CSV export、
+project save/load、GUI の sample browser、scatter/histogram、gate hierarchy、population
+filtering、pipeline 実行、analysis settings bundle を実装済みです。
 
-詳細なGUI操作、派生パラメータ、変換、ゲート階層、Booleanゲート、overlay設定については、英語版READMEの各節および`docs/user-manual/user_manual.md`を参照してください。
+未実装または限定的な項目は、FlowJo 完全互換、GatingML 完全対応、production GUI、
+大規模 FCS rendering、Release C の table/layout/template/interoperability 機能です。
