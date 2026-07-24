@@ -22,6 +22,7 @@ import json
 import logging
 import re
 from dataclasses import replace
+from html import escape
 from pathlib import Path
 from typing import Any, Literal
 
@@ -187,7 +188,13 @@ class PlotWidget(QWidget):
         """Return the current display style settings."""
         return self._style
 
-    def set_presentation(self, presentation: dict[str, Any] | None) -> None:
+    def set_presentation(
+        self,
+        presentation: dict[str, Any] | None,
+        *,
+        title_override: str | None = None,
+        title_colors: tuple[str, ...] | list[str] | None = None,
+    ) -> None:
         """Apply display-only presentation labels and basic appearance.
 
         This method consumes persisted presentation state only.  It never
@@ -199,7 +206,15 @@ class PlotWidget(QWidget):
                 presentation or {}, source_ids=()
             ).presentation.__dict__.items()
         }
-        title = str(value.get("title", ""))
+        title = str(value.get("title", "")) if title_override is None else title_override
+        title_lines = title.splitlines() or [title]
+        if title_colors and len(title_colors) >= len(title_lines):
+            title_markup = "<br/>".join(
+                f'<span style="color:{escape(str(color))}">{escape(line)}</span>'
+                for line, color in zip(title_lines, title_colors, strict=False)
+            )
+        else:
+            title_markup = escape(title).replace("\n", "<br/>")
         title_font = value.get("title_font", {})
         if isinstance(title_font, dict):
             family = str(title_font.get("family", "DejaVu Sans"))
@@ -210,11 +225,23 @@ class PlotWidget(QWidget):
             size = float(getattr(title_font, "size", 14.0))
             weight = str(getattr(title_font, "weight", "bold"))
         self._plot_item.setTitle(
-            title,
+            title_markup,
             family=family,
             size=f"{size:g}pt",
             bold=weight == "bold",
         )
+        title_qfont = QFont(family)
+        title_qfont.setPointSizeF(size)
+        title_qfont.setBold(weight == "bold")
+        title_height = max(
+            30,
+            QFontMetrics(title_qfont).height() * len(title_lines) + 8,
+        )
+        # pyqtgraph's PlotItem.setTitle() fixes this row to 30 px.  Increase
+        # it after setting the HTML title so every overlay-title line remains
+        # inside the plot layout rather than being clipped at the top.
+        self._plot_item.titleLabel.setMaximumHeight(title_height)
+        self._plot_item.layout.setRowFixedHeight(0, title_height)
         self._plot_item.setLabel(
             "bottom", str(value.get("x_axis_display_label") or self._x_label)
         )

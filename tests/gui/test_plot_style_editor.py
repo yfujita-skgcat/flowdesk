@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QLineEdit, QPushButton, QTabWidget
+from PySide6.QtWidgets import QComboBox, QLineEdit, QPushButton, QTabWidget
 
 from flowdesk_qt.plot_style_editor import PlotStyleEditorDialog
 
@@ -24,6 +24,9 @@ def test_style_editor_round_trips_plot_and_source_presentation(qapp) -> None:
   )
   try:
     dialog._title_edit.setText("After")
+    dialog._title_mode_combo.setCurrentIndex(
+      dialog._title_mode_combo.findData("overlay_sample_titles")
+    )
     dialog._subtitle_edit.setText("annotation")
     dialog._x_label_edit.setText("Publication CD3")
     dialog._legend_position_combo.setCurrentText("bottom")
@@ -35,6 +38,7 @@ def test_style_editor_round_trips_plot_and_source_presentation(qapp) -> None:
 
     result = dialog.presentation()
     assert result["title"] == "After"
+    assert result["title_mode"] == "overlay_sample_titles"
     assert result["subtitle"] == "annotation"
     assert result["x_axis_display_label"] == "Publication CD3"
     assert result["legend_visible"] is False
@@ -116,6 +120,7 @@ def test_style_editor_uses_compact_pages_for_small_monitors(qapp) -> None:
     assert dialog.width() <= 560
     assert dialog.height() <= 520
     assert pages is not None
+    assert dialog.findChild(QComboBox, "plotTitleModeCombo") is not None
     assert pages.count() == 3
     assert [pages.tabText(i) for i in range(pages.count())] == [
       "General", "Sources", "Fonts"

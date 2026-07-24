@@ -41,6 +41,8 @@ from flowdesk_core.file_fingerprint import (
 from flowdesk_core.models import ChannelSpec
 from flowdesk_qt.diagnostics import invoke_callback
 
+DEFAULT_OVERLAY_SAMPLE_COLOR = "#4c78a8"
+
 # ---------------------------------------------------------------------------
 # Per-sample metadata model (GUI-side only, no scientific logic)
 # ---------------------------------------------------------------------------
@@ -148,6 +150,13 @@ class SampleBrowser(QWidget):
     def samples(self) -> list[_SampleInfo]:
         """Return all samples currently included in the session."""
         return list(self._samples)
+
+    def overlay_color(self, sample_id: str) -> str:
+        """Return the color used for a sample's overlay row and dots."""
+        explicit = self._manual_overlay_colors.get(sample_id)
+        if explicit:
+            return explicit
+        return DEFAULT_OVERLAY_SAMPLE_COLOR
 
     def set_display_names(self, names: dict[str, str]) -> None:
         """Apply display-only sample titles while retaining immutable sample names."""
@@ -503,7 +512,7 @@ class SampleBrowser(QWidget):
             swatch.setToolTip("Choose overlay source color")
             swatch.setFixedWidth(24)
             self._set_swatch_style(
-                swatch, self._manual_overlay_colors.get(sample.id, "#4c78a8")
+                swatch, self.overlay_color(sample.id)
             )
             swatch.clicked.connect(
                 lambda _checked=False, sample_id=sample.id:
@@ -713,7 +722,7 @@ class SampleBrowser(QWidget):
 
     def _choose_overlay_color(self, sample_id: str) -> None:
         color = QColorDialog.getColor(
-            QColor(self._manual_overlay_colors.get(sample_id, "#4c78a8")),
+            QColor(self.overlay_color(sample_id)),
             self,
             "Overlay Color",
         )

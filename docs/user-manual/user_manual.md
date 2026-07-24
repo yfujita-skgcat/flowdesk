@@ -241,7 +241,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |列|control|説明|
 |---|---|---|
 |Ov|checkbox|その sample を manual overlay として追加・削除する。active sample 自身は overlay にできず disabled。|
-|Col|color button|overlay color を QColorDialog で選ぶ。active sample の base layer 色には使わない。右クリックの `Clear Overlay Color` で明示色を削除し、自動色へ戻せる。|
+|Col|color button|overlay color を QColorDialog で選ぶ。active sample の base layer 色には使わない。右クリックの `Clear Overlay Color` で明示色を削除し、共通の既定色（`#4c78a8`）へ戻せる。|
 |Name|sample row selection|クリックすると active sample になる。先頭記号は channel/file status。|
 |Rel|表示ラベル|`active`、manual、reference、positive_control 等の relation/status。ラベル自体はクリック操作を持たない。|
 
@@ -263,7 +263,7 @@ status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel
 |Set Overlay Role → Negative control|常時|overlay role を `negative_control` にする。|
 |Set Overlay Role → Reference|常時|overlay role を `reference` にする。|
 |Clear Overlay Role|常時|明示 role を削除する。|
-|Clear Overlay Color|明示 overlay color がある sample|明示した manual overlay color だけを削除し、自動色/fallbackへ戻す。overlay選択状態とcomparison roleは変更しない。|
+|Clear Overlay Color|明示 overlay color がある sample|明示した manual overlay color だけを削除し、共通の既定色（`#4c78a8`）へ戻す。overlay選択状態とcomparison roleは変更しない。|
 
 ### 7.4 下部 buttons
 
@@ -792,6 +792,7 @@ Analysis → Use Multiple Analysis Groups をオンにすると Gating tab 下�
 |control|説明|
 |---|---|
 |Title|plot title。current sample title と連動する場合がある。|
+|Title mode|既定値は `Overlay sample titles (one per line)`。アクティブサンプルと表示中のオーバーレイサンプルのタイトルを表示順に改行連結する。`Current sample title` を選ぶとアクティブサンプルだけを表示する。|
 |Subtitle/annotation|subtitle。|
 |X axis display label / Y axis display label|parameter ID を変えず、表示 label だけ変更。|
 |Show legend|legend visibility。|

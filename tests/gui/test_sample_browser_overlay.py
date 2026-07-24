@@ -25,3 +25,13 @@ def test_clear_overlay_color_removes_only_manual_color(qapp) -> None:
   browser.close()
   browser.deleteLater()
   qapp.processEvents()
+
+
+def test_default_overlay_color_is_available_for_sample_row(qapp) -> None:
+  browser = SampleBrowser()
+  try:
+    assert browser.overlay_color("unknown") == "#4c78a8"
+  finally:
+    browser.close()
+    browser.deleteLater()
+    qapp.processEvents()

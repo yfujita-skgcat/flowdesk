@@ -201,6 +201,20 @@ explicitly specified and diagnosed.
 
 ## Plot presentation model
 
+### Overlay title mode
+
+The persisted `PlotPresentationSpec.title_mode` controls only title rendering:
+
+- `overlay_sample_titles` (default) displays the active sample followed by visible
+  overlay sample titles, joined with newline characters.
+- `current_sample` displays only the active sample title.
+
+The joined title is resolved at display time from the current sample annotations
+and overlay state. It is not copied into the project presentation, so moving or
+reconnecting FCS files does not create stale title data. The same display-only
+resolution is used when the GUI applies the presentation; it does not change
+pipeline inputs, gate membership, statistics, or result records.
+
 Replace ad hoc unvalidated style usage with typed or strictly validated presentation
 definitions. Analysis/view identity and presentation should be separate types even when
 serialized together.

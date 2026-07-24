@@ -70,6 +70,7 @@ from flowdesk_core.plot_presentation import (
     SamplePresentationContext,
     resolve_overlay_sources,
     resolve_presentation_layers,
+    resolve_presentation_title,
 )
 from flowdesk_core.preview import (
     PreviewReport,
@@ -1762,6 +1763,12 @@ class MainWindow(QMainWindow):
                 display_mask,
                 report=processed.preview_report,
             )
+            if event_colors is None:
+                event_colors = np.full(
+                    int(display_mask.sum()),
+                    self._sample_overlay_color(self._current_sample_id),
+                    dtype="<U7",
+                )
 
             # For marginal histograms, use unfiltered data (or population-filtered if preferred).
             # Use the same filtered data for marginal histograms.
@@ -1802,9 +1809,13 @@ class MainWindow(QMainWindow):
         presentation = {} if view is None else deepcopy(
             view.get("presentation", {})
         )
-        if self._current_sample_id is not None:
-            presentation["title"] = self._current_sample_title()
-        self._plot_widget.set_presentation(presentation)
+        self._plot_widget.set_presentation(
+            presentation,
+            title_override=resolve_presentation_title(
+                presentation, self._current_plot_sample_titles()
+            ),
+            title_colors=self._current_plot_sample_title_colors(presentation),
+        )
         if self._results_stale and not self._old_membership_banner:
             self._refresh_override_statuses()
 
@@ -2063,10 +2074,10 @@ class MainWindow(QMainWindow):
                     y_values,
                     {
                         "color": (
-                            style.get("color")
-                            or state.get("manual_overlay_colors", {}).get(sample_id)
+                            state.get("manual_overlay_colors", {}).get(sample_id)
+                            or style.get("color")
                             or role_color
-                            or self._plot_widget.style().dot_color
+                            or self._sample_overlay_color(sample_id)
                         ),
                         "alpha": float(style.get("alpha", 0.65)),
                         "label": style.get("legend_label", source.get("display_name", sample_id)),
@@ -2076,6 +2087,10 @@ class MainWindow(QMainWindow):
         self._plot_widget.plot_overlay_layers(layers)
         if diagnostics:
             self._plot_widget.set_status_banner("Overlay warning: " + "; ".join(diagnostics))
+
+    def _sample_overlay_color(self, sample_id: str | None) -> str:
+        """Return a stable fallback color for one sample's display layer."""
+        return self._sample_browser.overlay_color(sample_id or "")
 
     def _population_event_colors(
         self,
@@ -3366,6 +3381,107 @@ class MainWindow(QMainWindow):
             sample.id, sample.name, sample.path, annotations
         )
 
+    def _current_plot_sample_titles(self) -> tuple[str, ...]:
+        """Return active and overlay sample titles in visible display order."""
+        sample_ids = self._current_plot_sample_ids()
+        titles_by_id = {
+            sample.id: self._sample_title_for(sample.id)
+            for sample in self._sample_browser.samples()
+        }
+        return tuple(
+            titles_by_id[sample_id]
+            for sample_id in sample_ids
+            if sample_id in titles_by_id
+        )
+
+    def _sample_title_for(self, sample_id: str) -> str:
+        """Resolve a display title for any loaded sample without changing identity."""
+        from flowdesk_core.annotations import resolve_sample_title
+
+        sample = next(
+            (item for item in self._sample_browser.samples() if item.id == sample_id),
+            None,
+        )
+        if sample is None:
+            return sample_id
+        annotations = [
+            AnnotationSpec(
+                sample_id=str(value["sample_id"]), keyword=str(value["keyword"]),
+                value=value.get("value"), source=value["source"],
+            )
+            for value in self._annotations
+        ]
+        return resolve_sample_title(sample.id, sample.name, sample.path, annotations)
+
+    def _current_plot_sample_title_colors(
+        self, presentation: dict[str, Any]
+    ) -> tuple[str, ...] | None:
+        """Return title-line colors using the same precedence as overlay dots."""
+        if presentation.get("title_mode", "overlay_sample_titles") != "overlay_sample_titles":
+            return None
+        state = self._sample_browser.overlay_state()
+        view = next(
+            (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+            None,
+        )
+        sources = [
+            dict(source) for source in (view or {}).get("overlay_sources", [])
+            if source.get("visible", True)
+        ]
+        source_by_sample: dict[str, dict[str, Any]] = {}
+        for source in sorted(
+            sources,
+            key=lambda item: (int(item.get("order", 0)), str(item.get("source_id", ""))),
+        ):
+            source_by_sample.setdefault(str(source.get("sample_id", "")), source)
+        colors: list[str] = []
+        for sample in self._current_plot_sample_ids():
+            if sample == self._current_sample_id:
+                colors.append(self._sample_overlay_color(sample))
+                continue
+            source = source_by_sample.get(sample, {})
+            style = dict(source.get("style") or {})
+            role_color = None
+            for comparison in state.get("comparison_sets", []):
+                for member in comparison.get("members", []):
+                    if member.get("sample_id") == sample:
+                        role_color = state.get("comparison_role_colors", {}).get(member.get("role"))
+            colors.append(
+                str(
+                    state.get("manual_overlay_colors", {}).get(sample)
+                    or style.get("color")
+                    or role_color
+                    or self._sample_overlay_color(sample)
+                )
+            )
+        return tuple(colors)
+
+    def _current_plot_sample_ids(self) -> tuple[str, ...]:
+        """Return active and overlay sample IDs in visible display order."""
+        if self._current_sample_id is None:
+            return ()
+        state = self._sample_browser.overlay_state()
+        view = next(
+            (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
+            None,
+        )
+        sample_ids: list[str] = [self._current_sample_id]
+        for source in sorted(
+            (view or {}).get("overlay_sources", []),
+            key=lambda item: (int(item.get("order", 0)), str(item.get("source_id", ""))),
+        ):
+            sample_id = str(source.get("sample_id", ""))
+            if sample_id and sample_id not in sample_ids and source.get("visible", True):
+                sample_ids.append(sample_id)
+        selected = set(state.get("manual_overlay_sample_ids", []))
+        selected.update(
+            self._sample_browser.comparison_overlay_sample_ids(self._current_sample_id)
+        )
+        for sample in self._sample_browser.samples():
+            if sample.id in selected and sample.id not in sample_ids:
+                sample_ids.append(sample.id)
+        return tuple(sample_ids)
+
     def _set_current_sample_title(self, title: str) -> None:
         """Store a Plot Appearance title as the active sample's workspace title."""
         from flowdesk_core.annotations import set_sample_title
@@ -4412,6 +4528,10 @@ class MainWindow(QMainWindow):
         resolved = resolve_presentation_layers(
             view.get("presentation", {}), source_ids=source_ids
         )
+        resolved_presentation = asdict(resolved.presentation)
+        resolved_presentation["title"] = resolve_presentation_title(
+            resolved.presentation, self._current_plot_sample_titles()
+        )
         return {
             "plot_id": view.get("id"),
             "definition_version": 1,
@@ -4430,7 +4550,7 @@ class MainWindow(QMainWindow):
                 }
                 for source in visible
             ],
-            "presentation": asdict(resolved.presentation),
+            "presentation": resolved_presentation,
             "style_provenance": dict(resolved.provenance),
             "integrated_overlay": self._sample_browser.overlay_state(),
             "integrated_style_provenance": self._integrated_style_provenance(),

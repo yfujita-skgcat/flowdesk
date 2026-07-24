@@ -141,7 +141,7 @@ def validate_presentation(
 
 def _presentation_fields() -> tuple[str, ...]:
   return (
-    "title", "subtitle", "x_axis_display_label", "y_axis_display_label",
+    "title", "title_mode", "subtitle", "x_axis_display_label", "y_axis_display_label",
     "background_color", "legend_visible", "legend_position", "legend_source_ids",
     "title_font", "axis_label_font", "tick_font", "legend_font",
     "gate_outline_color", "gate_outline_width", "gate_outline_style", "axis_line_width",
@@ -179,6 +179,30 @@ def _typed_presentation(value: Mapping[str, object]) -> PlotPresentationSpec:
       "source_styles": tuple(source_styles),
   }
   return PlotPresentationSpec(**presentation_values)
+
+
+def resolve_presentation_title(
+  presentation: Mapping[str, object] | PlotPresentationSpec,
+  sample_titles: tuple[str, ...] | list[str] = (),
+) -> str:
+  """Resolve the display title from persisted mode and visible sample titles.
+
+  Sample titles are runtime display metadata and are therefore not copied into
+  the persisted presentation.  The first title is the active sample title;
+  subsequent titles are overlay sources in their display order.
+  """
+  if isinstance(presentation, PlotPresentationSpec):
+    title_mode: str = presentation.title_mode
+    fallback = presentation.title
+  else:
+    title_mode = str(presentation.get("title_mode", "overlay_sample_titles"))
+    fallback = str(presentation.get("title", ""))
+  titles = tuple(str(title).strip() for title in sample_titles if str(title).strip())
+  if title_mode == "overlay_sample_titles" and titles:
+    return "\n".join(titles)
+  if title_mode == "current_sample" and titles:
+    return titles[0]
+  return fallback
 
 
 def resolve_presentation_layers(

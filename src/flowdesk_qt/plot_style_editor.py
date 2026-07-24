@@ -75,6 +75,7 @@ class PlotStyleEditorDialog(QDialog):
     result = deepcopy(self._presentation)
     result.update({
       "title": self._title_edit.text(),
+      "title_mode": self._title_mode_combo.currentData(),
       "subtitle": self._subtitle_edit.text(),
       "x_axis_display_label": self._x_label_edit.text() or None,
       "y_axis_display_label": self._y_label_edit.text() or None,
@@ -134,6 +135,11 @@ class PlotStyleEditorDialog(QDialog):
     self._title_edit = QLineEdit()
     self._title_edit.setObjectName("plotTitleEdit")
     form.addRow("Title:", self._title_edit)
+    self._title_mode_combo = QComboBox()
+    self._title_mode_combo.setObjectName("plotTitleModeCombo")
+    self._title_mode_combo.addItem("Current sample title", "current_sample")
+    self._title_mode_combo.addItem("Overlay sample titles (one per line)", "overlay_sample_titles")
+    form.addRow("Title mode:", self._title_mode_combo)
     self._subtitle_edit = QLineEdit()
     self._subtitle_edit.setObjectName("plotSubtitleEdit")
     form.addRow("Subtitle/annotation:", self._subtitle_edit)
@@ -407,6 +413,10 @@ class PlotStyleEditorDialog(QDialog):
     self._building = True
     try:
       self._title_edit.setText(str(self._presentation.get("title", "")))
+      self._set_data(
+        self._title_mode_combo,
+        self._presentation.get("title_mode", "overlay_sample_titles"),
+      )
       self._subtitle_edit.setText(str(self._presentation.get("subtitle", "")))
       self._x_label_edit.setText(str(self._presentation.get("x_axis_display_label") or ""))
       self._y_label_edit.setText(str(self._presentation.get("y_axis_display_label") or ""))
@@ -593,6 +603,7 @@ class PlotStyleEditorDialog(QDialog):
     result = self.presentation()
     return PlotPresentationSpec(
       title=str(result["title"]), subtitle=str(result["subtitle"]),
+      title_mode=str(result["title_mode"]),
       x_axis_display_label=result["x_axis_display_label"],
       y_axis_display_label=result["y_axis_display_label"],
       background_color=str(result["background_color"]),

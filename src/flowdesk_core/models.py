@@ -33,6 +33,7 @@ OverlayNormalization = Literal["count", "mode", "unit_area"]
 MarkerShape = Literal["circle", "square", "triangle", "cross", "plus"]
 LineStyle = Literal["solid", "dashed", "dotted", "dashdot"]
 LegendPosition = Literal["right", "left", "top", "bottom", "inside"]
+PlotTitleMode = Literal["current_sample", "overlay_sample_titles"]
 FitStatus = Literal["success", "failed"]
 ManualOverridePolicy = Literal["preserve_until_reset", "refit_on_input_change"]
 CompensationSource = Literal["fcs_metadata_spillover", "user_defined", "imported", "calculated"]
@@ -967,6 +968,7 @@ class PlotPresentationSpec:
   """Persisted, display-only presentation independent of analysis identity."""
 
   title: str = ""
+  title_mode: PlotTitleMode = "overlay_sample_titles"
   subtitle: str = ""
   x_axis_display_label: str | None = None
   y_axis_display_label: str | None = None
@@ -987,6 +989,8 @@ class PlotPresentationSpec:
   source_styles: tuple[SourceStyleSpec, ...] = ()
 
   def __post_init__(self) -> None:
+    if self.title_mode not in {"current_sample", "overlay_sample_titles"}:
+      raise ValueError(f"invalid plot title mode: {self.title_mode!r}")
     if self.legend_position not in {"right", "left", "top", "bottom", "inside"}:
       raise ValueError(f"invalid legend position: {self.legend_position!r}")
     if not math.isfinite(self.gate_outline_width) or not 0.1 <= self.gate_outline_width <= 100:

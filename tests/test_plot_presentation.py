@@ -17,6 +17,7 @@ from flowdesk_core.plot_presentation import (
   PresentationValidationError,
   SamplePresentationContext,
   resolve_overlay_sources,
+  resolve_presentation_title,
   validate_presentation,
 )
 from flowdesk_storage.manifest import validate_manifest
@@ -106,6 +107,15 @@ def test_presentation_labels_are_independent_from_analysis_identity() -> None:
 
 def test_plot_presentation_defaults_to_black_background() -> None:
   assert PlotPresentationSpec().background_color == "#000000"
+  assert PlotPresentationSpec().title_mode == "overlay_sample_titles"
+
+
+def test_overlay_title_mode_joins_runtime_sample_titles_without_persisting_them() -> None:
+  presentation = PlotPresentationSpec(title_mode="overlay_sample_titles")
+
+  assert resolve_presentation_title(presentation, ("a", "b")) == "a\nb"
+  assert resolve_presentation_title(presentation, ()) == ""
+  assert asdict(presentation)["title"] == ""
 
 
 def test_unsupported_style_is_rejected_by_shared_validator() -> None:

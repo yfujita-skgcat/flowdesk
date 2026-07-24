@@ -1127,6 +1127,16 @@ def test_plot_widget_formats_exponent_ticks_and_applies_readable_tick_style() ->
     assert widget.style().tick_font_size == 16
     assert widget.style().tick_font_weight == "bold"
     assert widget.style().axis_line_width == 3.0
+    widget.set_presentation({"title": "A\nB"})
+    assert widget._plot_item.titleLabel.text == "A<br/>B"
+    widget.set_presentation(
+      {"title": "A\nB"}, title_colors=("#0000ff", "#ffff00")
+    )
+    assert widget._plot_item.titleLabel.text == (
+      '<span style="color:#0000ff">A</span><br/>'
+      '<span style="color:#ffff00">B</span>'
+    )
+    assert widget._plot_item.titleLabel.maximumHeight() > 30
   finally:
     widget.close()
     widget.deleteLater()
@@ -1615,6 +1625,10 @@ def test_manual_overlay_loads_checked_sample_and_uses_its_color(tmp_path: Path) 
     assert len(window._plot_widget._overlay_scatter_items) == 1
     brush = window._plot_widget._overlay_scatter_items[0].scatter.opts["brush"]
     assert brush.color().name() == "#ff0000"
+    window._sample_browser._clear_overlay_color(overlay.id)
+    app.processEvents()
+    brush = window._plot_widget._overlay_scatter_items[0].scatter.opts["brush"]
+    assert brush.color().name() == "#4c78a8"
   finally:
     window.close()
     window.deleteLater()
