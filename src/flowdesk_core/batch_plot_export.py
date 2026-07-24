@@ -17,6 +17,14 @@ class BatchPlotExportError(ValueError):
   """Raised when a batch definition cannot be executed safely."""
 
 
+@dataclass(frozen=True)
+class WellResolution:
+  """A normalized well identifier and how it was obtained."""
+
+  value: str | None
+  source: str | None
+
+
 def batch_plot_export_spec_from_mapping(value: Mapping[str, Any]) -> BatchPlotExportSpec:
   """Parse persisted JSON while normalizing list fields to typed tuples."""
   data = dict(value)
@@ -32,6 +40,9 @@ class BatchPlotExportItem:
   output_paths: tuple[str, ...]
   status: str = "planned"
   diagnostic: str | None = None
+  source_sample_ids: tuple[str, ...] = ()
+  well_ids: tuple[str, ...] = ()
+  well_sources: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -49,6 +60,7 @@ def plan_batch_plot_export(
   *,
   group_members: Mapping[str, Sequence[str]] | None = None,
   annotations: Sequence[Any] = (),
+  overlay_sample_ids: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[BatchPlotExportItem, ...]:
   """Resolve targets and deterministic filenames without reading events."""
   sample_by_id = {str(sample.get("id", "")): sample for sample in samples}
@@ -75,7 +87,21 @@ def plan_batch_plot_export(
       str(sample.get("path", "")),
       typed_annotations,
     )
-    stem = _filename_stem(spec, sample, sample_id, title, index)
+    source_ids = _source_ids(sample_id, overlay_sample_ids)
+    unknown_sources = [source_id for source_id in source_ids if source_id not in sample_by_id]
+    if unknown_sources:
+      raise BatchPlotExportError(
+        f"overlay references unknown samples: {unknown_sources!r}"
+      )
+    source_samples = [sample_by_id[source_id] for source_id in source_ids]
+    wells = tuple(
+      resolution for source_sample in source_samples
+      if (resolution := resolve_sample_well(source_sample)).value is not None
+    )
+    stem = _filename_stem(
+      spec, sample, sample_id, title, index,
+      source_sample_ids=source_ids, well_resolutions=wells,
+    )
     paths: list[str] = []
     diagnostic: str | None = None
     for fmt in spec.formats:
@@ -89,7 +115,9 @@ def plan_batch_plot_export(
       used.add(path)
       paths.append(str(path))
     items.append(BatchPlotExportItem(
-      sample_id, title, tuple(paths), "failed" if diagnostic else "planned", diagnostic
+      sample_id, title, tuple(paths), "failed" if diagnostic else "planned", diagnostic,
+      source_ids, tuple(item.value for item in wells),
+      tuple(item.source for item in wells if item.source),
     ))
   return tuple(items)
 
@@ -102,10 +130,12 @@ def run_batch_plot_export(
   *,
   group_members: Mapping[str, Sequence[str]] | None = None,
   annotations: Sequence[Any] = (),
+  overlay_sample_ids: Mapping[str, Sequence[str]] | None = None,
 ) -> BatchPlotExportReport:
   """Render each planned sample and persist per-file provenance plus a manifest."""
   items = plan_batch_plot_export(
-    spec, samples, output_dir, group_members=group_members, annotations=annotations
+    spec, samples, output_dir, group_members=group_members, annotations=annotations,
+    overlay_sample_ids=overlay_sample_ids,
   )
   output_root = Path(output_dir)
   output_root.mkdir(parents=True, exist_ok=True)
@@ -131,6 +161,10 @@ def run_batch_plot_export(
           "export_id": spec.id,
           "sample_id": item.sample_id,
           "sample_title": item.sample_title,
+          "source_sample_ids": item.source_sample_ids,
+          "well_ids": item.well_ids,
+          "well_sources": item.well_sources,
+          "export_options": asdict(spec),
           "plot_view_id": spec.plot_view_id,
           "output": str(path),
         }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -139,6 +173,7 @@ def run_batch_plot_export(
     completed.append(BatchPlotExportItem(
       item.sample_id, item.sample_title, tuple(paths),
       "success" if diagnostic is None else "failed", diagnostic,
+      item.source_sample_ids, item.well_ids, item.well_sources,
     ))
   failures = [item for item in completed if item.status == "failed"]
   if failures and len(failures) == len(completed):
@@ -150,6 +185,7 @@ def run_batch_plot_export(
   manifest = output_root / f"{_safe_slug(spec.id)}.batch.json"
   manifest.write_text(json.dumps({
     "export_id": spec.id,
+    "export_options": asdict(spec),
     "status": status,
     "items": [asdict(item) for item in completed],
   }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -162,6 +198,9 @@ def _filename_stem(
   sample_id: str,
   title: str,
   index: int,
+  *,
+  source_sample_ids: Sequence[str] = (),
+  well_resolutions: Sequence[WellResolution] = (),
 ) -> str:
   values = {
     "sample_id": sample_id,
@@ -174,7 +213,58 @@ def _filename_stem(
     rendered = spec.filename_template.format(**values)
   except (KeyError, ValueError) as exc:
     raise BatchPlotExportError(f"invalid filename template: {exc}") from exc
-  return _safe_slug(rendered) or _safe_slug(f"{title}_{sample_id}")
+  rendered = _safe_slug(rendered) or _safe_slug(f"{title}_{sample_id}")
+  well_ids = tuple(dict.fromkeys(item.value for item in well_resolutions if item.value))
+  if well_ids:
+    return _safe_slug("_".join((*well_ids, rendered)))
+  if len(source_sample_ids) > 1:
+    return _safe_slug("_".join((*source_sample_ids, rendered)))
+  return rendered
+
+
+def resolve_sample_well(sample: Mapping[str, Any]) -> WellResolution:
+  """Resolve a stable well ID without depending on the host operating system."""
+  for key in ("well", "well_id"):
+    resolved = _normalize_well(sample.get(key))
+    if resolved:
+      return WellResolution(resolved, f"sample.{key}")
+  metadata = sample.get("metadata")
+  if isinstance(metadata, Mapping):
+    for key in ("well", "well_id"):
+      resolved = _normalize_well(metadata.get(key))
+      if resolved:
+        return WellResolution(resolved, f"metadata.{key}")
+  path = str(sample.get("path", ""))
+  filename = path.replace("\\", "/").rsplit("/", 1)[-1]
+  tokens = tuple(dict.fromkeys(
+    _normalize_well(match) for match in _WELL_TOKEN_RE.findall(filename)
+  ))
+  tokens = tuple(token for token in tokens if token)
+  if len(tokens) == 1:
+    return WellResolution(tokens[0], "filename_token")
+  if len(tokens) > 1:
+    return WellResolution(None, "ambiguous_filename_tokens")
+  return WellResolution(None, None)
+
+
+_WELL_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])([A-Pa-p](?:0?[1-9]|[1-9][0-9]))(?![A-Za-z0-9])")
+
+
+def _normalize_well(value: Any) -> str | None:
+  if not isinstance(value, str):
+    return None
+  match = re.fullmatch(r"([A-Pa-p]{1,3})0*([1-9][0-9]{0,2})", value.strip())
+  if not match:
+    return None
+  return f"{match.group(1).upper()}{int(match.group(2))}"
+
+
+def _source_ids(
+  sample_id: str,
+  overlay_sample_ids: Mapping[str, Sequence[str]] | None,
+) -> tuple[str, ...]:
+  values = (sample_id, *((overlay_sample_ids or {}).get(sample_id, ())))
+  return tuple(dict.fromkeys(str(value) for value in values))
 
 
 def _safe_slug(value: str) -> str:

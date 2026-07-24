@@ -122,10 +122,19 @@
         "group_id": { "type": ["string", "null"] },
         "plot_view_id": { "type": "string", "minLength": 1 },
         "formats": {
-          "type": "array", "items": { "enum": ["svg", "png", "pdf"] }, "minItems": 1
+          "type": "array", "items": { "enum": ["svg", "png", "jpg", "pdf"] }, "minItems": 1
         },
         "width": { "type": "integer", "minimum": 1 },
         "height": { "type": "integer", "minimum": 1 },
+        "dpi": { "type": "integer", "minimum": 1 },
+        "aspect_1_to_1": { "type": "boolean" },
+        "layout_policy": { "enum": ["current_view", "shared_ranges"] },
+        "include_title": { "type": "boolean" },
+        "include_axis_labels": { "type": "boolean" },
+        "include_ticks": { "type": "boolean" },
+        "include_gates": { "type": "boolean" },
+        "include_legend": { "type": "boolean" },
+        "include_status_banner": { "type": "boolean" },
         "filename_template": { "type": "string", "minLength": 1 },
         "collision_policy": { "enum": ["fail", "replace", "suffix"] },
         "strict": { "type": "boolean" }

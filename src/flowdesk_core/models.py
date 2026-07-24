@@ -22,8 +22,9 @@ TetheredGateAlgorithm = Literal["translated_rectangle"]
 CloneConflictPolicy = Literal["leader_wins", "reject_conflict"]
 PlotType = Literal["dot", "scatter", "pseudocolor", "density", "contour", "histogram", "cdf"]
 BatchPlotTarget = Literal["all", "explicit", "group"]
-BatchPlotFormat = Literal["svg", "png", "pdf"]
+BatchPlotFormat = Literal["svg", "png", "jpg", "pdf"]
 BatchPlotCollisionPolicy = Literal["fail", "replace", "suffix"]
+BatchPlotLayoutPolicy = Literal["current_view", "shared_ranges"]
 InteractionMode = Literal["pan", "select", "gate"]
 OverlayMode = Literal["manual_only", "manual_plus_comparison", "comparison_only"]
 ComparisonRole = Literal[
@@ -113,6 +114,15 @@ class BatchPlotExportSpec:
   formats: tuple[BatchPlotFormat, ...] = ("png",)
   width: int = 800
   height: int = 600
+  dpi: int = 96
+  aspect_1_to_1: bool = False
+  layout_policy: BatchPlotLayoutPolicy = "current_view"
+  include_title: bool = True
+  include_axis_labels: bool = True
+  include_ticks: bool = True
+  include_gates: bool = True
+  include_legend: bool = True
+  include_status_banner: bool = False
   filename_template: str = "{sample_title}_{sample_id}_{plot_id}"
   collision_policy: BatchPlotCollisionPolicy = "fail"
   strict: bool = True
@@ -126,10 +136,14 @@ class BatchPlotExportSpec:
       raise ValueError("explicit batch plot target requires sample_ids")
     if self.target == "group" and not self.group_id:
       raise ValueError("group batch plot target requires group_id")
-    if not self.formats or any(value not in {"svg", "png", "pdf"} for value in self.formats):
-      raise ValueError("batch plot formats must contain svg, png, or pdf")
+    if not self.formats or any(value not in {"svg", "png", "jpg", "pdf"} for value in self.formats):
+      raise ValueError("batch plot formats must contain svg, png, jpg, or pdf")
     if self.width <= 0 or self.height <= 0:
       raise ValueError("batch plot dimensions must be positive")
+    if self.dpi <= 0:
+      raise ValueError("batch plot dpi must be positive")
+    if self.layout_policy not in {"current_view", "shared_ranges"}:
+      raise ValueError(f"invalid batch plot layout policy {self.layout_policy!r}")
     if self.collision_policy not in {"fail", "replace", "suffix"}:
       raise ValueError(f"invalid collision policy {self.collision_policy!r}")
 

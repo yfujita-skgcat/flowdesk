@@ -719,7 +719,7 @@ items so future changes do not regress the behavior.
 `docs/implementation/plot-export-completion.md`を全文読む。一度のLLM/Codex実行では
 同ガイドの番号付きincrementを一つだけ実装する。
 
-- [ ] Increment 1: GUI/CLI共通のtyped export options、JPEG format、portable filename
+- [x] Increment 1: GUI/CLI共通のtyped export options、JPEG format、portable filename
   slug、well prefix、multi-source prefix、collision/provenanceをcore/schema/migrationへ
   追加する。wellは明示plate assignmentを優先し、filename tokenの暫定fallbackは
   provenanceを残して曖昧な文字列をwellと扱わない。

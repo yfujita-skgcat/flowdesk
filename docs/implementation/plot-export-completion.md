@@ -102,7 +102,7 @@ Target files:
 
 Work:
 
-- Add typed options, format validation/defaults, and migration.
+- Add typed options, format validation/defaults, and optional schema fields.
 - Implement core well resolution, multi-source prefix generation, slugging, and
   collision detection.
 - Keep prior `BatchPlotExportSpec` valid; missing fields use documented defaults.
@@ -112,6 +112,9 @@ Acceptance:
 - `A1` and `A1_B2` names are deterministic and portable on Linux/macOS/Windows.
 - Missing/ambiguous wells do not produce false well prefixes.
 - Project save/load and CLI planning preserve options and provenance exactly.
+
+Status: complete. The renderer does not yet execute JPEG or shared-range
+layout options; those are implemented in Increment 2.
 
 ### Increment 2: Renderer-neutral export scene and shared layout
 

@@ -897,6 +897,10 @@ current view、presentation、visible overlays、population colors、display sam
 
 現行 GUI には `BatchPlotExportSpec` を新規作成する editor がない。保存済み project に spec があり、project が先に保存されている場合に、最初の spec を指定 output directory へ実行する。
 
+Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベル・目盛・gate・legend・status banner の表示、`current_view` / `shared_ranges` layout policy を保存できる。旧 project で省略された項目は既定値が適用される。現行の renderer では JPG と `shared_ranges` は次の実装単位で有効化される。
+
+出力ファイル名は portable slug に変換される。sample または metadata の well (`A01` は `A1` に正規化) を優先し、未設定の場合は FCS ファイル名中の曖昧でない `A1`、`B02`、`H12` のような token だけを使用する。単一 source は `A1_<template>.png`、複数 source は表示順に `A1_B2_<template>.png` となり、well が分からない複数 source は stable sample ID を prefix にする。推定元と source ID は sidecar と batch manifest に保存される。
+
 ---
 
 ## 16. キーボードショートカット

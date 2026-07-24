@@ -45,6 +45,48 @@ def test_batch_plan_rejects_unknown_explicit_sample(tmp_path) -> None:
     plan_batch_plot_export(spec, _samples(), tmp_path)
 
 
+def test_batch_plan_prefixes_explicit_and_filename_wells(tmp_path) -> None:
+  samples = [
+    {"id": "s1", "name": "Control", "path": r"C:\results\plate_A01.fcs"},
+    {"id": "s2", "name": "Treatment", "path": "/results/B02_sample.fcs"},
+  ]
+  explicit = plan_batch_plot_export(
+    BatchPlotExportSpec(id="explicit", name="Explicit", target="explicit", sample_ids=("s1",)),
+    samples, tmp_path,
+  )
+  assert explicit[0].output_paths[0].endswith("A1_Control_s1_main-view.png")
+  assert explicit[0].well_ids == ("A1",)
+  assert explicit[0].well_sources == ("filename_token",)
+
+  inferred = plan_batch_plot_export(
+    BatchPlotExportSpec(id="inferred", name="Inferred", target="explicit", sample_ids=("s2",)),
+    samples, tmp_path,
+  )
+  assert inferred[0].output_paths[0].endswith("B2_Treatment_s2_main-view.png")
+
+
+def test_batch_plan_uses_ordered_wells_for_multiple_sources(tmp_path) -> None:
+  samples = [
+    {"id": "s1", "name": "A", "path": "/results/A01.fcs"},
+    {"id": "s2", "name": "B", "path": "/results/B02.fcs"},
+  ]
+  spec = BatchPlotExportSpec(id="overlay", name="Overlay", target="explicit", sample_ids=("s1",))
+  items = plan_batch_plot_export(spec, samples, tmp_path, overlay_sample_ids={"s1": ("s2",)})
+  assert items[0].output_paths[0].endswith("A1_B2_A_s1_main-view.png")
+  assert items[0].source_sample_ids == ("s1", "s2")
+  assert items[0].well_ids == ("A1", "B2")
+
+
+def test_batch_plan_does_not_infer_ambiguous_well(tmp_path) -> None:
+  sample = {"id": "s1", "name": "A1_B2", "path": "/results/A1_B2.fcs"}
+  spec = BatchPlotExportSpec(
+    id="ambiguous", name="Ambiguous", target="explicit", sample_ids=("s1",)
+  )
+  item = plan_batch_plot_export(spec, [sample], tmp_path)[0]
+  assert item.well_ids == ()
+  assert item.output_paths[0].endswith("A1_B2_s1_main-view.png")
+
+
 def test_batch_run_writes_outputs_sidecars_and_manifest(tmp_path) -> None:
   spec = BatchPlotExportSpec(id="export", name="Export", formats=("svg",))
   original_samples = [dict(sample) for sample in _samples()]
@@ -58,8 +100,12 @@ def test_batch_run_writes_outputs_sidecars_and_manifest(tmp_path) -> None:
   assert len(report.items) == 2
   manifest = json.loads((tmp_path / "export.batch.json").read_text(encoding="utf-8"))
   assert manifest["status"] == "success"
+  assert manifest["export_options"]["formats"] == ["svg"]
   sidecar = tmp_path / "Control_s1_main-view.svg.json"
-  assert json.loads(sidecar.read_text(encoding="utf-8"))["sample_id"] == "s1"
+  sidecar_data = json.loads(sidecar.read_text(encoding="utf-8"))
+  assert sidecar_data["sample_id"] == "s1"
+  assert sidecar_data["source_sample_ids"] == ["s1"]
+  assert sidecar_data["export_options"]["plot_view_id"] == "main-view"
   assert _samples() == original_samples
 
 
@@ -95,8 +141,12 @@ def test_batch_definition_project_round_trip(tmp_path) -> None:
 
 def test_batch_spec_mapping_normalizes_json_lists() -> None:
   spec = batch_plot_export_spec_from_mapping({
-    "id": "e", "name": "E", "formats": ["svg"], "sample_ids": ["s1"],
-    "target": "explicit",
+    "id": "e", "name": "E", "formats": ["jpg"], "sample_ids": ["s1"],
+    "target": "explicit", "dpi": 144, "aspect_1_to_1": True,
+    "layout_policy": "shared_ranges",
   })
-  assert spec.formats == ("svg",)
+  assert spec.formats == ("jpg",)
   assert spec.sample_ids == ("s1",)
+  assert spec.dpi == 144
+  assert spec.aspect_1_to_1 is True
+  assert spec.layout_policy == "shared_ranges"
