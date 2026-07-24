@@ -61,6 +61,11 @@ def atomic_write_json(
 
 def _fsync_directory(directory: Path) -> None:
   """Persist a completed atomic rename where the filesystem supports it."""
+  # Windows does not support opening a directory with os.open(..., O_RDONLY)
+  # for fsync. The file itself has already been flushed before os.replace;
+  # directory fsync is an additional durability step available on POSIX.
+  if os.name == "nt":
+    return
   directory_fd = os.open(directory, os.O_RDONLY)
   try:
     os.fsync(directory_fd)

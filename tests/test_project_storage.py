@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -2176,6 +2177,10 @@ class TestAtomicWrite:
     data = json.loads(target.read_text(encoding="utf-8"))
     assert data["v"] == 2
 
+  @pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows chmod does not make an existing directory read-only",
+  )
   def test_atomic_write_on_failure_preserves_original(self, tmp_path: Path) -> None:
     """Simulate write failure by making the directory read-only."""
     subdir = tmp_path / "subdir"

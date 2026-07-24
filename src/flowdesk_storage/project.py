@@ -121,7 +121,14 @@ def resolve_sample_paths(
     raw_path = s.get("path", "")
     sample_path = Path(raw_path)
 
-    if sample_path.is_absolute():
+    # A POSIX absolute path is still absolute metadata when a project is
+    # inspected on Windows, even though pathlib treats /path as drive-rooted
+    # and not fully absolute there.
+    posix_absolute = (
+      isinstance(raw_path, str)
+      and raw_path.startswith(("/", "\\"))
+    )
+    if sample_path.is_absolute() or posix_absolute:
       pass  # Keep absolute path as-is.
     elif policy == "absolute":
       raise ManifestValidationError(

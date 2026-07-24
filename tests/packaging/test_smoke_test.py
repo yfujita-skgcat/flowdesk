@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import platform
 from pathlib import Path
 
@@ -16,28 +17,56 @@ run_smoke = SMOKE_TEST_MODULE.run_smoke
 
 
 def _write_executable(path: Path, body: str) -> Path:
+  if os.name == "nt":
+    path = path.with_suffix(".cmd")
   path.write_text(body, encoding="utf-8")
-  path.chmod(0o755)
+  if os.name != "nt":
+    path.chmod(0o755)
   return path
 
 
 def test_smoke_runs_gui_and_cli_contracts(tmp_path: Path) -> None:
+  if os.name == "nt":
+    gui_body = (
+      "@echo off\n"
+      "set report=\n"
+      ":args\n"
+      "if \"%~1\"==\"\" goto done\n"
+      "if \"%~1\"==\"--smoke-report\" (set \"report=%~2\" & shift & shift & goto args)\n"
+      "shift\n"
+      "goto args\n"
+      ":done\n"
+      "(echo {\"status\":\"ok\",\"platform\":\"windows\","
+      "\"main_window_created\":true}) > \"%report%\"\n"
+    )
+    cli_body = (
+      "@echo off\n"
+      "if \"%~1\"==\"inspect\" exit /b 0\n"
+      "(echo sample,count) > \"%~4\"\n"
+    )
+  else:
+    gui_body = (
+      "#!/bin/sh\n"
+      "report=''\n"
+      "while [ $# -gt 0 ]; do\n"
+      "  if [ \"$1\" = \"--smoke-report\" ]; then report=\"$2\"; shift 2; continue; fi\n"
+      "  shift\n"
+      "done\n"
+      f"printf '{{\"status\":\"ok\",\"platform\":\"{platform.system().lower()}\","
+      "\"main_window_created\":true}' > \"$report\"\n"
+    )
+    cli_body = (
+      "#!/bin/sh\n"
+      "if [ \"$1\" = \"inspect\" ]; then exit 0; fi\n"
+      "echo 'sample,count' > \"$4\"\n"
+    )
   gui = _write_executable(
     tmp_path / "gui",
-    "#!/bin/sh\n"
-    "report=''\n"
-    "while [ $# -gt 0 ]; do\n"
-    "  if [ \"$1\" = \"--smoke-report\" ]; then report=\"$2\"; shift 2; continue; fi\n"
-    "  shift\n"
-    "done\n"
-    f"printf '{{\"status\":\"ok\",\"platform\":\"{platform.system().lower()}\","
-    "\"main_window_created\":true}' > \"$report\"\n",
+    gui_body,
   )
   cli = _write_executable(
     tmp_path / "cli",
-    "#!/bin/sh\n"
-    "if [ \"$1\" = \"inspect\" ]; then exit 0; fi\n"
-    "echo 'sample,count' > \"$4\"\n",
+    cli_body,
   )
   project = tmp_path / "project.flowdesk"
   project.mkdir()
@@ -49,7 +78,8 @@ def test_smoke_runs_gui_and_cli_contracts(tmp_path: Path) -> None:
 
 
 def test_smoke_requires_project_for_cli(tmp_path: Path) -> None:
-  cli = _write_executable(tmp_path / "cli", "#!/bin/sh\nexit 0\n")
+  body = "@echo off\nexit /b 0\n" if os.name == "nt" else "#!/bin/sh\nexit 0\n"
+  cli = _write_executable(tmp_path / "cli", body)
 
   with pytest.raises(ValueError, match="--project"):
     run_smoke(None, cli, None, None, tmp_path / "out")

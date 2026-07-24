@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowdesk"
-version = "0.1.0"
+version = "0.1.1"
 description = "Linux-first FlowJo-like flow cytometry analysis application"
 readme = "README.md"
 requires-python = ">=3.11"
