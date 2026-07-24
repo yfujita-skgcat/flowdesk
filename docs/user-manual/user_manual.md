@@ -212,6 +212,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |項目|説明|
 |---|---|
 |About Flowdesk|アプリ名、概要、`src/flowdesk_qt/_version.py` の application version を表示する。|
+|Credits...|著作権者、copyright year、連絡先、BSD 3-Clause License を表示する。完全な本文は配布物の `LICENSE` にある。|
 
 ---
 

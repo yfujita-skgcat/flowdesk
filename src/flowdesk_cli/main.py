@@ -8,12 +8,22 @@ from flowdesk_cli.batch_gate import batch_gate_command
 from flowdesk_cli.batch_plot import batch_plot_command
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
+from flowdesk_core.credits import credits_text
 
 
 def main() -> int:
   """Run the Flowdesk CLI."""
 
-  parser = argparse.ArgumentParser(prog="flowdesk")
+  parser = argparse.ArgumentParser(
+    prog="flowdesk",
+    epilog=credits_text(),
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+  )
+  parser.add_argument(
+    "--credits",
+    action="store_true",
+    help="Show copyright and license information and exit.",
+  )
   subparsers = parser.add_subparsers(dest="command")
 
   # ------------------------------------------------------------------
@@ -103,6 +113,10 @@ def main() -> int:
   plot_parser.add_argument("--output-dir", required=True, help="Output directory.")
 
   args = parser.parse_args()
+
+  if args.credits:
+    print(credits_text())
+    return 0
 
   if args.command == "run":
     return run_project_command(

@@ -40,6 +40,7 @@ from flowdesk_core.compensation import (
     inspect_compensation_matrix,
     resolve_compensation_binding,
 )
+from flowdesk_core.credits import credits_text
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
@@ -743,6 +744,10 @@ class MainWindow(QMainWindow):
         action_about = QAction("&About Flowdesk", self)
         action_about.triggered.connect(self._on_about)
         help_menu.addAction(action_about)
+        action_credits = QAction("&Credits...", self)
+        action_credits.setObjectName("actionCredits")
+        action_credits.triggered.connect(self._on_credits)
+        help_menu.addAction(action_credits)
 
     # -- toolbar -------------------------------------------------------------
 
@@ -4822,6 +4827,10 @@ class MainWindow(QMainWindow):
             "Linux-first FlowJo-like flow cytometry analysis application.\n"
             f"Version {application_version()}",
         )
+
+    def _on_credits(self) -> None:
+        """Show copyright and license information."""
+        QMessageBox.information(self, "Flowdesk Credits", credits_text())
 
     # -- status bar ----------------------------------------------------------
 

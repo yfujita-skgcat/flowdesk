@@ -8,8 +8,8 @@ dynamic = ["version"]
 description = "Linux-first FlowJo-like flow cytometry analysis application"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Proprietary" }
-authors = [{ name = "Flowdesk contributors" }]
+license = { file = "LICENSE" }
+authors = [{ name = "Yoshihiko Fujita", email = "yfujita.skgcat@gmail.com" }]
 dependencies = [
   "numpy",
   "flowio",

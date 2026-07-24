@@ -16,6 +16,14 @@ Flowdesk is an early-stage Python project for a Linux-first FlowJo-like flow cyt
 - Production GUI behavior.
 - Production FCS parsing or large-file rendering.
 
+## Credits and License
+
+Copyright (c) 2026 Yoshihiko Fujita (`yfujita.skgcat@gmail.com`).
+
+Flowdesk is distributed under the BSD 3-Clause License. See [LICENSE](LICENSE)
+for the complete license text. The same information is available from
+`flowdesk --help`, `flowdesk --credits`, and the GUI Help menu.
+
 ## Expected Stack
 
 Python 3.11+, NumPy, Polars or pandas, FlowIO and/or FlowKit, PySide6, pyqtgraph, Datashader, pytest, ruff, and mypy.
