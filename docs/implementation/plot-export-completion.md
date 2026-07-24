@@ -204,6 +204,86 @@ Acceptance:
 - No image drops a requested visible gate/overlay or changes resolved color/range.
 - A manifest accounts for every requested sample and source combination.
 
+### Increment 5: Batch Plot Export definition dialog
+
+The existing Results and plot-area entries only execute the first persisted
+`BatchPlotExportSpec`. They report "No BatchPlotExportSpec is configured" for
+a new project, so the normal GUI workflow cannot create its required
+definition. This increment supplies the missing definition editor and a
+single execution controller.
+
+Target files:
+
+- `src/flowdesk_qt/batch_plot_export_dialog.py`, `main_window.py`, and
+  `plot_widget.py`
+- `src/flowdesk_core/models.py`, `batch_plot_export.py` only if a missing
+  typed validation helper is required
+- `tests/test_batch_plot_export.py`, `tests/gui/test_batch_plot_export_dialog.py`,
+  and Results/plot-widget entry-point tests
+- `docs/user-manual/user_manual.md`
+
+#### Dialog contract
+
+The dialog edits an in-memory typed `BatchPlotExportSpec`; it must never
+execute analysis or render images itself. The Run action persists the chosen
+definition to the project first, then invokes `batch_plot_command()` with its
+stable ID. Cancel, validation failure, output-directory cancellation, and
+project-save failure leave project state unchanged.
+
+The dialog contains:
+
+- a saved-definition selector, `New`, and definition name. Existing projects
+  without a definition open with a new default definition rather than an
+  error;
+- target selector: all samples, explicit sample selection, or an existing
+  sample group. Explicit selection shows stable sample ID plus display title;
+- plot-view selector, defaulting to the currently displayed view. Visible
+  overlays and presentation are read from that persisted plot view; they are
+  not copied into a GUI-only export model;
+- format checkboxes for PNG, JPEG, SVG, and PDF; width, height, DPI, and 1:1
+  aspect; batch layout (`shared_ranges` default, or `current_view`);
+- visibility controls for title, axis labels, ticks, gates, legend, and status
+  banner;
+- filename template help for `{sample_title}`, `{sample_id}`, `{sample_name}`,
+  `{plot_id}`, and `{index}`, plus collision policy and strict mode; and
+- an output-directory chooser. This value is deliberately session-local (it
+  may be remembered in `QSettings`) and is never written into the project,
+  preserving project portability across Windows, macOS, and Linux.
+
+`Save Definition` validates through
+`batch_plot_export_spec_from_mapping()`, replaces only the selected definition
+by stable ID, and marks the project dirty. `Run` performs the same save plus
+the mandatory project save, then reports the structured batch manifest status
+and any failures. A project that has not yet been saved uses the normal Save
+Project flow before invoking the headless runner.
+
+#### Implementation steps
+
+1. Add a Qt-only `BatchPlotExportDialog` and a GUI-neutral mapping-to-typed
+   validation boundary. Give every control a stable object name.
+2. Replace both `Results -> Batch Plot Export...` and the plot context-menu
+   route with one MainWindow controller that opens the dialog, persists a
+   selected definition atomically, and calls the existing CLI adapter by ID.
+3. Add tests for creation from an empty project, edit/reopen/select among
+   multiple definitions, target validation, cancellation/no mutation,
+   save-before-run, output-directory non-persistence, and partial-failure
+   reporting.
+4. Update the user manual with the batch workflow, filename tokens, and the
+   distinction between project-persisted definition and machine-local output
+   directory.
+
+Acceptance:
+
+- Neither Batch Plot Export entry point displays a configuration error merely
+  because the project has no prior definition; both open the same dialog.
+- The saved project contains only serializable `BatchPlotExportSpec` fields;
+  reopening it on another platform preserves the definition without retaining
+  the prior output directory.
+- GUI execution and direct CLI execution of the saved definition produce the
+  same target order, source order, options, and provenance.
+- The GUI has no FCS parsing, gate evaluation, transform, or image-rendering
+  implementation beyond dispatching the existing headless runner.
+
 ## Non-goals
 
 - Report/layout editing belongs to Phase C2.

@@ -736,6 +736,11 @@ items so future changes do not regress the behavior.
   missing/incompatible source、renderer failureのcore/CLI/GUI E2E testとユーザーマニュアルを
   完了する。exportがraw events、membership、statistics、analysis revisionを変更しないことを
   検証する。GUI exportでは編集用gate handleを隠し、outlineを実線にする。
+- [ ] Increment 5: `Results -> Batch Plot Export...` とplot area右クリックの同一dialogから
+  `BatchPlotExportSpec`を新規作成・編集・選択して実行できるようにする。target、plot view、
+  format、size/DPI、1:1、layout、表示要素、filename template、collision/strictness、output
+  directoryを指定し、project保存後に既存CLI/headless runnerだけで実行する。output directoryは
+  projectへ保存しない。cancel、save失敗、partial failure、複数definition選択のGUI testを追加する。
 
 受け入れ条件:
 
@@ -747,6 +752,9 @@ items so future changes do not regress the behavior.
   揃え、PNG/JPEG/SVG/PDFの対応rendererで非空の出力を作る。
 - [x] toolbar/right-click/GUI batch/CLI batchが同じexport definitionを使い、GUIに独自の
   scientific computationまたは別plot identityを作らない。
+- [ ] Batch Plot Export dialogから設定なしのprojectでもdefinitionを作成して実行でき、保存済み
+  definitionを選択・更新・再実行できる。出力先はユーザーがその都度指定し、project移動後も
+  保存済みdefinitionが有効である。
 
 ### Phase B7.4: Analysis workflow integration [S02/S04/S05/S07/S09/S10/S11/S14]
 
