@@ -909,7 +909,7 @@ export画像では、解析中の編集用gateハンドルを表示せず、gate
 
 output directoryはprojectには保存されず、アプリケーション設定（`QSettings`）に最後に使用した値だけが保存される。次回ダイアログを開くと復元されるため、同じ場所へ繰り返し出力できる。projectを別のディレクトリへ移動しても、この設定はprojectとは独立している。
 
-Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベル・目盛・gate・legend・status banner の表示、`current_view` / `shared_ranges` layout policy を保存できる。旧 project で省略された項目は既定値が適用される。JPG出力には Pillow が必要で、`shared_ranges` は全sampleの変換後X/Y範囲を共有する。CLI batch exportではmanual overlay、persisted gate geometry、軸とplot marginも同じrenderer-neutral sceneへ反映される。
+Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベル・目盛・gate・legend・status banner の表示、`current_view` / `shared_ranges` layout policy を保存できる。旧 project で省略された項目は既定値が適用される。JPG出力には Pillow が必要で、`shared_ranges` は全sampleの変換後X/Y範囲を共有する。CLI batch exportではmanual overlay、persisted gate geometry、軸とplot marginも同じrenderer-neutral sceneへ反映される。PNG/JPGでは、表示と同様にsourceごとの小さな半透明円、overlayのtitle行と対応色、transformに対応した目盛ラベル、実線gate outlineを描く。これはheadless rendererで再現するため、GUI画面のスクリーンショットや編集用ハンドルは出力しない。
 
 出力ファイル名は portable slug に変換される。sample または metadata の well (`A01` は `A1` に正規化) を優先し、未設定の場合は FCS ファイル名中の曖昧でない `A1`、`B02`、`H12` のような token だけを使用する。単一 source は `A1_<template>.png`、複数 source は表示順に `A1_B2_<template>.png` となり、well が分からない複数 source は stable sample ID を prefix にする。推定元と source ID は sidecar と batch manifest に保存される。
 

@@ -16,6 +16,7 @@ from flowdesk_core.plot_presentation import (
   PresentationDiagnostic,
   ResolvedPresentation,
   resolve_presentation_layers,
+  resolve_presentation_title,
   validate_presentation,
 )
 
@@ -48,6 +49,7 @@ def prepare_plot_export(
   project_default: dict[str, Any] | None = None,
   global_preference: dict[str, Any] | None = None,
   gate_overlays: tuple[dict[str, Any], ...] = (),
+  scene: dict[str, Any] | None = None,
 ) -> PreparedPlotExport:
   """Resolve ordered sources and reject invalid visible layers atomically."""
   if not plot_id:
@@ -93,6 +95,24 @@ def prepare_plot_export(
     source_ids=tuple(visible_order),
   )
   resolved_dict = asdict(resolved.presentation)
+  source_labels = tuple(
+    str(source_by_id[source_id].get("display_name", source_id))
+    for source_id in visible_order
+  )
+  style_by_id = {style.source_id: style for style in resolved.presentation.source_styles}
+  scene_value = dict(scene or {})
+  scene_value.setdefault(
+    "title_lines",
+    resolve_presentation_title(resolved.presentation, source_labels).splitlines(),
+  )
+  scene_value.setdefault(
+    "title_colors",
+    [
+      (style.color if (style := style_by_id.get(source_id)) is not None else None)
+      or "#b8c7ff"
+      for source_id in visible_order
+    ],
+  )
   validate_presentation(plot_type, resolved.presentation)
   metadata = {
     "plot_id": plot_id,
@@ -125,6 +145,7 @@ def prepare_plot_export(
       "message": "The renderer backend determines the actual fallback face.",
     }],
     "gate_overlays": [dict(gate) for gate in gate_overlays],
+    "scene": scene_value,
     "plot_area": {"left": 60, "top": 50, "right": 20, "bottom": 60},
     "diagnostics": diagnostics,
     "scientific_note": (
@@ -227,7 +248,7 @@ def write_plot_png(
   height: int = 600,
   options: BatchPlotExportSpec | None = None,
 ) -> None:
-  """Write a dependency-free RGB PNG from the same prepared display layers."""
+  """Write an antialiased PNG from the prepared renderer-neutral scene."""
   if width < 1 or height < 1:
     raise PlotExportError("PNG dimensions must be positive")
   width, height = _dimensions(width, height, options)
@@ -237,36 +258,51 @@ def write_plot_png(
     raise PlotExportError("cannot export a plot with no visible source")
   if any(source_id not in layers for source_id in prepared.source_order):
     raise PlotExportError("missing prepared layer data")
-  background = _rgb(selected.background_color)
-  pixels = bytearray(background * (width * height))
-  style_by_id = {style.source_id: style for style in selected.source_styles}
-  left, top, right, bottom = 60, 50, 20, 60
-  plot_width, plot_height = width - left - right, height - top - bottom
+  try:
+    from PIL import Image, ImageDraw
+  except ImportError as exc:
+    raise PlotExportError("PNG export requires the Pillow package") from exc
+  scale = 2
+  image = Image.new(
+    "RGBA", (width * scale, height * scale), _rgb(selected.background_color) + (255,)
+  )
+  draw = ImageDraw.Draw(image)
+  left, top, plot_width, plot_height = _raster_layout(
+    width, height, prepared, selected, options
+  )
+  left *= scale
+  top *= scale
+  plot_width *= scale
+  plot_height *= scale
   if options is None or options.include_ticks:
-    _draw_png_axes(pixels, width, height, left, top, plot_width, plot_height)
+    _draw_raster_axes(draw, prepared, selected, left, top, plot_width, plot_height, scale)
+  style_by_id = {style.source_id: style for style in selected.source_styles}
   for source_id in prepared.source_order:
     style = style_by_id.get(source_id)
     color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
+    alpha = 1.0 if style is None else style.alpha
+    marker_size = 3.0 if style is None else style.marker_size
+    radius = max(1, round(marker_size * scale / 2))
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    layer_draw = ImageDraw.Draw(layer)
     for x_value, y_value in zip(*layers[source_id], strict=False):
-      x = min(width - 1, max(0, int(left + float(x_value) * plot_width)))
-      y = min(height - 1, max(0, int(top + (1.0 - float(y_value)) * plot_height)))
-      for dy in range(-2, 3):
-        for dx in range(-2, 3):
-          px, py = x + dx, y + dy
-          if 0 <= px < width and 0 <= py < height:
-            offset = (py * width + px) * 3
-            pixels[offset:offset + 3] = bytes(color)
+      x = round(left + float(x_value) * plot_width)
+      y = round(top + (1.0 - float(y_value)) * plot_height)
+      layer_draw.ellipse(
+        (x - radius, y - radius, x + radius, y + radius),
+        fill=color + (round(255 * alpha),),
+      )
+    image.alpha_composite(layer)
+  draw = ImageDraw.Draw(image)
   if options is None or options.include_gates:
-    _draw_png_gates(pixels, width, height, prepared.gate_overlays,
-                    left, top, plot_width, plot_height)
-  raw = b"".join(b"\x00" + pixels[row * width * 3:(row + 1) * width * 3]
-                  for row in range(height))
-  png = _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-  png += _png_chunk(b"IDAT", zlib.compress(raw, 9))
-  png += _png_chunk(b"IEND", b"")
+    _draw_raster_gates(draw, prepared.gate_overlays, left, top, plot_width, plot_height, scale)
+  _draw_raster_text(draw, prepared, selected, width * scale, height * scale,
+                    left, top, plot_width, plot_height, options, scale)
   out_path = Path(path)
   out_path.parent.mkdir(parents=True, exist_ok=True)
-  out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + png)
+  image.convert("RGB").resize(
+    (width, height), Image.Resampling.LANCZOS
+  ).save(out_path, format="PNG")
   out_path.with_suffix(out_path.suffix + ".json").write_text(
     json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
@@ -473,6 +509,166 @@ def _draw_png_line(pixels: bytearray, width: int, height: int,
     if 0 <= x < width and 0 <= y < height:
       offset = (y * width + x) * 3
       pixels[offset:offset + 3] = bytes(color)
+
+
+def _raster_layout(
+  width: int,
+  height: int,
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  options: BatchPlotExportSpec | None,
+) -> tuple[int, int, int, int]:
+  """Reserve text margins before rendering the normalized data rectangle."""
+  title_lines = _scene_lines(prepared)
+  title_height = (
+    max(24, round(selected.title_font.size * 1.8)) * max(1, len(title_lines)) + 10
+    if (options is None or options.include_title) and title_lines else 18
+  )
+  left = max(70, round(selected.tick_font.size * 4.8))
+  bottom = max(72, round(selected.tick_font.size * 3.4))
+  right = 26
+  plot_width = max(1, width - left - right)
+  plot_height = max(1, height - title_height - bottom)
+  return left, title_height, plot_width, plot_height
+
+
+def _scene_lines(prepared: PreparedPlotExport) -> list[str]:
+  scene = prepared.metadata.get("scene", {})
+  raw = scene.get("title_lines", ()) if isinstance(scene, dict) else ()
+  return [str(value) for value in raw if str(value)]
+
+
+def _font(size: float, *, bold: bool = False) -> Any:
+  """Return a portable Pillow font without making font availability fatal."""
+  from PIL import ImageFont
+
+  name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+  try:
+    return ImageFont.truetype(name, max(1, round(size)))
+  except OSError:
+    return ImageFont.load_default()
+
+
+def _draw_raster_axes(
+  draw: Any,
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  left: int,
+  top: int,
+  plot_width: int,
+  plot_height: int,
+  scale: int,
+) -> None:
+  color = (176, 199, 255, 255)
+  width = max(1, round(selected.axis_line_width * scale / 2))
+  bottom = top + plot_height
+  draw.line((left, top, left, bottom, left + plot_width, bottom), fill=color, width=width)
+  scene = prepared.metadata.get("scene", {})
+  for axis, origin, extent, horizontal in (
+    ("x_ticks", left, plot_width, True),
+    ("y_ticks", bottom, plot_height, False),
+  ):
+    ticks = scene.get(axis, ()) if isinstance(scene, dict) else ()
+    for tick in ticks:
+      if not isinstance(tick, dict):
+        continue
+      position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
+      major = bool(tick.get("major", True))
+      length = round((6 if major else 3) * scale)
+      if horizontal:
+        x = round(origin + position * extent)
+        draw.line((x, bottom, x, bottom + length), fill=color, width=width)
+      else:
+        y = round(origin - position * extent)
+        draw.line((left - length, y, left, y), fill=color, width=width)
+
+
+def _draw_raster_gates(
+  draw: Any,
+  gates: tuple[dict[str, Any], ...],
+  left: int,
+  top: int,
+  plot_width: int,
+  plot_height: int,
+  scale: int,
+) -> None:
+  for gate in gates:
+    points = _gate_points(gate)
+    if len(points) < 2:
+      continue
+    mapped = [
+      (round(left + x * plot_width), round(top + (1 - y) * plot_height))
+      for x, y in points
+    ]
+    mapped.append(mapped[0])
+    draw.line(
+      mapped,
+      fill=_rgb(str(gate.get("color", "#ffffff"))) + (255,),
+      width=max(1, round(float(gate.get("width", 1.5)) * scale)),
+      joint="curve",
+    )
+
+
+def _draw_raster_text(
+  draw: Any,
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  width: int,
+  height: int,
+  left: int,
+  top: int,
+  plot_width: int,
+  plot_height: int,
+  options: BatchPlotExportSpec | None,
+  scale: int,
+) -> None:
+  scene = prepared.metadata.get("scene", {})
+  title_lines = _scene_lines(prepared)
+  title_colors = scene.get("title_colors", ()) if isinstance(scene, dict) else ()
+  if options is None or options.include_title:
+    title_font = _font(selected.title_font.size * scale, bold=selected.title_font.weight == "bold")
+    line_height = round(selected.title_font.size * 1.45 * scale)
+    for index, line in enumerate(title_lines):
+      color = str(title_colors[index]) if index < len(title_colors) else "#b8c7ff"
+      _draw_centered(draw, width // 2, 5 * scale + index * line_height, line,
+                     title_font, _rgb(color) + (255,))
+  tick_font = _font(selected.tick_font.size * scale, bold=selected.tick_font.weight == "bold")
+  if options is None or options.include_ticks:
+    for axis, origin, extent, horizontal in (
+      ("x_ticks", left, plot_width, True),
+      ("y_ticks", top + plot_height, plot_height, False),
+    ):
+      ticks = scene.get(axis, ()) if isinstance(scene, dict) else ()
+      for tick in ticks:
+        if not isinstance(tick, dict) or not tick.get("major", True):
+          continue
+        label = str(tick.get("label", ""))
+        if not label:
+          continue
+        position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
+        if horizontal:
+          _draw_centered(draw, round(origin + position * extent), top + plot_height + 9 * scale,
+                         label, tick_font, (176, 199, 255, 255))
+        else:
+          bbox = draw.textbbox((0, 0), label, font=tick_font)
+          x = left - 9 * scale - (bbox[2] - bbox[0])
+          y = round(origin - position * extent) - (bbox[3] - bbox[1]) // 2
+          draw.text((x, y), label, font=tick_font, fill=(176, 199, 255, 255))
+  if options is None or options.include_axis_labels:
+    axis_font = _font(selected.axis_label_font.size * scale,
+                      bold=selected.axis_label_font.weight == "bold")
+    _draw_centered(draw, left + plot_width // 2, height - 27 * scale,
+                   selected.x_axis_display_label or "", axis_font, (176, 199, 255, 255))
+    label = selected.y_axis_display_label or ""
+    if label:
+      bbox = draw.textbbox((0, 0), label, font=axis_font)
+      draw.text((8 * scale, top + plot_height // 2 - (bbox[3] - bbox[1]) // 2),
+                label, font=axis_font, fill=(176, 199, 255, 255))
+
+
+def _draw_centered(draw: Any, x: int, y: int, text: str, font: Any, fill: Any) -> None:
+  bbox = draw.textbbox((0, 0), text, font=font)
+  draw.text((x - (bbox[2] - bbox[0]) // 2, y), text, font=font, fill=fill)
 
 
 def _pdf_axes(left: int, top: int, width: int, plot_height: int, height: int) -> list[str]:

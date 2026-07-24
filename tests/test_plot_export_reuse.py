@@ -110,6 +110,46 @@ def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   assert path.stat().st_size > 100
 
 
+def test_png_export_scene_preserves_colored_titles_and_labeled_ticks(tmp_path) -> None:
+  source = (
+    {
+      "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",
+      "display_name": "Control", "visible": True,
+    },
+    {
+      "source_id": "s2", "sample_id": "sample-2", "population_id": "cd3",
+      "display_name": "Treated", "visible": True,
+    },
+  )
+  prepared = prepare_plot_export(
+    "view", "scatter", source,
+    (OverlaySourceResolution("s1", "compatible"), OverlaySourceResolution("s2", "compatible")),
+    view_presentation={
+      "x_axis_display_label": "FITC B525-A",
+      "y_axis_display_label": "APC R660-A",
+      "source_styles": [
+        {"source_id": "s1", "color": "#4c78a8", "alpha": 0.75, "marker_size": 3},
+        {"source_id": "s2", "color": "#f8e45c", "alpha": 0.65, "marker_size": 3},
+      ],
+    },
+    scene={
+      "x_ticks": [{"position": 0.5, "label": "1e3", "major": True}],
+      "y_ticks": [{"position": 0.5, "label": "1e2", "major": True}],
+    },
+  )
+  path = tmp_path / "scene.png"
+  write_plot_png(
+    path, prepared,
+    layers={"s1": ((0.2,), (0.2,)), "s2": ((0.8,), (0.8,))},
+  )
+
+  metadata = json.loads(path.with_suffix(".png.json").read_text(encoding="utf-8"))
+  assert metadata["scene"]["title_lines"] == ["Control", "Treated"]
+  assert metadata["scene"]["title_colors"] == ["#4c78a8", "#f8e45c"]
+  assert metadata["scene"]["x_ticks"][0]["label"] == "1e3"
+  assert path.stat().st_size > 1_000
+
+
 def test_export_options_control_svg_elements_and_aspect(tmp_path) -> None:
   source = ({
     "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",

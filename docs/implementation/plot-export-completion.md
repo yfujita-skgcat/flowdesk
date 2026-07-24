@@ -358,6 +358,49 @@ state; it must not be a second, competing batch-rendering definition.
 - The GUI remains a project-state editor and CLI dispatcher; no FCS processing
   or image rendering is added to Qt code.
 
+### Increment 7: Headless renderer visual parity
+
+#### Observed failure
+
+After Increment 6, Batch Plot Export uses the correct persisted FITC/APC axes,
+transforms, overlays, and gate coordinates, but the PNG is still visibly unlike
+the live plot. The core PNG adapter writes every event as an opaque 5x5 square
+and only draws bare axis lines. It does not render title lines, axis labels, or
+tick labels. This is a renderer-contract gap, not an FCS, transform, or gate
+calculation issue.
+
+#### Design
+
+The headless export scene must carry renderer-neutral presentation primitives:
+resolved title lines and their source colors, labels, transformed axis bounds,
+major/minor tick coordinates and labels, marker size/opacity/shape, and solid
+gate strokes. The CLI derives that scene from the same persisted plot view,
+transform definitions, and resolved source styles used for data extraction.
+The core adapters render the scene without importing Qt or capturing the GUI.
+
+#### Work
+
+1. Add typed/validated scene metadata to `PreparedPlotExport` for title-line
+   colors and normalized ticks. Resolve `overlay_sample_titles` from the ordered
+   visible sources rather than relying on a GUI-only title string.
+2. Make PNG/JPEG use antialiased circular markers with each source's resolved
+   color, alpha, and marker size. Reserve margins for title, tick labels, and
+   axis labels; draw requested labels, major/minor ticks, and solid gates.
+3. Bring SVG and PDF marker and text primitives in line with the same scene
+   contract so formats do not silently diverge.
+4. Add synthetic renderer and CLI tests for visual-scene metadata, title-line
+   colors, log tick labels, raster text/tick regions, marker alpha/shape, and
+   gate stroke visibility. Keep all assertions independent of GUI screenshots.
+
+#### Acceptance
+
+- With title, labels, ticks, gates, and legend enabled, a Batch PNG has the
+  selected transformed axes, readable labels/ticks, source-colored title lines,
+  small semi-transparent circular points, and solid gate outlines.
+- SVG, PDF, PNG, and JPEG receive the same source order, colors, title/tick
+  scene, and gate geometry; no format reverts to opaque square scatter points.
+- The headless renderer remains deterministic and independent of PySide6.
+
 ## Non-goals
 
 - Report/layout editing belongs to Phase C2.

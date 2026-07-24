@@ -25,7 +25,7 @@ from flowdesk_core.plot_export import (
 )
 from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.processed_display import ProcessedDisplayRequest
-from flowdesk_core.transforms import apply_transform
+from flowdesk_core.transforms import apply_transform, generate_transform_ticks
 from flowdesk_storage.project import load_project, resolve_sample_paths
 
 
@@ -243,7 +243,26 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
             "source_id": source_id,
             "color": str(explicit_color),
           }
+      for source_id in source_ids:
+        style = source_styles.setdefault(source_id, {"source_id": source_id})
+        manual_fields = set(style.get("manual_fields", ()))
+        if not style.get("color"):
+          style["color"] = "#4c78a8"
+        if "alpha" not in manual_fields:
+          style["alpha"] = 0.75 if source_id == sample_id else 0.65
+        if "marker_shape" not in manual_fields:
+          style["marker_shape"] = "circle"
+        if "marker_size" not in manual_fields:
+          style["marker_size"] = 3.0
       presentation["source_styles"] = list(source_styles.values())
+      scene = {
+        "x_ticks": _normalized_ticks(
+          active_bounds[0], view.get("x_transform_id"), transform_by_id
+        ),
+        "y_ticks": _normalized_ticks(
+          active_bounds[1], view.get("y_transform_id"), transform_by_id
+        ),
+      }
       prepared = prepare_plot_export(
         spec.plot_view_id, cast(PlotType, str(view.get("plot_type", "scatter"))),
         tuple(sources), tuple(OverlaySourceResolution(source_id, "compatible")
@@ -253,6 +272,7 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
           project, x_id, y_id, active_bounds,
           view.get("x_transform_id"), view.get("y_transform_id"),
         ),
+        scene=scene,
       )
       if path.suffix.lower() == ".png":
         write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height,
@@ -294,6 +314,37 @@ def _normalize(
   if high == low:
     return np.full(values.shape, 0.5, dtype=np.float64)
   return (values - low) / (high - low)
+
+
+def _normalized_ticks(
+  bounds: tuple[float, float],
+  transform_id: object,
+  transforms: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, object]]:
+  """Build renderer-neutral axis ticks in normalized transformed coordinates."""
+  low, high = bounds
+  if high == low:
+    return []
+  if transform_id:
+    ticks = generate_transform_ticks(
+      _transform_spec(transforms, str(transform_id)), low, high, "auto"
+    )
+    return [
+      {
+        "position": (tick.coordinate - low) / (high - low),
+        "label": tick.label,
+        "major": tick.level == "major",
+      }
+      for tick in ticks
+    ]
+  return [
+    {
+      "position": index / 4,
+      "label": f"{low + (high - low) * index / 4:g}",
+      "major": True,
+    }
+    for index in range(5)
+  ]
 
 
 def _gate_overlays(
