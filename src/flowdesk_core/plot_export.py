@@ -31,6 +31,7 @@ class PreparedPlotExport:
   source_order: tuple[str, ...]
   metadata: dict[str, Any]
   resolved_presentation: ResolvedPresentation
+  gate_overlays: tuple[dict[str, Any], ...] = ()
 
 
 def _diagnostic_mapping(value: PresentationDiagnostic) -> dict[str, Any]:
@@ -46,6 +47,7 @@ def prepare_plot_export(
   view_presentation: dict[str, Any] | None = None,
   project_default: dict[str, Any] | None = None,
   global_preference: dict[str, Any] | None = None,
+  gate_overlays: tuple[dict[str, Any], ...] = (),
 ) -> PreparedPlotExport:
   """Resolve ordered sources and reject invalid visible layers atomically."""
   if not plot_id:
@@ -122,13 +124,16 @@ def prepare_plot_export(
       "severity": "info",
       "message": "The renderer backend determines the actual fallback face.",
     }],
+    "gate_overlays": [dict(gate) for gate in gate_overlays],
+    "plot_area": {"left": 60, "top": 50, "right": 20, "bottom": 60},
     "diagnostics": diagnostics,
     "scientific_note": (
       "Presentation settings and display sampling do not alter scientific results."
     ),
   }
   return PreparedPlotExport(
-    plot_id, plot_type, tuple(visible_order), metadata, resolved
+    plot_id, plot_type, tuple(visible_order), metadata, resolved,
+    tuple(dict(gate) for gate in gate_overlays),
   )
 
 
@@ -149,9 +154,13 @@ def write_plot_svg(
   if not prepared.source_order:
     raise PlotExportError("cannot export a plot with no visible source")
   width, height = _dimensions(800, 600, options)
+  left, top, right, bottom = 60, 50, 20, 60
+  plot_width, plot_height = width - left - right, height - top - bottom
   elements = [
     f'<rect width="100%" height="100%" fill="{escape(selected.background_color)}"/>',
   ]
+  if options is None or options.include_ticks:
+    elements.extend(_svg_axes(left, top, plot_width, plot_height))
   if options is None or options.include_title:
     elements.append(
       f'<text x="{width / 2:g}" y="32" text-anchor="middle" '
@@ -159,10 +168,10 @@ def write_plot_svg(
     )
   if options is None or options.include_axis_labels:
     elements.extend([
-      f'<text x="{width / 2:g}" y="{height - 20:g}" text-anchor="middle">'
+      f'<text x="{left + plot_width / 2:g}" y="{height - 20:g}" text-anchor="middle">'
       f"{escape(selected.x_axis_display_label or '')}</text>",
-      f'<text x="15" y="{height / 2:g}" text-anchor="middle" '
-      f'transform="rotate(-90 15 {height / 2:g})">'
+      f'<text x="15" y="{top + plot_height / 2:g}" text-anchor="middle" '
+      f'transform="rotate(-90 15 {top + plot_height / 2:g})">'
       f"{escape(selected.y_axis_display_label or '')}</text>",
     ])
   style_by_id = {style.source_id: style for style in selected.source_styles}
@@ -182,8 +191,8 @@ def write_plot_svg(
     color = "#4c78a8" if style is None or style.color is None else style.color
     x_values, y_values = layers[source_id]
     for x_value, y_value in zip(x_values, y_values, strict=False):
-      x = 60.0 + float(x_value) * 680.0
-      y = 520.0 - float(y_value) * 460.0
+      x = left + float(x_value) * plot_width
+      y = top + (1.0 - float(y_value)) * plot_height
       elements.append(
         f'<circle cx="{x:g}" cy="{y:g}" r="3" fill="{escape(color)}"/>'
       )
@@ -193,6 +202,8 @@ def write_plot_svg(
         f'<text x="{width - 180:g}" y="{55 + index * 20}" fill="{escape(color)}">'
         f"{escape(str(label))}</text>"
       )
+  if options is None or options.include_gates:
+    elements.extend(_svg_gates(prepared.gate_overlays, left, top, plot_width, plot_height))
   svg = (
     f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
     + "".join(elements) + "</svg>\n"
@@ -201,7 +212,7 @@ def write_plot_svg(
   out_path.parent.mkdir(parents=True, exist_ok=True)
   out_path.write_text(svg, encoding="utf-8")
   out_path.with_suffix(out_path.suffix + ".json").write_text(
-    json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n",
+    json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
   )
 
@@ -229,18 +240,25 @@ def write_plot_png(
   background = _rgb(selected.background_color)
   pixels = bytearray(background * (width * height))
   style_by_id = {style.source_id: style for style in selected.source_styles}
+  left, top, right, bottom = 60, 50, 20, 60
+  plot_width, plot_height = width - left - right, height - top - bottom
+  if options is None or options.include_ticks:
+    _draw_png_axes(pixels, width, height, left, top, plot_width, plot_height)
   for source_id in prepared.source_order:
     style = style_by_id.get(source_id)
     color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
     for x_value, y_value in zip(*layers[source_id], strict=False):
-      x = min(width - 1, max(0, int(float(x_value) * (width - 1))))
-      y = min(height - 1, max(0, int((1.0 - float(y_value)) * (height - 1))))
+      x = min(width - 1, max(0, int(left + float(x_value) * plot_width)))
+      y = min(height - 1, max(0, int(top + (1.0 - float(y_value)) * plot_height)))
       for dy in range(-2, 3):
         for dx in range(-2, 3):
           px, py = x + dx, y + dy
           if 0 <= px < width and 0 <= py < height:
             offset = (py * width + px) * 3
             pixels[offset:offset + 3] = bytes(color)
+  if options is None or options.include_gates:
+    _draw_png_gates(pixels, width, height, prepared.gate_overlays,
+                    left, top, plot_width, plot_height)
   raw = b"".join(b"\x00" + pixels[row * width * 3:(row + 1) * width * 3]
                   for row in range(height))
   png = _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
@@ -250,7 +268,8 @@ def write_plot_png(
   out_path.parent.mkdir(parents=True, exist_ok=True)
   out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + png)
   out_path.with_suffix(out_path.suffix + ".json").write_text(
-    json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8",
   )
 
 
@@ -273,19 +292,25 @@ def write_plot_pdf(
   if any(source_id not in layers for source_id in prepared.source_order):
     raise PlotExportError("missing prepared layer data")
   background = _rgb(selected.background_color)
+  left, top, right, bottom = 60, 50, 20, 60
+  plot_width, plot_height = width - left - right, height - top - bottom
   commands = [
     f"{background[0] / 255:g} {background[1] / 255:g} {background[2] / 255:g} rg",
     f"0 0 {width} {height} re f",
   ]
+  if options is None or options.include_ticks:
+    commands.extend(_pdf_axes(left, top, plot_width, plot_height, height))
   style_by_id = {style.source_id: style for style in selected.source_styles}
   for source_id in prepared.source_order:
     style = style_by_id.get(source_id)
     color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
     commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg")
     for x_value, y_value in zip(*layers[source_id], strict=False):
-      x = float(x_value) * width
-      y = float(y_value) * height
+      x = left + float(x_value) * plot_width
+      y = height - top - float(y_value) * plot_height
       commands.append(f"{x:g} {y:g} 2 2 re f")
+  if options is None or options.include_gates:
+    commands.extend(_pdf_gates(prepared.gate_overlays, left, top, plot_width, plot_height, height))
   stream = ("\n".join(commands) + "\n").encode("ascii")
   objects = [
     b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -317,7 +342,8 @@ def write_plot_pdf(
   out_path.parent.mkdir(parents=True, exist_ok=True)
   out_path.write_bytes(bytes(pdf))
   out_path.with_suffix(out_path.suffix + ".json").write_text(
-    json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8",
   )
 
 
@@ -348,7 +374,8 @@ def write_plot_jpg(
     png_path.unlink(missing_ok=True)
     png_path.with_suffix(png_path.suffix + ".json").unlink(missing_ok=True)
   Path(path).with_suffix(Path(path).suffix + ".json").write_text(
-    json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8",
   )
 
 
@@ -359,6 +386,119 @@ def _dimensions(width: int, height: int, options: BatchPlotExportSpec | None) ->
     size = min(width, height)
     return size, size
   return width, height
+
+
+def _export_metadata(
+  prepared: PreparedPlotExport,
+  options: BatchPlotExportSpec | None,
+) -> dict[str, Any]:
+  metadata = dict(prepared.metadata)
+  if options is not None:
+    metadata["export_options"] = asdict(options)
+  return metadata
+
+
+def _svg_axes(left: int, top: int, width: int, height: int) -> list[str]:
+  elements = [
+    f'<path d="M {left} {top} V {top + height} H {left + width}" '
+    'fill="none" stroke="#808080" stroke-width="1"/>',
+  ]
+  for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
+    x = left + fraction * width
+    y = top + (1.0 - fraction) * height
+    elements.append(f'<path d="M {x:g} {top + height} v 5 M {left - 5} {y:g} h 5" '
+                    'stroke="#808080" stroke-width="1"/>')
+  return elements
+
+
+def _svg_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,
+               width: int, height: int) -> list[str]:
+  elements: list[str] = []
+  for gate in gates:
+    points = _gate_points(gate)
+    if len(points) < 2:
+      continue
+    path = " ".join(
+      ("M" if index == 0 else "L")
+      + f" {left + x * width:g} {top + (1 - y) * height:g}"
+      for index, (x, y) in enumerate(points)
+    ) + " Z"
+    color = escape(str(gate.get("color", "#ffffff")))
+    elements.append(f'<path d="{path}" fill="none" stroke="{color}" stroke-width="2"/>')
+  return elements
+
+
+def _gate_points(gate: dict[str, Any]) -> tuple[tuple[float, float], ...]:
+  raw = gate.get("points") or gate.get("coordinates") or ()
+  result: list[tuple[float, float]] = []
+  for point in raw:
+    if isinstance(point, (list, tuple)) and len(point) >= 2:
+      result.append((float(point[0]), float(point[1])))
+  return tuple(result)
+
+
+def _draw_png_axes(pixels: bytearray, width: int, height: int, left: int, top: int,
+                   plot_width: int, plot_height: int) -> None:
+  color = (128, 128, 128)
+  _draw_png_line(pixels, width, height, left, top, left, top + plot_height, color)
+  _draw_png_line(pixels, width, height, left, top + plot_height,
+                 left + plot_width, top + plot_height, color)
+
+
+def _draw_png_gates(pixels: bytearray, width: int, height: int,
+                    gates: tuple[dict[str, Any], ...], left: int, top: int,
+                    plot_width: int, plot_height: int) -> None:
+  for gate in gates:
+    points = _gate_points(gate)
+    if len(points) < 2:
+      continue
+    color = _rgb(str(gate.get("color", "#ffffff")))
+    for first, second in zip(points, (*points[1:], points[0]), strict=False):
+      _draw_png_line(
+        pixels, width, height,
+        int(left + first[0] * plot_width), int(top + (1 - first[1]) * plot_height),
+        int(left + second[0] * plot_width), int(top + (1 - second[1]) * plot_height),
+        color,
+      )
+
+
+def _draw_png_line(pixels: bytearray, width: int, height: int,
+                   x1: int, y1: int, x2: int, y2: int,
+                   color: tuple[int, int, int]) -> None:
+  steps = max(abs(x2 - x1), abs(y2 - y1), 1)
+  for step in range(steps + 1):
+    fraction = step / steps
+    x = round(x1 + (x2 - x1) * fraction)
+    y = round(y1 + (y2 - y1) * fraction)
+    if 0 <= x < width and 0 <= y < height:
+      offset = (y * width + x) * 3
+      pixels[offset:offset + 3] = bytes(color)
+
+
+def _pdf_axes(left: int, top: int, width: int, plot_height: int, height: int) -> list[str]:
+  bottom = height - top
+  commands = ["0.5 0.5 0.5 RG 1 w", f"{left} {top} m {left} {bottom} l {left + width} {bottom} l S"]
+  for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
+    x = left + fraction * width
+    y = top + fraction * plot_height
+    commands.append(f"{x:g} {bottom} m {x:g} {bottom - 5} l {left - 5} {y:g} m {left} {y:g} l S")
+  return commands
+
+
+def _pdf_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,
+               width: int, plot_height: int, height: int) -> list[str]:
+  commands: list[str] = []
+  for gate in gates:
+    points = _gate_points(gate)
+    if len(points) < 2:
+      continue
+    color = _rgb(str(gate.get("color", "#ffffff")))
+    commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} RG 2 w")
+    transformed = [(left + x * width, height - top - y * plot_height) for x, y in points]
+    commands.append(f"{transformed[0][0]:g} {transformed[0][1]:g} m")
+    commands.extend(f"{x:g} {y:g} l" for x, y in transformed[1:])
+    commands.append("h S")
+  return commands
 
 
 def _rgb(value: str) -> tuple[int, int, int]:

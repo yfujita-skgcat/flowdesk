@@ -118,9 +118,10 @@ layout options; those are implemented in Increment 2.
 
 ### Increment 2: Renderer-neutral export scene and shared layout
 
-Progress: export dimensions, 1:1 aspect, title/axis-label/legend visibility,
-JPEG dispatch, and canonical transformed shared X/Y bounds are implemented.
-The common overlay/gate/tick/margin scene remains for this increment.
+Status: complete. Export dimensions, 1:1 aspect, title/axis-label/legend
+visibility, JPEG dispatch, canonical transformed shared X/Y bounds, visible
+manual overlays, persisted gate geometry, and a shared plot-area/axis scene
+are implemented for the core and CLI renderer.
 
 Target files:
 

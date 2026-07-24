@@ -50,6 +50,7 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       {"id": spec.plot_view_id, "plot_type": "scatter"},
     )
     prepared_layers: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    layer_metadata: dict[str, dict[str, Any]] = {}
     shared_bounds: tuple[float, float, float, float] | None = None
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -101,8 +102,10 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       sample_id = str(sample["id"])
       if not prepared_layers:
         for candidate in samples:
-          x_values, y_values, _ = extract_layer(candidate)
-          prepared_layers[str(candidate["id"])] = (x_values, y_values)
+          candidate_id = str(candidate["id"])
+          x_values, y_values, metadata = extract_layer(candidate)
+          prepared_layers[candidate_id] = (x_values, y_values)
+          layer_metadata[candidate_id] = metadata
         if spec.layout_policy == "shared_ranges":
           all_x = np.concatenate([value[0] for value in prepared_layers.values()])
           all_y = np.concatenate([value[1] for value in prepared_layers.values()])
@@ -111,24 +114,44 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
             float(np.min(all_y)), float(np.max(all_y)),
           )
       x_values, y_values = prepared_layers[sample_id]
-      metadata = extract_layer(sample)[2]
+      metadata = layer_metadata[sample_id]
       x_id, y_id = metadata["x_id"], metadata["y_id"]
-      x_values = _normalize(x_values, shared_bounds[:2] if shared_bounds else None)
-      y_values = _normalize(y_values, (shared_bounds[2], shared_bounds[3])
-                            if shared_bounds else None)
-      sample_id = str(sample["id"])
-      source = {
-        "source_id": sample_id, "sample_id": sample_id,
-        "population_id": str(view.get("population_id", "all_events")),
-        "display_name": str(sample.get("name", sample_id)),
-        "x_parameter_id": x_id, "y_parameter_id": y_id, "visible": True,
-      }
+      active_bounds = (
+        shared_bounds[:2], shared_bounds[2:]
+      ) if shared_bounds else (
+        (float(np.min(x_values)), float(np.max(x_values))),
+        (float(np.min(y_values)), float(np.max(y_values))),
+      )
+      overlay_ids = tuple(
+        str(value) for value in view.get("manual_overlay_sample_ids", ())
+        if str(value) in prepared_layers and str(value) != sample_id
+      )
+      source_ids = (sample_id, *overlay_ids)
+      source_by_id = {str(item["id"]): item for item in samples}
+      sources = []
+      layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] = {}
+      for order, source_id in enumerate(source_ids):
+        source_sample = source_by_id[source_id]
+        source_metadata = layer_metadata[source_id]
+        source_x, source_y = prepared_layers[source_id]
+        layers[source_id] = (
+          tuple(_normalize(source_x, active_bounds[0])),
+          tuple(_normalize(source_y, active_bounds[1])),
+        )
+        sources.append({
+          "source_id": source_id, "sample_id": source_id,
+          "population_id": str(view.get("population_id", "all_events")),
+          "display_name": str(source_sample.get("name", source_id)),
+          "x_parameter_id": source_metadata["x_id"],
+          "y_parameter_id": source_metadata["y_id"], "visible": True, "order": order,
+        })
       prepared = prepare_plot_export(
         spec.plot_view_id, cast(PlotType, str(view.get("plot_type", "scatter"))),
-        (source,), (OverlaySourceResolution(sample_id, "compatible"),),
+        tuple(sources), tuple(OverlaySourceResolution(source_id, "compatible")
+                              for source_id in source_ids),
         view_presentation=cast(dict[str, Any] | None, view.get("presentation")),
+        gate_overlays=_gate_overlays(project, x_id, y_id, active_bounds),
       )
-      layers = {sample_id: (tuple(x_values), tuple(y_values))}
       if path.suffix.lower() == ".png":
         write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height,
                        options=spec)
@@ -145,6 +168,12 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
 
     batch_report = run_batch_plot_export(
       spec, samples, output_dir, render, annotations=annotations,
+      overlay_sample_ids={
+        str(sample.get("id")): tuple(
+          str(value) for value in view.get("manual_overlay_sample_ids", ())
+        )
+        for sample in samples
+      },
     )
     print(f"Batch plot export {batch_report.status}: {len(batch_report.items)} samples")
     return 0 if batch_report.status == "success" else 1
@@ -163,6 +192,63 @@ def _normalize(
   if high == low:
     return np.full(values.shape, 0.5, dtype=np.float64)
   return (values - low) / (high - low)
+
+
+def _gate_overlays(
+  project: Mapping[str, Any],
+  x_parameter: str,
+  y_parameter: str,
+  bounds: tuple[tuple[float, float], tuple[float, float]],
+) -> tuple[dict[str, Any], ...]:
+  """Convert persisted gate geometry to the renderer's normalized scene."""
+  x_low, x_high = bounds[0]
+  y_low, y_high = bounds[1]
+  strategies = project.get("gating_strategies_data", {})
+  if not isinstance(strategies, Mapping):
+    return ()
+  result: list[dict[str, Any]] = []
+  for strategy in strategies.values():
+    if not isinstance(strategy, Mapping):
+      continue
+    for gate in strategy.get("gates", ()):
+      if not isinstance(gate, Mapping):
+        continue
+      if gate.get("x_parameter") not in {None, x_parameter}:
+        continue
+      if gate.get("y_parameter") not in {None, y_parameter}:
+        continue
+      points = gate.get("coordinates", ())
+      if not points and gate.get("gate_type") == "rectangle":
+        thresholds = gate.get("thresholds", {})
+        if isinstance(thresholds, Mapping):
+          x_min = thresholds.get("x_min", thresholds.get("min"))
+          x_max = thresholds.get("x_max", thresholds.get("max"))
+          y_min = thresholds.get("y_min", thresholds.get("min"))
+          y_max = thresholds.get("y_max", thresholds.get("max"))
+          if all(isinstance(value, (int, float)) for value in (x_min, x_max, y_min, y_max)):
+            points = ((x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max))
+      normalized: list[tuple[float, float]] = []
+      for point in points:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+          continue
+        x_value, y_value = point[0], point[1]
+        if not isinstance(x_value, (int, float)) or not isinstance(y_value, (int, float)):
+          continue
+        normalized.append((_unit_range(float(x_value), x_low, x_high),
+                           _unit_range(float(y_value), y_low, y_high)))
+      if len(normalized) >= 2:
+        result.append({
+          "id": str(gate.get("id", "gate")),
+          "points": tuple(normalized),
+          "color": str(gate.get("color", "#ffffff")),
+        })
+  return tuple(result)
+
+
+def _unit_range(value: float, low: float, high: float) -> float:
+  if high == low:
+    return 0.5
+  return min(1.0, max(0.0, (value - low) / (high - low)))
 
 
 def _transform_spec(

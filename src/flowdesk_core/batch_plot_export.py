@@ -157,7 +157,15 @@ def run_batch_plot_export(
           raise BatchPlotExportError(f"renderer produced no output: {path}")
         paths.append(str(path))
         sidecar = path.with_suffix(path.suffix + ".json")
-        sidecar.write_text(json.dumps({
+        renderer_metadata: dict[str, Any] = {}
+        if sidecar.exists():
+          try:
+            loaded = json.loads(sidecar.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+              renderer_metadata = loaded
+          except (OSError, json.JSONDecodeError):
+            renderer_metadata = {}
+        renderer_metadata.update({
           "export_id": spec.id,
           "sample_id": item.sample_id,
           "sample_title": item.sample_title,
@@ -167,7 +175,10 @@ def run_batch_plot_export(
           "export_options": asdict(spec),
           "plot_view_id": spec.plot_view_id,
           "output": str(path),
-        }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        })
+        sidecar.write_text(json.dumps(
+          renderer_metadata, indent=2, ensure_ascii=False
+        ) + "\n", encoding="utf-8")
     except Exception as exc:
       diagnostic = str(exc)
     completed.append(BatchPlotExportItem(

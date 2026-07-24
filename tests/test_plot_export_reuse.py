@@ -128,6 +128,26 @@ def test_export_options_control_svg_elements_and_aspect(tmp_path) -> None:
   assert "Control" not in text
 
 
+def test_export_scene_uses_same_plot_area_for_axes_and_gate(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),),
+    gate_overlays=({
+      "id": "gate-1", "points": ((0.2, 0.2), (0.8, 0.2), (0.8, 0.8), (0.2, 0.8)),
+      "color": "#ff0000",
+    },),
+  )
+  path = tmp_path / "plot.svg"
+  write_plot_svg(path, prepared, layers={"s1": ((0.2,), (0.8,))})
+  text = path.read_text(encoding="utf-8")
+  assert 'stroke="#ff0000"' in text
+  assert 'stroke="#808080"' in text
+  assert prepared.metadata["plot_area"] == {"left": 60, "top": 50, "right": 20, "bottom": 60}
+
+
 def test_pdf_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   source = ({
     "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",

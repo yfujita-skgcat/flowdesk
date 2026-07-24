@@ -723,12 +723,12 @@ items so future changes do not regress the behavior.
   slug、well prefix、multi-source prefix、collision/provenanceをcore/schema/migrationへ
   追加する。wellは明示plate assignmentを優先し、filename tokenの暫定fallbackは
   provenanceを残して曖昧な文字列をwellと扱わない。
-- [ ] Increment 2: canonical processed displayとresolved overlay/presentation/gateから
+- [x] Increment 2: canonical processed displayとresolved overlay/presentation/gateから
   renderer-neutral export sceneを作る。batchではshared transformed range、axes、ticks、
   marginsをpreflightして、比較画像のplot originと軸表示を揃える。
   - [x] persisted export optionsをcore rendererへ渡し、サイズと1:1 aspect、title/label/legendの表示制御を反映する。
   - [x] `shared_ranges` のcanonical transformed X/Y boundsをbatch開始前に計算する。
-  - [ ] overlay、gate、ticks、marginを共通sceneとして出力する。
+  - [x] overlay、gate、ticks、marginを共通sceneとして出力する。
 - [ ] Increment 3: plot area右クリックのExport submenu、PNG/JPEG/SVG/PDF、Batch Plot
   Export導線、format/path/1:1/layout/inclusion options dialogを追加する。toolbarと
   context menuは同一request builderだけを使う。
