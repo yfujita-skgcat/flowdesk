@@ -118,6 +118,10 @@ layout options; those are implemented in Increment 2.
 
 ### Increment 2: Renderer-neutral export scene and shared layout
 
+Progress: export dimensions, 1:1 aspect, title/axis-label/legend visibility,
+JPEG dispatch, and canonical transformed shared X/Y bounds are implemented.
+The common overlay/gate/tick/margin scene remains for this increment.
+
 Target files:
 
 - `src/flowdesk_core/plot_export.py`, `batch_plot_export.py`, processed-display

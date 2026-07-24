@@ -13,6 +13,7 @@ authors = [{ name = "Yoshihiko Fujita", email = "yfujita.skgcat@gmail.com" }]
 dependencies = [
   "numpy",
   "flowio",
+  "Pillow",
 ]
 
 [project.optional-dependencies]

@@ -4,7 +4,12 @@ import json
 
 import pytest
 
-from flowdesk_core.models import PlotPresentationSpec, PlotViewRegistry, PlotViewSpec
+from flowdesk_core.models import (
+  BatchPlotExportSpec,
+  PlotPresentationSpec,
+  PlotViewRegistry,
+  PlotViewSpec,
+)
 from flowdesk_core.plot_export import (
   PlotExportError,
   prepare_plot_export,
@@ -102,6 +107,25 @@ def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   write_plot_png(path, prepared, layers={"s1": ((0.2, 0.8), (0.2, 0.8))})
   assert path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
   assert path.stat().st_size > 100
+
+
+def test_export_options_control_svg_elements_and_aspect(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  path = tmp_path / "plot.svg"
+  options = BatchPlotExportSpec(
+    id="export", name="Export", width=900, height=600, aspect_1_to_1=True,
+    include_title=False, include_axis_labels=False, include_legend=False,
+  )
+  write_plot_svg(path, prepared, layers={"s1": ((0.2,), (0.8,))}, options=options)
+  text = path.read_text(encoding="utf-8")
+  assert 'width="600" height="600"' in text
+  assert "Control" not in text
 
 
 def test_pdf_export_is_nonblank_and_has_metadata(tmp_path) -> None:

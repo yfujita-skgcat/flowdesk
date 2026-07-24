@@ -10,7 +10,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from flowdesk_core.models import PlotPresentationSpec, PlotType
+from flowdesk_core.models import BatchPlotExportSpec, PlotPresentationSpec, PlotType
 from flowdesk_core.plot_presentation import (
   OverlaySourceResolution,
   PresentationDiagnostic,
@@ -137,6 +137,8 @@ def write_plot_svg(
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
   layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  *,
+  options: BatchPlotExportSpec | None = None,
 ) -> None:
   """Write a small deterministic SVG using the prepared source order."""
   selected = presentation or prepared.resolved_presentation.presentation
@@ -146,16 +148,23 @@ def write_plot_svg(
     raise PlotExportError(f"missing prepared layer data: {', '.join(missing)}")
   if not prepared.source_order:
     raise PlotExportError("cannot export a plot with no visible source")
-  width, height = 800, 600
+  width, height = _dimensions(800, 600, options)
   elements = [
     f'<rect width="100%" height="100%" fill="{escape(selected.background_color)}"/>',
-    f'<text x="400" y="32" text-anchor="middle" font-size="{selected.title_font.size}">'
-    f"{escape(selected.title)}</text>",
-    f'<text x="400" y="580" text-anchor="middle">'
-    f"{escape(selected.x_axis_display_label or '')}</text>",
-    f'<text x="15" y="300" text-anchor="middle" transform="rotate(-90 15 300)">'
-    f"{escape(selected.y_axis_display_label or '')}</text>",
   ]
+  if options is None or options.include_title:
+    elements.append(
+      f'<text x="{width / 2:g}" y="32" text-anchor="middle" '
+      f'font-size="{selected.title_font.size}">{escape(selected.title)}</text>'
+    )
+  if options is None or options.include_axis_labels:
+    elements.extend([
+      f'<text x="{width / 2:g}" y="{height - 20:g}" text-anchor="middle">'
+      f"{escape(selected.x_axis_display_label or '')}</text>",
+      f'<text x="15" y="{height / 2:g}" text-anchor="middle" '
+      f'transform="rotate(-90 15 {height / 2:g})">'
+      f"{escape(selected.y_axis_display_label or '')}</text>",
+    ])
   style_by_id = {style.source_id: style for style in selected.source_styles}
   source_labels = {
     source_id: next(
@@ -179,10 +188,11 @@ def write_plot_svg(
         f'<circle cx="{x:g}" cy="{y:g}" r="3" fill="{escape(color)}"/>'
       )
     label = style.legend_label if style and style.legend_label else source_labels[source_id]
-    elements.append(
-      f'<text x="620" y="{55 + index * 20}" fill="{escape(color)}">'
-      f"{escape(str(label))}</text>"
-    )
+    if options is None or options.include_legend:
+      elements.append(
+        f'<text x="{width - 180:g}" y="{55 + index * 20}" fill="{escape(color)}">'
+        f"{escape(str(label))}</text>"
+      )
   svg = (
     f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
     + "".join(elements) + "</svg>\n"
@@ -204,10 +214,12 @@ def write_plot_png(
   *,
   width: int = 800,
   height: int = 600,
+  options: BatchPlotExportSpec | None = None,
 ) -> None:
   """Write a dependency-free RGB PNG from the same prepared display layers."""
   if width < 1 or height < 1:
     raise PlotExportError("PNG dimensions must be positive")
+  width, height = _dimensions(width, height, options)
   selected = presentation or prepared.resolved_presentation.presentation
   layers = layers or {}
   if not prepared.source_order:
@@ -250,10 +262,12 @@ def write_plot_pdf(
   *,
   width: int = 800,
   height: int = 600,
+  options: BatchPlotExportSpec | None = None,
 ) -> None:
   """Write a minimal vector PDF using the same prepared layers and styles."""
   if width < 1 or height < 1 or not prepared.source_order:
     raise PlotExportError("PDF dimensions and visible sources are required")
+  width, height = _dimensions(width, height, options)
   selected = presentation or prepared.resolved_presentation.presentation
   layers = layers or {}
   if any(source_id not in layers for source_id in prepared.source_order):
@@ -305,6 +319,46 @@ def write_plot_pdf(
   out_path.with_suffix(out_path.suffix + ".json").write_text(
     json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
   )
+
+
+def write_plot_jpg(
+  path: str | Path,
+  prepared: PreparedPlotExport,
+  presentation: PlotPresentationSpec | None = None,
+  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  *,
+  width: int = 800,
+  height: int = 600,
+  options: BatchPlotExportSpec | None = None,
+) -> None:
+  """Write JPEG through Pillow without making Qt part of the core renderer."""
+  try:
+    from PIL import Image  # type: ignore[import-not-found]
+  except ImportError as exc:
+    raise PlotExportError("JPEG export requires the Pillow package") from exc
+  width, height = _dimensions(width, height, options)
+  png_path = Path(path).with_suffix(".png.tmp")
+  write_plot_png(png_path, prepared, presentation, layers, width=width, height=height,
+                 options=options)
+  try:
+    with Image.open(png_path) as image:
+      image.convert("RGB").save(path, format="JPEG", dpi=(options.dpi, options.dpi)
+                                 if options else None)
+  finally:
+    png_path.unlink(missing_ok=True)
+    png_path.with_suffix(png_path.suffix + ".json").unlink(missing_ok=True)
+  Path(path).with_suffix(Path(path).suffix + ".json").write_text(
+    json.dumps(prepared.metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+  )
+
+
+def _dimensions(width: int, height: int, options: BatchPlotExportSpec | None) -> tuple[int, int]:
+  if width < 1 or height < 1:
+    raise PlotExportError("plot dimensions must be positive")
+  if options and options.aspect_1_to_1:
+    size = min(width, height)
+    return size, size
+  return width, height
 
 
 def _rgb(value: str) -> tuple[int, int, int]:

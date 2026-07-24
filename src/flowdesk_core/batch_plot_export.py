@@ -116,7 +116,7 @@ def plan_batch_plot_export(
       paths.append(str(path))
     items.append(BatchPlotExportItem(
       sample_id, title, tuple(paths), "failed" if diagnostic else "planned", diagnostic,
-      source_ids, tuple(item.value for item in wells),
+      source_ids, tuple(item.value for item in wells if item.value is not None),
       tuple(item.source for item in wells if item.source),
     ))
   return tuple(items)

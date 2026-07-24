@@ -18,6 +18,7 @@ from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, Tr
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import (
   prepare_plot_export,
+  write_plot_jpg,
   write_plot_pdf,
   write_plot_png,
   write_plot_svg,
@@ -48,10 +49,10 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
        if str(item.get("id")) == spec.plot_view_id),
       {"id": spec.plot_view_id, "plot_type": "scatter"},
     )
+    prepared_layers: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    shared_bounds: tuple[float, float, float, float] | None = None
 
-    def render(
-      sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
-    ) -> None:
+    def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
       _info, sample_data = read_fcs_sample(sample["path"], str(sample["id"]))
       names = [channel.id for channel in sample_data.channels]
       if len(names) < 2:
@@ -66,20 +67,20 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         plot_type=cast(PlotType, str(view.get("plot_type", "scatter"))),
         rendering_downsample=cast(dict[str, Any], view.get("rendering_downsample", {})),
       )
-      x_transform_id = view.get("x_transform_id")
-      y_transform_id = view.get("y_transform_id")
       processed = runner.prepare_display_sample(ProcessedDisplayRequest(
         revision=0,
         sample=sample_data,
         population_id=view_spec.population_id,
         x_parameter_id=x_id,
         y_parameter_id=y_id,
-        x_transform_id=x_transform_id,
-        y_transform_id=y_transform_id,
+        x_transform_id=view.get("x_transform_id"),
+        y_transform_id=view.get("y_transform_id"),
         display_max_points=int(view_spec.rendering_downsample.get("max_points", 20_000)),
       ))
       x_values = processed.events[processed.display_mask, processed.channel_index(x_id)]
       y_values = processed.events[processed.display_mask, processed.channel_index(y_id)]
+      x_transform_id = view.get("x_transform_id")
+      y_transform_id = view.get("y_transform_id")
       if x_transform_id:
         x_values = apply_transform(
           _transform_spec(transform_by_id, str(x_transform_id)), x_values
@@ -89,8 +90,32 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
           _transform_spec(transform_by_id, str(y_transform_id)), y_values
         )
       finite = np.isfinite(x_values) & np.isfinite(y_values)
-      x_values, y_values = x_values[finite], y_values[finite]
-      x_values, y_values = _normalize(x_values), _normalize(y_values)
+      return x_values[finite], y_values[finite], {
+        "x_id": x_id, "y_id": y_id, "view_spec": view_spec,
+      }
+
+    def render(
+      sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
+    ) -> None:
+      nonlocal shared_bounds
+      sample_id = str(sample["id"])
+      if not prepared_layers:
+        for candidate in samples:
+          x_values, y_values, _ = extract_layer(candidate)
+          prepared_layers[str(candidate["id"])] = (x_values, y_values)
+        if spec.layout_policy == "shared_ranges":
+          all_x = np.concatenate([value[0] for value in prepared_layers.values()])
+          all_y = np.concatenate([value[1] for value in prepared_layers.values()])
+          shared_bounds = (
+            float(np.min(all_x)), float(np.max(all_x)),
+            float(np.min(all_y)), float(np.max(all_y)),
+          )
+      x_values, y_values = prepared_layers[sample_id]
+      metadata = extract_layer(sample)[2]
+      x_id, y_id = metadata["x_id"], metadata["y_id"]
+      x_values = _normalize(x_values, shared_bounds[:2] if shared_bounds else None)
+      y_values = _normalize(y_values, (shared_bounds[2], shared_bounds[3])
+                            if shared_bounds else None)
       sample_id = str(sample["id"])
       source = {
         "source_id": sample_id, "sample_id": sample_id,
@@ -105,11 +130,16 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       )
       layers = {sample_id: (tuple(x_values), tuple(y_values))}
       if path.suffix.lower() == ".png":
-        write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height)
+        write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height,
+                       options=spec)
+      elif path.suffix.lower() in {".jpg", ".jpeg"}:
+        write_plot_jpg(path, prepared, layers=layers, width=spec.width, height=spec.height,
+                       options=spec)
       elif path.suffix.lower() == ".svg":
-        write_plot_svg(path, prepared, layers=layers)
+        write_plot_svg(path, prepared, layers=layers, options=spec)
       elif path.suffix.lower() == ".pdf":
-        write_plot_pdf(path, prepared, layers=layers, width=spec.width, height=spec.height)
+        write_plot_pdf(path, prepared, layers=layers, width=spec.width, height=spec.height,
+                       options=spec)
       else:
         raise ValueError(f"CLI renderer does not support {path.suffix!r}")
 
@@ -123,10 +153,13 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
     return 1
 
 
-def _normalize(values: np.ndarray) -> np.ndarray:
+def _normalize(
+  values: np.ndarray,
+  bounds: tuple[float, float] | None = None,
+) -> np.ndarray:
   if values.size == 0:
     raise ValueError("plot has no finite events")
-  low, high = float(np.min(values)), float(np.max(values))
+  low, high = bounds or (float(np.min(values)), float(np.max(values)))
   if high == low:
     return np.full(values.shape, 0.5, dtype=np.float64)
   return (values - low) / (high - low)
