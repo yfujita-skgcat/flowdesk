@@ -1345,6 +1345,7 @@ class MainWindow(QMainWindow):
 
     def _on_channel_changed(self, x_name: str, y_name: str) -> None:
         """Called when X or Y channel selection changes."""
+        self._project_dirty = True
         self._replot()
 
     def _on_axis_analysis_transform_requested(self, axis: str, choice: str) -> None:
@@ -1511,6 +1512,14 @@ class MainWindow(QMainWindow):
             ("overlay", self._overlays, "sources"),
         ):
             for definition in definitions:
+                if (
+                    collection_name == "plot view"
+                    and definition.get("id") == self._overlay_view_id()
+                ):
+                    # The active view is the editable display definition. Its
+                    # axis transform is synchronized with the selector and
+                    # must not block a selector change by referencing itself.
+                    continue
                 name = str(definition.get("name", definition.get("id", "unknown")))
                 if definition.get("transform_id") == transform.id:
                     references.append(f"{collection_name} {name}")
@@ -2480,6 +2489,7 @@ class MainWindow(QMainWindow):
             "notes": "",
         }
 
+        self._synchronize_active_plot_view()
         plot_views = deepcopy(self._plot_views)
         view_id = self._overlay_view_id()
         current_view = next(
@@ -2593,6 +2603,48 @@ class MainWindow(QMainWindow):
         }
 
         return project
+
+    def _synchronize_active_plot_view(self) -> None:
+        """Persist the complete current display identity in the active view."""
+        view_id = self._overlay_view_id()
+        view = next(
+            (item for item in self._plot_views if item.get("id") == view_id),
+            None,
+        )
+        if view is None:
+            view = {"id": view_id}
+            self._plot_views.append(view)
+        x_parameter = self._channel_selector.x_channel_id()
+        y_parameter = (
+            None
+            if self._channel_selector.is_count_mode()
+            else self._channel_selector.y_channel_id()
+        )
+        x_transform = self._active_plot_transform(x_parameter or "")
+        y_transform = (
+            None
+            if y_parameter is None
+            else self._active_plot_transform(y_parameter)
+        )
+        overlay_state = self._sample_browser.overlay_state()
+        view.update({
+            "population_id": self._display_population_id or "all_events",
+            "x_parameter": x_parameter or "",
+            "y_parameter": y_parameter,
+            "x_transform_id": None if x_transform is None else x_transform.id,
+            "y_transform_id": None if y_transform is None else y_transform.id,
+            "plot_type": "histogram" if y_parameter is None else "scatter",
+            "manual_overlay_sample_ids": list(
+                overlay_state.get("manual_overlay_sample_ids", [])
+            ),
+            "manual_overlay_colors": dict(
+                overlay_state.get("manual_overlay_colors", {})
+            ),
+            "overlay_mode": overlay_state.get("overlay_mode", "manual_only"),
+            "rendering_downsample": {
+                "max_points": self._channel_selector.display_max_points()
+            },
+        })
 
     def _on_pipeline_finished(self) -> None:
         """Handle pipeline completion by retrieving results from the worker."""
@@ -3511,6 +3563,7 @@ class MainWindow(QMainWindow):
 
     def _on_batch_plot_export(self) -> None:
         """Edit a batch definition, persist it, and optionally run the CLI adapter."""
+        self._synchronize_active_plot_view()
         samples = [
             {"id": sample.id, "name": sample.name}
             for sample in self._sample_browser.samples()

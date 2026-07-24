@@ -473,6 +473,39 @@ def test_plot_parameters_expose_persisted_display_max_points() -> None:
     app.processEvents()
 
 
+def test_project_manifest_persists_complete_active_plot_view() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    window._channel_selector.set_channels(["x", "y"], preserve_selection=False)
+    window._channel_selector.set_selected_channels("x", "y")
+    window._plot_views = [{"id": "main-view"}]
+    window._display_population_id = "gate-1"
+    window._plot_transform_overrides = {"x": "tx", "y": "ty"}
+    window._transforms = [
+      {
+        "id": "tx", "name": "X log", "transform_type": "log",
+        "parameter": "x", "settings": {"base": 10.0},
+      },
+      {
+        "id": "ty", "name": "Y log", "transform_type": "log",
+        "parameter": "y", "settings": {"base": 10.0},
+      },
+    ]
+    manifest = window._build_project_manifest()
+    view = next(item for item in manifest["plot_views"] if item["id"] == "main-view")
+    assert view["x_parameter"] == "x"
+    assert view["y_parameter"] == "y"
+    assert view["x_transform_id"] == "tx"
+    assert view["y_transform_id"] == "ty"
+    assert view["population_id"] == "gate-1"
+    assert view["plot_type"] == "scatter"
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_default_drag_delegates_mouse_drag_to_viewbox() -> None:
   app = _app()
   widget = PlotWidget()

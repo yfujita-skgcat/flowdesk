@@ -282,7 +282,7 @@ Acceptance:
 - The GUI has no FCS parsing, gate evaluation, transform, or image-rendering
   implementation beyond dispatching the existing headless runner.
 
-### Increment 6: Persisted plot-view snapshot parity (planned regression fix)
+### Increment 6: Persisted plot-view snapshot parity (implemented)
 
 #### Observed failure and evidence
 
@@ -305,12 +305,14 @@ and the resolved presentation has null axis labels even though the visibility
 checkboxes are enabled. The generated PNG sidecar confirms the fallback
 parameter IDs, null labels, and an empty `gate_overlays` list.
 
-There is a second latent error: `PipelineRunner.prepare_display_sample()`
-already returns the compensated/derived/transformed display array, but
-`flowdesk_cli.batch_plot` applies the selected transform again. Once transform
-IDs are persisted this would double-transform the batch data.
+The transform stage is represented lazily: `PipelineRunner.prepare_display_sample()`
+validates and carries the transform definitions, while the returned event array
+still requires the selected display transform to be materialized for renderer
+coordinates. The fix must therefore apply the persisted X/Y transform exactly
+once after the canonical processed-display result, and must test against double
+application rather than removing this required materialization.
 
-#### Required design
+#### Implemented design
 
 `PlotViewSpec` is the sole persisted identity of a batch-rendered plot. The
 GUI may construct a serializable snapshot from current UI selections, but the
@@ -318,20 +320,21 @@ snapshot must be validated through core model contracts and rendered only by
 the existing headless path. `plot_display_settings` remains UI restoration
 state; it must not be a second, competing batch-rendering definition.
 
-#### Work
+#### Implemented work
 
-1. Add a core validated helper for synchronizing a complete active
-   `PlotViewSpec` mapping: stable X/Y parameter IDs, formal transform IDs,
+1. The GUI synchronizes a complete active `PlotViewSpec` mapping: stable X/Y
+   parameter IDs, formal transform IDs,
    selected population, scatter/histogram type, rendering downsampling,
    overlay state, and presentation. Invoke it before project serialization and
    before creating/running a Batch Plot Export definition.
 2. Make the CLI require a complete persisted view for batch scatter export.
-   Remove the first/second-channel fallback and emit a structured validation
-   failure that names the missing field and view ID.
-3. Consume the canonical processed-display array without a second
-   `apply_transform()` call. Align gate selection and gate coordinates with
-   the exact persisted X/Y parameter and transform IDs; incompatible gates are
-   diagnostics, never silently rendered in a different coordinate system.
+   The first/second-channel fallback is removed and validation failure names
+   the missing field and view ID.
+3. Consume the canonical processed-display array and materialize each persisted
+   X/Y transform exactly once for renderer coordinates. Align gate selection
+   and gate coordinates with the exact persisted X/Y parameter and transform
+   IDs; incompatible gates are diagnostics, never silently rendered in a
+   different coordinate system.
 4. Build axis-label defaults from the resolved persisted view and channel
    metadata. `include_axis_labels` and `include_ticks` control visibility only;
    they must not turn a missing scene definition into empty labels or axes.

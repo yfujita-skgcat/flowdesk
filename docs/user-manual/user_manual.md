@@ -905,7 +905,7 @@ export画像では、解析中の編集用gateハンドルを表示せず、gate
 
 ### 15.5 Batch Plot Export
 
-`Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、サイズ・DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。未保存projectでは、保存または実行時に通常のproject保存を行う。
+`Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、サイズ・DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。Batch Exportは保存時点のactive plot view（X/Y channel、transform、population、overlay、presentation）を使用する。未保存projectでは、保存または実行時に通常のproject保存を行う。
 
 output directoryはprojectには保存されず、アプリケーション設定（`QSettings`）に最後に使用した値だけが保存される。次回ダイアログを開くと復元されるため、同じ場所へ繰り返し出力できる。projectを別のディレクトリへ移動しても、この設定はprojectとは独立している。
 

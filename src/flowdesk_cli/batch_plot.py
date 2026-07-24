@@ -40,15 +40,37 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
     samples = resolve_sample_paths(project, Path(project_path))
     annotations = project.get("annotations", [])
     runner = PipelineRunner(project)
+    view = next(
+      (item for item in project.get("plot_views", [])
+       if str(item.get("id")) == spec.plot_view_id),
+      None,
+    )
+    if view is None:
+      raise ValueError(
+        f"batch plot view {spec.plot_view_id!r} is missing from the project"
+      )
+    try:
+      persisted_view = PlotViewSpec(
+        id=str(view.get("id", spec.plot_view_id)),
+        population_id=str(view.get("population_id", "all_events")),
+        x_parameter=str(view.get("x_parameter", "")),
+        y_parameter=(
+          None if view.get("y_parameter") is None
+          else str(view.get("y_parameter"))
+        ),
+        x_transform_id=view.get("x_transform_id"),
+        y_transform_id=view.get("y_transform_id"),
+        plot_type=cast(PlotType, str(view.get("plot_type", "scatter"))),
+        rendering_downsample=dict(view.get("rendering_downsample", {})),
+      )
+    except (TypeError, ValueError) as exc:
+      raise ValueError(
+        f"invalid batch plot view {spec.plot_view_id!r}: {exc}"
+      ) from exc
     transform_by_id = {
       str(item.get("id")): item for item in project.get("transforms", [])
       if isinstance(item, Mapping) and item.get("id")
     }
-    view = next(
-      (item for item in project.get("plot_views", [])
-       if str(item.get("id")) == spec.plot_view_id),
-      {"id": spec.plot_view_id, "plot_type": "scatter"},
-    )
     prepared_layers: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     layer_metadata: dict[str, dict[str, Any]] = {}
     shared_bounds: tuple[float, float, float, float] | None = None
@@ -58,8 +80,8 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       names = [channel.id for channel in sample_data.channels]
       if len(names) < 2:
         raise ValueError("plot requires at least two channels")
-      x_id = str(view.get("x_parameter") or names[0])
-      y_id = str(view.get("y_parameter") or names[1])
+      x_id = persisted_view.x_parameter
+      y_id = persisted_view.y_parameter or names[1]
       view_spec = PlotViewSpec(
         id=spec.plot_view_id,
         population_id=str(view.get("population_id", "all_events")),
@@ -78,6 +100,12 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         y_transform_id=view.get("y_transform_id"),
         display_max_points=int(view_spec.rendering_downsample.get("max_points", 20_000)),
       ))
+      processed_ids = {channel.id for channel in processed.channels}
+      if x_id not in processed_ids or y_id not in processed_ids:
+        raise ValueError(
+          f"batch plot view {spec.plot_view_id!r} references unavailable axes "
+          f"{x_id!r}, {y_id!r} for sample {sample['id']!r}"
+        )
       x_values = processed.events[processed.display_mask, processed.channel_index(x_id)]
       y_values = processed.events[processed.display_mask, processed.channel_index(y_id)]
       x_transform_id = view.get("x_transform_id")
@@ -91,8 +119,17 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
           _transform_spec(transform_by_id, str(y_transform_id)), y_values
         )
       finite = np.isfinite(x_values) & np.isfinite(y_values)
+      x_label = next(
+        (channel.name for channel in processed.channels if channel.id == x_id),
+        x_id,
+      )
+      y_label = next(
+        (channel.name for channel in processed.channels if channel.id == y_id),
+        y_id,
+      )
       return x_values[finite], y_values[finite], {
-        "x_id": x_id, "y_id": y_id, "view_spec": view_spec,
+        "x_id": x_id, "y_id": y_id, "x_label": x_label, "y_label": y_label,
+        "view_spec": view_spec,
       }
 
     def render(
@@ -122,9 +159,24 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         (float(np.min(x_values)), float(np.max(x_values))),
         (float(np.min(y_values)), float(np.max(y_values))),
       )
+      advanced_overlay_ids = [
+        str(source.get("sample_id"))
+        for source in sorted(
+          view.get("overlay_sources", ()),
+          key=lambda item: (
+            int(item.get("order", 0)), str(item.get("source_id", ""))
+          ),
+        )
+        if source.get("visible", True) and source.get("sample_id")
+      ]
+      overlay_candidates = [
+        *advanced_overlay_ids,
+        *(str(value) for value in view.get("manual_overlay_sample_ids", ())),
+      ]
       overlay_ids = tuple(
-        str(value) for value in view.get("manual_overlay_sample_ids", ())
-        if str(value) in prepared_layers and str(value) != sample_id
+        value for index, value in enumerate(overlay_candidates)
+        if value in prepared_layers and value != sample_id
+        and value not in overlay_candidates[:index]
       )
       source_ids = (sample_id, *overlay_ids)
       source_by_id = {str(item["id"]): item for item in samples}
@@ -144,13 +196,63 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
           "display_name": str(source_sample.get("name", source_id)),
           "x_parameter_id": source_metadata["x_id"],
           "y_parameter_id": source_metadata["y_id"], "visible": True, "order": order,
+          "style": next(
+            (
+              dict(item.get("style", {}))
+              for item in view.get("overlay_sources", [])
+              if str(item.get("sample_id")) == source_id
+            ),
+            {},
+          ),
         })
+      presentation = dict(view.get("presentation", {}))
+      if not presentation.get("x_axis_display_label"):
+        presentation["x_axis_display_label"] = metadata["x_label"]
+      if not presentation.get("y_axis_display_label"):
+        presentation["y_axis_display_label"] = metadata["y_label"]
+      source_styles = {
+        str(style.get("source_id")): dict(style)
+        for style in presentation.get("source_styles", [])
+        if isinstance(style, Mapping) and style.get("source_id")
+      }
+      manual_colors = view.get("manual_overlay_colors", {})
+      for source_id in source_ids:
+        explicit_color = (
+          manual_colors.get(source_id)
+          if isinstance(manual_colors, Mapping) else None
+        )
+        if explicit_color and not source_styles.get(source_id, {}).get("color"):
+          source_styles[source_id] = {
+            **source_styles.get(source_id, {}),
+            "source_id": source_id,
+            "color": str(explicit_color),
+          }
+        source_style = next(
+          (item.get("style") for item in sources if item.get("source_id") == source_id),
+          None,
+        )
+        if isinstance(source_style, Mapping):
+          source_styles[source_id] = {
+            **source_styles.get(source_id, {}),
+            **dict(source_style),
+            "source_id": source_id,
+          }
+        if explicit_color:
+          source_styles[source_id] = {
+            **source_styles.get(source_id, {}),
+            "source_id": source_id,
+            "color": str(explicit_color),
+          }
+      presentation["source_styles"] = list(source_styles.values())
       prepared = prepare_plot_export(
         spec.plot_view_id, cast(PlotType, str(view.get("plot_type", "scatter"))),
         tuple(sources), tuple(OverlaySourceResolution(source_id, "compatible")
                               for source_id in source_ids),
-        view_presentation=cast(dict[str, Any] | None, view.get("presentation")),
-        gate_overlays=_gate_overlays(project, x_id, y_id, active_bounds),
+        view_presentation=presentation,
+        gate_overlays=_gate_overlays(
+          project, x_id, y_id, active_bounds,
+          view.get("x_transform_id"), view.get("y_transform_id"),
+        ),
       )
       if path.suffix.lower() == ".png":
         write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height,
@@ -199,6 +301,8 @@ def _gate_overlays(
   x_parameter: str,
   y_parameter: str,
   bounds: tuple[tuple[float, float], tuple[float, float]],
+  x_transform_id: str | None,
+  y_transform_id: str | None,
 ) -> tuple[dict[str, Any], ...]:
   """Convert persisted gate geometry to the renderer's normalized scene."""
   x_low, x_high = bounds[0]
@@ -216,6 +320,10 @@ def _gate_overlays(
       if gate.get("x_parameter") not in {None, x_parameter}:
         continue
       if gate.get("y_parameter") not in {None, y_parameter}:
+        continue
+      if gate.get("x_transform_id") != x_transform_id:
+        continue
+      if gate.get("y_transform_id") != y_transform_id:
         continue
       points = gate.get("coordinates", ())
       if not points and gate.get("gate_type") == "rectangle":
@@ -254,7 +362,7 @@ def _unit_range(value: float, low: float, high: float) -> float:
 def _transform_spec(
   transform_by_id: Mapping[str, Mapping[str, Any]], transform_id: str,
 ) -> TransformSpec:
-  """Build a typed transform for canonical headless plot coordinates."""
+  """Build the typed transform used once for canonical display coordinates."""
   definition = transform_by_id.get(transform_id)
   if definition is None:
     raise ValueError(f"plot transform is missing: {transform_id!r}")
