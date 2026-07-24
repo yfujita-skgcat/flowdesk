@@ -14,6 +14,8 @@ Phase 1の配布準備は実装済みである。
 - Makefileは`tools/package.py`を呼ぶLinux/macOS向けの便利なラッパーとし、WindowsではPythonから直接実行できる。
 - GUI smoke testはJSON reportでQt version、platform、MainWindow生成を検証し、Qt platformの指定は明示時だけ行う。
 - PyInstallerの標準hookを優先し、collectorではpyqtgraphのデータだけを追加収集する。
+- GUI specはQt Widgets/SVGと2D plotに不要なQt optional modules、OpenGL、テストモジュールを除外する。
+- package workflowはNode.js警告を避けるため、checkout、setup-python、upload-artifactの現行majorを使用する。
 
 次のPhase 2以降は未実装であり、PyInstaller specやOS installerを追加する前に、各Phaseを個別に完了させる。
 

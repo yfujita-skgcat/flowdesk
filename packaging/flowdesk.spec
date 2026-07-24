@@ -28,16 +28,56 @@ datas, binaries, hiddenimports = collect_packages()
 # build.  The fallback in app_info remains useful for source-tree execution.
 datas.extend(copy_metadata("flowdesk"))
 
+# Flowdesk uses Qt Widgets, Qt SVG, and pyqtgraph's 2-D plotting APIs.  Keep
+# PyInstaller's normal import analysis for the runtime dependencies, while
+# preventing optional Qt tooling, 3-D/OpenGL support, and test packages from
+# being pulled into the onedir artifact by broad package hooks.
+excluded_modules = [
+  "PySide6.Qt3DAnimation",
+  "PySide6.Qt3DCore",
+  "PySide6.Qt3DExtras",
+  "PySide6.Qt3DInput",
+  "PySide6.Qt3DLogic",
+  "PySide6.Qt3DRender",
+  "PySide6.QtBluetooth",
+  "PySide6.QtCharts",
+  "PySide6.QtDataVisualization",
+  "PySide6.QtDesigner",
+  "PySide6.QtGraphs",
+  "PySide6.QtLocation",
+  "PySide6.QtMultimedia",
+  "PySide6.QtNfc",
+  "PySide6.QtPdf",
+  "PySide6.QtPdfWidgets",
+  "PySide6.QtQml",
+  "PySide6.QtQuick",
+  "PySide6.QtQuick3D",
+  "PySide6.QtSql",
+  "PySide6.QtWebChannel",
+  "PySide6.QtWebEngineCore",
+  "PySide6.QtWebEngineWidgets",
+  "PySide6.scripts",
+  "pyqtgraph.opengl",
+  "OpenGL",
+  "numpy.tests",
+  "numpy.f2py.tests",
+  "numpy.lib.tests",
+  "numpy.linalg.tests",
+  "numpy.random.tests",
+  "numpy.typing.tests",
+  "pytest",
+]
+
 analysis = Analysis(
   [str(src_dir / "flowdesk_qt" / "__main__.py")],
   pathex=[str(src_dir)],
   binaries=binaries,
   datas=datas,
   hiddenimports=hiddenimports,
-  hookspath=[],
+  hookspath=[str(Path(SPECPATH) / "hooks")],
   hooksconfig={},
   runtime_hooks=[],
-  excludes=[],
+  excludes=excluded_modules,
   noarchive=False,
 )
 

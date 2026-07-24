@@ -9,6 +9,18 @@ from PyInstaller.utils.hooks import copy_metadata
 project_root = Path(SPECPATH).parent
 src_dir = project_root / "src"
 
+# The CLI has no GUI entry point.  These exclusions also keep optional test
+# modules out when NumPy's package hook is evaluated for the headless build.
+excluded_modules = [
+  "numpy.tests",
+  "numpy.f2py.tests",
+  "numpy.lib.tests",
+  "numpy.linalg.tests",
+  "numpy.random.tests",
+  "numpy.typing.tests",
+  "pytest",
+]
+
 analysis = Analysis(
   [str(src_dir / "flowdesk_cli" / "main.py")],
   pathex=[str(src_dir)],
@@ -18,7 +30,7 @@ analysis = Analysis(
   hookspath=[],
   hooksconfig={},
   runtime_hooks=[],
-  excludes=[],
+  excludes=excluded_modules,
   noarchive=False,
 )
 
