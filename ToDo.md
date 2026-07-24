@@ -741,6 +741,12 @@ items so future changes do not regress the behavior.
   format、size/DPI、1:1、layout、表示要素、filename template、collision/strictness、output
   directoryを指定し、project保存後に既存CLI/headless runnerだけで実行する。output directoryは
   projectへ保存しない。cancel、save失敗、partial failure、複数definition選択のGUI testを追加する。
+- [ ] Increment 6: Batch Plot Exportが現在のplot viewと異なる先頭FCS channelへfallbackする
+  回帰を修正する。project保存時にactive viewのstable X/Y parameter ID、transform ID、
+  population、plot type、overlay/presentationを一つの`PlotViewSpec`として同期し、CLIは
+  不完全viewを明示的に失敗させる。`PipelineRunner.prepare_display_sample()`の出力へtransformを
+  再適用しない。axis label/tick/gateが同一の座標系・definitionからrenderされることを
+  PNG/SVG/PDF/sidecarでE2E検証する。
 
 受け入れ条件:
 
@@ -755,6 +761,9 @@ items so future changes do not regress the behavior.
 - [x] Batch Plot Export dialogから設定なしのprojectでもdefinitionを作成して実行でき、保存済み
   definitionを選択・更新・再実行できる。出力先はユーザーがその都度指定し、project移動後も
   保存済みdefinitionが有効である。
+- [ ] Batch Plot Exportは現在選択中のFITC/APC等の軸、formal transform ID、population、
+  visible overlay、gate、axis label/tickをsingle exportと同じdefinitionで出力する。不完全な
+  viewが先頭FCS channelや空のlabel/gateへ暗黙fallbackすることはない。
 
 ### Phase B7.4: Analysis workflow integration [S02/S04/S05/S07/S09/S10/S11/S14]
 

@@ -282,6 +282,79 @@ Acceptance:
 - The GUI has no FCS parsing, gate evaluation, transform, or image-rendering
   implementation beyond dispatching the existing headless runner.
 
+### Increment 6: Persisted plot-view snapshot parity (planned regression fix)
+
+#### Observed failure and evidence
+
+The Batch Plot Export dialog can save an export definition, but its selected
+`plot_view_id` does not yet reliably identify the current display definition.
+For the reported project, `plot_display_settings` records the active FITC/APC
+channel IDs, while `plot_views/main-view` contains only rendering downsampling
+and manual-overlay fields. The CLI then executes this fallback:
+
+```text
+x_parameter = view.x_parameter or first FCS channel
+y_parameter = view.y_parameter or second FCS channel
+x_transform_id = view.x_transform_id (missing)
+y_transform_id = view.y_transform_id (missing)
+```
+
+This explains all observed symptoms: the output plots FSC-H/FSC-A instead of
+FITC/APC, gates are filtered out because their parameter IDs no longer match,
+and the resolved presentation has null axis labels even though the visibility
+checkboxes are enabled. The generated PNG sidecar confirms the fallback
+parameter IDs, null labels, and an empty `gate_overlays` list.
+
+There is a second latent error: `PipelineRunner.prepare_display_sample()`
+already returns the compensated/derived/transformed display array, but
+`flowdesk_cli.batch_plot` applies the selected transform again. Once transform
+IDs are persisted this would double-transform the batch data.
+
+#### Required design
+
+`PlotViewSpec` is the sole persisted identity of a batch-rendered plot. The
+GUI may construct a serializable snapshot from current UI selections, but the
+snapshot must be validated through core model contracts and rendered only by
+the existing headless path. `plot_display_settings` remains UI restoration
+state; it must not be a second, competing batch-rendering definition.
+
+#### Work
+
+1. Add a core validated helper for synchronizing a complete active
+   `PlotViewSpec` mapping: stable X/Y parameter IDs, formal transform IDs,
+   selected population, scatter/histogram type, rendering downsampling,
+   overlay state, and presentation. Invoke it before project serialization and
+   before creating/running a Batch Plot Export definition.
+2. Make the CLI require a complete persisted view for batch scatter export.
+   Remove the first/second-channel fallback and emit a structured validation
+   failure that names the missing field and view ID.
+3. Consume the canonical processed-display array without a second
+   `apply_transform()` call. Align gate selection and gate coordinates with
+   the exact persisted X/Y parameter and transform IDs; incompatible gates are
+   diagnostics, never silently rendered in a different coordinate system.
+4. Build axis-label defaults from the resolved persisted view and channel
+   metadata. `include_axis_labels` and `include_ticks` control visibility only;
+   they must not turn a missing scene definition into empty labels or axes.
+5. Add fixture-based core/CLI/GUI E2E tests that save FITC/APC with log10/log10
+   and a rectangle gate, then assert the export sidecar, raster/SVG scene, and
+   manifest use those axis IDs, transform IDs, labels, gate geometry, visible
+   overlays, colors, and no double transformation. Cover incomplete legacy
+   views as a clear failure and a GUI save-time synchronization path.
+
+#### Acceptance
+
+- A batch export created from the screenshot's FITC B525-A / APC R660-A
+  log10/log10 display records those stable IDs and transform IDs in both the
+  saved view and sidecar; it never plots unrelated FSC channels.
+- With title, labels, ticks, and gates enabled, output has channel labels,
+  ticks, and the matching rectangle/polygon geometry in the same transformed
+  coordinate system as the displayed plot.
+- Exported values equal the single canonical processed-display view, with each
+  transform applied exactly once. Missing persisted axes fail before writing an
+  image and do not fall back silently.
+- The GUI remains a project-state editor and CLI dispatcher; no FCS processing
+  or image rendering is added to Qt code.
+
 ## Non-goals
 
 - Report/layout editing belongs to Phase C2.
