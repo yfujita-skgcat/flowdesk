@@ -65,6 +65,7 @@ release order below.
 | B7.1 | `multi-sample-overlay-and-plot-presentation.md` | B6-B7 |
 | B7.2 | `integrated-overlay-controls-and-plot-appearance.md` | B7.1 |
 | B7.3 | `sample-sheet-results-and-batch-plot-export.md` | B1, B3.3, B7.1, A6 |
+| B7.3.E | `plot-export-completion.md` | B7.3, B7.4, B7.1 |
 | B7.4 | `analysis-workflow-integration.md` | A2-A3, A6, B1, B3.3, B7.2-B7.3 |
 | B7.6 | `unified-results-export-and-population-paths.md` | B7.5, B1-B4, A7 |
 | B8.1 | `analysis-settings-bundles.md` | A1-A7, B3 |

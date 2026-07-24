@@ -66,6 +66,7 @@ git status --short
 | B7.1 | `docs/implementation/multi-sample-overlay-and-plot-presentation.md` |
 | B7.2 | `docs/implementation/integrated-overlay-controls-and-plot-appearance.md` |
 | B7.3 | `docs/implementation/sample-sheet-results-and-batch-plot-export.md` |
+| B7.3.E | `docs/implementation/plot-export-completion.md` |
 | B7.4 | `docs/implementation/analysis-workflow-integration.md` |
 | B7.5 | `docs/implementation/results-statistics-matrix.md` |
 | B7.6 | `docs/implementation/unified-results-export-and-population-paths.md` |
@@ -710,6 +711,39 @@ items so future changes do not regress the behavior.
 - [x] バッチ画像exportの有無・表示downsample・style変更がraw events、membership、count、frequency、statisticsを変更しない。
 - [x] Resultsからmean/medianなどのStatisticSpecを追加・編集でき、known values、undefined status、unit、revisionがheadless report/CLI exportと一致する。
 - [x] GUIに科学計算または独自plot export定義を複製せず、core/headless runnerをGUIなしで実行できる。
+
+#### Phase B7.3.E: Plot image export completion [docs/bug.md]
+
+`docs/bug.md` のplot画像export要求は、既存のsingle PNG/SVG/PDF exportと
+`BatchPlotExportSpec`だけでは完了していない。実装前に
+`docs/implementation/plot-export-completion.md`を全文読む。一度のLLM/Codex実行では
+同ガイドの番号付きincrementを一つだけ実装する。
+
+- [ ] Increment 1: GUI/CLI共通のtyped export options、JPEG format、portable filename
+  slug、well prefix、multi-source prefix、collision/provenanceをcore/schema/migrationへ
+  追加する。wellは明示plate assignmentを優先し、filename tokenの暫定fallbackは
+  provenanceを残して曖昧な文字列をwellと扱わない。
+- [ ] Increment 2: canonical processed displayとresolved overlay/presentation/gateから
+  renderer-neutral export sceneを作る。batchではshared transformed range、axes、ticks、
+  marginsをpreflightして、比較画像のplot originと軸表示を揃える。
+- [ ] Increment 3: plot area右クリックのExport submenu、PNG/JPEG/SVG/PDF、Batch Plot
+  Export導線、format/path/1:1/layout/inclusion options dialogを追加する。toolbarと
+  context menuは同一request builderだけを使う。
+- [ ] Increment 4: single/batch、overlay/gate/color/title、well filename、collision、
+  missing/incompatible source、renderer failureのcore/CLI/GUI E2E testとユーザーマニュアルを
+  完了する。exportがraw events、membership、statistics、analysis revisionを変更しないことを
+  検証する。
+
+受け入れ条件:
+
+- [ ] single exportとbatch exportが、選択されたoverlay、gate、presentation、title、axis
+  label/tick、色を定義どおりに出力し、sidecar/manifestへresolved provenanceを残す。
+- [ ] overlayなしのwell `A1`は`A1_*.png`、A1/B2 overlayは`A1_B2_*.png`となり、Windows、
+  macOS、Linuxで安全なファイル名かつ衝突検出後も決定的である。
+- [ ] batch shared-layout exportは、全出力でX/Y range、tick位置、plot area位置、label余白を
+  揃え、PNG/JPEG/SVG/PDFの対応rendererで非空の出力を作る。
+- [ ] toolbar/right-click/GUI batch/CLI batchが同じexport definitionを使い、GUIに独自の
+  scientific computationまたは別plot identityを作らない。
 
 ### Phase B7.4: Analysis workflow integration [S02/S04/S05/S07/S09/S10/S11/S14]
 
