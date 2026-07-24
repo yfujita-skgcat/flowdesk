@@ -204,13 +204,11 @@ Acceptance:
 - No image drops a requested visible gate/overlay or changes resolved color/range.
 - A manifest accounts for every requested sample and source combination.
 
-### Increment 5: Batch Plot Export definition dialog
+### Increment 5: Batch Plot Export definition dialog (implemented)
 
-The existing Results and plot-area entries only execute the first persisted
-`BatchPlotExportSpec`. They report "No BatchPlotExportSpec is configured" for
-a new project, so the normal GUI workflow cannot create its required
-definition. This increment supplies the missing definition editor and a
-single execution controller.
+The existing Results and plot-area entries now use a shared
+`BatchPlotExportSpec` editor and execution controller. A new project opens a
+default definition instead of requiring a preconfigured definition.
 
 Target files:
 
@@ -257,7 +255,7 @@ the mandatory project save, then reports the structured batch manifest status
 and any failures. A project that has not yet been saved uses the normal Save
 Project flow before invoking the headless runner.
 
-#### Implementation steps
+#### Implemented steps
 
 1. Add a Qt-only `BatchPlotExportDialog` and a GUI-neutral mapping-to-typed
    validation boundary. Give every control a stable object name.

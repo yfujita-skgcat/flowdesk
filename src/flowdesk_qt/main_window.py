@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.analysis_settings import preflight_analysis_settings
+from flowdesk_core.batch_plot_export import batch_plot_export_spec_from_mapping
 from flowdesk_core.compensation import (
     inspect_compensation_matrix,
     resolve_compensation_binding,
@@ -92,6 +93,7 @@ from flowdesk_core.project_commands import (
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.app_info import APP_NAME, application_version
 from flowdesk_qt.app_paths import cache_directory
+from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportDialog
 from flowdesk_qt.channel_metadata import ChannelMetadataWorkspace
 from flowdesk_qt.channel_selector import DEFAULT_DISPLAY_MAX_POINTS, ChannelSelector
 from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
@@ -2787,6 +2789,10 @@ class MainWindow(QMainWindow):
 
     def _on_save_project(self) -> None:
         """Save current analysis and display state as a project bundle."""
+        self._save_project_interactively()
+
+    def _save_project_interactively(self) -> bool:
+        """Ask for a project path and save, returning whether it succeeded."""
         initial = str(self._project_path or Path.cwd())
         path_str = QFileDialog.getExistingDirectory(
             self,
@@ -2794,16 +2800,18 @@ class MainWindow(QMainWindow):
             initial,
         )
         if not path_str:
-            return
+            return False
         path = Path(path_str)
         if path.suffix != ".flowdesk":
             path = path.with_suffix(".flowdesk")
         try:
             self._save_project_to_path(path)
             self._update_status(f"Project saved to {path}")
+            return True
         except Exception as exc:
             logger.error("Project save failed: %s", exc)
             QMessageBox.critical(self, "Project Save Error", str(exc))
+            return False
 
     def _save_project_to_path(self, path: str | Path) -> None:
         """Save current project state through the storage API."""
@@ -3502,21 +3510,64 @@ class MainWindow(QMainWindow):
         self._project_dirty = True
 
     def _on_batch_plot_export(self) -> None:
-        """Run a persisted batch plot definition through the CLI/core adapter."""
+        """Edit a batch definition, persist it, and optionally run the CLI adapter."""
+        samples = [
+            {"id": sample.id, "name": sample.name}
+            for sample in self._sample_browser.samples()
+        ]
+        views = deepcopy(self._plot_views)
+        if not views:
+            views = [{"id": self._overlay_view_id(), "name": "Current view"}]
+        dialog = BatchPlotExportDialog(
+            self._batch_plot_exports,
+            samples,
+            self._sample_groups,
+            views,
+            self._overlay_view_id(),
+            self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        request = dialog.request()
+        definition = request.definition
+        if not definition.get("id"):
+            definition["id"] = f"batch-export-{uuid.uuid4().hex[:12]}"
+        try:
+            batch_plot_export_spec_from_mapping(definition)
+        except (TypeError, ValueError) as exc:
+            QMessageBox.warning(self, "Invalid batch export", str(exc))
+            return
+
+        previous_definitions = deepcopy(self._batch_plot_exports)
+        previous_dirty = self._project_dirty
+        export_id = str(definition["id"])
+        replaced = False
+        for index, existing in enumerate(self._batch_plot_exports):
+            if str(existing.get("id", "")) == export_id:
+                self._batch_plot_exports[index] = deepcopy(definition)
+                replaced = True
+                break
+        if not replaced:
+            self._batch_plot_exports.append(deepcopy(definition))
+        self._project_dirty = True
         if self._project_path is None:
-            QMessageBox.information(
-                self, "Save project first", "Save the project before batch export."
-            )
+            saved = self._save_project_interactively()
+        else:
+            try:
+                self._save_project_to_path(self._project_path)
+                saved = True
+            except Exception as exc:
+                logger.error("Project save failed before batch export: %s", exc)
+                QMessageBox.critical(self, "Project Save Error", str(exc))
+                saved = False
+        if not saved:
+            self._batch_plot_exports = previous_definitions
+            self._project_dirty = previous_dirty
             return
-        if not self._batch_plot_exports:
-            QMessageBox.information(
-                self, "No batch export", "No BatchPlotExportSpec is configured."
-            )
+        if not request.run:
+            self._update_status(f"Batch plot definition saved: {definition['name']}")
             return
-        output_dir = QFileDialog.getExistingDirectory(self, "Batch Plot Output Directory")
-        if not output_dir:
-            return
-        export_id = str(self._batch_plot_exports[0].get("id", ""))
+        output_dir = request.output_dir
         try:
             from flowdesk_cli.batch_plot import batch_plot_command
 

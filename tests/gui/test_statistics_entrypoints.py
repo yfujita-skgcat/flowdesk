@@ -556,10 +556,32 @@ def test_gui_batch_plot_action_delegates_to_cli_core_runner(qapp, monkeypatch, t
   window = MainWindow()
   calls: list[tuple[str, str, str]] = []
   window._project_path = tmp_path / "project.flowdesk"
-  window._batch_plot_exports = [{"id": "export"}]
+  window._batch_plot_exports = [{"id": "export", "name": "Export"}]
+
+  class AcceptedDialog:
+    def __init__(self, *_args, **_kwargs):
+      pass
+
+    def exec(self):
+      return 1
+
+    def request(self):
+      from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportRequest
+
+      return BatchPlotExportRequest(
+        {"id": "export", "name": "Export", "target": "all", "formats": ["png"]},
+        str(tmp_path / "plots"),
+        True,
+      )
+
+  monkeypatch.setattr("flowdesk_qt.main_window.BatchPlotExportDialog", AcceptedDialog)
   monkeypatch.setattr(
-    "flowdesk_qt.main_window.QFileDialog.getExistingDirectory",
-    lambda *_args: str(tmp_path / "plots"),
+    "flowdesk_qt.main_window.batch_plot_export_spec_from_mapping",
+    lambda value: value,
+  )
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.MainWindow._save_project_to_path",
+    lambda *_args: None,
   )
   monkeypatch.setattr(
     "flowdesk_cli.batch_plot.batch_plot_command",

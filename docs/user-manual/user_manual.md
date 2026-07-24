@@ -8,6 +8,12 @@
 > [!IMPORTANT]
 > この文書はスクリーンショットだけでなく、`src/flowdesk_qt/` の実装、メニュー接続、ダイアログ、右クリックメニュー、GUI テストを基準に作成している。Flowdesk はまだ early-stage であり、画面に存在する項目の一部は機能が限定的、または保存済み定義がないと実行できない。
 
+## Batch Plot Export
+
+`Results -> Batch Plot Export...` またはプロット領域の右クリックメニューから、同じダイアログを開いてバッチ出力を設定できます。保存済み定義を選択して編集するか、`New` で新しい定義を作成します。対象サンプル（全件、明示選択、グループ）、plot view、PNG/JPEG/SVG/PDF、サイズ・DPI・1:1、表示要素、ファイル名テンプレート、既存ファイルの扱い、strict exportを指定できます。
+
+`Save Definition` は設定だけをprojectへ保存し、`Run Export` は設定を保存した後に出力先ディレクトリへ書き出します。出力先はprojectには保存されないため、projectを別の場所へ移動しても、実行時に新しい出力先を指定できます。projectが未保存の場合は、定義を保存または実行すると通常のproject保存ダイアログが開きます。キャンセルやproject保存失敗では、定義は変更されません。
+
 **UI 網羅性検査:** 静的検査では、literal `objectName` 325件と、action・button・checkbox・menu・tab・combo-box item の一意な表示文字列172件について、マニュアル内の記載漏れは0件だった。詳細は [coverage_report.md](coverage_report.md) を参照。動的生成 control と標準 Qt dialog button は、19.2節で別途確認している。
 
 ## 目次
