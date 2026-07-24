@@ -1156,10 +1156,10 @@ class MainWindow(QMainWindow):
                 active,
                 x_id,
                 y_id,
-                self._transform_for_parameter(x_id),
+                self._active_plot_transform(x_id),
                 None
                 if self._channel_selector.is_count_mode()
-                else self._transform_for_parameter(y_id),
+                else self._active_plot_transform(y_id),
             )
             key = self._processed_display_key(request)
             if key not in self._processed_display_cache:
@@ -1285,21 +1285,57 @@ class MainWindow(QMainWindow):
         )
         if not parameter_id or parameter_id == "__count__":
             return
-        if self._gate_editor.gates() and choice in {"linear", "log", "asinh"}:
-            # Axis changes are display-only while gate definitions exist.  The
-            # gate membership remains in its stored coordinate space; the plot
-            # widget hides overlays whose coordinate scales no longer match.
-            self._plot_transform_overrides.pop(parameter_id, None)
-            self._display_transform_overrides[parameter_id] = choice
+        settings_by_type: dict[str, dict[str, Any]] = {
+            "log": {"base": 10.0, "invalid_value_policy": "to_nan"},
+            "asinh": {"cofactor": 1.0},
+            "logicle": {
+                "T": 262144.0,
+                "W": 0.5,
+                "M": 4.5,
+                "A": 0.0,
+                "implementation_version": "logicle-gml2-moore-parks-2012-v1",
+            },
+        }
+        if self._gate_editor.gates() and choice in settings_by_type:
+            # Existing gates retain their immutable coordinate definitions.
+            # Select (or create) a formal definition for the current plot so
+            # that a subsequently drawn gate records the same transform ID.
+            transform = next(
+                (
+                    value
+                    for value in self._transform_specs()
+                    if value.parameter == parameter_id
+                    and value.transform_type == choice
+                ),
+                None,
+            )
+            if transform is None:
+                transform_id = (
+                    f"transform_{parameter_id}_{choice}_{uuid.uuid4().hex[:8]}"
+                )
+                self._transforms.append({
+                    "id": transform_id,
+                    "name": f"{parameter_id} {choice}",
+                    "transform_type": choice,
+                    "parameter": parameter_id,
+                    "settings": settings_by_type[choice],
+                    "role": "analysis",
+                    "notes": "Created from the axis Transform selector.",
+                })
+            else:
+                transform_id = transform.id
+            self._plot_transform_overrides[parameter_id] = transform_id
+            self._display_transform_overrides.pop(parameter_id, None)
             self._replot()
+            labels = {"log": "Log10", "asinh": "Asinh", "logicle": "Logicle"}
             self._update_status(
-                f"{axis.upper()} display transform set to "
-                f"{choice.capitalize()}; gate memberships unchanged"
+                f"{axis.upper()} analysis transform set to {labels[choice]}; "
+                "existing gate memberships unchanged"
             )
             return
         self._plot_transform_overrides.pop(parameter_id, None)
         self._display_transform_overrides.pop(parameter_id, None)
-        existing = self._transform_for_parameter(parameter_id)
+        existing = self._active_plot_transform(parameter_id)
         if choice == "linear" and existing is not None:
             # A transform referenced by a gate is part of the analysis definition.
             # Switching the plot to linear is display-only; keep that definition
@@ -1335,17 +1371,6 @@ class MainWindow(QMainWindow):
             if not self._replaceable_axis_transform(existing, axis):
                 return
             self._remove_axis_transform(existing)
-        settings_by_type: dict[str, dict[str, Any]] = {
-            "log": {"base": 10.0, "invalid_value_policy": "to_nan"},
-            "asinh": {"cofactor": 1.0},
-            "logicle": {
-                "T": 262144.0,
-                "W": 0.5,
-                "M": 4.5,
-                "A": 0.0,
-                "implementation_version": "logicle-gml2-moore-parks-2012-v1",
-            },
-        }
         if choice not in settings_by_type:
             return
         transform_id = f"transform_{parameter_id}_{choice}_{uuid.uuid4().hex[:8]}"
@@ -1358,9 +1383,15 @@ class MainWindow(QMainWindow):
             "role": "analysis",
             "notes": "Created from the axis Transform selector.",
         })
+        self._plot_transform_overrides[parameter_id] = transform_id
         labels = {"log": "Log10", "asinh": "Asinh", "logicle": "Logicle"}
         self._mark_results_stale(f"{axis.upper()} analysis transform set to {labels[choice]}")
         self._channel_selector.set_analysis_transform_choice(axis, choice)
+        # Synchronize PlotWidget and GateEditor before the user can draw a gate.
+        # Without this refresh, the newly created transform exists in the
+        # registry but the gate creation context still contains the previous
+        # transform ID (usually None).
+        self._replot()
 
     def _replaceable_axis_transform(self, transform: TransformSpec, axis: str) -> bool:
         """Return whether an axis quick-selection may replace *transform* safely."""
@@ -1389,10 +1420,8 @@ class MainWindow(QMainWindow):
         """List persisted definitions that prevent replacement of a transform ID."""
         references: list[str] = []
         for gate in self._gate_editor.gates():
-            x_transform_id = gate.x_transform_id or gate.transform_id
-            if x_transform_id == transform.id or (
-                x_transform_id is None and gate.x_parameter == transform.parameter
-            ):
+            x_transform_id = gate.x_transform_id
+            if x_transform_id == transform.id:
                 references.append(f"gate {gate.name} (X axis)")
             if gate.y_transform_id == transform.id or (
                 gate.y_transform_id is None and gate.y_parameter == transform.parameter
@@ -1550,18 +1579,11 @@ class MainWindow(QMainWindow):
         x_id = self._channel_selector.x_channel_id()
         y_id = self._channel_selector.y_channel_id()
 
-        if x_id in self._plot_transform_overrides:
-            x_transform_id = self._plot_transform_overrides[x_id]
-            x_spec = self._transform_by_id(x_transform_id)
-        else:
-            x_spec = self._transform_for_parameter(x_id)
+        x_spec = self._active_plot_transform(x_id)
         if self._channel_selector.is_count_mode():
             y_spec = None
-        elif y_id in self._plot_transform_overrides:
-            y_transform_id = self._plot_transform_overrides[y_id]
-            y_spec = self._transform_by_id(y_transform_id)
         else:
-            y_spec = self._transform_for_parameter(y_id)
+            y_spec = self._active_plot_transform(y_id)
         self._channel_selector.set_analysis_transform_bound(
             x_spec is not None, y_spec is not None
         )
@@ -1837,11 +1859,11 @@ class MainWindow(QMainWindow):
             return
         x_id = self._channel_selector.x_channel_id()
         y_id = self._channel_selector.y_channel_id()
-        x_transform = self._transform_for_parameter(x_id)
+        x_transform = self._active_plot_transform(x_id)
         y_transform = (
             None
             if self._channel_selector.is_count_mode()
-            else self._transform_for_parameter(y_id)
+            else self._active_plot_transform(y_id)
         )
         current = self._processed_display_request(
             sample, x_id, y_id, x_transform, y_transform
@@ -1901,8 +1923,8 @@ class MainWindow(QMainWindow):
             self._load_sample_events(sample)
         layers: list[Overlay2DLayer] = []
         diagnostics: list[str] = []
-        x_transform = self._transform_for_parameter(x_parameter_id)
-        y_transform = self._transform_for_parameter(y_parameter_id)
+        x_transform = self._active_plot_transform(x_parameter_id)
+        y_transform = self._active_plot_transform(y_parameter_id)
         source_definitions: list[dict[str, Any]] = advanced_sources or [
             {
                 "source_id": f"manual:{sample_id}",
@@ -2139,29 +2161,12 @@ class MainWindow(QMainWindow):
             self._channel_selector.set_selected_channels(
                 gate.x_parameter, y_parameter
             )
-        x_transform_id = gate.x_transform_id or gate.transform_id
-        x_parameter = gate.x_parameter or ""
-        y_parameter = gate.y_parameter or ""
-        if self._transform_by_id(x_transform_id) is None:
-            self._display_transform_overrides[x_parameter] = (
-                self._legacy_display_transform_choice(gate.x_scale)
-            )
-        else:
-            self._display_transform_overrides.pop(x_parameter, None)
-        self._plot_transform_overrides[gate.x_parameter or ""] = x_transform_id
-        self._restore_gate_axis_transform(
-            "x", x_transform_id, gate.x_scale
-        )
-        if self._transform_by_id(gate.y_transform_id) is None:
-            self._display_transform_overrides[y_parameter] = (
-                self._legacy_display_transform_choice(gate.y_scale)
-            )
-        else:
-            self._display_transform_overrides.pop(y_parameter, None)
-        self._plot_transform_overrides[y_parameter] = gate.y_transform_id
-        self._restore_gate_axis_transform(
-            "y", gate.y_transform_id, gate.y_scale
-        )
+        self._display_transform_overrides.pop(gate.x_parameter or "", None)
+        self._display_transform_overrides.pop(gate.y_parameter or "", None)
+        self._plot_transform_overrides[gate.x_parameter or ""] = gate.x_transform_id
+        self._restore_gate_axis_transform("x", gate.x_transform_id)
+        self._plot_transform_overrides[gate.y_parameter or ""] = gate.y_transform_id
+        self._restore_gate_axis_transform("y", gate.y_transform_id)
         self._replot()
         self._update_status(
             f"Showing gate: {gate.name} [{gate.id}] on "
@@ -2170,7 +2175,7 @@ class MainWindow(QMainWindow):
         )
 
     def _restore_gate_axis_transform(
-        self, axis: str, transform_id: str | None, legacy_scale: str
+        self, axis: str, transform_id: str | None
     ) -> None:
         """Restore one gate axis using its exact transform ID when available."""
         transform = self._transform_by_id(transform_id)
@@ -2190,47 +2195,22 @@ class MainWindow(QMainWindow):
             if axis == "x"
             else self._channel_selector.set_y_transform
         )
-        setter(
-            "log10" if legacy_scale == "log" else legacy_scale
-        )
+        setter("linear")
         self._channel_selector.set_analysis_transform_choice(
-            axis, self._legacy_display_transform_choice(legacy_scale)
+            axis, "linear"
         )
-
-    @staticmethod
-    def _legacy_display_transform_choice(scale: str) -> str:
-        """Map a legacy gate scale to the current selector vocabulary."""
-        return {
-            "linear": "linear",
-            "log": "log",
-            "log10": "log",
-            "asinh": "asinh",
-        }.get(str(scale), "linear")
-
-    @staticmethod
-    def _legacy_transform_status(scale: str) -> str:
-        """Make compatibility-only gate scales explicit in status text."""
-        labels = {
-            "linear": "Linear",
-            "log": "Legacy Log10",
-            "log10": "Legacy Log10",
-            "asinh": "Legacy Asinh",
-        }
-        return labels.get(str(scale), f"Legacy {scale}")
 
     def _gate_transform_status(self, gate: Any, axis: str) -> str:
         transform_id = (
             gate.x_transform_id if axis == "x" else gate.y_transform_id
-        ) or (gate.transform_id if axis == "x" else None)
+        )
         if transform_id:
             transform = self._transform_by_id(transform_id)
             return (
                 f"{transform_id} ({transform.transform_type})"
                 if transform is not None else str(transform_id)
             )
-        return self._legacy_transform_status(
-            gate.x_scale if axis == "x" else gate.y_scale
-        )
+        return "Linear"
 
     def _on_show_population(self, gate) -> None:
         """Display a gate-derived population only when its result is current."""
@@ -2281,6 +2261,12 @@ class MainWindow(QMainWindow):
             logger.error("Ambiguous analysis transforms for parameter %s", parameter)
             return None
         return matches[0] if matches else None
+
+    def _active_plot_transform(self, parameter: str) -> TransformSpec | None:
+        """Return the transform explicitly selected for the current plot axis."""
+        if parameter in self._plot_transform_overrides:
+            return self._transform_by_id(self._plot_transform_overrides[parameter])
+        return self._transform_for_parameter(parameter)
 
     def _transform_by_id(self, transform_id: str | None) -> TransformSpec | None:
         if not transform_id:
@@ -3347,8 +3333,8 @@ class MainWindow(QMainWindow):
             None if self._channel_selector.is_count_mode()
             else self._channel_selector.y_channel_id()
         )
-        active_x_transform = self._transform_for_parameter(active_x or "")
-        active_y_transform = self._transform_for_parameter(active_y or "")
+        active_x_transform = self._active_plot_transform(active_x or "")
+        active_y_transform = self._active_plot_transform(active_y or "")
         expected_x_transform = None if active_x_transform is None else active_x_transform.id
         expected_y_transform = None if active_y_transform is None else active_y_transform.id
         for source in sources:
@@ -3518,7 +3504,7 @@ class MainWindow(QMainWindow):
             transform_id
             for gate in self._gate_editor.gates()
             for transform_id in (
-                gate.x_transform_id or gate.transform_id,
+                gate.x_transform_id,
                 gate.y_transform_id,
             )
             if transform_id is not None
@@ -3787,9 +3773,9 @@ class MainWindow(QMainWindow):
                 "will be used for an analysis-changing decision.",
             )
             return
-        target_x = self._transform_for_parameter(gate.x_parameter or "")
+        target_x = self._active_plot_transform(gate.x_parameter or "")
         target_y = (
-            self._transform_for_parameter(gate.y_parameter or "")
+            self._active_plot_transform(gate.y_parameter or "")
             if gate.y_parameter else None
         )
         if target_x is None or (gate.y_parameter and target_y is None):
@@ -3972,15 +3958,15 @@ class MainWindow(QMainWindow):
         x_name = self._channel_selector.x_channel_id()
         y_name = self._channel_selector.y_channel_id()
 
-        x_scale, y_scale, x_transform_id, y_transform_id = (
+        _x_scale, _y_scale, x_transform_id, y_transform_id = (
             self._gate_editor.plot_coordinate_context()
         )
         if not self._gate_editor.has_plot_coordinate_context():
             # This fallback supports programmatic creation before a plot refresh.
             # Normal interactive creation always uses the exact context synced
             # by ``_replot`` above.
-            x_transform = self._transform_for_parameter(x_name)
-            y_transform = self._transform_for_parameter(y_name)
+            x_transform = self._active_plot_transform(x_name)
+            y_transform = self._active_plot_transform(y_name)
             x_transform_id = None if x_transform is None else x_transform.id
             y_transform_id = None if y_transform is None else y_transform.id
         gate = GateSpec(
@@ -3992,8 +3978,6 @@ class MainWindow(QMainWindow):
             ),
             x_parameter=x_name,
             y_parameter=y_name,
-            x_scale=x_scale,
-            y_scale=y_scale,
             x_transform_id=x_transform_id,
             y_transform_id=y_transform_id,
             thresholds={

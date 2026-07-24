@@ -104,11 +104,13 @@ def test_population_filter_reduces_scatter_points(
         assert window._plot_widget._scatter is not None
         assert len(window._plot_widget._scatter.xData) == 3
 
-        # Changing one display scale must not recalculate the linear gate.
+        # Selecting a formal Log10 transform must not recalculate the existing
+        # linear gate membership.
         window._channel_selector.set_analysis_transform_choice("x", "log")
         window._on_axis_analysis_transform_requested("x", "log")
         assert not window._results_stale
-        assert window._plot_widget._x_transform == "log10"
+        assert window._plot_widget._x_transform_spec is not None
+        assert window._plot_widget._x_transform_spec.transform_type == "log"
         assert window._plot_widget._scatter is not None
         assert len(window._plot_widget._scatter.xData) == 3
     finally:
@@ -172,30 +174,19 @@ def test_show_gate_restores_both_axis_transforms_by_id(qapp) -> None:
         qapp.processEvents()
 
 
-def test_show_gate_restores_legacy_axis_scales(qapp) -> None:
+def test_new_transform_is_bound_before_gate_creation(qapp) -> None:
   window = MainWindow()
-  gate = GateSpec(
-    id="legacy-transformed-gate",
-    name="Legacy transformed gate",
-    gate_type="rectangle",
-    x_parameter="X",
-    y_parameter="Y",
-    x_scale="log10",
-    y_scale="log10",
-    thresholds={"x_min": 1.0, "x_max": 2.0, "y_min": 1.0, "y_max": 2.0},
-  )
   try:
     window._channel_selector.set_channels(["X", "Y"])
-    window._replot = lambda: None
+    replot_calls: list[bool] = []
+    window._replot = lambda: replot_calls.append(True)
 
-    window._on_show_gate(gate)
+    window._on_axis_analysis_transform_requested("x", "log")
 
-    assert window._channel_selector.x_transform() == "log10"
-    assert window._channel_selector.y_transform() == "log10"
-    assert window._channel_selector._x_analysis_transform_combo.currentData() == "log"
-    assert window._channel_selector._y_analysis_transform_combo.currentData() == "log"
-    assert window._display_transform_overrides == {"X": "log", "Y": "log"}
-    assert window._plot_transform_overrides == {"X": None, "Y": None}
+    assert replot_calls == [True]
+    transform = window._transform_for_parameter("X")
+    assert transform is not None
+    assert transform.transform_type == "log"
   finally:
     window.close()
     window.deleteLater()
@@ -240,6 +231,7 @@ def test_population_filter_persists_across_channel_switch(
         window._on_run_pipeline()
         _wait_for_worker(window)
         qapp.processEvents()
+
 
         # Select gate population
         table = window._population_tree._table
@@ -286,6 +278,35 @@ def test_population_filter_persists_across_channel_switch(
         window.close()
         window.deleteLater()
         qapp.processEvents()
+
+
+def test_existing_gate_log10_selection_uses_formal_transform(qapp) -> None:
+  window = MainWindow()
+  try:
+    window._channel_selector.set_channels(["X", "Y"])
+    window._gate_editor.set_gates([
+      GateSpec(
+        id="linear-gate",
+        name="Linear gate",
+        gate_type="range",
+        x_parameter="X",
+        thresholds={"min": 1.0},
+      )
+    ], notify=False)
+    replot_calls: list[bool] = []
+    window._replot = lambda: replot_calls.append(True)
+
+    window._on_axis_analysis_transform_requested("x", "log")
+
+    transform = window._transform_for_parameter("X")
+    assert transform is not None
+    assert transform.transform_type == "log"
+    assert window._plot_transform_overrides == {"X": transform.id}
+    assert replot_calls == [True]
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
 
 
 # ---------------------------------------------------------------------------

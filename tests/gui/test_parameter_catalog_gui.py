@@ -285,7 +285,7 @@ def test_axis_transform_selector_replaces_an_unreferenced_definition(qapp, tmp_p
     qapp.processEvents()
 
 
-def test_axis_transform_selector_is_display_only_with_gates(
+def test_axis_transform_selector_creates_formal_transform_with_gates(
   qapp, tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   path = tmp_path / "transform-gate-reference.fcs"
@@ -315,7 +315,12 @@ def test_axis_transform_selector_is_display_only_with_gates(
 
     combo.setCurrentIndex(combo.findData("log"))
 
-    assert window._transform_for_parameter(parameter_id).id == transform.id
+    selected_transform_id = window._plot_transform_overrides[parameter_id]
+    assert selected_transform_id != transform.id
+    selected_transform = window._transform_by_id(selected_transform_id)
+    assert selected_transform is not None
+    assert selected_transform.transform_type == "log"
+    assert window._gate_editor.gates()[0].x_transform_id == transform.id
     assert combo.currentData() == "log"
     assert len(messages) == 0
     assert window._results_stale == stale_before

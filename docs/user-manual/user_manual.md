@@ -282,7 +282,7 @@ status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel
 
 ### 8.1 transform selector の挙動
 
-`Linear`、`Log10`、`Asinh`、`Logicle` は、ゲート定義が存在する場合はプロットの表示座標だけを切り替える。現在のゲートと座標が一致しない場合、ゲート輪郭は非表示になるが、ゲート定義、membership、Resultsは変更されない。ゲートが参照するanalysis transformを変更する操作は、`Manage Parameter Transforms...` と明示的な `Migrate Transform` で行う。ゲート定義がない場合は、従来どおり選択したanalysis transformを作成または切り替える。`Custom…` は Analysis Transforms dialog を開く。
+`Linear`、`Log10`、`Asinh`、`Logicle` はプロットの正式なanalysis transformを選択する。非線形transformを選ぶと、既存の同種definitionを選択するか、新しいversioned Transform IDを作成する。既存ゲートは保存済みTransform IDとmembershipを維持し、座標が一致しない輪郭だけが非表示になる。以後に作成するゲートは、現在のTransform IDを保存する。ゲートが参照するTransform ID自体を変更するには、`Manage Parameter Transforms...` と明示的な `Migrate Transform` を使う。`Custom…` は Analysis Transforms dialog を開く。
 
 既存 transform が gate 等から参照されている場合、quick selector から in-place replacement は拒否される。新しい transform ID を作り、gate の `Migrate Transform` を使う。
 
@@ -383,7 +383,7 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 
 |項目|説明|
 |---|---|
-|Go to Gate|選択したgateの保存済みX/Y channel、Scale、Transformをplotへ適用し、gateを表示する。旧形式のLegacy Log10/Legacy Asinh gateも保存済みの座標系で表示する。|
+|Go to Gate|選択したgateの保存済みX/Y channelとTransform IDをplotへ適用し、gateを表示する。|
 |Population Color...|population 内 event の display color を選ぶ。|
 |Gate Outline Color...|gate outline 専用色を選ぶ。|
 |Use Population Color for Outline|outline 色を population color と連動させる toggle。|

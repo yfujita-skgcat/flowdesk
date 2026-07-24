@@ -94,6 +94,7 @@ def _strategy() -> GatingStrategySpec:
         parent_population_id="all_events",
         x_parameter="x",
         y_parameter="sum",
+        x_transform_id="scale-x",
         thresholds={
           "x_min": 1000.0,
           "x_max": 1998.0,

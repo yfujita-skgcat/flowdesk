@@ -423,10 +423,6 @@ def _validate_current_gate_transforms(
 ) -> None:
   if not isinstance(strategies, dict):
     raise ManifestValidationError("gating_strategies_data must be an object")
-  defaults_by_parameter = {
-    parameter: transform_id
-    for transform_id, (_transform_type, parameter) in transforms.items()
-  }
   for strategy_id, strategy in strategies.items():
     if not isinstance(strategy, dict):
       raise ManifestValidationError(
@@ -443,19 +439,17 @@ def _validate_current_gate_transforms(
           f"gating strategy {strategy_id!r} gate must be an object"
         )
       gate_id = str(gate.get("id", "unknown"))
+      legacy_fields = {"transform_id", "x_scale", "y_scale"}.intersection(gate)
+      if legacy_fields:
+        raise ManifestValidationError(
+          f"gate {gate_id!r} uses removed legacy fields: "
+          f"{', '.join(sorted(legacy_fields))}"
+        )
       for axis in ("x", "y"):
         parameter = gate.get(f"{axis}_parameter")
         if parameter is None:
           continue
         transform_id = gate.get(f"{axis}_transform_id")
-        if axis == "x" and transform_id is None:
-          transform_id = gate.get("transform_id")
-        default_id = defaults_by_parameter.get(parameter)
-        if transform_id is None and default_id is not None:
-          raise ManifestValidationError(
-            f"gate {gate_id!r} {axis}-axis must reference transform "
-            f"{default_id!r} for parameter {parameter!r}"
-          )
         if transform_id is None:
           continue
         if transform_id not in transforms:
@@ -466,10 +460,6 @@ def _validate_current_gate_transforms(
           raise ManifestValidationError(
             f"gate {gate_id!r} {axis}-parameter does not match transform "
             f"{transform_id!r}"
-          )
-        if gate.get(f"{axis}_scale", "linear") != "linear":
-          raise ManifestValidationError(
-            f"gate {gate_id!r} {axis}-axis defines a double transform"
           )
 
 

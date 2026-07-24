@@ -8,13 +8,9 @@ ToDo: `Phase A3`
 Replace the approximate transform ambiguity with explicit, invertible transform
 definitions used consistently by the runner, gates, axes, and serialization.
 
-> **Authoring-workflow follow-up:** the A3 core single-application model prevents a formal
-> transform ID from being combined with a non-linear legacy gate scale. The GUI still has
-> two authoring concepts: legacy axis `linear`/`log`/`asinh` and formal Analysis
-> Transforms. The legacy choice is not purely cosmetic when a gate is created; it is
-> persisted on the gate and used by headless membership when no formal transform ID is
-> bound. Phase B7.4 must replace these competing controls with one axis transform workflow
-> backed by the same persisted registry. See
+> **Authoring-workflow follow-up:** the A3 core single-application model is now backed by
+> one formal TransformSpec registry. Gate coordinates reference transform IDs; display
+> scale controls are not persisted as gate analysis fields. See
 > [`analysis-workflow-integration.md`](analysis-workflow-integration.md).
 
 ## Inspect first
@@ -231,15 +227,14 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
 ## Confirmed contract after increment 4
 
 - `GateSpec.x_transform_id` and `GateSpec.y_transform_id` identify the exact
-  versioned analysis coordinate definition for each geometric axis. The old
-  single `transform_id` and `x_scale`/`y_scale` fields remain read-compatible;
-  combining a transform ID with a non-linear legacy scale is rejected as a
-  double transform.
-- The pipeline transform stage validates definitions and binds one default
-  analysis transform per parameter without mutating event columns. Gate
-  evaluation lazily applies the referenced transform to the immutable
-  compensated/derived view and caches it by transform ID. Thus project and
-  gate references select one transform application instead of composing two.
+  versioned analysis coordinate definition for each geometric axis. The
+  removed `transform_id`, `x_scale`, and `y_scale` gate fields are not accepted
+  in the current project format.
+- The pipeline transform stage validates definitions without mutating event
+  columns. Multiple versioned analysis transforms may target one parameter.
+  Gate evaluation applies only the transform ID explicitly stored on that gate
+  axis and caches it by ID; an absent ID means raw coordinates. Thus project
+  and gate references select one transform application instead of composing two.
 - `TransformSpec.role="analysis"` is persisted separately from
   `plot_display_settings`. Display-only linear/log10/asinh choices are not
   accepted as gate analysis transform IDs.
@@ -254,9 +249,8 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
   silently changing membership.
 - Synthetic rectangle and polygon fixtures verify that PlotWidget coordinates
   and GUI-visible overlays produce the same full-event headless membership.
-  Existing linear, log, asinh, and legacy scale gate tests remain unchanged.
-  Transform parameter editing and explicit legacy gate duplication/migration
-  preview remain increment 5 work.
+  Linear, log, and asinh gates all use explicit transform IDs where a
+  non-linear coordinate system is required.
 
 ## Confirmed contract after increment 5
 
@@ -293,9 +287,8 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
 - A newly drawn gate records the exact active transform ID, or the documented identity
   binding for Linear. Events, geometry, membership, inverse coordinate display, and ticks
   use that one definition.
-- Legacy `x_scale`/`y_scale` remains read-compatible and visibly labelled Legacy until an
-  explicit migration proves unchanged geometry and membership. It is not offered as a
-  second new-project authoring path.
+- Legacy gate scale fields are not read-compatible. Projects containing them
+  must be explicitly converted outside Flowdesk before loading.
 - Plot transform selection does not choose a statistic value domain. Native compensated/
   derived mean or median changes only when its `StatisticSpec` changes; transformed
   statistics require an explicit transform ID in that definition.

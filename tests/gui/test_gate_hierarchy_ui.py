@@ -429,8 +429,6 @@ def test_show_gate_is_display_only(qapp) -> None:
         gate_type="rectangle",
         x_parameter="X",
         y_parameter="Y",
-        x_scale="log10",
-        y_scale="asinh",
         thresholds={"x_min": 0, "x_max": 1, "y_min": 0, "y_max": 1},
     )
     try:

@@ -823,8 +823,6 @@ class GateEditor(QWidget):
                 parent_population_id=self._parent_population_id,
                 x_parameter=self._x_channel,
                 y_parameter=self._y_channel,
-                x_scale=self._x_scale,
-                y_scale=self._y_scale,
                 x_transform_id=self._x_transform_id,
                 y_transform_id=self._y_transform_id,
                 coordinates=coords,
@@ -1017,8 +1015,6 @@ class GateEditor(QWidget):
             parent_population_id=self._parent_population_id,
             x_parameter=self._x_channel if gate_type != "boolean" else None,
             y_parameter=self._y_channel if gate_type not in {"range", "boolean"} else None,
-            x_scale=self._x_scale,
-            y_scale=self._y_scale,
             x_transform_id=self._x_transform_id if gate_type != "boolean" else None,
             y_transform_id=(
                 self._y_transform_id
@@ -1066,8 +1062,8 @@ class GateEditor(QWidget):
             gate.y_parameter or self._y_channel,
             initial_gate=gate,
             parent=self,
-            x_scale=gate.x_scale,
-            y_scale=gate.y_scale,
+            x_scale=self._x_scale,
+            y_scale=self._y_scale,
         )
         dialog.setWindowTitle("Edit Gate Geometry")
         dialog._name_edit.setText(gate.name)
@@ -1194,7 +1190,8 @@ class GateEditor(QWidget):
                         expression = f"{operation}({sources})"
                     axes = (
                         f"{gate.x_parameter or '-'} / {gate.y_parameter or '-'} "
-                        f"[{gate.x_scale}/{gate.y_scale}]"
+                        f"[transform: {gate.x_transform_id or '-'} / "
+                        f"{gate.y_transform_id or '-'}]"
                     )
                     item = QTreeWidgetItem([gate.name, gate.gate_type, axes, expression, ""])
                     item.setData(0, Qt.UserRole, gate.id)

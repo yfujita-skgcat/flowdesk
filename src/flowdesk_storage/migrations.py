@@ -11,7 +11,7 @@ from typing import Any
 from flowdesk_core.boolean_expression import migrate_boolean_thresholds
 from flowdesk_core.errors import FlowdeskError
 
-CURRENT_PROJECT_VERSION = "1.7.0"
+CURRENT_PROJECT_VERSION = "1.8.0"
 
 
 @dataclass
@@ -43,6 +43,7 @@ LEGACY_PROJECT_VERSIONS = frozenset({
   "1.4.0",
   "1.5.0",
   "1.6.0",
+  "1.7.0",
 })
 
 # Ordered list of all known versions from oldest to newest.
@@ -55,6 +56,7 @@ ALL_KNOWN_VERSIONS = [
   "1.4.0",
   "1.5.0",
   "1.6.0",
+  "1.7.0",
   CURRENT_PROJECT_VERSION,
 ]
 
@@ -319,76 +321,6 @@ def _migrate_transforms(
       diagnostics.append(diagnostic)
 
 
-def _migrate_gate_transforms(
-  migrated: dict[str, Any],
-  diagnostics: list[dict[str, Any]],
-) -> None:
-  """Bind legacy gate axes to project transforms."""
-
-  transforms = migrated.get("transforms", [])
-  if not isinstance(transforms, list):
-    return
-
-  transform_ids_by_parameter: dict[str, str] = {}
-  duplicate_transform_parameters: set[str] = set()
-  for transform in transforms:
-    parameter = transform.get("parameter")
-    transform_id = transform.get("id")
-    if not isinstance(parameter, str) or not parameter:
-      continue
-    if parameter in transform_ids_by_parameter:
-      duplicate_transform_parameters.add(parameter)
-      continue
-    transform_ids_by_parameter[parameter] = transform_id
-  for parameter in duplicate_transform_parameters:
-    transform_ids_by_parameter.pop(parameter, None)
-
-  strategy_data = migrated.get("gating_strategies_data", {})
-  if not isinstance(strategy_data, dict):
-    return
-  for strategy in strategy_data.values():
-    if not isinstance(strategy, dict):
-      continue
-    gates = strategy.get("gates", [])
-    if not isinstance(gates, list):
-      continue
-    for gate in gates:
-      if not isinstance(gate, dict):
-        continue
-      legacy_transform_id = gate.get("transform_id")
-      if legacy_transform_id is not None:
-        gate.setdefault("x_transform_id", legacy_transform_id)
-      for axis in ("x", "y"):
-        parameter = gate.get(f"{axis}_parameter")
-        if not isinstance(parameter, str) or not parameter:
-          continue
-        transform_id = transform_ids_by_parameter.get(parameter)
-        if transform_id is None or gate.get(f"{axis}_transform_id") is not None:
-          continue
-        scale = gate.get(f"{axis}_scale", "linear")
-        if scale == "linear":
-          gate[f"{axis}_transform_id"] = transform_id
-          continue
-        diagnostic = {
-          "code": "legacy_double_transform",
-          "severity": "error",
-          "stage": "migration",
-          "message": (
-            f"Gate {gate.get('id', 'unknown')!r} {axis}-axis combines "
-            f"project transform {transform_id!r} with legacy scale {scale!r}"
-          ),
-          "transform_id": transform_id,
-          "details": {
-            "gate_id": gate.get("id"),
-            "axis": axis,
-            "legacy_scale": scale,
-            "compatibility_policy": "reject_double_application",
-          },
-        }
-        if diagnostic not in diagnostics:
-          diagnostics.append(diagnostic)
-
-
 def _migrate_boolean_expressions(
   migrated: dict[str, Any],
   diagnostics: list[dict[str, Any]],
@@ -581,7 +513,6 @@ def _normalize_historical_manifest(
   _migrate_samples(migrated, diagnostics)
   _migrate_derived_parameters(migrated, diagnostics)
   _migrate_transforms(migrated, diagnostics)
-  _migrate_gate_transforms(migrated, diagnostics)
   _migrate_boolean_expressions(migrated, diagnostics)
   _migrate_compensation_matrices(migrated, diagnostics)
   _ensure_compensation_bindings(migrated, diagnostics)
@@ -666,5 +597,14 @@ MIGRATION_REGISTRY: dict[tuple[str, str], MigrationFunction] = {
     strict=False,
   )
 }
+
+
+def _finalize_gate_schema(
+  migrated: dict[str, Any],
+  diagnostics: list[dict[str, Any]],
+) -> None:
+  """Advance the schema version; manifest validation rejects removed gate fields."""
+  del migrated, diagnostics
 MIGRATION_REGISTRY[("1.5.0", "1.6.0")] = _add_default_sample_group
 MIGRATION_REGISTRY[("1.6.0", "1.7.0")] = _migrate_statistic_population_targets
+MIGRATION_REGISTRY[("1.7.0", "1.8.0")] = _finalize_gate_schema

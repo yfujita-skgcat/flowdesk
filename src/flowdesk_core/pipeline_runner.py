@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -140,7 +140,6 @@ class _AnalysisData:
   events: NDArray[np.float64]
   channels: tuple[ChannelSpec, ...]
   transforms: tuple[TransformSpec, ...] = ()
-  default_transform_ids: dict[str, str] = field(default_factory=dict)
 
   def __post_init__(self) -> None:
     if self.events.ndim != 2 or self.events.shape[1] != len(self.channels):
@@ -1495,7 +1494,6 @@ class PipelineRunner:
 
     parsed: list[TransformSpec] = []
     transform_ids: set[str] = set()
-    default_ids: dict[str, str] = {}
     for spec_dict in specs:
       try:
         spec = TransformSpec(
@@ -1519,25 +1517,17 @@ class PipelineRunner:
         )
       if spec.id in transform_ids:
         raise PipelineError(f"duplicate_transform_id: {spec.id!r}")
-      if spec.parameter in default_ids:
-        raise PipelineError(
-          "duplicate_analysis_transform_parameter: "
-          f"{spec.parameter!r} uses {default_ids[spec.parameter]!r} "
-          f"and {spec.id!r}"
-        )
       if spec.parameter not in data.channel_ids:
         raise PipelineError(
           f"unknown_transform_parameter: {spec.parameter!r}"
         )
       transform_ids.add(spec.id)
-      default_ids[spec.parameter] = spec.id
       parsed.append(spec)
 
     return _AnalysisData(
       data.events,
       data.channels,
       transforms=tuple(parsed),
-      default_transform_ids=default_ids,
     )
 
   def _step_gating(
@@ -1731,7 +1721,6 @@ class PipelineRunner:
       data.events,
       data.channel_ids,
       transforms=data.transforms,
-      default_transform_ids=data.default_transform_ids,
       diagnostics=gating_diagnostics,
     )
 
@@ -2205,11 +2194,8 @@ class PipelineRunner:
         parent_population_id=gate.get("parent_population_id"),
         x_parameter=gate.get("x_parameter"),
         y_parameter=gate.get("y_parameter"),
-        x_scale=gate.get("x_scale", "linear"),
-        y_scale=gate.get("y_scale", "linear"),
         x_transform_id=gate.get("x_transform_id"),
         y_transform_id=gate.get("y_transform_id"),
-        transform_id=gate.get("transform_id"),
         compensation_id=gate.get("compensation_id"),
         coordinates=tuple(tuple(point) for point in gate.get("coordinates", ())),
         thresholds=dict(gate.get("thresholds", {})),

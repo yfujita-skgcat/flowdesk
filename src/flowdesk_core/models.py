@@ -14,7 +14,6 @@ from numpy.typing import NDArray
 
 SourceStage = Literal["raw", "compensated", "transformed"]
 GateType = Literal["rectangle", "polygon", "range", "ellipse", "boolean"]
-GateAxisScale = Literal["linear", "log10", "asinh"]
 GateOverrideGeometryMode = Literal["delta", "full"]
 GatePurpose = Literal["technical_cleanup", "comparison_critical"]
 AutoGateAlgorithm = Literal["quantile_rectangle"]
@@ -651,11 +650,8 @@ class GateSpec:
   parent_population_id: str | None = None
   x_parameter: str | None = None
   y_parameter: str | None = None
-  x_scale: GateAxisScale = "linear"
-  y_scale: GateAxisScale = "linear"
   x_transform_id: str | None = None
   y_transform_id: str | None = None
-  transform_id: str | None = None
   compensation_id: str | None = None
   coordinates: tuple[tuple[float, float], ...] = field(default_factory=tuple)
   thresholds: dict[str, Any] = field(default_factory=dict)

@@ -63,14 +63,12 @@ def build_gate_transform_migration_candidate(
   _validate_target(gate.y_parameter, target_y_transform, "y")
 
   x_mapper = _axis_mapper(
-    gate.x_transform_id or gate.transform_id,
-    gate.x_scale,
+    gate.x_transform_id,
     target_x_transform,
     lookup,
   )
   y_mapper = _axis_mapper(
     gate.y_transform_id,
-    gate.y_scale,
     target_y_transform,
     lookup,
   )
@@ -111,8 +109,6 @@ def build_gate_transform_migration_candidate(
 
   return replace(
     gate,
-    x_scale="linear" if target_x_transform is not None else gate.x_scale,
-    y_scale="linear" if target_y_transform is not None else gate.y_scale,
     x_transform_id=(
       target_x_transform.id if target_x_transform is not None
       else gate.x_transform_id
@@ -121,7 +117,6 @@ def build_gate_transform_migration_candidate(
       target_y_transform.id if target_y_transform is not None
       else gate.y_transform_id
     ),
-    transform_id=None if target_x_transform is not None else gate.transform_id,
     thresholds=thresholds,
     coordinates=coordinates,
   )
@@ -220,7 +215,6 @@ def _validate_target(
 
 def _axis_mapper(
   source_transform_id: str | None,
-  source_scale: str,
   target: TransformSpec | None,
   lookup: dict[str, TransformSpec],
 ) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
@@ -244,15 +238,10 @@ def _axis_mapper(
           else "source_transform_inverse_failed"
         )
         raise GateTransformMigrationError(code, str(exc)) from exc
-    elif source_scale == "linear":
-      raw = values
-    elif source_scale == "log10":
-      raw = np.power(10.0, values)
-    elif source_scale == "asinh":
-      raw = np.sinh(values)
     else:
       raise GateTransformMigrationError(
-        "unsupported_source_scale", f"unsupported source scale: {source_scale!r}"
+        "missing_source_transform",
+        "gate migration requires a formal source transform ID",
       )
     try:
       mapped = apply_transform(target, raw)

@@ -891,7 +891,15 @@ def test_evaluate_with_membership_raw_data_unchanged() -> None:
   np.testing.assert_array_equal(data, data_copy)
 
 
-def test_polygon_gate_is_evaluated_in_its_stored_log_scales() -> None:
+def test_polygon_gate_is_evaluated_in_its_referenced_log_transforms() -> None:
+  x_transform = TransformSpec(
+    id="log_x", name="Log X", transform_type="log", parameter="x",
+    settings={"base": 10.0},
+  )
+  y_transform = TransformSpec(
+    id="log_y", name="Log Y", transform_type="log", parameter="y",
+    settings={"base": 10.0},
+  )
   strategy = GatingStrategySpec(
     id="log-gating",
     name="Log gating",
@@ -903,8 +911,8 @@ def test_polygon_gate_is_evaluated_in_its_stored_log_scales() -> None:
         parent_population_id="all_events",
         x_parameter="x",
         y_parameter="y",
-        x_scale="log10",
-        y_scale="log10",
+        x_transform_id=x_transform.id,
+        y_transform_id=y_transform.id,
         coordinates=((0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)),
       ),
     ),
@@ -915,12 +923,51 @@ def test_polygon_gate_is_evaluated_in_its_stored_log_scales() -> None:
   ])
 
   results, masks = evaluate_gating_strategy_with_membership(
-    strategy, data, ["x", "y"]
+    strategy, data, ["x", "y"], transforms=(x_transform, y_transform)
   )
 
   assert masks["log-poly"].tolist() == [True, True, True, False, False]
   result = next(r for r in results if r.population_id == "log-poly")
   assert result.event_count == 3
+
+
+def test_linear_and_log_gates_share_a_parameter_without_rewriting_membership() -> None:
+  log_transform = TransformSpec(
+    id="log_x",
+    name="Log X",
+    transform_type="log",
+    parameter="x",
+    settings={"base": 10.0},
+  )
+  linear_gate = GateSpec(
+    id="linear_gate",
+    name="Linear gate",
+    gate_type="range",
+    x_parameter="x",
+    thresholds={"min": 10.0},
+  )
+  log_gate = GateSpec(
+    id="log_gate",
+    name="Log gate",
+    gate_type="range",
+    x_parameter="x",
+    x_transform_id=log_transform.id,
+    thresholds={"min": 1.0},
+  )
+
+  _results, masks = evaluate_gating_strategy_with_membership(
+    GatingStrategySpec(
+      id="mixed-coordinate-strategy",
+      name="Mixed coordinate strategy",
+      gates=(linear_gate, log_gate),
+    ),
+    np.array([[1.0], [10.0], [100.0]], dtype=np.float64),
+    ["x"],
+    transforms=(log_transform,),
+  )
+
+  assert masks[linear_gate.id].tolist() == [False, True, True]
+  assert masks[log_gate.id].tolist() == [False, True, True]
 
 
 def _gate_logicle_transform(parameter: str, transform_id: str) -> TransformSpec:
@@ -977,27 +1024,6 @@ def test_rectangle_gate_uses_referenced_logicle_transforms_once() -> None:
   )
 
   assert masks[gate.id].tolist() == [True, True, True, False]
-
-
-def test_gate_transform_reference_rejects_second_legacy_scale() -> None:
-  transform = _gate_logicle_transform("x", "logicle_x")
-  gate = GateSpec(
-    id="double",
-    name="double",
-    gate_type="range",
-    x_parameter="x",
-    x_scale="log10",
-    x_transform_id=transform.id,
-    thresholds={"min": 0.0},
-  )
-
-  with pytest.raises(GatingStrategyError, match="double transform"):
-    evaluate_gating_strategy_with_membership(
-      GatingStrategySpec(id="s", name="s", gates=(gate,)),
-      np.array([[10.0]], dtype=np.float64),
-      ["x"],
-      transforms=(transform,),
-    )
 
 
 @pytest.mark.parametrize(
@@ -1083,14 +1109,21 @@ def test_evaluate_with_membership_no_gui_dependency() -> None:
 
 
 def test_rectangle_gate_transform_migration_preserves_membership() -> None:
+  source_transform = TransformSpec(
+    id="linear_x",
+    name="Linear X",
+    transform_type="linear",
+    parameter="x",
+    settings={"scale": 1.0, "offset": 0.0},
+  )
   transform = _gate_logicle_transform("x", "logicle_x")
   gate = GateSpec(
-    id="legacy",
-    name="Legacy rectangle",
+    id="linear-rectangle",
+    name="Linear rectangle",
     gate_type="rectangle",
     x_parameter="x",
+    x_transform_id=source_transform.id,
     y_parameter="y",
-    x_scale="asinh",
     thresholds={"x_min": -2.0, "x_max": 2.0, "y_min": -1.0, "y_max": 1.0},
   )
   events = np.array([
@@ -1102,26 +1135,53 @@ def test_rectangle_gate_transform_migration_preserves_membership() -> None:
     gate,
     events,
     ["x", "y"],
-    transforms=(transform,),
+    transforms=(source_transform, transform),
     target_x_transform=transform,
     parent_mask=parent_mask,
   )
 
   assert preview.candidate_gate.id == gate.id
   assert preview.candidate_gate.x_transform_id == transform.id
-  assert preview.candidate_gate.x_scale == "linear"
   assert preview.source_event_count == preview.candidate_event_count == 3
   assert preview.gained_event_count == preview.lost_event_count == 0
   assert preview.mapping_kind == "exact_axis_monotonic"
 
 
+def test_rectangle_gate_transform_migration_requires_source_transform_id() -> None:
+  transform = _gate_logicle_transform("x", "logicle_x")
+  gate = GateSpec(
+    id="linear-rectangle",
+    name="Linear rectangle",
+    gate_type="rectangle",
+    x_parameter="x",
+    y_parameter="y",
+    thresholds={"x_min": -2.0, "x_max": 2.0, "y_min": -1.0, "y_max": 1.0},
+  )
+  with pytest.raises(GateTransformMigrationError, match="source transform ID"):
+    preview_gate_transform_migration(
+      gate,
+      np.zeros((2, 2), dtype=np.float64),
+      ["x", "y"],
+      transforms=(transform,),
+      target_x_transform=transform,
+    )
+
+
 def test_polygon_gate_transform_migration_is_labeled_approximate() -> None:
+  source_transform = TransformSpec(
+    id="linear_x",
+    name="Linear X",
+    transform_type="linear",
+    parameter="x",
+    settings={"scale": 1.0, "offset": 0.0},
+  )
   transform = _gate_logicle_transform("x", "logicle_x")
   gate = GateSpec(
     id="legacy_polygon",
     name="Legacy polygon",
     gate_type="polygon",
     x_parameter="x",
+    x_transform_id=source_transform.id,
     y_parameter="y",
     coordinates=((-10.0, -2.0), (10.0, -2.0), (0.0, 2.0)),
   )
@@ -1131,7 +1191,7 @@ def test_polygon_gate_transform_migration_is_labeled_approximate() -> None:
     gate,
     events,
     ["x", "y"],
-    transforms=(transform,),
+    transforms=(source_transform, transform),
     target_x_transform=transform,
   )
 

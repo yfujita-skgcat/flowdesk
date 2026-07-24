@@ -35,10 +35,9 @@ The following is the implementation boundary at the time this guide was added:
   table that the runner uses.
 - Transform and Statistic editors build parameter choices from acquired sample channels,
   not a shared acquired-plus-derived catalog.
-- The legacy axis `linear`/`log`/`asinh` choice is not purely cosmetic: when no formal
-  transform ID is bound, gate definitions retain the selected legacy scale and headless
-  membership applies it. A formal analysis transform disables the legacy selector. This
-  prevents simple double application but leaves two confusing authoring paths.
+- Gate authoring uses only the formal TransformSpec registry. Nonlinear gate coordinates
+  always persist their exact transform ID; display-only axis choices never become a
+  second gate coordinate definition.
 - Results `Add Statistic...` and Analysis `Population Statistics...` reach the same
   statistic editor.
 - Sample Sheet title and Sample Annotations both persist through `AnnotationSpec`, but
@@ -291,10 +290,9 @@ Required semantics:
   never mutate or remove a definition with downstream references.
 - No hidden legacy scale remains active underneath a formal transform.
 
-For legacy projects, continue reading `gate.x_scale`/`gate.y_scale`. Provide an explicit,
-tested migration to formal linear/log/asinh definitions that preserves membership and
-gate geometry. Until migrated, show `Legacy Log10`/`Legacy Asinh` visibly. Never silently
-rewrite legacy Logicle approximation to formal Logicle.
+Legacy gate scale fields are not accepted by the current project format. Projects
+containing them must be explicitly converted outside Flowdesk before loading; Flowdesk
+must not guess a transform from persisted coordinates.
 
 ### Axis quick-transform implementation boundary
 
@@ -305,8 +303,8 @@ core registry is then the only source used by plotting, gate creation, membershi
 ticks. `Linear` is the documented null/identity binding when no analysis transform is
 registered. Once a parameter has a formal definition, changing it in place is blocked:
 the user must use `Manage Parameter Transforms...` to create a new ID and the explicit
-gate-migration preview. Hidden legacy `x_scale`/`y_scale` controls remain read-compatible
-for old project fixtures only and are not visible as a new authoring workflow.
+gate-migration preview. Display coordinate scales remain GUI-only context and are not
+persisted as gate analysis fields.
 
 Statistics stay explicit. The default numeric domain is the persisted native source
 stage (normally compensated values after derived evaluation, before display transform).

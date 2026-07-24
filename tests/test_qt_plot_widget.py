@@ -798,20 +798,29 @@ def test_log10_rectangle_overlay_edit_keeps_log_coordinates() -> None:
   app = _app()
   widget = PlotWidget()
   try:
+    x_transform = TransformSpec(
+      id="log_x", name="Log X", transform_type="log", parameter="X",
+      settings={"base": 10.0},
+    )
+    y_transform = TransformSpec(
+      id="log_y", name="Log Y", transform_type="log", parameter="Y",
+      settings={"base": 10.0},
+    )
     gate = GateSpec(
       id="gate-log",
       name="log rectangle",
       gate_type="rectangle",
       x_parameter="X",
       y_parameter="Y",
-      x_scale="log10",
-      y_scale="log10",
+      x_transform_id=x_transform.id,
+      y_transform_id=y_transform.id,
       thresholds={
         "x_min": 2.0, "x_max": 4.0, "y_min": 3.0, "y_max": 5.0,
       },
     )
     updates: list[GateSpec] = []
-    widget.set_axis_transforms("log10", "log10")
+    widget.set_axis_transform_specs(x_transform, y_transform)
+    widget.set_axis_transforms("linear", "linear")
     widget.on_gate_geometry_changed(
       lambda _index, updated: updates.append(updated)
     )
@@ -940,21 +949,30 @@ def test_log_polygon_is_editable_only_on_matching_display_scale() -> None:
   app = _app()
   widget = PlotWidget()
   try:
+    x_transform = TransformSpec(
+      id="log_x", name="Log X", transform_type="log", parameter="X",
+      settings={"base": 10.0},
+    )
+    y_transform = TransformSpec(
+      id="log_y", name="Log Y", transform_type="log", parameter="Y",
+      settings={"base": 10.0},
+    )
     gate = GateSpec(
       id="gate-log",
       name="log gate",
       gate_type="polygon",
       x_parameter="X",
       y_parameter="Y",
-      x_scale="log10",
-      y_scale="log10",
+      x_transform_id=x_transform.id,
+      y_transform_id=y_transform.id,
       coordinates=((2.0, 3.0), (4.0, 3.0), (3.0, 5.0)),
     )
     widget.set_axis_transforms("linear", "linear")
     widget.add_gate_overlay(gate, gate_index=0)
     assert widget._gate_items == []
 
-    widget.set_axis_transforms("log10", "log10")
+    widget.set_axis_transform_specs(x_transform, y_transform)
+    widget.set_axis_transforms("linear", "linear")
     widget.add_gate_overlay(gate, gate_index=0)
     item = widget._gate_items[0]
     assert item.__class__.__name__ == "PolyLineROI"
@@ -1179,7 +1197,6 @@ def test_gui_created_logicle_rectangle_binds_ids_and_matches_headless() -> None:
     gate = window._gate_editor.gates()[0]
     assert gate.x_transform_id == x_transform.id
     assert gate.y_transform_id == y_transform.id
-    assert gate.x_scale == gate.y_scale == "linear"
     _results, masks = evaluate_gating_strategy_with_membership(
       GatingStrategySpec(id="s", name="s", gates=(gate,)),
       window._event_data["sample"],
@@ -1201,17 +1218,20 @@ def test_gui_created_rectangle_uses_active_display_coordinate_context() -> None:
     window._current_sample_id = "sample"
     window._channel_names = ["X", "Y"]
     window._channel_selector.set_channels(["X", "Y"])
-    window._gate_editor.set_plot_scales("log10", "linear")
-    window._gate_editor.set_plot_transforms(None, None)
+    transform = TransformSpec(
+      id="log_x", name="Log X", transform_type="log", parameter="X",
+      settings={"base": 10.0},
+    )
+    window._gate_editor.set_plot_scales("linear", "linear")
+    window._gate_editor.set_plot_transforms(transform.id, None)
 
     window._create_rectangle_gate(2.0, 10.0, 4.0, 20.0)
 
     gate = window._gate_editor.gates()[0]
-    assert gate.x_scale == "log10"
-    assert gate.y_scale == "linear"
-    assert gate.x_transform_id is None
+    assert gate.x_transform_id == transform.id
     assert gate.y_transform_id is None
-    window._plot_widget.set_axis_transforms("log10", "linear")
+    window._plot_widget.set_axis_transform_specs(transform, None)
+    window._plot_widget.set_axis_transforms("linear", "linear")
     window._plot_widget.add_gate_overlay(gate)
     assert len(window._plot_widget._gate_items) == 1
   finally:

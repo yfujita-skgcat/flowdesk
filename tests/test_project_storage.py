@@ -559,7 +559,7 @@ class TestChannelIdentityMigration:
     with pytest.raises(ManifestValidationError, match="transform_type"):
       validate_manifest(current)
 
-  def test_v1_4_gate_axis_is_bound_to_matching_project_transform(self) -> None:
+  def test_v1_4_gate_without_transform_id_is_rejected(self) -> None:
     legacy = {
       **MINIMAL_MANIFEST,
       "project_version": "1.4.0",
@@ -590,8 +590,9 @@ class TestChannelIdentityMigration:
 
     assert migrated["transforms"][0]["role"] == "analysis"
     gate = migrated["gating_strategies_data"]["default"]["gates"][0]
-    assert gate["x_transform_id"] == "scale_signal"
-    validate_manifest(migrated)
+    assert "x_transform_id" not in gate
+    with pytest.raises(ManifestValidationError, match="removed legacy fields"):
+      validate_manifest(migrated)
 
   def test_current_gate_rejects_transform_id_plus_legacy_scale(self) -> None:
     manifest = migrate_manifest(MINIMAL_MANIFEST)
@@ -618,7 +619,7 @@ class TestChannelIdentityMigration:
       },
     }
 
-    with pytest.raises(ManifestValidationError, match="double transform"):
+    with pytest.raises(ManifestValidationError, match="removed legacy fields"):
       validate_manifest(manifest)
 
   def test_v1_1_derived_parameters_migrate_with_explicit_source_semantics(
@@ -2148,13 +2149,13 @@ class TestMigrationRegistry:
   def test_v0_1_migration_path(self) -> None:
     path = _get_migration_path("0.1")
     assert path == [
-      "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0",
+      "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0",
       CURRENT_PROJECT_VERSION,
     ]
 
   def test_v1_4_migration_path(self) -> None:
     path = _get_migration_path("1.4.0")
-    assert path == ["1.5.0", "1.6.0", CURRENT_PROJECT_VERSION]
+    assert path == ["1.5.0", "1.6.0", "1.7.0", CURRENT_PROJECT_VERSION]
 
   def test_v1_6_statistic_targets_migrate_without_merging(self) -> None:
     legacy = {

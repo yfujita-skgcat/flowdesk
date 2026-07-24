@@ -17,8 +17,8 @@ Samples initially use path references instead of copying FCS data into the proje
 
 Execution profiles allow one project to store multiple run configurations.
 
-The current project format is `1.6.0`. Analysis transforms require
-`role: analysis`; geometric gate axes reference them using
+The current project format is `1.8.0`. Analysis transforms require
+`role: analysis`; geometric gate axes reference them using only
 `x_transform_id`/`y_transform_id`. `plot_display_settings` remains explicitly
 display-only. Formal `logicle` transforms require `T`, `W`, `M`, `A`, and an
 implementation version. Version

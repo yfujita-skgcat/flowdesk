@@ -1213,26 +1213,24 @@ class PlotWidget(QWidget):
         return None
 
     def _gate_matches_current_axes(self, gate: GateSpec) -> bool:
-        x_transform_id = gate.x_transform_id or gate.transform_id
+        x_transform_id = gate.x_transform_id
         y_transform_id = gate.y_transform_id
         if x_transform_id is not None:
             if (
                 self._x_transform_spec is None
                 or self._x_transform_spec.id != x_transform_id
-                or gate.x_scale != "linear"
             ):
                 return False
-        elif self._x_transform_spec is not None or gate.x_scale != self._x_transform:
+        elif self._x_transform_spec is not None or self._x_transform != "linear":
             return False
         if gate.gate_type in {"rectangle", "polygon", "ellipse"}:
             if y_transform_id is not None:
                 if (
                     self._y_transform_spec is None
                     or self._y_transform_spec.id != y_transform_id
-                    or gate.y_scale != "linear"
                 ):
                     return False
-            elif self._y_transform_spec is not None or gate.y_scale != self._y_transform:
+            elif self._y_transform_spec is not None or self._y_transform != "linear":
                 return False
         return True
 

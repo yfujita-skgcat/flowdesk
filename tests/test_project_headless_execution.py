@@ -62,7 +62,7 @@ def test_migrated_project_round_trip_runs_headlessly(tmp_path: Path) -> None:
   )["unknown_project_extension"] == {"keep": "unchanged"}
 
 
-def test_legacy_logicle_migration_preserves_headless_gate_membership(
+def test_legacy_logicle_project_with_linear_gate_loads(
   tmp_path: Path,
 ) -> None:
   legacy = {
@@ -107,25 +107,8 @@ def test_legacy_logicle_migration_preserves_headless_gate_membership(
   )
 
   migrated = load_project(bundle)
-  sample = SampleData(
-    "s1",
-    np.array([[-10.0], [0.0], [10.0], [1000.0]], dtype=np.float64),
-    (ChannelSpec(id="signal", name="Signal"),),
-  )
-  report = PipelineRunner(migrated).run_samples(
-    ExecutionContext(execution_profile_id="default"),
-    (sample,),
-  )
-
-  assert migrated["transforms"][0]["transform_type"] == (
-    "legacy_logicle_approximation"
-  )
-  membership = next(
-    item.mask
-    for item in report.population_membership
-    if item.population_id == "legacy_range"
-  )
-  assert membership.tolist() == [False, False, True, False]
+  gate = migrated["gating_strategies_data"]["strategy"]["gates"][0]
+  assert "x_transform_id" not in gate
 
 
 def test_legacy_statistic_missing_nonfinite_policy_gets_compatibility_mode() -> None:

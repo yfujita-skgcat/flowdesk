@@ -64,9 +64,8 @@ def gate_version_hash(gate: GateSpec | Mapping[str, Any]) -> str:
       id=str(raw["id"]), name=str(raw.get("name", raw["id"])),
       gate_type=raw["gate_type"], parent_population_id=raw.get("parent_population_id"),
       x_parameter=raw.get("x_parameter"), y_parameter=raw.get("y_parameter"),
-      x_scale=raw.get("x_scale", "linear"), y_scale=raw.get("y_scale", "linear"),
       x_transform_id=raw.get("x_transform_id"), y_transform_id=raw.get("y_transform_id"),
-      transform_id=raw.get("transform_id"), compensation_id=raw.get("compensation_id"),
+      compensation_id=raw.get("compensation_id"),
       coordinates=tuple(tuple(point) for point in raw.get("coordinates", ())),
       thresholds=dict(raw.get("thresholds", {})), notes=str(raw.get("notes", "")),
     ))
