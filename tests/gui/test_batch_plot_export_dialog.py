@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from PySide6.QtCore import QSettings
+
 from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportDialog
 
 
@@ -50,3 +52,27 @@ def test_batch_plot_dialog_loads_saved_definition(qapp) -> None:
     assert request.definition["width"] == 1200
   finally:
     dialog.deleteLater()
+
+
+def test_batch_plot_dialog_remembers_output_directory(qapp, tmp_path) -> None:
+  settings = QSettings()
+  key = BatchPlotExportDialog._OUTPUT_DIRECTORY_KEY
+  previous = settings.value(key, None)
+  try:
+    settings.remove(key)
+    first = BatchPlotExportDialog([], [], [], [], "main-view")
+    first._output.setText(str(tmp_path))
+    first._accept_save()
+    first.request()
+    first.deleteLater()
+
+    second = BatchPlotExportDialog([], [], [], [], "main-view")
+    try:
+      assert second._output.text() == str(tmp_path)
+    finally:
+      second.deleteLater()
+  finally:
+    if previous is None:
+      settings.remove(key)
+    else:
+      settings.setValue(key, previous)

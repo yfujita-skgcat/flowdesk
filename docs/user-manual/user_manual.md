@@ -196,7 +196,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |Add Statistic...|新しい persisted statistic definition を作成する。初期 population は All Events。|
 |Manage Statistics...|既存 statistics の Compute/Show と適用 population をまとめて管理する。|
 |Export Results...|population metrics と custom statistics を wide/long TSV/CSV に書き出す。Results が stale または未計算の場合は、保存先と形式を確認した後に Pipeline を自動実行し、完了後に最新結果を出力する。Pipeline が失敗した場合は出力しない。|
-|Batch Plot Export...|保存済み `BatchPlotExportSpec` を使って batch export する。project の保存と定義済み spec が必要。|
+|Batch Plot Export...|Batch Plot Export定義を作成・編集・選択し、保存または指定output directoryへbatch exportする。|
 
 ### 5.5 Data
 
@@ -905,7 +905,9 @@ export画像では、解析中の編集用gateハンドルを表示せず、gate
 
 ### 15.5 Batch Plot Export
 
-現行 GUI には `BatchPlotExportSpec` を新規作成する editor がない。保存済み project に spec があり、project が先に保存されている場合に、最初の spec を指定 output directory へ実行する。
+`Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、サイズ・DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。未保存projectでは、保存または実行時に通常のproject保存を行う。
+
+output directoryはprojectには保存されず、アプリケーション設定（`QSettings`）に最後に使用した値だけが保存される。次回ダイアログを開くと復元されるため、同じ場所へ繰り返し出力できる。projectを別のディレクトリへ移動しても、この設定はprojectとは独立している。
 
 Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベル・目盛・gate・legend・status banner の表示、`current_view` / `shared_ranges` layout policy を保存できる。旧 project で省略された項目は既定値が適用される。JPG出力には Pillow が必要で、`shared_ranges` は全sampleの変換後X/Y範囲を共有する。CLI batch exportではmanual overlay、persisted gate geometry、軸とplot marginも同じrenderer-neutral sceneへ反映される。
 

@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
   QCheckBox,
   QComboBox,
@@ -36,6 +37,8 @@ class BatchPlotExportRequest:
 
 class BatchPlotExportDialog(QDialog):
   """Edit a ``BatchPlotExportSpec`` and select a session output directory."""
+
+  _OUTPUT_DIRECTORY_KEY = "batch_plot_export/output_directory"
 
   def __init__(
     self,
@@ -173,6 +176,9 @@ class BatchPlotExportDialog(QDialog):
     output_row.addWidget(self._output)
     output_row.addWidget(browse)
     form.addRow("Output directory", output_row)
+    self._output.setText(
+      str(QSettings().value(self._OUTPUT_DIRECTORY_KEY, "", type=str) or "")
+    )
 
     save = QPushButton("Save Definition")
     save.setObjectName("batchPlotSaveDefinitionButton")
@@ -304,7 +310,10 @@ class BatchPlotExportDialog(QDialog):
     return True
 
   def request(self) -> BatchPlotExportRequest:
-    return BatchPlotExportRequest(self.definition_mapping(), self._output.text().strip(), self._run)
+    output_dir = self._output.text().strip()
+    if output_dir:
+      QSettings().setValue(self._OUTPUT_DIRECTORY_KEY, output_dir)
+    return BatchPlotExportRequest(self.definition_mapping(), output_dir, self._run)
 
   def definition_mapping(self) -> dict[str, Any]:
     definition_id = str(self._definition.currentData() or "")
