@@ -13,6 +13,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from typing import Any
 
+from flowdesk_core.analysis_settings import replace_analysis_settings
 from flowdesk_core.gating_strategy import GatingStrategyError, ordered_gates
 from flowdesk_core.models import (
   GateOverrideSpec,
@@ -94,6 +95,29 @@ class ProjectCommand(ABC):
   @abstractmethod
   def undo(self, state: ProjectState) -> ProjectState:
     """Return a new state with this command reversed."""
+
+
+class ReplaceAnalysisSettingsCommand(ProjectCommand):
+  """Replace reusable analysis definitions as one reversible mutation."""
+
+  type = "analysis_settings.replace"
+  invalidation_reason = "Analysis settings loaded"
+
+  def __init__(self, settings: Mapping[str, Any]) -> None:
+    self.settings = deepcopy(dict(settings))
+    self._before: ProjectState | None = None
+
+  def apply(self, state: ProjectState) -> ProjectState:
+    self._before = deepcopy(state)
+    try:
+      return replace_analysis_settings(state, self.settings)
+    except ValueError as exc:
+      raise ProjectCommandError(str(exc)) from exc
+
+  def undo(self, state: ProjectState) -> ProjectState:
+    if self._before is None:
+      raise ProjectCommandError("cannot undo settings before apply")
+    return deepcopy(self._before)
 
 
 class EditOverlaySourcesCommand(ProjectCommand):

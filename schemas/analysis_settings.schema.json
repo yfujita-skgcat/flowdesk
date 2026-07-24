@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowdesk.example/schemas/analysis-settings.schema.json",
+  "title": "Flowdesk Analysis Settings Bundle",
+  "type": "object",
+  "required": ["document_kind", "settings_version", "analysis_definition"],
+  "properties": {
+    "document_kind": {"const": "analysis_settings"},
+    "settings_version": {"const": "1.0.0"},
+    "source_project_id": {"type": "string"},
+    "created_at": {"type": "string"},
+    "analysis_definition": {
+      "type": "object",
+      "required": [
+        "gating_strategies_data",
+        "derived_parameters",
+        "transforms",
+        "compensation_matrices",
+        "statistics",
+        "auto_gate_templates",
+        "magnetic_gate_templates",
+        "tethered_gate_templates",
+        "plot_views"
+      ],
+      "properties": {
+        "gating_strategies_data": {"type": "object"},
+        "derived_parameters": {"type": "array"},
+        "transforms": {"type": "array"},
+        "compensation_matrices": {"type": "array"},
+        "statistics": {"type": "array"},
+        "auto_gate_templates": {"type": "array"},
+        "magnetic_gate_templates": {"type": "array"},
+        "tethered_gate_templates": {"type": "array"},
+        "plot_views": {"type": "array"}
+      }
+    }
+  }
+}

@@ -149,6 +149,8 @@ flowdesk run project.flowdesk --output results.tsv --layout long --include-qc
 |Open Files...|Ctrl+Shift+O|複数の FCS ファイルを個別選択して読み込む。|
 |Open Project...|—|既存 `.flowdesk` directory bundle を開く。より新しい recovery copy がある場合は、別コピーとして復元するか確認される。|
 |Save Project...|Ctrl+S|現在の解析定義、サンプル参照、表示設定を `.flowdesk` directory bundle として保存する。選択したパスに `.flowdesk` suffix がなければ付加される。|
+|Save Analysis Settings...|—|サンプル、FCSパス、Resultsを含めず、再利用可能な解析定義だけを `.flowdesk-settings` directory bundle として保存する。|
+|Load Analysis Settings...|—|`.flowdesk-settings` または既存 `.flowdesk` project から解析定義を読み込み、現在のサンプルを維持したまま定義を置換する。|
 |Exit|Ctrl+Q|Flowdesk を終了する。|
 
 `Open Samples` toolbar button は名称とは異なり、現行実装では **Open Directory...** と同じ処理を呼ぶ。
@@ -159,6 +161,8 @@ flowdesk run project.flowdesk --output results.tsv --layout long --include-qc
 |---|---:|---|
 |Undo Gate Change|Ctrl+Z|直前の gate 作成、削除、rename、reparent、geometry 変更などを元に戻す。|
 |Redo Gate Change|Ctrl+Shift+Z|取り消した gate change をやり直す。|
+|Undo Analysis Settings|—|直前の解析設定の置換を元に戻す。サンプルは変更しない。|
+|Redo Analysis Settings|—|取り消した解析設定の置換をやり直す。|
 |Create Sample Gate Override...|—|選択中の sample と gate に対し、監査情報付き sample-specific geometry override を作る。通常の比較では shared group geometry を優先する。|
 |Undo Overlay Source Change|—|Advanced Overlay Sources または Plot Presentation の変更を戻す。|
 |Redo Overlay Source Change|—|取り消した overlay/presentation change をやり直す。|
@@ -843,7 +847,26 @@ Title font、Axis label font、Tick font、Legend font のそれぞれに `famil
 
 `.flowdesk` は単一ファイルではなく directory bundle である。保存対象には sample reference、fingerprint、gates、compensation、derived parameters、transforms、statistics、groups、annotations、overlays、plot presentation などが含まれる。raw event array 自体を project に埋め込む前提ではない。FCS の参照は保存先 bundle からの相対パスに変換されるため、例えば `project.flowdesk/` と `260724_apoptosis/` が同じ親ディレクトリにある場合、親ディレクトリごと移動しても再読込できる。FCS が project と別の場所にあり、移動後に見つからない場合は Samples の `Reconnect…` を使う。保存先と FCS の異なる Windows ドライブ間など、相対化できない場合は絶対パスを保持する。
 
-### 15.2 Population Results / Statistics
+### 15.2 analysis settings save/load
+
+`File > Save Analysis Settings...` は `.flowdesk-settings` directory bundle を作成する。
+この bundle には gate hierarchy、analysis transform、derived parameter、未バインドの
+compensation matrix、statistics、再利用可能な自動 gate template と plot presentation
+だけが保存される。FCS のパス、sample ID、fingerprint、raw event、Results、preview、
+cache、sample group、annotation、sample-specific override、compensation binding は
+保存されない。
+
+`File > Load Analysis Settings...` では settings bundle または既存の `.flowdesk` project
+を選択できる。読み込み前に現在の sample の channel/parameter と定義内部の参照が検証
+され、missing または ambiguous channel がある場合は現在の project を変更せず中止する。
+読み込みは定義の merge ではなく置換であり、現在の sample と FCS パスは維持される。
+
+読み込み成功後は source project の Results を使用せず、現在の Results と preview が
+stale になる。`Run Pipeline` を実行してから Results の確認や export を行う。設定置換は
+`Undo Analysis Settings` / `Redo Analysis Settings` で戻せる。異なる channel 名を自動推測
+して対応付ける機能はなく、channel mapping は別の Template 機能で扱う。
+
+### 15.3 Population Results / Statistics
 
 Results → **Export Results...** を選び、Wide table または Long detail table、
 population metrics、custom statistics、internal ID、QC/status metadata を選択する。
@@ -864,11 +887,11 @@ gate名にはASCII `/`を使用できない。これは `/`をpopulation full pa
 予約しているためである。全角の`／`は禁止対象ではない。gate名変更時も内部の
 Population IDは変わらない。
 
-### 15.3 Plot PNG/SVG/PDF
+### 15.4 Plot PNG/SVG/PDF
 
 current view、presentation、visible overlays、population colors、display sampling definition 等を使って export する。`Export 1:1` は export-only aspect option。visible advanced overlay が incompatible なら export は拒否される。
 
-### 15.4 Batch Plot Export
+### 15.5 Batch Plot Export
 
 現行 GUI には `BatchPlotExportSpec` を新規作成する editor がない。保存済み project に spec があり、project が先に保存されている場合に、最初の spec を指定 output directory へ実行する。
 

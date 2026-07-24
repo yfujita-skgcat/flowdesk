@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from flowdesk_core.analysis_settings import preflight_analysis_settings
 from flowdesk_core.compensation import (
     inspect_compensation_matrix,
     resolve_compensation_binding,
@@ -44,9 +45,9 @@ from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.integrated_overlay import resolve_overlay_style
 from flowdesk_core.models import (
-  AnnotationSpec,
-  ChannelSpec,
-  CompensationMatrixSpec,
+    AnnotationSpec,
+    ChannelSpec,
+    CompensationMatrixSpec,
     OverlaySourceSpec,
     TransformSpec,
 )
@@ -83,6 +84,7 @@ from flowdesk_core.project_commands import (
     EditOverlaySourcesCommand,
     EditPlotPresentationCommand,
     EditPlotRenderingDownsampleCommand,
+    ReplaceAnalysisSettingsCommand,
     UndoStack,
 )
 from flowdesk_core.sample import SampleData
@@ -104,6 +106,10 @@ from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
 from flowdesk_qt.workspace_tree import WorkspaceTree
+from flowdesk_storage.analysis_settings import (
+    load_analysis_settings,
+    save_analysis_settings,
+)
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import load_project, resolve_sample_paths, save_project
 from flowdesk_storage.recovery import AutosaveSettings, RecoveryManager
@@ -307,6 +313,7 @@ class MainWindow(QMainWindow):
         self._overlay_undo_stack = UndoStack(
             {"plot_views": []}, on_changed=self._on_overlay_state_changed
         )
+        self._analysis_settings_undo_stack: UndoStack | None = None
         self._backgating_specs: list[dict[str, Any]] = []
         self._auto_gate_templates: list[dict[str, Any]] = []
         self._auto_gate_fits: list[dict[str, Any]] = []
@@ -520,6 +527,28 @@ class MainWindow(QMainWindow):
         self.action_save_project.triggered.connect(self._on_save_project)
         file_menu.addAction(self.action_save_project)
 
+        self.action_save_analysis_settings = QAction(
+            "Save Analysis Settings...", self
+        )
+        self.action_save_analysis_settings.setObjectName(
+            "actionSaveAnalysisSettings"
+        )
+        self.action_save_analysis_settings.triggered.connect(
+            self._on_save_analysis_settings
+        )
+        file_menu.addAction(self.action_save_analysis_settings)
+
+        self.action_load_analysis_settings = QAction(
+            "Load Analysis Settings...", self
+        )
+        self.action_load_analysis_settings.setObjectName(
+            "actionLoadAnalysisSettings"
+        )
+        self.action_load_analysis_settings.triggered.connect(
+            self._on_load_analysis_settings
+        )
+        file_menu.addAction(self.action_load_analysis_settings)
+
         file_menu.addSeparator()
 
         self.action_export_results = QAction("Export &Results...", self)
@@ -543,6 +572,26 @@ class MainWindow(QMainWindow):
         self.action_redo.setShortcut(QKeySequence("Ctrl+Shift+Z"))
         self.action_redo.triggered.connect(self._on_redo)
         edit_menu.addAction(self.action_redo)
+        self.action_undo_analysis_settings = QAction(
+            "Undo Analysis Settings", self
+        )
+        self.action_undo_analysis_settings.setObjectName(
+            "actionUndoAnalysisSettings"
+        )
+        self.action_undo_analysis_settings.triggered.connect(
+            self._on_undo_analysis_settings
+        )
+        edit_menu.addAction(self.action_undo_analysis_settings)
+        self.action_redo_analysis_settings = QAction(
+            "Redo Analysis Settings", self
+        )
+        self.action_redo_analysis_settings.setObjectName(
+            "actionRedoAnalysisSettings"
+        )
+        self.action_redo_analysis_settings.triggered.connect(
+            self._on_redo_analysis_settings
+        )
+        edit_menu.addAction(self.action_redo_analysis_settings)
         self.action_create_gate_override = QAction(
             "Create Sample Gate &Override...", self
         )
@@ -1261,9 +1310,26 @@ class MainWindow(QMainWindow):
         if self._gate_editor.redo():
             self._update_undo_actions()
 
+    def _on_undo_analysis_settings(self) -> None:
+        stack = self._analysis_settings_undo_stack
+        if stack is not None and stack.can_undo:
+            stack.undo()
+
+    def _on_redo_analysis_settings(self) -> None:
+        stack = self._analysis_settings_undo_stack
+        if stack is not None and stack.can_redo:
+            stack.redo()
+
     def _update_undo_actions(self) -> None:
         self.action_undo.setEnabled(self._gate_editor.can_undo())
         self.action_redo.setEnabled(self._gate_editor.can_redo())
+        settings_stack = self._analysis_settings_undo_stack
+        self.action_undo_analysis_settings.setEnabled(
+            settings_stack is not None and settings_stack.can_undo
+        )
+        self.action_redo_analysis_settings.setEnabled(
+            settings_stack is not None and settings_stack.can_redo
+        )
         self.action_undo_overlay_sources.setEnabled(self._overlay_undo_stack.can_undo)
         self.action_redo_overlay_sources.setEnabled(self._overlay_undo_stack.can_redo)
 
@@ -2728,6 +2794,119 @@ class MainWindow(QMainWindow):
         self._gate_editor.mark_undo_clean()
         self._update_undo_actions()
 
+    def _on_save_analysis_settings(self) -> None:
+        """Save reusable definitions without samples or computed Results."""
+        path_str = QFileDialog.getExistingDirectory(
+            self,
+            "Select analysis settings bundle directory",
+            str(self._project_path.parent if self._project_path else Path.cwd()),
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix != ".flowdesk-settings":
+            path = path.with_suffix(".flowdesk-settings")
+        try:
+            save_analysis_settings(path, self._build_project_manifest())
+            self._update_status(f"Analysis settings saved to {path}")
+        except Exception as exc:
+            logger.error("Analysis settings save failed: %s", exc)
+            QMessageBox.critical(self, "Analysis Settings Save Error", str(exc))
+
+    def _on_load_analysis_settings(self) -> None:
+        """Load settings or extract reusable definitions from a project."""
+        path_str = QFileDialog.getExistingDirectory(
+            self,
+            "Open Analysis Settings or Flowdesk Project",
+            str(self._project_path.parent if self._project_path else Path.cwd()),
+        )
+        if not path_str:
+            return
+        try:
+            settings = load_analysis_settings(path_str)
+            current = self._build_project_manifest()
+            diagnostics = preflight_analysis_settings(current, settings)
+            if diagnostics:
+                QMessageBox.warning(
+                    self,
+                    "Analysis Settings Incompatible",
+                    "The settings were not loaded:\n\n" + "\n".join(diagnostics),
+                )
+                return
+            choice = QMessageBox.question(
+                self,
+                "Replace Analysis Definitions",
+                "Replace the current analysis definitions?\n\n"
+                "Samples and FCS paths will be kept. Results and previews "
+                "will be cleared and Pipeline must be run again.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if choice != QMessageBox.StandardButton.Yes:
+                return
+            if self._analysis_settings_undo_stack is None:
+                self._analysis_settings_undo_stack = UndoStack(
+                    current,
+                    on_changed=self._on_analysis_settings_state_changed,
+                )
+            self._analysis_settings_undo_stack.execute(
+                ReplaceAnalysisSettingsCommand(settings)
+            )
+            self._update_status("Analysis settings loaded; Results are stale")
+        except Exception as exc:
+            logger.error("Analysis settings load failed: %s", exc)
+            QMessageBox.critical(self, "Analysis Settings Load Error", str(exc))
+
+    def _on_analysis_settings_state_changed(
+        self, state: dict[str, Any], reason: str
+    ) -> None:
+        """Apply a validated definition-only command state to the GUI."""
+        strategy_data = state.get("gating_strategies_data", {}).get(
+            "default_strategy"
+        )
+        if strategy_data is None:
+            strategy_data = next(
+                iter(state.get("gating_strategies_data", {}).values())
+            )
+        strategy = PipelineRunner._strategy_from_mapping(strategy_data)
+        self._gate_editor.set_gates(list(strategy.gates), notify=False)
+        self._gate_editor.mark_undo_clean()
+        self._derived_parameters = deepcopy(state.get("derived_parameters", []))
+        self._transforms = deepcopy(state.get("transforms", []))
+        self._compensation_matrices = deepcopy(
+            state.get("compensation_matrices", [])
+        )
+        self._statistics = deepcopy(state.get("statistics", []))
+        self._plot_views = deepcopy(state.get("plot_views", []))
+        self._auto_gate_templates = deepcopy(
+            state.get("auto_gate_templates", [])
+        )
+        self._magnetic_gate_templates = deepcopy(
+            state.get("magnetic_gate_templates", [])
+        )
+        self._tethered_gate_templates = deepcopy(
+            state.get("tethered_gate_templates", [])
+        )
+        self._auto_gate_fits = []
+        self._magnetic_gate_fits = []
+        self._tethered_gate_fits = []
+        self._last_result_report = None
+        self._default_compensation_matrix_id = state.get(
+            "default_compensation_matrix_id"
+        )
+        self._overlay_undo_stack = UndoStack(
+            {"plot_views": deepcopy(self._plot_views)},
+            on_changed=self._on_overlay_state_changed,
+        )
+        self._mark_results_stale(reason)
+        self._project_dirty = True
+        self._refresh_parameter_catalog()
+        self._population_tree.set_population_parents(self._population_parent_map())
+        self._workspace_tree.set_population_hierarchy(
+            self._population_parent_map(), self._population_name_map()
+        )
+        self._update_undo_actions()
+        self._replot()
+
     def _on_open_project(self) -> None:
         path_str = QFileDialog.getExistingDirectory(
             self,
@@ -2921,6 +3100,8 @@ class MainWindow(QMainWindow):
         self._migration_diagnostics = deepcopy(
             manifest.get("migration_diagnostics", [])
         )
+        self._analysis_settings_undo_stack = None
+        self._update_undo_actions()
         self._mark_results_stale("Project loaded")
 
     def _on_edit_derived_parameters(self) -> None:

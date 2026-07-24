@@ -898,13 +898,13 @@ incrementでは両者を一つの authoritative report から統合し、GUI・C
 実験データや既存の結果を含めず、別projectの現在のsampleへ再利用可能な解析定義だけを
 保存・読込する。実装前に`docs/implementation/analysis-settings-bundles.md`を全文読む。
 
-- [ ] `.flowdesk-settings` directory bundle用のversioned `AnalysisSettingsSpec`、schema、migration、atomic save/loadを追加する。通常の`.flowdesk` projectから同じspecを抽出できるようにする。
-- [ ] gate hierarchy、analysis transforms、derived parameters、unbound compensation matrices、statistics、auto-gate templates、内部参照を含むplot viewsだけを保存対象にする。sample path/ID/fingerprint、raw events、execution report/cache、group membership、annotations、gate override、compensation binding/control assignment、export output path、UI session stateは保存しない。
-- [ ] target sample catalogに対するchannel/parameterと内部IDのstrict preflightをcoreへ実装する。missing/ambiguous channel、invalid dependency、unknown gate/transform/statistic参照では一切変更しない。channel mappingやdefinition mergeは実装しない。
-- [ ] importをreplace-onlyのdefinition commandとして実装する。targetのproject ID、sample catalog、FCS参照、fingerprint、target-only表示状態を維持し、成功時はResults/preview/cacheを破棄して`analysis_settings_loaded`でstale化する。Undo/Redoも同じstate境界を保つ。
-- [ ] Fileメニューへ`Save Analysis Settings...`と`Load Analysis Settings...`を追加する。load dialogは`.flowdesk-settings`と`.flowdesk` projectを選択可能にし、置換対象・除外対象・互換性診断・Pipeline再実行要件を確認後に適用する。
-- [ ] settings round-trip、project-source extraction、source Results非移植、target sample保持、失敗時atomicity、undo/redo、GUI/headless Pipeline一致、Windows/macOS/LinuxのUnicode/空白pathをtestする。
-- [ ] `docs/user-manual/user_manual.md`へ保存/読み込み、replace semantics、除外項目、互換性エラー、Results再計算必須を記載する。
+- [x] `.flowdesk-settings` directory bundle用のversioned `AnalysisSettingsSpec`、schema、migration、atomic save/loadを追加する。通常の`.flowdesk` projectから同じspecを抽出できるようにする。
+- [x] gate hierarchy、analysis transforms、derived parameters、unbound compensation matrices、statistics、auto-gate templates、内部参照を含むplot viewsだけを保存対象にする。sample path/ID/fingerprint、raw events、execution report/cache、group membership、annotations、gate override、compensation binding/control assignment、export output path、UI session stateは保存しない。
+- [x] target sample catalogに対するchannel/parameterと内部IDのstrict preflightをcoreへ実装する。missing/ambiguous channel、invalid dependency、unknown gate/transform/statistic参照では一切変更しない。channel mappingやdefinition mergeは実装しない。
+- [x] importをreplace-onlyのdefinition commandとして実装する。targetのproject ID、sample catalog、FCS参照、fingerprint、target-only表示状態を維持し、成功時はResults/preview/cacheを破棄して`analysis_settings_loaded`でstale化する。Undo/Redoも同じstate境界を保つ。
+- [x] Fileメニューへ`Save Analysis Settings...`と`Load Analysis Settings...`を追加する。load dialogは`.flowdesk-settings`と`.flowdesk` projectを選択可能にし、置換対象・除外対象・互換性診断・Pipeline再実行要件を確認後に適用する。
+- [x] settings round-trip、project-source extraction、source Results非移植、target sample保持、失敗時atomicity、undo/redo、GUI/headless Pipeline一致、Windows/macOS/LinuxのUnicode/空白pathをtestする。
+- [x] `docs/user-manual/user_manual.md`へ保存/読み込み、replace semantics、除外項目、互換性エラー、Results再計算必須を記載する。
 
 ## Release C: Reports, reuse, interoperability
 
