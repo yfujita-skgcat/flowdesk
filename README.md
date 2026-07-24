@@ -121,6 +121,29 @@ Do not commit `build/`, `dist/`, or package smoke artifacts. Use a native
 runner for each supported OS and keep the Python, PySide6, NumPy, and FlowIO
 versions recorded in the manifest when sharing a package.
 
+### Windows build with GitHub Actions
+
+The repository includes `.github/workflows/package-windows.yml`. It runs on a
+native `windows-latest` runner and builds both the GUI and CLI packages, runs
+core tests and the packaged smoke test, writes a build manifest, and uploads
+`Flowdesk-Windows-x64.zip` as an Actions artifact.
+
+Run it from **Actions → Package Windows → Run workflow**, or push a tag such
+as `v0.1.0`. The workflow creates a portable ZIP, not an installer, and the
+artifact is available from the completed workflow run. The package is
+unsigned; code signing, SmartScreen reputation, and an Inno Setup installer
+require a later release workflow.
+
+To create and push a tag from the version in `pyproject.toml`, first commit
+the version change and then run:
+
+```bash
+make pushtag
+```
+
+This creates and pushes `v<project version>`. Existing tags are never
+overwritten.
+
 ## Tests
 
 ```bash

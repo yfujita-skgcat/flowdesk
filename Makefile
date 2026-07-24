@@ -11,15 +11,18 @@
 #   make package-smoke - Smoke-test existing package artifacts
 #   make package-check - Build and smoke-test package artifacts
 #   make package-manifest - Write package provenance JSON
+#   make pushtag    - Tag and push the version from pyproject.toml
 #   make clean      - Remove build artifacts and caches
 #   make help       - Show this help
 
 PYTHON ?= python
 PACKAGE_SMOKE_DIR ?= artifacts/package-smoke
 QT_PLATFORM ?=
+PACKAGE_VERSION := $(shell $(PYTHON) -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+PACKAGE_TAG := v$(PACKAGE_VERSION)
 
 .PHONY: test test-core test-gui test-all gui-debug lint type-check check fmt all \
-	package package-smoke package-check package-manifest clean help
+	package package-smoke package-check package-manifest pushtag clean help
 
 gui:
 	flowdesk-gui
@@ -44,6 +47,7 @@ help:
 	@echo "  package-smoke - Smoke-test existing package artifacts"
 	@echo "  package-check - Build and smoke-test package artifacts"
 	@echo "  package-manifest - Write package provenance JSON"
+	@echo "  pushtag     - Tag and push version from pyproject.toml ($(PACKAGE_TAG))"
 	@echo "  clean       - Remove build artifacts and caches"
 	@echo "  help        - Show this help"
 
@@ -89,6 +93,11 @@ package-check: package
 
 package-manifest:
 	$(PYTHON) tools/package.py manifest --output $(PACKAGE_SMOKE_DIR)/build-manifest.json
+
+pushtag:
+	@test -n "$(PACKAGE_VERSION)" || (echo "Could not read project version from pyproject.toml" >&2; exit 1)
+	git tag "$(PACKAGE_TAG)"
+	git push origin "$(PACKAGE_TAG)"
 
 clean:
 	rm -rf build/

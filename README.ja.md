@@ -97,6 +97,20 @@ OS固有の署名やインストーラー作成は、現在のビルド入口に
 
 `build/`、`dist/`、パッケージsmoke testの成果物はコミットしないでください。対応OSごとにネイティブrunnerを使い、配布時にはmanifestに記録されたPython、PySide6、NumPy、FlowIOのバージョンを保管してください。
 
+### GitHub ActionsでWindows版をビルドする
+
+リポジトリには`.github/workflows/package-windows.yml`を用意しています。ネイティブな`windows-latest` runner上でGUIとCLIをビルドし、coreテストとパッケージsmoke testを実行し、ビルドmanifestを作成して、`Flowdesk-Windows-x64.zip`をActions artifactとしてアップロードします。
+
+GitHubの**Actions → Package Windows → Run workflow**から手動実行できます。また、`v0.1.0`のようなタグをpushした場合にも実行されます。生成されるのはポータブルZIPであり、インストーラーではありません。成果物はworkflow完了後の実行結果からダウンロードできます。パッケージは未署名のため、コード署名、SmartScreenの評価、Inno Setupインストーラーは今後のリリースworkflowで対応します。
+
+`pyproject.toml`に記載されたversionからタグを作成してpushするには、version変更を先にcommitしてから次を実行します。
+
+```bash
+make pushtag
+```
+
+`v<project version>`形式のタグを作成してpushします。既存タグを上書きすることはありません。
+
 ## テスト
 
 ```bash
