@@ -73,7 +73,7 @@ class RecoveryManager:
     if source.resolve() == target.resolve():
       raise ValueError("recovery destination must differ from recovery source")
     manifest = load_project(source)
-    save_project(target, manifest)
+    save_project(target, manifest, source_project_path=source)
     return target
 
   def cleanup(self, project_id: str, retention: int) -> None:

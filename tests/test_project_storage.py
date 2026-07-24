@@ -194,6 +194,81 @@ class TestSaveProject:
     assert (bundle / "gates").is_dir()
     assert (bundle / "manifest.json").is_file()
 
+  def test_save_rewrites_absolute_sample_paths_relative_to_target_bundle(
+    self, tmp_path: Path,
+  ) -> None:
+    workspace = tmp_path / "fcsfiles"
+    fcs_directory = workspace / "260724_apoptosis"
+    fcs_directory.mkdir(parents=True)
+    fcs_path = fcs_directory / "sample1.fcs"
+    fcs_path.write_bytes(b"synthetic-fcs")
+    bundle = workspace / "project.flowdesk"
+    manifest = {
+      **MINIMAL_MANIFEST,
+      "samples": [{"id": "s1", "path": str(fcs_path)}],
+    }
+
+    save_project(bundle, manifest)
+
+    saved = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    assert saved["samples"][0]["path"] == "../260724_apoptosis/sample1.fcs"
+
+  def test_relative_sample_reference_survives_workspace_move(
+    self, tmp_path: Path,
+  ) -> None:
+    workspace = tmp_path / "fcsfiles"
+    fcs_directory = workspace / "260724_800"
+    fcs_directory.mkdir(parents=True)
+    fcs_path = fcs_directory / "sample1.fcs"
+    fcs_path.write_bytes(b"synthetic-fcs")
+    bundle = workspace / "project.flowdesk"
+    save_project(bundle, {
+      **MINIMAL_MANIFEST,
+      "samples": [{"id": "s1", "path": str(fcs_path)}],
+    })
+
+    moved_workspace = tmp_path / "archive" / "fcsfiles"
+    moved_workspace.parent.mkdir()
+    workspace.rename(moved_workspace)
+    moved_manifest = load_project(moved_workspace / "project.flowdesk")
+    resolved = resolve_sample_paths(
+      moved_manifest, moved_workspace / "project.flowdesk"
+    )
+
+    assert Path(resolved[0]["path"]).resolve() == (
+      moved_workspace / "260724_800" / "sample1.fcs"
+    ).resolve()
+    assert Path(resolved[0]["path"]).is_file()
+
+  def test_save_as_rebases_existing_relative_sample_paths(
+    self, tmp_path: Path,
+  ) -> None:
+    source_workspace = tmp_path / "source"
+    fcs_directory = source_workspace / "260724_800"
+    fcs_directory.mkdir(parents=True)
+    fcs_path = fcs_directory / "sample1.fcs"
+    fcs_path.write_bytes(b"synthetic-fcs")
+    source_bundle = source_workspace / "project.flowdesk"
+    save_project(source_bundle, {
+      **MINIMAL_MANIFEST,
+      "samples": [{"id": "s1", "path": str(fcs_path)}],
+    })
+
+    loaded = load_project(source_bundle)
+    target_workspace = tmp_path / "target"
+    target_workspace.mkdir()
+    save_project(
+      target_workspace / "copy.flowdesk",
+      loaded,
+      source_project_path=source_bundle,
+    )
+    saved = load_project(target_workspace / "copy.flowdesk")
+    resolved = resolve_sample_paths(
+      saved, target_workspace / "copy.flowdesk"
+    )
+
+    assert Path(resolved[0]["path"]).resolve() == fcs_path.resolve()
+
 
 # -- Load-save-load round-trip --
 

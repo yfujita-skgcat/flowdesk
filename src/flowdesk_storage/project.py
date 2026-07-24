@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ntpath
+import os
+import posixpath
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, TypeAlias
@@ -31,6 +34,8 @@ def load_project(path: str | Path) -> ProjectManifest:
 def save_project(
   path: str | Path,
   manifest: ProjectManifest,
+  *,
+  source_project_path: str | Path | None = None,
 ) -> None:
   """Save a project manifest to a ``.flowdesk`` bundle directory.
 
@@ -47,6 +52,11 @@ def save_project(
   if migrated_manifest is None:
     raise RuntimeError("migration did not produce a manifest")
   manifest = migrated_manifest
+  _make_sample_paths_portable(
+    manifest,
+    project_path,
+    source_project_path=source_project_path,
+  )
   validate_manifest(manifest)
 
   # Ensure the bundle directory structure exists.
@@ -119,16 +129,12 @@ def resolve_sample_paths(
   for sample in samples:
     s = dict(sample)
     raw_path = s.get("path", "")
-    sample_path = Path(raw_path)
+    sample_path = Path(_portable_path_text(raw_path))
 
     # A POSIX absolute path is still absolute metadata when a project is
     # inspected on Windows, even though pathlib treats /path as drive-rooted
     # and not fully absolute there.
-    posix_absolute = (
-      isinstance(raw_path, str)
-      and raw_path.startswith(("/", "\\"))
-    )
-    if sample_path.is_absolute() or posix_absolute:
+    if _is_absolute_path(raw_path):
       pass  # Keep absolute path as-is.
     elif policy == "absolute":
       raise ManifestValidationError(
@@ -140,3 +146,77 @@ def resolve_sample_paths(
     resolved.append(s)
 
   return resolved
+
+
+def _is_absolute_path(raw_path: object) -> bool:
+  """Recognize absolute paths written on either supported path platform."""
+  if not isinstance(raw_path, str):
+    return False
+  return (
+    Path(raw_path).is_absolute()
+    or posixpath.isabs(raw_path)
+    or ntpath.isabs(raw_path)
+  )
+
+
+def _portable_path_text(raw_path: str) -> str:
+  """Normalize a relative manifest path without changing absolute metadata."""
+  if _is_absolute_path(raw_path):
+    return raw_path
+  return raw_path.replace("\\", "/")
+
+
+def _make_sample_paths_portable(
+  manifest: ProjectManifest,
+  project_path: Path,
+  *,
+  source_project_path: str | Path | None = None,
+) -> None:
+  """Store local sample references relative to the target project bundle.
+
+  Relative paths already in a manifest are relative to
+  ``source_project_path`` when that optional origin is supplied; otherwise
+  they are assumed to be relative to the target bundle.  Absolute paths are
+  converted to relative paths whenever the current platform can represent the
+  relationship (for example, Windows paths on different drives remain
+  absolute).
+  """
+  if manifest.get("sample_path_resolution_policy") == "absolute":
+    return
+
+  target_base = project_path.resolve()
+  source_base = (
+    Path(source_project_path).resolve()
+    if source_project_path is not None
+    else None
+  )
+  for sample in manifest.get("samples", []):
+    if not isinstance(sample, dict):
+      continue
+    raw_path = sample.get("path")
+    if not isinstance(raw_path, str) or not raw_path:
+      continue
+
+    portable_raw = _portable_path_text(raw_path)
+    if Path(raw_path).is_absolute():
+      source_path = Path(raw_path)
+    elif _is_absolute_path(raw_path):
+      # An absolute path from another OS cannot be safely re-based here.
+      sample["path"] = raw_path
+      continue
+    elif source_base is not None:
+      source_path = source_base / portable_raw
+    else:
+      sample["path"] = portable_raw
+      continue
+
+    try:
+      relative = os.path.relpath(
+        os.fspath(source_path),
+        start=os.fspath(target_base),
+      )
+    except ValueError:
+      # Windows cannot make a relative path across different drive letters.
+      sample["path"] = raw_path
+    else:
+      sample["path"] = Path(relative).as_posix()

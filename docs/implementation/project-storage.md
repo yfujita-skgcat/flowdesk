@@ -19,6 +19,8 @@ Implement robust loading, validation, and saving for `.flowdesk` project bundles
 - Treat a project as a directory bundle, not one JSON file.
 - Keep sample FCS files as path references.
 - Support relative paths resolved from the project bundle directory.
+- On save, convert local absolute sample paths to POSIX-separated paths relative to the target bundle; arbitrary sibling directories such as `../260724_apoptosis/sample.fcs` are valid.
+- When copying a project to a new bundle, accept the source bundle path so existing relative references can be rebased before saving.
 - Preserve unknown manifest fields unless a validation mode explicitly rejects them.
 - Do not import PySide6 or `flowdesk_qt`.
 - Use structured JSON parsing, not string manipulation.

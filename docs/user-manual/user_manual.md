@@ -840,7 +840,7 @@ Title font、Axis label font、Tick font、Legend font のそれぞれに `famil
 
 ### 15.1 project save
 
-`.flowdesk` は単一ファイルではなく directory bundle である。保存対象には sample reference、fingerprint、gates、compensation、derived parameters、transforms、statistics、groups、annotations、overlays、plot presentation などが含まれる。raw event array 自体を project に埋め込む前提ではないため、FCS 移動後は Reconnect が必要になる。
+`.flowdesk` は単一ファイルではなく directory bundle である。保存対象には sample reference、fingerprint、gates、compensation、derived parameters、transforms、statistics、groups、annotations、overlays、plot presentation などが含まれる。raw event array 自体を project に埋め込む前提ではない。FCS の参照は保存先 bundle からの相対パスに変換されるため、例えば `project.flowdesk/` と `260724_apoptosis/` が同じ親ディレクトリにある場合、親ディレクトリごと移動しても再読込できる。FCS が project と別の場所にあり、移動後に見つからない場合は Samples の `Reconnect…` を使う。保存先と FCS の異なる Windows ドライブ間など、相対化できない場合は絶対パスを保持する。
 
 ### 15.2 Population Results / Statistics
 
