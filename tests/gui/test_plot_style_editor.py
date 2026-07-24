@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QTabWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QLineEdit, QPushButton, QTabWidget
 
 from flowdesk_qt.plot_style_editor import PlotStyleEditorDialog
 
@@ -119,6 +120,48 @@ def test_style_editor_uses_compact_pages_for_small_monitors(qapp) -> None:
     assert [pages.tabText(i) for i in range(pages.count())] == [
       "General", "Sources", "Fonts"
     ]
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_style_editor_color_button_uses_palette_and_normalizes_hex(qapp, monkeypatch) -> None:
+  dialog = PlotStyleEditorDialog(
+    "histogram",
+    {"background_color": "#010203", "source_styles": [{"source_id": "source-a"}]},
+    ("source-a",),
+  )
+  try:
+    button = dialog.findChild(QPushButton, "plotBackgroundColorButton")
+    edit = dialog.findChild(QLineEdit, "plotBackgroundColorEdit")
+    assert button is not None
+    assert edit is not None
+    monkeypatch.setattr(
+      "flowdesk_qt.plot_style_editor.QColorDialog.getColor",
+      lambda *_args: QColor("#A1B2C3"),
+    )
+    button.click()
+    assert edit.text() == "#a1b2c3"
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_style_editor_color_button_cancel_keeps_value(qapp, monkeypatch) -> None:
+  dialog = PlotStyleEditorDialog("scatter", {"background_color": "#123456"}, ())
+  try:
+    button = dialog.findChild(QPushButton, "plotBackgroundColorButton")
+    edit = dialog.findChild(QLineEdit, "plotBackgroundColorEdit")
+    assert button is not None
+    assert edit is not None
+    monkeypatch.setattr(
+      "flowdesk_qt.plot_style_editor.QColorDialog.getColor",
+      lambda *_args: QColor(),
+    )
+    button.click()
+    assert edit.text() == "#123456"
   finally:
     dialog.close()
     dialog.deleteLater()

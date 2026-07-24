@@ -645,6 +645,10 @@ class SampleBrowser(QWidget):
         clear_role = menu.addAction("Clear Overlay Role")
         clear_role.setObjectName("clearOverlayRoleAction")
         clear_role.triggered.connect(lambda: self._set_overlay_role(sample_id, None))
+        clear_color = menu.addAction("Clear Overlay Color")
+        clear_color.setObjectName("clearOverlayColorAction")
+        clear_color.setEnabled(sample_id in self._manual_overlay_colors)
+        clear_color.triggered.connect(lambda: self._clear_overlay_color(sample_id))
         menu.exec(self._list_widget.viewport().mapToGlobal(position))
 
     def _set_overlay_mode(self, _index: int) -> None:
@@ -716,6 +720,15 @@ class SampleBrowser(QWidget):
         if not color.isValid():
             return
         self._manual_overlay_colors[sample_id] = color.name().lower()
+        self._rebuild_sample_list()
+        for callback in self._overlay_callbacks:
+            invoke_callback(callback, self.overlay_state())
+
+    def _clear_overlay_color(self, sample_id: str) -> None:
+        """Remove only the explicit manual color override for one sample."""
+        if sample_id not in self._manual_overlay_colors:
+            return
+        self._manual_overlay_colors.pop(sample_id)
         self._rebuild_sample_list()
         for callback in self._overlay_callbacks:
             invoke_callback(callback, self.overlay_state())

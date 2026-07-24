@@ -229,6 +229,21 @@ sources may vary sample, Population, label, style, visibility, and order. Arbitr
 per-source axes/transforms require a separately reviewed canonical mapping/calibration
 design.
 
+## Post-completion follow-ups
+
+The two user-facing follow-ups below are implemented and retained here as the
+completion contract:
+
+- Plot Presentation color fields use a `QColorDialog` palette workflow for background,
+  gate outline, source, line, and histogram fill/outline colors. Cancel leaves the
+  presentation state unchanged, and the chosen color is normalized to `#rrggbb`.
+- Samples-pane manual overlay colors expose `Clear Overlay Color`. Clearing removes
+  only the explicit sample/view color override and returns resolution to the documented
+  automatic/fallback color. It does not uncheck the overlay or remove comparison roles.
+
+Both follow-ups are display-only. They must not change pipeline revision, gate geometry,
+membership, counts, frequencies, or statistics.
+
 ### Simple source resolution
 
 For each manually checked sample, create or update a B7.1-compatible source request using:

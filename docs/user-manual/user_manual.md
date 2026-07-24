@@ -236,7 +236,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |列|control|説明|
 |---|---|---|
 |Ov|checkbox|その sample を manual overlay として追加・削除する。active sample 自身は overlay にできず disabled。|
-|Col|color button|overlay color を QColorDialog で選ぶ。active sample の base layer 色には使わない。|
+|Col|color button|overlay color を QColorDialog で選ぶ。active sample の base layer 色には使わない。右クリックの `Clear Overlay Color` で明示色を削除し、自動色へ戻せる。|
 |Name|sample row selection|クリックすると active sample になる。先頭記号は channel/file status。|
 |Rel|表示ラベル|`active`、manual、reference、positive_control 等の relation/status。ラベル自体はクリック操作を持たない。|
 
@@ -258,6 +258,7 @@ status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel
 |Set Overlay Role → Negative control|常時|overlay role を `negative_control` にする。|
 |Set Overlay Role → Reference|常時|overlay role を `reference` にする。|
 |Clear Overlay Role|常時|明示 role を削除する。|
+|Clear Overlay Color|明示 overlay color がある sample|明示した manual overlay color だけを削除し、自動色/fallbackへ戻す。overlay選択状態とcomparison roleは変更しない。|
 
 ### 7.4 下部 buttons
 
@@ -791,8 +792,8 @@ Analysis → Use Multiple Analysis Groups をオンにすると Gating tab 下�
 |Show legend|legend visibility。|
 |Legend position|right / left / top / bottom / inside|
 |Legend order list|source order。Up/Down で変更。|
-|Plot background|`#RRGGBB`。|
-|Gate outline color|default gate outline color。individual population setting が優先する場合がある。|
+|Plot background|入力欄または `Choose…` のカラーパレット。`#RRGGBB` として保存する。|
+|Gate outline color|入力欄または `Choose…` のカラーパレット。individual population setting が優先する場合がある。|
 |Gate outline width|0.1–100。|
 |Gate outline style|solid / dashed / dotted / dashdot。|
 |Axis line width|0.5–20。|
@@ -806,10 +807,10 @@ Analysis → Use Multiple Analysis Groups をオンにすると Gating tab 下�
 |Provenance|automatic / manual override / resolved default の由来。|
 |Marker shape|Automatic / Circle / Square / Triangle / Cross / Plus|
 |Marker size|scatter marker size。|
-|Source color|event/marker color。|
+|Source color|入力欄または `Choose…` のカラーパレットで指定する event/marker color。|
 |Source alpha|0–1。|
-|Line color / width / style|line plot 対応 style。|
-|Histogram fill / outline / alpha|histogram 対応 style。|
+|Line color / width / style|line plot 対応 style。色は入力欄または `Choose…` のカラーパレットで指定する。|
+|Histogram fill / outline / alpha|histogram 対応 style。fill/outline色は入力欄または `Choose…` のカラーパレットで指定する。|
 |Reset source to automatic|manual_fields を消し automatic policy に戻す。|
 |Project default|project default style に解決。|
 |Global default|global default style に解決。|

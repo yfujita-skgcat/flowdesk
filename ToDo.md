@@ -660,6 +660,15 @@ Accessibility:
 - [x] checkbox、color swatch、relation iconにaccessible nameとtooltipがあり、keyboardだけで主要操作へ到達できる。
 - [x] color dialogをCancelした場合はstateを変更しない。
 
+#### Phase B7.2 post-completion follow-ups
+
+The integrated overlay foundation and the following user-facing polish items from
+`docs/bug.md` are now implemented. Keep their acceptance criteria with the checked
+items so future changes do not regress the behavior.
+
+- [x] Plot Presentationの色入力欄をQColorDialogまたは同等のカラーパレットから選択できるようにする。background、gate outline、source、line、histogram fill/outlineの各色でCancel時の非変更、hex値の正規化、project save/load、PNG/SVG/PDF表示一致を検証する。色変更はpipeline、gate geometry、membership、count、frequency、statisticsを変更しない。
+- [x] Samples paneのmanual overlay色をクリアする`Clear Overlay Color`操作を追加する。色のクリアはsampleのoverlay選択状態やcomparison roleを変更せず、明示色を削除して自動色/fallbackへ戻す。project save/load、active sample変更、overlay描画、GUI/headless/exportの色解決を検証する。
+
 ### Phase B7.3: Sample sheet、Results statistics、batch plot export [S02/S09/S11/S14]
 
 サンプル名とは別に、利用者が指定する表示タイトルをExcel風の表で編集できるようにする。

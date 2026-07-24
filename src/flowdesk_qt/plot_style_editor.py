@@ -6,8 +6,10 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
   QCheckBox,
+  QColorDialog,
   QComboBox,
   QDialog,
   QDialogButtonBox,
@@ -62,6 +64,7 @@ class PlotStyleEditorDialog(QDialog):
     self._project_defaults = deepcopy(project_defaults or {})
     self._global_defaults = deepcopy(global_defaults or {})
     self._source_styles = self._normalise_source_styles()
+    self._color_buttons: dict[QLineEdit, QPushButton] = {}
     self._building = False
     self._build_ui()
     self._load_presentation()
@@ -169,10 +172,20 @@ class PlotStyleEditorDialog(QDialog):
 
     self._background_edit = QLineEdit()
     self._background_edit.setObjectName("plotBackgroundColorEdit")
-    form.addRow("Plot background:", self._background_edit)
+    form.addRow(
+      "Plot background:",
+      self._color_row(
+        self._background_edit, "plotBackgroundColorButton", "#000000"
+      ),
+    )
     self._gate_color_edit = QLineEdit()
     self._gate_color_edit.setObjectName("plotGateOutlineColorEdit")
-    form.addRow("Gate outline color:", self._gate_color_edit)
+    form.addRow(
+      "Gate outline color:",
+      self._color_row(
+        self._gate_color_edit, "plotGateOutlineColorButton", "#555555"
+      ),
+    )
     self._gate_width_spin = self._spin(0.1, 100.0, 1.5)
     self._gate_width_spin.setObjectName("plotGateOutlineWidthSpinBox")
     form.addRow("Gate outline width:", self._gate_width_spin)
@@ -207,13 +220,23 @@ class PlotStyleEditorDialog(QDialog):
     source_layout.addRow("Marker size:", self._marker_size_spin)
     self._source_color_edit = QLineEdit()
     self._source_color_edit.setObjectName("plotSourceColorEdit")
-    source_layout.addRow("Source color:", self._source_color_edit)
+    source_layout.addRow(
+      "Source color:",
+      self._color_row(
+        self._source_color_edit, "plotSourceColorButton", "#4c78a8"
+      ),
+    )
     self._source_alpha_spin = self._spin(0.0, 1.0, 1.0, 0.05)
     self._source_alpha_spin.setObjectName("plotSourceAlphaSpinBox")
     source_layout.addRow("Source alpha:", self._source_alpha_spin)
     self._line_color_edit = QLineEdit()
     self._line_color_edit.setObjectName("plotSourceLineColorEdit")
-    source_layout.addRow("Line color:", self._line_color_edit)
+    source_layout.addRow(
+      "Line color:",
+      self._color_row(
+        self._line_color_edit, "plotSourceLineColorButton", "#4c78a8"
+      ),
+    )
     self._line_width_spin = self._spin(0.1, 100.0, 1.5)
     self._line_width_spin.setObjectName("plotSourceLineWidthSpinBox")
     source_layout.addRow("Line width:", self._line_width_spin)
@@ -221,10 +244,22 @@ class PlotStyleEditorDialog(QDialog):
     source_layout.addRow("Line style:", self._line_style_combo)
     self._hist_fill_edit = QLineEdit()
     self._hist_fill_edit.setObjectName("plotHistogramFillColorEdit")
-    source_layout.addRow("Histogram fill:", self._hist_fill_edit)
+    source_layout.addRow(
+      "Histogram fill:",
+      self._color_row(
+        self._hist_fill_edit, "plotHistogramFillColorButton", "#4c78a8"
+      ),
+    )
     self._hist_outline_edit = QLineEdit()
     self._hist_outline_edit.setObjectName("plotHistogramOutlineColorEdit")
-    source_layout.addRow("Histogram outline:", self._hist_outline_edit)
+    source_layout.addRow(
+      "Histogram outline:",
+      self._color_row(
+        self._hist_outline_edit,
+        "plotHistogramOutlineColorButton",
+        "#4c78a8",
+      ),
+    )
     self._hist_alpha_spin = self._spin(0.0, 1.0, 0.35, 0.05)
     self._hist_alpha_spin.setObjectName("plotHistogramAlphaSpinBox")
     source_layout.addRow("Histogram alpha:", self._hist_alpha_spin)
@@ -327,6 +362,46 @@ class PlotStyleEditorDialog(QDialog):
     for value in ("solid", "dashed", "dotted", "dashdot"):
       combo.addItem(value.title(), value)
     return combo
+
+  def _color_row(
+    self, edit: QLineEdit, button_name: str, fallback: str,
+  ) -> QWidget:
+    row = QWidget()
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    button = QPushButton("Choose…")
+    button.setObjectName(button_name)
+    button.setAccessibleName(f"Choose color for {edit.objectName()}")
+    button.setToolTip("Choose a color from the palette")
+    button.setFixedWidth(78)
+    button.clicked.connect(lambda: self._choose_color(edit, fallback))
+    edit.textChanged.connect(
+      lambda value: self._update_color_button(button, value, fallback)
+    )
+    layout.addWidget(edit, 1)
+    layout.addWidget(button)
+    self._color_buttons[edit] = button
+    self._update_color_button(button, edit.text(), fallback)
+    return row
+
+  @staticmethod
+  def _update_color_button(
+    button: QPushButton, value: str, fallback: str,
+  ) -> None:
+    color = QColor(value.strip())
+    if not color.isValid():
+      color = QColor(fallback)
+    button.setStyleSheet(
+      f"QPushButton {{ background-color: {color.name()}; border: 1px solid #555; }}"
+    )
+
+  def _choose_color(self, edit: QLineEdit, fallback: str) -> None:
+    initial = QColor(edit.text().strip())
+    if not initial.isValid():
+      initial = QColor(fallback)
+    color = QColorDialog.getColor(initial, self, "Choose Color")
+    if color.isValid():
+      edit.setText(color.name().lower())
 
   def _load_presentation(self) -> None:
     self._building = True
@@ -497,6 +572,9 @@ class PlotStyleEditorDialog(QDialog):
     for field_name, widget in mapping.items():
       enabled = field_name in supported
       widget.setEnabled(enabled)
+      button = self._color_buttons.get(widget)
+      if button is not None:
+        button.setEnabled(enabled)
       widget.setToolTip(
         "Supported for this plot type"
         if enabled else f"Unsupported for {self._plot_type}"
