@@ -183,6 +183,9 @@ Status: complete. Synthetic core, CLI, and GUI tests cover overlays, gates,
 colors, titles, wells, collisions, incompatible sources, renderer failures,
 JPEG output, and display-only state preservation.
 
+GUI exports additionally suppress interactive ROI handles and use solid gate
+outlines temporarily; the editing view is restored after rendering.
+
 Target files:
 
 - core/CLI/GUI export tests, user manual, this guide

@@ -735,7 +735,7 @@ items so future changes do not regress the behavior.
 - [x] Increment 4: single/batch、overlay/gate/color/title、well filename、collision、
   missing/incompatible source、renderer failureのcore/CLI/GUI E2E testとユーザーマニュアルを
   完了する。exportがraw events、membership、statistics、analysis revisionを変更しないことを
-  検証する。
+  検証する。GUI exportでは編集用gate handleを隠し、outlineを実線にする。
 
 受け入れ条件:
 

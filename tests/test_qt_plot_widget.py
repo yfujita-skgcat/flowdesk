@@ -291,6 +291,32 @@ def test_plot_export_dialog_returns_display_only_options() -> None:
   dialog.deleteLater()
 
 
+def test_export_gate_style_hides_edit_handles_and_restores_editing_state() -> None:
+  _app()
+  plot = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="gate-1", name="Gate", gate_type="rectangle",
+      x_parameter="x", y_parameter="y",
+      thresholds={"x_min": 1.0, "x_max": 3.0, "y_min": 1.0, "y_max": 3.0},
+    )
+    plot.plot_events(np.array([1.0, 2.0]), np.array([1.0, 2.0]), x_label="x", y_label="y")
+    plot.add_gate_overlays([gate])
+    item = plot._gate_items[0]
+    original_style = item.pen.style()
+    handles = list(item.getHandles())
+    state = plot._begin_export_visibility({})
+    assert item.pen.style() == Qt.PenStyle.SolidLine
+    assert all(not handle.isVisible() for handle in handles)
+    plot._end_export_visibility(state)
+    assert item.pen.style() == original_style
+    assert all(handle.isVisible() for handle in handles)
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
 def test_plot_events_accepts_population_display_colors_without_changing_data() -> None:
   _app()
   plot = PlotWidget()

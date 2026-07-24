@@ -25,7 +25,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from html import escape
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -878,6 +878,7 @@ class PlotWidget(QWidget):
             "gate_visible": tuple(item.isVisible() for item in self._gate_items),
             "status_visible": self._status_banner.isVisible()
             if self._status_banner is not None else False,
+            "gate_visuals": self._begin_export_gate_visuals(),
         }
         if options.get("include_title") is False:
             title.setVisible(False)
@@ -902,10 +903,64 @@ class PlotWidget(QWidget):
         self._plot_item.setLabel("left", str(state["left_label"]))
         self._plot_item.getAxis("bottom").setStyle(showValues=True)
         self._plot_item.getAxis("left").setStyle(showValues=True)
-        for item, visible in zip(self._gate_items, state["gate_visible"], strict=False):
+        gate_visible = cast(tuple[bool, ...], state["gate_visible"])
+        for item, visible in zip(self._gate_items, gate_visible, strict=False):
             item.setVisible(bool(visible))
+        gate_visuals = cast(
+            tuple[tuple[Any, tuple[bool, ...]], ...], state["gate_visuals"]
+        )
+        self._end_export_gate_visuals(gate_visuals)
         if self._status_banner is not None:
             self._status_banner.setVisible(bool(state["status_visible"]))
+
+    def _begin_export_gate_visuals(self) -> tuple[tuple[Any, tuple[bool, ...]], ...]:
+        """Hide ROI editing handles and use publication-friendly solid outlines."""
+        from pyqtgraph import mkPen  # type: ignore[attr-defined]
+
+        state: list[tuple[Any, tuple[bool, ...]]] = []
+        for item in self._gate_items:
+            try:
+                original_pen = item.pen() if callable(item.pen) else item.pen
+                color = original_pen.color()
+                width = max(1.0, float(original_pen.widthF()))
+                item.setPen(mkPen(color=color, width=width, style=Qt.SolidLine))
+            except Exception:
+                original_pen = None
+            handles = []
+            try:
+                handles = list(item.getHandles())
+            except Exception:
+                handles = []
+            handle_visibility: list[bool] = []
+            for handle in handles:
+                try:
+                    handle_visibility.append(bool(handle.isVisible()))
+                    handle.setVisible(False)
+                except Exception:
+                    handle_visibility.append(False)
+            state.append((original_pen, tuple(handle_visibility)))
+        return tuple(state)
+
+    def _end_export_gate_visuals(
+        self, state: tuple[tuple[Any, tuple[bool, ...]], ...]
+    ) -> None:
+        for item, (original_pen, handle_visibility) in zip(
+            self._gate_items, state, strict=False
+        ):
+            if original_pen is not None:
+                try:
+                    item.setPen(original_pen)
+                except Exception:
+                    pass
+            try:
+                handles = list(item.getHandles())
+            except Exception:
+                handles = []
+            for handle, visible in zip(handles, handle_visibility, strict=False):
+                try:
+                    handle.setVisible(visible)
+                except Exception:
+                    pass
 
     def _begin_export_aspect(self, enabled: bool) -> tuple[bool, float] | None:
         if not enabled:

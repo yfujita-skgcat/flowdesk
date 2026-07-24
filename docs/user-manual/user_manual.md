@@ -895,6 +895,8 @@ current view、presentation、visible overlays、population colors、display sam
 
 plot areaの右クリック `Export` submenu と toolbar は同じ `Plot Export Options` dialogを使用する。PNG/JPEG/SVG/PDF、出力サイズ、1:1 aspect、title、axis labels、ticks、gates、legend、status bannerの出力有無を選択できる。`Batch Plot Export...` は保存済み定義をheadless runnerへ渡す。
 
+export画像では、解析中の編集用gateハンドルを表示せず、gate outlineを実線で描画する。これは出力時だけの表示変更であり、通常画面のgate編集表示（ハンドル・点線）やgate geometry、解析結果は変更しない。
+
 ### 15.5 Batch Plot Export
 
 現行 GUI には `BatchPlotExportSpec` を新規作成する editor がない。保存済み project に spec があり、project が先に保存されている場合に、最初の spec を指定 output directory へ実行する。
