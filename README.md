@@ -134,6 +134,12 @@ artifact is available from the completed workflow run. The package is
 unsigned; code signing, SmartScreen reputation, and an Inno Setup installer
 require a later release workflow.
 
+The repository also includes `package-linux.yml` and `package-macos.yml`.
+They run on `ubuntu-22.04` and `macos-14`, respectively, and upload
+`Flowdesk-Linux-x86_64.tar.gz` and `Flowdesk-macOS-arm64.zip` as separate
+artifacts. These are native PyInstaller directory packages. AppImage,
+macOS `.app`/DMG packaging, signing, and notarization are not included yet.
+
 To create and push a tag from the version in `pyproject.toml`, first commit
 the version change and then run:
 

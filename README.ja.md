@@ -103,6 +103,8 @@ OS固有の署名やインストーラー作成は、現在のビルド入口に
 
 GitHubの**Actions → Package Windows → Run workflow**から手動実行できます。また、`v0.1.0`のようなタグをpushした場合にも実行されます。生成されるのはポータブルZIPであり、インストーラーではありません。成果物はworkflow完了後の実行結果からダウンロードできます。パッケージは未署名のため、コード署名、SmartScreenの評価、Inno Setupインストーラーは今後のリリースworkflowで対応します。
 
+Linux用の`package-linux.yml`とmacOS用の`package-macos.yml`も用意しています。それぞれ`ubuntu-22.04`と`macos-14`上で実行し、`Flowdesk-Linux-x86_64.tar.gz`と`Flowdesk-macOS-arm64.zip`を別々のartifactとしてアップロードします。これらはPyInstallerのnativeディレクトリパッケージです。AppImage、macOSの`.app`/DMG、署名、公証はまだ対応していません。
+
 `pyproject.toml`に記載されたversionからタグを作成してpushするには、version変更を先にcommitしてから次を実行します。
 
 ```bash
