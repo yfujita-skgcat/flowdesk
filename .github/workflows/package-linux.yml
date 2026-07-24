@@ -12,10 +12,21 @@ permissions:
 jobs:
   package-linux:
     runs-on: ubuntu-22.04
+    env:
+      QT_QPA_PLATFORM: offscreen
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,8 +47,6 @@ jobs:
         run: python tools/package.py build
 
       - name: Run packaged smoke test
-        env:
-          QT_QPA_PLATFORM: offscreen
         run: python tools/package.py smoke
 
       - name: Write build manifest
