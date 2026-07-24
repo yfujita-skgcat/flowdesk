@@ -13,6 +13,7 @@ from flowdesk_core.models import (
 from flowdesk_core.plot_export import (
   PlotExportError,
   prepare_plot_export,
+  write_plot_jpg,
   write_plot_pdf,
   write_plot_png,
   write_plot_svg,
@@ -160,6 +161,24 @@ def test_pdf_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   write_plot_pdf(path, prepared, layers={"s1": ((0.2,), (0.8,))})
   assert path.read_bytes().startswith(b"%PDF-1.4")
   assert path.stat().st_size > 100
+
+
+def test_jpeg_export_is_nonblank_and_has_metadata(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  path = tmp_path / "plot.jpg"
+  write_plot_jpg(
+    path, prepared, layers={"s1": ((0.2, 0.8), (0.2, 0.8))},
+    options=BatchPlotExportSpec(id="export", name="Export", dpi=144),
+  )
+  assert path.read_bytes().startswith(b"\xff\xd8\xff")
+  metadata = json.loads(path.with_suffix(".jpg.json").read_text(encoding="utf-8"))
+  assert metadata["export_options"]["dpi"] == 144
 
 
 def test_layout_reference_and_template_mapping_are_explicit() -> None:

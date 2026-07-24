@@ -359,7 +359,7 @@ def write_plot_jpg(
 ) -> None:
   """Write JPEG through Pillow without making Qt part of the core renderer."""
   try:
-    from PIL import Image  # type: ignore[import-not-found]
+    from PIL import Image
   except ImportError as exc:
     raise PlotExportError("JPEG export requires the Pillow package") from exc
   width, height = _dimensions(width, height, options)

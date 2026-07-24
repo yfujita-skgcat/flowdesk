@@ -113,8 +113,9 @@ Acceptance:
 - Missing/ambiguous wells do not produce false well prefixes.
 - Project save/load and CLI planning preserve options and provenance exactly.
 
-Status: complete. The renderer does not yet execute JPEG or shared-range
-layout options; those are implemented in Increment 2.
+Status: complete. The renderer execution details are completed in Increment 2;
+this increment established the persisted options and deterministic naming
+contract.
 
 ### Increment 2: Renderer-neutral export scene and shared layout
 
@@ -177,6 +178,10 @@ Acceptance:
   and reports each batch failure.
 
 ### Increment 4: End-to-end verification and documentation
+
+Status: complete. Synthetic core, CLI, and GUI tests cover overlays, gates,
+colors, titles, wells, collisions, incompatible sources, renderer failures,
+JPEG output, and display-only state preservation.
 
 Target files:
 

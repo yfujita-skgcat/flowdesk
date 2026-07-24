@@ -732,20 +732,20 @@ items so future changes do not regress the behavior.
 - [x] Increment 3: plot area右クリックのExport submenu、PNG/JPEG/SVG/PDF、Batch Plot
   Export導線、format/path/1:1/layout/inclusion options dialogを追加する。toolbarと
   context menuは同一request builderだけを使う。
-- [ ] Increment 4: single/batch、overlay/gate/color/title、well filename、collision、
+- [x] Increment 4: single/batch、overlay/gate/color/title、well filename、collision、
   missing/incompatible source、renderer failureのcore/CLI/GUI E2E testとユーザーマニュアルを
   完了する。exportがraw events、membership、statistics、analysis revisionを変更しないことを
   検証する。
 
 受け入れ条件:
 
-- [ ] single exportとbatch exportが、選択されたoverlay、gate、presentation、title、axis
+- [x] single exportとbatch exportが、選択されたoverlay、gate、presentation、title、axis
   label/tick、色を定義どおりに出力し、sidecar/manifestへresolved provenanceを残す。
-- [ ] overlayなしのwell `A1`は`A1_*.png`、A1/B2 overlayは`A1_B2_*.png`となり、Windows、
+- [x] overlayなしのwell `A1`は`A1_*.png`、A1/B2 overlayは`A1_B2_*.png`となり、Windows、
   macOS、Linuxで安全なファイル名かつ衝突検出後も決定的である。
-- [ ] batch shared-layout exportは、全出力でX/Y range、tick位置、plot area位置、label余白を
+- [x] batch shared-layout exportは、全出力でX/Y range、tick位置、plot area位置、label余白を
   揃え、PNG/JPEG/SVG/PDFの対応rendererで非空の出力を作る。
-- [ ] toolbar/right-click/GUI batch/CLI batchが同じexport definitionを使い、GUIに独自の
+- [x] toolbar/right-click/GUI batch/CLI batchが同じexport definitionを使い、GUIに独自の
   scientific computationまたは別plot identityを作らない。
 
 ### Phase B7.4: Analysis workflow integration [S02/S04/S05/S07/S09/S10/S11/S14]

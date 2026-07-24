@@ -19,7 +19,7 @@ shiboken6 = pytest.importorskip("shiboken6")
 pytestmark = pytest.mark.gui
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPointF, Qt  # noqa: E402
-from PySide6.QtGui import QImage  # noqa: E402
+from PySide6.QtGui import QAction, QImage  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
   QApplication,
   QCheckBox,
@@ -150,6 +150,10 @@ def test_plot_context_menu_exposes_display_only_appearance_actions() -> None:
       "plotExportPngAction", "plotExportJpegAction", "plotExportSvgAction",
       "plotExportPdfAction", "plotExportBatchAction",
     } == {action.objectName() for action in export_menu.actions()}
+    requested: list[str] = []
+    plot.export_requested.connect(requested.append)
+    export_menu.findChild(QAction, "plotExportJpegAction").trigger()
+    assert requested == ["JPEG"]
     assert plot._glw.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
     plot.set_interaction_mode("gate")
     assert plot._interaction_mode == "gate"
@@ -246,6 +250,30 @@ def test_plot_widget_exports_png(tmp_path: Path) -> None:
     assert image.width() == 320
     assert image.height() == 240
     assert image.isNull() is False
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_plot_widget_exports_jpeg_with_display_metadata(tmp_path: Path) -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    widget.resize(320, 240)
+    widget.show()
+    widget.plot_events(
+      np.array([1.0, 2.0]), np.array([2.0, 1.0]), x_label="X", y_label="Y"
+    )
+    out = tmp_path / "plot.jpg"
+    widget.set_export_metadata({"ordered_source_ids": ["s1"]})
+    widget.export_jpg(out, width=240, height=180)
+    image = QImage(str(out))
+    metadata = json.loads(out.with_suffix(".jpg.json").read_text(encoding="utf-8"))
+    assert image.width() == 240
+    assert image.height() == 180
+    assert metadata["format"] == "JPEG"
+    assert metadata["ordered_source_ids"] == ["s1"]
   finally:
     widget.close()
     widget.deleteLater()
