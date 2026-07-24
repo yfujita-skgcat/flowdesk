@@ -57,6 +57,7 @@ from flowdesk_qt.gate_editor import GateEditor, _GateDialog  # noqa: E402
 from flowdesk_qt.gate_override_editor import GateOverrideDialog  # noqa: E402
 from flowdesk_qt.group_panel import GroupPanel  # noqa: E402
 from flowdesk_qt.main_window import MainWindow  # noqa: E402
+from flowdesk_qt.plot_export_dialog import PlotExportDialog  # noqa: E402
 from flowdesk_qt.plot_widget import PlotWidget  # noqa: E402
 from flowdesk_qt.sample_browser import SampleBrowser  # noqa: E402
 from flowdesk_storage.project import load_project  # noqa: E402
@@ -143,6 +144,12 @@ def test_plot_context_menu_exposes_display_only_appearance_actions() -> None:
     assert {"plotAppearance", "plotResetAppearance"} == action_ids
     assert menu.findChild(QMenu, "plotLegendMenu") is not None
     assert menu.findChild(QMenu, "plotViewRangeMenu") is not None
+    export_menu = menu.findChild(QMenu, "plotExportMenu")
+    assert export_menu is not None
+    assert {
+      "plotExportPngAction", "plotExportJpegAction", "plotExportSvgAction",
+      "plotExportPdfAction", "plotExportBatchAction",
+    } == {action.objectName() for action in export_menu.actions()}
     assert plot._glw.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
     plot.set_interaction_mode("gate")
     assert plot._interaction_mode == "gate"
@@ -243,6 +250,17 @@ def test_plot_widget_exports_png(tmp_path: Path) -> None:
     widget.close()
     widget.deleteLater()
     app.processEvents()
+
+
+def test_plot_export_dialog_returns_display_only_options() -> None:
+  _app()
+  dialog = PlotExportDialog("JPEG")
+  assert dialog.objectName() == "plotExportOptionsDialog"
+  assert dialog.findChild(QCheckBox, "plotExportIncludeGatesCheckBox") is not None
+  request = dialog.request()
+  assert request.format_name == "JPEG"
+  assert request.layout_policy == "current_view"
+  dialog.deleteLater()
 
 
 def test_plot_events_accepts_population_display_colors_without_changing_data() -> None:

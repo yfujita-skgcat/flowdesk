@@ -98,6 +98,7 @@ from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
 from flowdesk_qt.gate_override_editor import GateOverrideDialog
 from flowdesk_qt.group_panel import GroupPanel
+from flowdesk_qt.plot_export_dialog import PlotExportDialog
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
@@ -1091,9 +1092,8 @@ class MainWindow(QMainWindow):
         # Plot toolbar callbacks
         self._plot_toolbar.on_reset_robust(self._on_reset_robust)
         self._plot_toolbar.on_reset_full(self._on_reset_full)
-        self._plot_toolbar.on_export_png(self._on_export_png)
-        self._plot_toolbar.on_export_svg(self._on_export_svg)
-        self._plot_toolbar.on_export_pdf(self._on_export_pdf)
+        self._plot_toolbar.on_export_request(self._on_export_request)
+        self._plot_widget.export_requested.connect(self._on_export_request)
         self._plot_toolbar.on_export_aspect_toggled(self._on_export_aspect_toggled)
         self._plot_toolbar.on_add_statistic(self._on_add_statistic_from_graph)
         self._plot_toolbar.on_interaction_mode(self._on_interaction_mode)
@@ -4443,6 +4443,51 @@ class MainWindow(QMainWindow):
         """Forward the exclusive toolbar mode to the display widget."""
         self._plot_widget.set_interaction_mode(mode)  # type: ignore[arg-type]
         self._update_status(f"Plot interaction mode: {mode}")
+
+    def _on_export_request(self, format_name: str) -> None:
+        """Handle toolbar and plot-context export requests through one builder."""
+        if format_name == "BATCH":
+            self._on_batch_plot_export()
+            return
+        dialog = PlotExportDialog(format_name, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        request = dialog.request()
+        suffix = {
+            "PNG": "png", "JPEG": "jpg", "SVG": "svg", "PDF": "pdf"
+        }[request.format_name]
+        path, _filter = QFileDialog.getSaveFileName(
+            self,
+            f"Export Plot as {request.format_name}",
+            "",
+            f"{request.format_name} files (*.{suffix})",
+        )
+        if not path:
+            return
+        try:
+            metadata = self._current_plot_export_metadata()
+            metadata["export_options"] = request.metadata()
+            self._plot_widget.set_export_metadata(metadata)
+            if request.format_name == "PNG":
+                self._plot_widget.export_png(
+                    path, request.width, request.height, request.aspect_1_to_1,
+                    request.metadata(),
+                )
+            elif request.format_name == "JPEG":
+                self._plot_widget.export_jpg(
+                    path, request.width, request.height, request.aspect_1_to_1,
+                    request.metadata(),
+                )
+            else:
+                self._plot_widget.export_vector(
+                    path, request.format_name,
+                    request.aspect_1_to_1, request.width, request.height,
+                    request.metadata(),
+                )
+            self._update_status(f"Plot exported to {path}")
+        except Exception as exc:
+            logger.error("%s export failed: %s", request.format_name, exc)
+            QMessageBox.critical(self, "Export Error", str(exc))
 
     def _on_export_png(self) -> None:
         """Export current plot view to PNG."""

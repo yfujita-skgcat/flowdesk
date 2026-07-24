@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import replace
 from html import escape
 from pathlib import Path
@@ -79,6 +80,7 @@ class PlotWidget(QWidget):
 
     appearance_requested = Signal(str)
     view_range_requested = Signal()
+    export_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -723,6 +725,7 @@ class PlotWidget(QWidget):
         width: int | None = None,
         height: int | None = None,
         aspect_1_to_1: bool = False,
+        export_options: Mapping[str, object] | None = None,
     ) -> None:
         """Render the current plot widget to a PNG file.
 
@@ -730,6 +733,7 @@ class PlotWidget(QWidget):
         change event data, or affect gate membership.
         """
         original_size = self.size()
+        visibility = self._begin_export_visibility(export_options)
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
         resized = width is not None or height is not None
         try:
@@ -763,6 +767,48 @@ class PlotWidget(QWidget):
             )
         finally:
             self._end_export_aspect(original_aspect)
+            self._end_export_visibility(visibility)
+            if resized:
+                self.resize(original_size)
+
+    def export_jpg(
+        self,
+        path: str | Path,
+        width: int | None = None,
+        height: int | None = None,
+        aspect_1_to_1: bool = False,
+        export_options: Mapping[str, object] | None = None,
+    ) -> None:
+        """Render the current display-only scene to a JPEG file."""
+        original_size = self.size()
+        visibility = self._begin_export_visibility(export_options)
+        original_aspect = self._begin_export_aspect(aspect_1_to_1)
+        resized = width is not None or height is not None
+        try:
+            if resized:
+                width = width or max(1, original_size.width())
+                height = height or max(1, original_size.height())
+                self.resize(max(1, width), max(1, height))
+            image = QImage(self.size(), QImage.Format.Format_RGB32)
+            image.fill(Qt.GlobalColor.white)
+            self.render(image, QPoint(0, 0))
+            out_path = Path(path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            if not image.save(str(out_path), "JPEG", quality=95):
+                raise OSError(f"failed to write JPEG plot: {out_path}")
+            metadata = dict(self._export_metadata or {})
+            metadata.update({
+                "format": "JPEG",
+                "aspect_1_to_1": aspect_1_to_1,
+                "display_state": self.display_state(),
+                "scientific_note": "display export; does not contain analytical statistics",
+            })
+            out_path.with_suffix(out_path.suffix + ".json").write_text(
+                json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+        finally:
+            self._end_export_aspect(original_aspect)
+            self._end_export_visibility(visibility)
             if resized:
                 self.resize(original_size)
 
@@ -771,12 +817,22 @@ class PlotWidget(QWidget):
         path: str | Path,
         format_name: Literal["SVG", "PDF"],
         aspect_1_to_1: bool = False,
+        width: int | None = None,
+        height: int | None = None,
+        export_options: Mapping[str, object] | None = None,
     ) -> None:
         """Export the display-only scene as SVG/PDF and write a metadata sidecar."""
         out_path = Path(path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        original_size = self.size()
+        visibility = self._begin_export_visibility(export_options)
+        resized = width is not None or height is not None
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
         try:
+            if resized:
+                width = width or max(1, original_size.width())
+                height = height or max(1, original_size.height())
+                self.resize(max(1, width), max(1, height))
             if format_name == "SVG":
                 device = QSvgGenerator()
                 device.setFileName(str(out_path))
@@ -803,6 +859,53 @@ class PlotWidget(QWidget):
             )
         finally:
             self._end_export_aspect(original_aspect)
+            self._end_export_visibility(visibility)
+            if resized:
+                self.resize(original_size)
+
+    def _begin_export_visibility(
+        self, options: Mapping[str, object] | None
+    ) -> dict[str, object]:
+        """Temporarily apply export-only visibility without changing plot state."""
+        options = options or {}
+        title = self._plot_item.titleLabel
+        bottom_axis = self._plot_item.getAxis("bottom")
+        left_axis = self._plot_item.getAxis("left")
+        state: dict[str, object] = {
+            "title_visible": title.isVisible(),
+            "bottom_label": getattr(bottom_axis, "labelText", ""),
+            "left_label": getattr(left_axis, "labelText", ""),
+            "gate_visible": tuple(item.isVisible() for item in self._gate_items),
+            "status_visible": self._status_banner.isVisible()
+            if self._status_banner is not None else False,
+        }
+        if options.get("include_title") is False:
+            title.setVisible(False)
+        if options.get("include_axis_labels") is False:
+            self._plot_item.setLabel("bottom", "")
+            self._plot_item.setLabel("left", "")
+        if options.get("include_ticks") is False:
+            bottom_axis.setStyle(showValues=False)
+            left_axis.setStyle(showValues=False)
+        if options.get("include_gates") is False:
+            for item in self._gate_items:
+                item.setVisible(False)
+        if options.get("include_status_banner") is False and self._status_banner is not None:
+            self._status_banner.setVisible(False)
+        return state
+
+    def _end_export_visibility(self, state: dict[str, object]) -> None:
+        if not state:
+            return
+        self._plot_item.titleLabel.setVisible(bool(state["title_visible"]))
+        self._plot_item.setLabel("bottom", str(state["bottom_label"]))
+        self._plot_item.setLabel("left", str(state["left_label"]))
+        self._plot_item.getAxis("bottom").setStyle(showValues=True)
+        self._plot_item.getAxis("left").setStyle(showValues=True)
+        for item, visible in zip(self._gate_items, state["gate_visible"], strict=False):
+            item.setVisible(bool(visible))
+        if self._status_banner is not None:
+            self._status_banner.setVisible(bool(state["status_visible"]))
 
     def _begin_export_aspect(self, enabled: bool) -> tuple[bool, float] | None:
         if not enabled:
@@ -2169,6 +2272,22 @@ class PlotWidget(QWidget):
                 lambda _checked=False, value=action_id: self.appearance_requested.emit(value)
             )
             return action
+
+        export_menu = menu.addMenu("Export")
+        export_menu.setObjectName("plotExportMenu")
+        for label, format_name in (
+            ("PNG", "PNG"), ("JPEG", "JPEG"), ("SVG", "SVG"), ("PDF", "PDF"),
+        ):
+            action = export_menu.addAction(label)
+            action.setObjectName(f"plotExport{format_name.title()}Action")
+            action.triggered.connect(
+                lambda _checked=False, value=format_name: self.export_requested.emit(value)
+            )
+        batch_action = export_menu.addAction("Batch Plot Export...")
+        batch_action.setObjectName("plotExportBatchAction")
+        batch_action.triggered.connect(
+            lambda _checked=False: self.export_requested.emit("BATCH")
+        )
 
         add_action("Plot Appearance...", "plotAppearance")
 

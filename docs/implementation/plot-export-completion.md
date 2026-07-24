@@ -149,6 +149,10 @@ Acceptance:
 
 ### Increment 3: GUI export options and plot-area context menu
 
+Status: complete. Toolbar and plot-area context requests use the same
+format-aware request builder and options dialog; batch export is delegated to
+the existing headless entry point.
+
 Target files:
 
 - `src/flowdesk_qt/plot_widget.py`, `plot_toolbar.py`, `main_window.py`

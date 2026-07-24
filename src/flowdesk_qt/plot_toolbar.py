@@ -37,6 +37,7 @@ class PlotToolbar(QToolBar):
             "export_png": [],
             "export_svg": [],
             "export_pdf": [],
+            "export_request": [],
             "export_aspect_toggled": [],
             "marginal_toggled": [],
             "add_statistic": [],
@@ -78,6 +79,10 @@ class PlotToolbar(QToolBar):
     def on_export_pdf(self, callback: Callable[[], None]) -> None:
         self._callbacks["export_pdf"].append(callback)
 
+    def on_export_request(self, callback: Callable[[str], None]) -> None:
+        """Register the common format-aware export request callback."""
+        self._callbacks["export_request"].append(callback)
+
     def on_export_aspect_toggled(self, callback: Callable[[bool], None]) -> None:
         """Register callback for the export-only equal-aspect option."""
         self._callbacks["export_aspect_toggled"].append(callback)
@@ -108,12 +113,15 @@ class PlotToolbar(QToolBar):
 
     def _on_export_clicked(self) -> None:
         self._emit("export_png")
+        self._emit("export_request", "PNG")
 
     def _on_export_svg_clicked(self) -> None:
         self._emit("export_svg")
+        self._emit("export_request", "SVG")
 
     def _on_export_pdf_clicked(self) -> None:
         self._emit("export_pdf")
+        self._emit("export_request", "PDF")
 
     def _on_export_aspect_toggled(self, checked: bool) -> None:
         self._export_aspect_1_to_1 = checked
