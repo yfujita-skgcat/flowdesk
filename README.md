@@ -140,14 +140,15 @@ They run on `ubuntu-22.04` and `macos-14`, respectively, and upload
 artifacts. These are native PyInstaller directory packages. AppImage,
 macOS `.app`/DMG packaging, signing, and notarization are not included yet.
 
-To create and push a tag from the version in `pyproject.toml`, first commit
-the version change and then run:
+To increment the patch version, first run `make upversion`. The version source
+is `src/flowdesk_qt/_version.py`; setuptools, the GUI, and the CLI all use it.
+After committing the version change, create and push a tag with:
 
 ```bash
 make pushtag
 ```
 
-This creates and pushes `v<project version>`. Existing tags are never
+This creates and pushes `v<application version>`. Existing tags are never
 overwritten.
 
 ## Tests

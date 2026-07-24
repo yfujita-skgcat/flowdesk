@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from flowdesk_qt._version import __version__
+
 ROOT = Path(__file__).resolve().parents[1]
 GUI_SPEC = ROOT / "packaging" / "flowdesk.spec"
 CLI_SPEC = ROOT / "packaging" / "flowdesk-cli.spec"
@@ -18,13 +20,8 @@ SMOKE_SCRIPT = ROOT / "packaging" / "smoke_test.py"
 
 
 def _flowdesk_version() -> str:
-  try:
-    return version("flowdesk")
-  except PackageNotFoundError as exc:
-    raise RuntimeError(
-      "Flowdesk is not installed in the build environment. "
-      "Run: python -m pip install -e '.[gui,dev]'"
-    ) from exc
+  """Return the same source version used by setuptools and the GUI."""
+  return __version__
 
 
 def _run(command: list[str]) -> None:

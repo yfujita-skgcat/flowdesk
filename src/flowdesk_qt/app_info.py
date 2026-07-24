@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
+from flowdesk_qt._version import __version__
 
 APP_NAME = "Flowdesk"
 ORGANIZATION_NAME = "Flowdesk"
 
 
 def application_version() -> str:
-  """Return the installed Flowdesk version, or a source-tree fallback."""
-  try:
-    return version("flowdesk")
-  except PackageNotFoundError:
-    return "0.0.0.dev0"
+  """Return the version used by packaging and the running application."""
+  return __version__

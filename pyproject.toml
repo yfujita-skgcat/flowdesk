@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowdesk"
-version = "0.1.2"
+dynamic = ["version"]
 description = "Linux-first FlowJo-like flow cytometry analysis application"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,9 @@ flowdesk-gui = "flowdesk_qt:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "flowdesk_qt._version.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

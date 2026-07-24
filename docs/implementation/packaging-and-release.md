@@ -8,7 +8,8 @@ Phase 1の配布準備は実装済みである。
 - GUI依存を`gui` extraへ分離し、`PySide6`と`pyqtgraph`を定義した。
 - `python -m flowdesk_qt`のmodule entry pointを追加した。
 - `QStandardPaths`を使い、recovery、ログ、debug artifactの保存先をOS標準のユーザー領域へ移した。
-- アプリversionを`importlib.metadata`から取得し、GUI表示とdebug stateで共有するようにした。
+- `src/flowdesk_qt/_version.py`をアプリversionのsingle source of truthとし、setuptools、GUI、CLI、debug stateで共有するようにした。
+- `make upversion`でpatch versionだけを1 incrementできるようにした。
 - `tools/package.py`をOS共通のnative build/smoke/manifest入口として追加した。
 - GUI用`flowdesk`とheadless用`flowdesk-cli`を別のonedir成果物として生成する。
 - Makefileは`tools/package.py`を呼ぶLinux/macOS向けの便利なラッパーとし、WindowsではPythonから直接実行できる。
@@ -51,7 +52,7 @@ specでは次を明示的に検証する。
 - `flowdesk_qt`と`flowdesk_core`の全importが収集される。
 - PySide6のplatform plugin、SVG plugin、Qt resourceが収集される。
 - NumPy、flowioとnative libraryの依存が成果物に含まれる。
-- `importlib.metadata`でpackage versionを取得できるか、build時のversion情報を安全に埋め込む。
+- `_version.py`のversionがwheel metadataとpackage成果物へ安全に埋め込まれる。
 - output directory、temporary directory、ユーザー書込み領域がinstall directoryを参照しない。
 
 ## Phase 3: package smoke test

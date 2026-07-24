@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from flowdesk_qt._version import __version__
 from flowdesk_qt.app_info import APP_NAME, application_version
 from flowdesk_qt.app_paths import app_data_directory, cache_directory
 
@@ -13,6 +14,7 @@ pytestmark = pytest.mark.gui
 def test_application_version_is_available(qapp) -> None:
   assert APP_NAME == "Flowdesk"
   assert application_version()
+  assert application_version() == __version__
 
 
 def test_user_directories_are_absolute_and_created(qapp) -> None:
