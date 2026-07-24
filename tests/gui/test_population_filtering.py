@@ -172,6 +172,36 @@ def test_show_gate_restores_both_axis_transforms_by_id(qapp) -> None:
         qapp.processEvents()
 
 
+def test_show_gate_restores_legacy_axis_scales(qapp) -> None:
+  window = MainWindow()
+  gate = GateSpec(
+    id="legacy-transformed-gate",
+    name="Legacy transformed gate",
+    gate_type="rectangle",
+    x_parameter="X",
+    y_parameter="Y",
+    x_scale="log10",
+    y_scale="log10",
+    thresholds={"x_min": 1.0, "x_max": 2.0, "y_min": 1.0, "y_max": 2.0},
+  )
+  try:
+    window._channel_selector.set_channels(["X", "Y"])
+    window._replot = lambda: None
+
+    window._on_show_gate(gate)
+
+    assert window._channel_selector.x_transform() == "log10"
+    assert window._channel_selector.y_transform() == "log10"
+    assert window._channel_selector._x_analysis_transform_combo.currentData() == "log"
+    assert window._channel_selector._y_analysis_transform_combo.currentData() == "log"
+    assert window._display_transform_overrides == {"X": "log", "Y": "log"}
+    assert window._plot_transform_overrides == {"X": None, "Y": None}
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 # ---------------------------------------------------------------------------
 # 3-3b: Membership mask persists across channel switches
 # ---------------------------------------------------------------------------

@@ -383,7 +383,7 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 
 |項目|説明|
 |---|---|
-|Go to Gate|選択したgateの保存済みX/Y channel、Scale、Transformをplotへ適用し、gateを表示する。|
+|Go to Gate|選択したgateの保存済みX/Y channel、Scale、Transformをplotへ適用し、gateを表示する。旧形式のLegacy Log10/Legacy Asinh gateも保存済みの座標系で表示する。|
 |Population Color...|population 内 event の display color を選ぶ。|
 |Gate Outline Color...|gate outline 専用色を選ぶ。|
 |Use Population Color for Outline|outline 色を population color と連動させる toggle。|

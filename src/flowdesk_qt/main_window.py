@@ -2140,13 +2140,25 @@ class MainWindow(QMainWindow):
                 gate.x_parameter, y_parameter
             )
         x_transform_id = gate.x_transform_id or gate.transform_id
-        self._display_transform_overrides.pop(gate.x_parameter or "", None)
-        self._display_transform_overrides.pop(gate.y_parameter or "", None)
+        x_parameter = gate.x_parameter or ""
+        y_parameter = gate.y_parameter or ""
+        if self._transform_by_id(x_transform_id) is None:
+            self._display_transform_overrides[x_parameter] = (
+                self._legacy_display_transform_choice(gate.x_scale)
+            )
+        else:
+            self._display_transform_overrides.pop(x_parameter, None)
         self._plot_transform_overrides[gate.x_parameter or ""] = x_transform_id
         self._restore_gate_axis_transform(
             "x", x_transform_id, gate.x_scale
         )
-        self._plot_transform_overrides[gate.y_parameter or ""] = gate.y_transform_id
+        if self._transform_by_id(gate.y_transform_id) is None:
+            self._display_transform_overrides[y_parameter] = (
+                self._legacy_display_transform_choice(gate.y_scale)
+            )
+        else:
+            self._display_transform_overrides.pop(y_parameter, None)
+        self._plot_transform_overrides[y_parameter] = gate.y_transform_id
         self._restore_gate_axis_transform(
             "y", gate.y_transform_id, gate.y_scale
         )
@@ -2178,13 +2190,32 @@ class MainWindow(QMainWindow):
             if axis == "x"
             else self._channel_selector.set_y_transform
         )
-        setter(legacy_scale)
-        self._channel_selector.set_analysis_transform_choice(axis, "linear")
+        setter(
+            "log10" if legacy_scale == "log" else legacy_scale
+        )
+        self._channel_selector.set_analysis_transform_choice(
+            axis, self._legacy_display_transform_choice(legacy_scale)
+        )
+
+    @staticmethod
+    def _legacy_display_transform_choice(scale: str) -> str:
+        """Map a legacy gate scale to the current selector vocabulary."""
+        return {
+            "linear": "linear",
+            "log": "log",
+            "log10": "log",
+            "asinh": "asinh",
+        }.get(str(scale), "linear")
 
     @staticmethod
     def _legacy_transform_status(scale: str) -> str:
         """Make compatibility-only gate scales explicit in status text."""
-        labels = {"linear": "Linear", "log": "Legacy Log10", "asinh": "Legacy Asinh"}
+        labels = {
+            "linear": "Linear",
+            "log": "Legacy Log10",
+            "log10": "Legacy Log10",
+            "asinh": "Legacy Asinh",
+        }
         return labels.get(str(scale), f"Legacy {scale}")
 
     def _gate_transform_status(self, gate: Any, axis: str) -> str:
