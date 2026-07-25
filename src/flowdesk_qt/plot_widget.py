@@ -705,10 +705,12 @@ class PlotWidget(QWidget):
     def highlight_gate_index(self, index: int) -> None:
         """Highlight a gate overlay by index.
 
-        The selected gate gets a solid white pen; all others revert to
-        the style-defined dashed outline.
+        The selected gate gets a contrast-safe solid pen and a subtle
+        translucent fill; all others revert to the style-defined dashed
+        outline. This is an editing-only indication.
         """
         from pyqtgraph import mkPen  # type: ignore[attr-defined]
+        from PySide6.QtGui import QBrush, QColor
 
         s = self._style
         default_pen = mkPen(
@@ -716,18 +718,30 @@ class PlotWidget(QWidget):
             width=2,
             style=Qt.DashLine,
         )
+        background = QColor(s.background_color)
+        selected_color = "#0057b8" if background.lightness() >= 128 else "#ffd400"
         highlight_pen = mkPen(
-            color="#ffffff",
+            color=selected_color,
             width=3,
             style=Qt.SolidLine,
         )
+        selected_brush_color = QColor(selected_color)
+        selected_brush_color.setAlphaF(0.12)
+        selected_brush = QBrush(selected_brush_color)
+        default_brush_color = QColor(s.gate_fill_color)
+        default_brush_color.setAlphaF(max(0.0, min(1.0, s.gate_fill_opacity)))
+        default_brush = QBrush(default_brush_color)
 
         for idx, item in enumerate(self._gate_items):
             try:
                 if idx == index:
                     item.setPen(highlight_pen)
+                    if hasattr(item, "setBrush"):
+                        item.setBrush(selected_brush)
                 else:
                     item.setPen(default_pen)
+                    if hasattr(item, "setBrush"):
+                        item.setBrush(default_brush)
             except Exception:
                 pass
 

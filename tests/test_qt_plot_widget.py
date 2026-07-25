@@ -831,6 +831,30 @@ def test_clear_gates_disconnects_and_disposes_roi() -> None:
     app.processEvents()
 
 
+def test_selected_gate_uses_contrast_safe_outline_and_fill() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="selected-gate",
+      name="selected",
+      gate_type="polygon",
+      x_parameter="X",
+      y_parameter="Y",
+      coordinates=((1.0, 1.0), (3.0, 1.0), (2.0, 3.0)),
+    )
+    widget.add_gate_overlay(gate, gate_index=0)
+    item = widget._gate_items[0]
+    widget.highlight_gate_index(0)
+
+    assert item.pen.color().name() == "#0057b8"
+    assert item.pen.style() == Qt.PenStyle.SolidLine
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
 def test_polygon_gate_creation_uses_scene_click_and_double_click() -> None:
   app = _app()
   widget = PlotWidget()
