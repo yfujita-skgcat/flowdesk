@@ -358,7 +358,7 @@ state; it must not be a second, competing batch-rendering definition.
 - The GUI remains a project-state editor and CLI dispatcher; no FCS processing
   or image rendering is added to Qt code.
 
-### Increment 7: Headless renderer visual parity
+### Increment 7: Headless renderer visual parity (implemented)
 
 #### Observed failure
 
@@ -401,7 +401,7 @@ The core adapters render the scene without importing Qt or capturing the GUI.
   scene, and gate geometry; no format reverts to opaque square scatter points.
 - The headless renderer remains deterministic and independent of PySide6.
 
-### Increment 8: Current viewport and Qt-equivalent axis presentation
+### Increment 8: Current viewport and Qt-equivalent axis presentation (implemented)
 
 #### Observed failure
 
@@ -434,6 +434,132 @@ plain `1e3` rather than the GUI's `1 × 10³` display form.
 - Log tick labels use `1 × 10ⁿ` formatting and raster Y labels are vertical.
 - Font requests in output sidecars equal the saved resolved presentation;
   rendering remains Qt-independent and does not change scientific results.
+
+### Increment 9: Canonical `PlotScene` contract (planned)
+
+#### Goal
+
+Replace the current partial sharing of metadata and normalized layers with one
+typed, renderer-neutral `PlotScene`. The GUI plot and every export adapter
+must consume the same scene, so display data, coordinate system, plot rectangle,
+ticks, labels, title, marker/gate styles, clipping, and source order have one
+authoritative definition.
+
+`PlotScene` is display state, not analysis state. It must be built only after
+the canonical pipeline has completed:
+
+```text
+raw events -> compensation -> derived parameters -> transform
+           -> full-resolution gate membership -> display selection -> PlotScene
+```
+
+No scene adapter may apply a transform, calculate gate membership, derive a
+population count, or change raw events. Display clipping and deterministic
+downsampling affect rendered points only.
+
+#### Scene contract
+
+Add immutable core models, for example `PlotScene`, `PlotSceneViewport`,
+`PlotSceneLayer`, `PlotSceneGate`, `PlotSceneTick`, and `PlotSceneText`. The
+exact class names may differ, but the contract must include:
+
+- stable source/sample/population IDs; X/Y parameter IDs; formal transform IDs;
+  transformed viewport bounds; deterministic display-sampling identity; and a
+  canonical coordinate convention;
+- canvas dimensions, title/axis/tick/legend reservations, the plot rectangle,
+  clipping rectangle, aspect policy, and z-order;
+- source point coordinates in the one transformed coordinate system, marker
+  shape/size/color/alpha, and resolved title/legend source colors;
+- major/minor tick positions and already-resolved display labels, including
+  Unicode exponent notation; title, axis-label, and font requests; and
+- gate geometry in the same transformed coordinate system, resolved stroke/
+  fill style, and a flag distinguishing export geometry from GUI-only editing
+  handles or creation previews.
+
+Project files retain a compact `PlotViewSpec` and current viewport snapshot;
+they must not persist event coordinates or rendered images. Export sidecars
+record a serialized scene summary and a deterministic scene hash for audit.
+
+#### Work
+
+1. Create the typed core scene model and a GUI-independent scene builder under
+   `flowdesk_core`. It receives canonical `ProcessedDisplayResult` data plus a
+   validated `PlotViewSpec`/presentation and rejects incomplete axes,
+   incompatible overlays, non-finite viewport bounds, and transform mismatch
+   with structured diagnostics.
+2. Move range normalization, clipping, deterministic display sampling, tick
+   generation, title resolution, text/layout reservations, source-style
+   resolution, and gate-coordinate conversion into that builder. Apply each
+   persisted transform exactly once and retain full-resolution gate membership
+   outside the scene.
+3. Make PNG/JPEG/SVG/PDF adapters accept only `PlotScene`; remove independent
+   fallback range/tick/title/layout calculations from individual writers.
+   Ensure all formats use the scene's plot rectangle and resolved font/style
+   requests.
+4. Make `PlotWidget` a scene display adapter: it maps scene primitives into
+   pyqtgraph items and does not independently select points, resolve titles,
+   derive ticks, or compute view bounds. Gate selection/creation handles stay
+   in a separate Qt-only editing overlay and are excluded from `PlotScene`.
+5. Make toolbar, context export, Batch Plot Export, and CLI build the same
+   scene from the same saved plot-view definition. A GUI export may use its
+   current scene directly, while CLI/batch reconstruct the equal scene through
+   the canonical pipeline runner.
+
+#### Required tests
+
+- Core scene fixtures covering linear/log/asinh/logicle transforms, manual and
+  advanced overlays, current/shared ranges, titles, all supported marker
+  styles, ticks, rectangle/polygon/ellipse/range gates, and incompatible
+  sources.
+- Assertions that GUI and CLI scene serializations and scene hashes match for
+  equal saved definitions; verify X/Y IDs, transform IDs, bounds, source order,
+  point count/sampling indices, tick coordinates/labels, and gate paths.
+- Adapter contract tests that pyqtgraph and every export writer receive the
+  same primitive bounds, colors, alpha, fonts, and z-order. GUI-only handles
+  and previews must be absent from exported scenes.
+- Scientific regression tests proving that building/rendering a scene cannot
+  change raw events, transformed caches, gate membership, counts, frequencies,
+  statistics, or analysis revision.
+
+#### Acceptance
+
+- Equal plot definitions produce equal canonical scenes in GUI and headless
+  paths. A batch export never has a different parameter, transform, viewport,
+  gate coordinate, or source order from the selected saved view.
+- PNG/JPEG/SVG/PDF and the live plot have equal plot-rectangle geometry, text
+  strings, tick positions, marker/gate style values, clipping, and z-order.
+- The scientific pipeline remains executable without Qt. `flowdesk_core` does
+  not import Qt; Qt only renders the scene it receives.
+
+### Increment 10: Visual-equivalence verification and renderer decision (planned)
+
+The common scene guarantees semantic and geometric parity, but separate Qt,
+Pillow, SVG, and PDF backends can still differ in font rasterization and
+anti-aliasing. Define visual equivalence as the scene contract plus measured
+geometry/style agreement; do not use cross-platform pixel hashes as a
+scientific correctness test.
+
+#### Work
+
+1. Add a fixed-size visual regression fixture that renders the same scene in
+   the Qt adapter and raster export adapter. Compare plot rectangle, marker
+   centroid masks, gate paths, text bounding boxes, tick anchor positions, and
+   resolved colors with explicit tolerances; archive diagnostics on failure.
+2. Ship/select one deterministic cross-platform font family for export and
+   request the same family in the GUI adapter. Record the resolved fallback in
+   sidecars rather than silently substituting it.
+3. Set a product decision gate: if geometric/style equivalence is insufficient
+   for publication workflows, introduce one shared rendering backend for both
+   GUI and export as a separate optional adapter. Do not make `flowdesk_core`
+   depend on Qt, and retain a supported headless adapter for CLI use.
+
+#### Acceptance
+
+- The documented visual-equivalence suite passes on Linux, macOS, and Windows
+  with backend-specific font diagnostics but no silent range/style drift.
+- Exact pixel identity is required only when both outputs explicitly use the
+  same optional rendering backend; otherwise the supported guarantee is equal
+  canonical scene plus bounded visual geometry/style differences.
 
 ## Non-goals
 
