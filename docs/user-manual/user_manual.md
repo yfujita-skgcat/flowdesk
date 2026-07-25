@@ -921,6 +921,8 @@ Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベ
 
 GUIとheadless exportは、X/Y parameter、transform ID、viewport、tick、title/source色、gate geometry、clip、z-orderを含む共通のrenderer-neutral `PlotScene`を使用する。sidecarにはsceneの決定的hashも記録される。作成中gateのpreviewや編集用handleはsceneに含まれないため、exportへ混入しない。OSやフォントbackendが異なる場合はpixel完全一致ではなく、scene値と幾何・色・文字配置の許容差を再現性の基準とする。
 
+GUIから実行する`Batch Plot Export`は、現在のGUIと同じQt/pyqtgraph `PlotWidget`をoffscreenで構築してPNGを描画する。そのため、軸・grid・Log10表示・dot size/alpha・title・gateの位置はGUI表示と同じbackendで処理される。CLIを直接実行する場合は、PySide6不要のheadless rendererが既定で使用される。
+
 出力ファイル名は portable slug に変換される。sample または metadata の well (`A01` は `A1` に正規化) を優先し、未設定の場合は FCS ファイル名中の曖昧でない `A1`、`B02`、`H12` のような token だけを使用する。単一 source は `A1_<template>.png`、複数 source は表示順に `A1_B2_<template>.png` となり、well が分からない複数 source は stable sample ID を prefix にする。推定元と source ID は sidecar と batch manifest に保存される。
 
 ---

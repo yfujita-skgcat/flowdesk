@@ -718,6 +718,7 @@ items so future changes do not regress the behavior.
 - [x] `current_view` Batch ExportでGUI ViewBox範囲、表示済み軸ラベル、tick書式、font requestをsnapshotし、raw FCS名や全data範囲へfallbackしない。上付き指数・縦Y軸labelを含め、詳細は`docs/implementation/plot-export-completion.md` Increment 8。
 - [x] Canonical `PlotScene`をcoreに定義し、GUI表示、single export、Batch/CLI exportが同じscene（parameter/transform/range/tick/title/source style/gate geometry/clipping/z-order）だけを描画するよう統合する。GUIの編集handle・作成previewはscene外へ分離し、scene構築が科学的結果を変更しないことを検証する。詳細は`docs/implementation/plot-export-completion.md` Increment 9。
 - [x] 同一`PlotScene`のGUI/export visual-equivalence testを追加し、geometry/style/fontの差を測定・制限する。backend差によるpixel完全一致は同一backend利用時だけの保証とし、cross-platformではscene一致と明示的toleranceを受け入れ条件にする。詳細は`docs/implementation/plot-export-completion.md` Increment 10。
+- [x] GUIから実行するBatch Plot Exportは、GUIと同じQt/pyqtgraph `PlotWidget` adapterで描画する。CLIはPySide6がない環境でも動作するQt非依存rendererを維持し、Qt backendは明示選択時に使用する。
 
 `docs/bug.md` のplot画像export要求は、既存のsingle PNG/SVG/PDF exportと
 `BatchPlotExportSpec`だけでは完了していない。実装前に

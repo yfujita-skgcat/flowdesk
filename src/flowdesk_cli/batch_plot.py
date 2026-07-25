@@ -29,7 +29,13 @@ from flowdesk_core.transforms import apply_transform, generate_transform_ticks
 from flowdesk_storage.project import load_project, resolve_sample_paths
 
 
-def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> int:
+def batch_plot_command(
+  project_path: str,
+  export_id: str,
+  output_dir: str,
+  *,
+  renderer_backend: str = "headless",
+) -> int:
   try:
     project = load_project(project_path)
     raw = next(
@@ -109,6 +115,8 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         )
       x_values = processed.events[processed.display_mask, processed.channel_index(x_id)]
       y_values = processed.events[processed.display_mask, processed.channel_index(y_id)]
+      raw_x_values = np.asarray(x_values, dtype=np.float64).copy()
+      raw_y_values = np.asarray(y_values, dtype=np.float64).copy()
       x_transform_id = view.get("x_transform_id")
       y_transform_id = view.get("y_transform_id")
       if x_transform_id:
@@ -131,6 +139,7 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
       return x_values[finite], y_values[finite], {
         "x_id": x_id, "y_id": y_id, "x_label": x_label, "y_label": y_label,
         "view_spec": view_spec,
+        "raw_x": raw_x_values[finite], "raw_y": raw_y_values[finite],
       }
 
     def render(
@@ -277,6 +286,18 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
           active_bounds[1], view.get("y_transform_id"), transform_by_id,
           str(display_scene.get("y_tick_policy", "auto")),
         ),
+        "title_colors": [
+          str(
+            manual_colors.get(source_id)
+            if isinstance(manual_colors, Mapping) and manual_colors.get(source_id)
+            else (
+              source_styles.get(source_id, {}).get("color")
+              if "color" in set(source_styles.get(source_id, {}).get("manual_fields", ()))
+              else "#4c78a8"
+            )
+          )
+          for source_id in source_ids
+        ],
       }
       prepared = prepare_plot_export(
         spec.plot_view_id, cast(PlotType, str(view.get("plot_type", "scatter"))),
@@ -289,6 +310,42 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         ),
         scene=scene,
       )
+      if renderer_backend == "qt":
+        from flowdesk_qt.qt_plot_export import render_batch_plot_qt
+
+        render_batch_plot_qt(
+          path,
+          raw_layers={
+            source_id: (
+              np.asarray(layer_metadata[source_id]["raw_x"], dtype=np.float64),
+              np.asarray(layer_metadata[source_id]["raw_y"], dtype=np.float64),
+            )
+            for source_id in source_ids
+          },
+          source_ids=source_ids,
+          source_styles=source_styles,
+          presentation=presentation,
+          x_parameter=x_id,
+          y_parameter=y_id,
+          title_lines=tuple(prepared.scene.title_lines),
+          title_colors=tuple(prepared.scene.title_colors),
+          x_transform=transform_by_id.get(str(view.get("x_transform_id"))),
+          y_transform=transform_by_id.get(str(view.get("y_transform_id"))),
+          x_range=active_bounds[0],
+          y_range=active_bounds[1],
+          gates=tuple(
+            gate
+            for strategy in project.get("gating_strategies_data", {}).values()
+            if isinstance(strategy, Mapping)
+            for gate in strategy.get("gates", ())
+            if isinstance(gate, Mapping)
+          ),
+          width=spec.width,
+          height=spec.height,
+          options=spec,
+          export_metadata=prepared.metadata,
+        )
+        return
       if path.suffix.lower() == ".png":
         write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height,
                        options=spec)

@@ -539,6 +539,14 @@ anti-aliasing. Define visual equivalence as the scene contract plus measured
 geometry/style agreement; do not use cross-platform pixel hashes as a
 scientific correctness test.
 
+The GUI-triggered Batch Plot Export now selects the Qt/pyqtgraph adapter. It
+constructs a temporary `PlotWidget` from the same processed display arrays,
+transform specifications, viewport, presentation, and gate definitions used
+by the live GUI, then asks that widget to render the PNG. Direct CLI execution
+continues to use the Qt-independent renderer unless `renderer_backend="qt"`
+is explicitly selected, so headless execution remains available on systems
+without PySide6.
+
 #### Work
 
 1. Add a fixed-size visual regression fixture that verifies GUI/export scene

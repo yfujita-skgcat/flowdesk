@@ -3666,7 +3666,10 @@ class MainWindow(QMainWindow):
         try:
             from flowdesk_cli.batch_plot import batch_plot_command
 
-            status = batch_plot_command(str(self._project_path), export_id, output_dir)
+            status = batch_plot_command(
+                str(self._project_path), export_id, output_dir,
+                renderer_backend="qt",
+            )
         except Exception as exc:
             logger.error("Batch plot export failed: %s", exc)
             QMessageBox.critical(self, "Batch Plot Export Error", str(exc))
