@@ -79,6 +79,7 @@ def batch_plot_command(
     }
     prepared_layers: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     layer_metadata: dict[str, dict[str, Any]] = {}
+    layer_event_colors: dict[str, np.ndarray] = {}
     shared_bounds: tuple[float, float, float, float] | None = None
     display_scene = dict(view.get("display_scene", {}))
 
@@ -128,6 +129,12 @@ def batch_plot_command(
           _transform_spec(transform_by_id, str(y_transform_id)), y_values
         )
       finite = np.isfinite(x_values) & np.isfinite(y_values)
+      event_colors = _population_event_colors(
+        project, str(sample["id"]), processed.preview_report,
+        processed.display_mask, default_color="#000000",
+      )
+      if event_colors is not None:
+        event_colors = event_colors[finite]
       x_label = next(
         (channel.name for channel in processed.channels if channel.id == x_id),
         x_id,
@@ -140,6 +147,7 @@ def batch_plot_command(
         "x_id": x_id, "y_id": y_id, "x_label": x_label, "y_label": y_label,
         "view_spec": view_spec,
         "raw_x": raw_x_values[finite], "raw_y": raw_y_values[finite],
+        "event_colors": event_colors,
       }
 
     def render(
@@ -153,6 +161,8 @@ def batch_plot_command(
           x_values, y_values, metadata = extract_layer(candidate)
           prepared_layers[candidate_id] = (x_values, y_values)
           layer_metadata[candidate_id] = metadata
+          if metadata.get("event_colors") is not None:
+            layer_event_colors[candidate_id] = metadata["event_colors"]
         if spec.layout_policy == "shared_ranges":
           all_x = np.concatenate([value[0] for value in prepared_layers.values()])
           all_y = np.concatenate([value[1] for value in prepared_layers.values()])
@@ -269,7 +279,7 @@ def batch_plot_command(
         style = source_styles.setdefault(source_id, {"source_id": source_id})
         manual_fields = set(style.get("manual_fields", ()))
         if not style.get("color"):
-          style["color"] = "#000000"
+          style["color"] = "#4c78a8"
         if "alpha" not in manual_fields:
           style["alpha"] = 0.60
         if "marker_shape" not in manual_fields:
@@ -322,6 +332,7 @@ def batch_plot_command(
             )
             for source_id in source_ids
           },
+          event_colors=layer_event_colors,
           source_ids=source_ids,
           source_styles=source_styles,
           presentation=presentation,
@@ -386,6 +397,49 @@ def _normalize(
   if high == low:
     return np.full(values.shape, 0.5, dtype=np.float64)
   return (values - low) / (high - low)
+
+
+def _population_event_colors(
+  project: Mapping[str, Any],
+  sample_id: str,
+  report: Any,
+  display_mask: np.ndarray,
+  *,
+  default_color: str,
+) -> np.ndarray | None:
+  """Resolve persisted population colors for the displayed event subset.
+
+  This mirrors the GUI's display-only population coloring. Membership arrays
+  come from the canonical preview report; no gate is re-evaluated here.
+  """
+  settings = project.get("plot_display_settings", {})
+  raw_colors = settings.get("population_display_colors", {})
+  if not isinstance(raw_colors, Mapping):
+    return None
+  colored = {
+    str(population_id): str(value.get("color"))
+    for population_id, value in raw_colors.items()
+    if isinstance(value, Mapping) and isinstance(value.get("color"), str)
+    and value.get("color")
+  }
+  if not colored:
+    return None
+  memberships = getattr(report, "population_membership", ())
+  event_count = len(display_mask)
+  colors = np.full(event_count, default_color, dtype="<U7")
+  for population_id in colored:
+    membership = next(
+      (
+        value.mask for value in memberships
+        if value.sample_id == sample_id
+        and value.population_id == population_id
+        and len(value.mask) == event_count
+      ),
+      None,
+    )
+    if membership is not None:
+      colors[np.asarray(membership, dtype=bool)] = colored[population_id]
+  return colors[np.asarray(display_mask, dtype=bool)]
 
 
 def _normalized_ticks(

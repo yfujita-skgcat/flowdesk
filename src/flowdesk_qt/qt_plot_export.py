@@ -21,6 +21,7 @@ def render_batch_plot_qt(
   path: str | Path,
   *,
   raw_layers: Mapping[str, tuple[NDArray[np.float64], NDArray[np.float64]]],
+  event_colors: Mapping[str, NDArray[np.str_]] | None = None,
   source_ids: tuple[str, ...],
   source_styles: Mapping[str, Mapping[str, Any]],
   presentation: Mapping[str, Any],
@@ -76,6 +77,7 @@ def render_batch_plot_qt(
     active_x, active_y,
     x_label=str(presentation.get("x_axis_display_label", "")),
     y_label=str(presentation.get("y_axis_display_label", "")),
+    event_colors=None if event_colors is None else event_colors.get(active_id),
   )
   overlay_layers: list[Overlay2DLayer] = []
   for source_id in source_ids[1:]:

@@ -547,6 +547,13 @@ continues to use the Qt-independent renderer unless `renderer_backend="qt"`
 is explicitly selected, so headless execution remains available on systems
 without PySide6.
 
+For `current_view` exports, the transformed X/Y ViewBox range is captured
+before the temporary export resize/aspect operation and restored for the
+render. This prevents a 1:1 export canvas from silently expanding an axis.
+Population display colors are applied to the canonical preview membership
+mask, while overlay colors use the persisted source/manual color before
+falling back to the GUI overlay palette.
+
 #### Work
 
 1. Add a fixed-size visual regression fixture that verifies GUI/export scene

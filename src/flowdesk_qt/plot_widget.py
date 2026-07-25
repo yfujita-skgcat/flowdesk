@@ -764,6 +764,7 @@ class PlotWidget(QWidget):
         """
         original_size = self.size()
         visibility = self._begin_export_visibility(export_options)
+        export_view_range = self.view_range()
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
         resized = width is not None or height is not None
         try:
@@ -773,6 +774,7 @@ class PlotWidget(QWidget):
                 if height is None:
                     height = max(1, original_size.height())
                 self.resize(max(1, width), max(1, height))
+            self._restore_export_view_range(export_view_range)
 
             image = QImage(self.size(), QImage.Format_ARGB32)
             image.fill(Qt.white)
@@ -812,6 +814,7 @@ class PlotWidget(QWidget):
         """Render the current display-only scene to a JPEG file."""
         original_size = self.size()
         visibility = self._begin_export_visibility(export_options)
+        export_view_range = self.view_range()
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
         resized = width is not None or height is not None
         try:
@@ -819,6 +822,7 @@ class PlotWidget(QWidget):
                 width = width or max(1, original_size.width())
                 height = height or max(1, original_size.height())
                 self.resize(max(1, width), max(1, height))
+            self._restore_export_view_range(export_view_range)
             image = QImage(self.size(), QImage.Format.Format_RGB32)
             image.fill(Qt.GlobalColor.white)
             self.render(image, QPoint(0, 0))
@@ -856,6 +860,7 @@ class PlotWidget(QWidget):
         out_path.parent.mkdir(parents=True, exist_ok=True)
         original_size = self.size()
         visibility = self._begin_export_visibility(export_options)
+        export_view_range = self.view_range()
         resized = width is not None or height is not None
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
         try:
@@ -863,6 +868,7 @@ class PlotWidget(QWidget):
                 width = width or max(1, original_size.width())
                 height = height or max(1, original_size.height())
                 self.resize(max(1, width), max(1, height))
+            self._restore_export_view_range(export_view_range)
             if format_name == "SVG":
                 device = QSvgGenerator()
                 device.setFileName(str(out_path))
@@ -1009,6 +1015,29 @@ class PlotWidget(QWidget):
         vb = self._view_box()
         if vb is not None:
             vb.setAspectLocked(original[0], ratio=original[1])
+
+    def _restore_export_view_range(
+        self,
+        view_range: tuple[tuple[float, float], tuple[float, float]] | None,
+    ) -> None:
+        """Keep the GUI data range when export layout/aspect changes size."""
+        if view_range is None:
+            return
+        vb = self._view_box()
+        if vb is None:
+            return
+        try:
+            # A locked ViewBox rejects a range whose aspect does not match the
+            # resized export canvas. The GUI range is authoritative for
+            # current-view export, so temporarily unlock during the render.
+            if bool(vb.state.get("aspectLocked", False)):
+                vb.setAspectLocked(False)
+            vb.setRange(
+                xRange=view_range[0], yRange=view_range[1], padding=0,
+                disableAutoRange=True,
+            )
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            logger.debug("Could not restore export ViewBox range", exc_info=True)
 
     def screen_to_data(self, screen_x: float, screen_y: float) -> tuple[float, float]:
         """Convert screen coordinates to data coordinates.

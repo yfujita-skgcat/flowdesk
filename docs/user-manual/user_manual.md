@@ -923,6 +923,8 @@ GUIとheadless exportは、X/Y parameter、transform ID、viewport、tick、titl
 
 GUIから実行する`Batch Plot Export`は、現在のGUIと同じQt/pyqtgraph `PlotWidget`をoffscreenで構築してPNGを描画する。そのため、軸・grid・Log10表示・dot size/alpha・title・gateの位置はGUI表示と同じbackendで処理される。CLIを直接実行する場合は、PySide6不要のheadless rendererが既定で使用される。
 
+`current_view`では、出力サイズや1:1 aspectの指定があっても、GUIで現在表示している変換後のX/Y範囲を優先する。ゲートで色付けされたpopulationはcanonical previewのmembershipに従って同じ色で描画し、overlayは保存された個別色、またはGUIの既定overlay色で描画される。
+
 出力ファイル名は portable slug に変換される。sample または metadata の well (`A01` は `A1` に正規化) を優先し、未設定の場合は FCS ファイル名中の曖昧でない `A1`、`B02`、`H12` のような token だけを使用する。単一 source は `A1_<template>.png`、複数 source は表示順に `A1_B2_<template>.png` となり、well が分からない複数 source は stable sample ID を prefix にする。推定元と source ID は sidecar と batch manifest に保存される。
 
 ---
