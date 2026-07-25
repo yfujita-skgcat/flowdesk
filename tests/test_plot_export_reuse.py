@@ -152,7 +152,9 @@ def test_png_export_scene_preserves_colored_titles_and_labeled_ticks(tmp_path) -
 
 
 def test_export_tick_labels_use_gui_superscript_notation() -> None:
-  assert _display_tick_label("1e3") == "1 × 10³"
+  assert _display_tick_label("1e3") == "10³"
+  assert _display_tick_label("1.0e3") == "10³"
+  assert _display_tick_label("2e3") == "2 × 10³"
   assert _display_tick_label("-1e-2") == "-1 × 10⁻²"
 
 

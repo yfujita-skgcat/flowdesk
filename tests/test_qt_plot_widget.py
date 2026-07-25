@@ -1227,8 +1227,10 @@ def test_plot_widget_formats_exponent_ticks_and_applies_readable_tick_style() ->
   app = _app()
   widget = PlotWidget()
   try:
-    assert widget._format_tick_label("1e+06") == "1 × 10⁶"
+    assert widget._format_tick_label("1e+06") == "10⁶"
+    assert widget._format_tick_label("1.0e+06") == "10⁶"
     assert widget._format_tick_label("-2.5e-03") == "-2.5 × 10⁻³"
+    assert widget._format_tick_label("-1e-03") == "-1 × 10⁻³"
     assert widget._format_tick_label("0") == "0"
     assert widget._foreground_color("#ffffff") == "#000000"
     assert widget._foreground_color("#000000") == "#e8e8e8"

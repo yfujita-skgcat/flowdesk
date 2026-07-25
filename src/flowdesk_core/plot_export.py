@@ -723,6 +723,8 @@ def _display_tick_label(label: str) -> str:
   superscript = str(int(exponent)).translate(str.maketrans(
     "0123456789-+", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺"
   ))
+  if float(mantissa) == 1.0:
+    return f"10{superscript}"
   return f"{mantissa} × 10{superscript}"
 
 
