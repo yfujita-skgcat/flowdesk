@@ -29,6 +29,8 @@ Implement robust loading, validation, and saving for `.flowdesk` project bundles
   the selected name is normalized to one `.flowdesk` suffix and passed to the storage
   API as a directory path. Storage remains GUI-independent and creates the bundle
   structure through `save_project()`.
+- `Save Project` reuses the current bundle after the first save; `Save Project As...`
+  always requests a new bundle name and confirms replacement of an existing bundle.
 
 ## Required Behavior
 

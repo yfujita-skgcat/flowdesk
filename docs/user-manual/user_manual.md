@@ -107,7 +107,7 @@ OSごとのユーザー書込み可能なアプリケーションデータ領域
 7. **Run Pipeline** を実行する。
 8. Results タブで event count、frequency、統計値、status を確認する。
 9. **Export Results...**、またはプロットの PNG/SVG/PDF export を行う。
-10. **Save Project...** で保存名を入力し、その名前の `.flowdesk` directory bundle として保存する。
+10. **Save Project**（Ctrl+S）で現在のprojectへ上書き保存する。未保存projectの場合は保存名を入力し、その名前の `.flowdesk` directory bundle として保存する。別名で保存する場合は **Save Project As...** を使う。
 
 ### 3.1 CLIでResultsを出力する
 
@@ -156,7 +156,8 @@ flowdesk run project.flowdesk --output results.tsv --layout long --include-qc
 |Open Directory...|Ctrl+O|選択したディレクトリ直下の `*.fcs` を読み込む。サブディレクトリは再帰検索しない。|
 |Open Files...|Ctrl+Shift+O|複数の FCS ファイルを個別選択して読み込む。|
 |Open Project...|—|既存 `.flowdesk` directory bundle を開く。より新しい recovery copy がある場合は、別コピーとして復元するか確認される。|
-|Save Project...|Ctrl+S|保存名を入力し、現在の解析定義、サンプル参照、表示設定をその名前の `.flowdesk` directory bundle として保存する。入力名に `.flowdesk` suffix がなければ自動付加される。|
+|Save Project|Ctrl+S|保存済みprojectを現在の `.flowdesk` directory bundleへ上書き保存する。未保存の場合は保存名を入力する。|
+|Save Project As...|—|常に保存名を入力し、新しい `.flowdesk` directory bundleとして保存する。既存bundleを指定した場合は上書き確認を表示する。|
 |Save Analysis Settings...|—|サンプル、FCSパス、Resultsを含めず、再利用可能な解析定義だけを `.flowdesk-settings` directory bundle として保存する。|
 |Load Analysis Settings...|—|`.flowdesk-settings` または既存 `.flowdesk` project から解析定義を読み込み、現在のサンプルを維持したまま定義を置換する。|
 |Exit|Ctrl+Q|Flowdesk を終了する。|
@@ -858,7 +859,7 @@ Title font、Axis label font、Tick font、Legend font のそれぞれに `famil
 
 ### 15.1 project save
 
-`.flowdesk` は単一ファイルではなく directory bundle である。**Save Project...** ではファイル名ではなくproject名を入力し、例えば `experiment-260724` と入力すると `experiment-260724.flowdesk/` ディレクトリが作成される。保存対象には sample reference、fingerprint、gates、compensation、derived parameters、transforms、statistics、groups、annotations、overlays、plot presentation などが含まれる。raw event array 自体を project に埋め込む前提ではない。FCS の参照は保存先 bundle からの相対パスに変換されるため、例えば `project.flowdesk/` と `260724_apoptosis/` が同じ親ディレクトリにある場合、親ディレクトリごと移動しても再読込できる。FCS が project と別の場所にあり、移動後に見つからない場合は Samples の `Reconnect…` を使う。保存先と FCS の異なる Windows ドライブ間など、相対化できない場合は絶対パスを保持する。
+`.flowdesk` は単一ファイルではなく directory bundle である。**Save Project As...** ではファイル名ではなくproject名を入力し、例えば `experiment-260724` と入力すると `experiment-260724.flowdesk/` ディレクトリが作成される。保存済みprojectで **Save Project**（Ctrl+S）を実行すると、この現在のbundleへ上書き保存される。保存対象には sample reference、fingerprint、gates、compensation、derived parameters、transforms、statistics、groups、annotations、overlays、plot presentation などが含まれる。raw event array 自体を project に埋め込む前提ではない。FCS の参照は保存先 bundle からの相対パスに変換されるため、例えば `project.flowdesk/` と `260724_apoptosis/` が同じ親ディレクトリにある場合、親ディレクトリごと移動しても再読込できる。FCS が project と別の場所にあり、移動後に見つからない場合は Samples の `Reconnect…` を使う。保存先と FCS の異なる Windows ドライブ間など、相対化できない場合は絶対パスを保持する。
 
 ### 15.2 analysis settings save/load
 

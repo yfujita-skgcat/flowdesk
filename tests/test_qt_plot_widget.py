@@ -558,6 +558,39 @@ def test_save_project_dialog_uses_entered_name(monkeypatch, tmp_path: Path) -> N
     app.processEvents()
 
 
+def test_save_project_reuses_current_bundle_without_dialog(monkeypatch, tmp_path: Path) -> None:
+  app = _app()
+  window = MainWindow()
+  current = tmp_path / "current.flowdesk"
+  saved: list[Path] = []
+  window._project_path = current
+  monkeypatch.setattr(window, "_save_project_to_path", saved.append)
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.QFileDialog.getSaveFileName",
+    lambda *_args, **_kwargs: pytest.fail("Save Project must not open a dialog"),
+  )
+  try:
+    window._on_save_project()
+    assert saved == [current]
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_file_menu_exposes_save_project_as_action() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    assert window.action_save_project.shortcut().toString() == "Ctrl+S"
+    assert window.action_save_project_as.objectName() == "actionSaveProjectAs"
+    assert window.action_save_project.text() == "&Save Project"
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_default_drag_delegates_mouse_drag_to_viewbox() -> None:
   app = _app()
   widget = PlotWidget()

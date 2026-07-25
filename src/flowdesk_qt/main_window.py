@@ -536,11 +536,16 @@ class MainWindow(QMainWindow):
         self.action_open_project.triggered.connect(self._on_open_project)
         file_menu.addAction(self.action_open_project)
 
-        self.action_save_project = QAction("&Save Project...", self)
+        self.action_save_project = QAction("&Save Project", self)
         self.action_save_project.setObjectName("actionSaveProject")
         self.action_save_project.setShortcut(QKeySequence.Save)
         self.action_save_project.triggered.connect(self._on_save_project)
         file_menu.addAction(self.action_save_project)
+
+        self.action_save_project_as = QAction("Save Project &As...", self)
+        self.action_save_project_as.setObjectName("actionSaveProjectAs")
+        self.action_save_project_as.triggered.connect(self._on_save_project_as)
+        file_menu.addAction(self.action_save_project_as)
 
         self.action_save_analysis_settings = QAction(
             "Save Analysis Settings...", self
@@ -2855,7 +2860,19 @@ class MainWindow(QMainWindow):
         self._update_status(f"Loaded {count} samples")
 
     def _on_save_project(self) -> None:
-        """Save current analysis and display state as a project bundle."""
+        """Save to the current bundle, or request a name for a new project."""
+        if self._project_path is None:
+            self._save_project_interactively()
+            return
+        try:
+            self._save_project_to_path(self._project_path)
+            self._update_status(f"Project saved to {self._project_path}")
+        except Exception as exc:
+            logger.error("Project save failed: %s", exc)
+            QMessageBox.critical(self, "Project Save Error", str(exc))
+
+    def _on_save_project_as(self) -> None:
+        """Always request a new project bundle name before saving."""
         self._save_project_interactively()
 
     def _save_project_interactively(self) -> bool:
@@ -2870,6 +2887,16 @@ class MainWindow(QMainWindow):
         if not path_str:
             return False
         path = _project_bundle_path(path_str)
+        if path.exists():
+            answer = QMessageBox.question(
+                self,
+                "Overwrite project?",
+                f"The project already exists:\n{path}\n\nOverwrite it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return False
         try:
             self._save_project_to_path(path)
             self._update_status(f"Project saved to {path}")
