@@ -777,6 +777,8 @@ def test_rectangle_preview_reuses_and_disposes_single_roi() -> None:
     widget._update_rectangle_preview((1.0, 2.0), (3.0, 5.0))
     preview = widget._preview_item
     assert preview is not None
+    assert preview.pen.color().name() == "#0057b8"
+    assert preview.pen.style() == Qt.PenStyle.DotLine
 
     for offset in range(100):
       widget._update_rectangle_preview(

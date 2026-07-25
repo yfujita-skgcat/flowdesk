@@ -718,8 +718,7 @@ class PlotWidget(QWidget):
             width=2,
             style=Qt.DashLine,
         )
-        background = QColor(s.background_color)
-        selected_color = "#0057b8" if background.lightness() >= 128 else "#ffd400"
+        selected_color = self._contrast_gate_color()
         highlight_pen = mkPen(
             color=selected_color,
             width=3,
@@ -744,6 +743,11 @@ class PlotWidget(QWidget):
                         item.setBrush(default_brush)
             except Exception:
                 pass
+
+    def _contrast_gate_color(self) -> str:
+        """Return the editing highlight color with background contrast."""
+        background = QColor(self._style.background_color)
+        return "#0057b8" if background.lightness() >= 128 else "#ffd400"
 
     def export_png(
         self,
@@ -1793,6 +1797,7 @@ class PlotWidget(QWidget):
         end: tuple[float, float],
     ) -> None:
         from pyqtgraph import RectROI, mkPen  # type: ignore[attr-defined]
+        from PySide6.QtGui import QColor
 
         x_min = min(start[0], end[0])
         y_min = min(start[1], end[1])
@@ -1804,10 +1809,11 @@ class PlotWidget(QWidget):
             self._preview_item.setPos([x_min, y_min], update=False)
             self._preview_item.setSize([width, height], update=True)
             return
+        preview_color = QColor(self._contrast_gate_color())
         rect = RectROI(
             [x_min, y_min],
             [width, height],
-            pen=mkPen(color="#ffffff", width=1, style=Qt.DotLine),
+            pen=mkPen(color=preview_color, width=2, style=Qt.DotLine),
             movable=False,
             removable=False,
         )
@@ -1815,6 +1821,7 @@ class PlotWidget(QWidget):
 
     def _update_polygon_preview(self) -> None:
         from pyqtgraph import PlotDataItem, mkPen  # type: ignore[attr-defined]
+        from PySide6.QtGui import QColor
 
         if not self._polygon_preview_vertices:
             self._clear_preview()
@@ -1828,13 +1835,14 @@ class PlotWidget(QWidget):
             self._preview_item.setLogMode(False, False)
             self._preview_item.setData(x_vals, y_vals)
             return
+        preview_color = QColor(self._contrast_gate_color())
         item = PlotDataItem(
             x_vals,
             y_vals,
-            pen=mkPen(color="#ffffff", width=1, style=Qt.DotLine),
+            pen=mkPen(color=preview_color, width=2, style=Qt.DotLine),
             symbol="o",
             symbolSize=5,
-            symbolBrush=QColor("#ffffff"),
+            symbolBrush=preview_color,
         )
         self._set_preview_item(item)
         # PlotItem propagates its current log mode when a PlotDataItem is
