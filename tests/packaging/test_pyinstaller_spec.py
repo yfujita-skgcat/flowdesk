@@ -5,6 +5,7 @@ SPEC = ROOT / "packaging" / "flowdesk.spec"
 CLI_SPEC = ROOT / "packaging" / "flowdesk-cli.spec"
 COLLECTOR = ROOT / "packaging" / "collect_qt.py"
 PYQTGRAPH_HOOK = ROOT / "packaging" / "hooks" / "hook-pyqtgraph.py"
+NOTICES = ROOT / "THIRD_PARTY_NOTICES.md"
 
 
 def test_onedir_spec_has_native_build_entrypoint_and_collection() -> None:
@@ -17,6 +18,8 @@ def test_onedir_spec_has_native_build_entrypoint_and_collection() -> None:
   assert "console=False" in text
   assert "copy_metadata(\"flowdesk\")" in text
   assert "collect_packages()" in text
+  assert 'project_root / "LICENSE"' in text
+  assert 'project_root / "THIRD_PARTY_NOTICES.md"' in text
 
 
 def test_collection_covers_runtime_and_native_dependencies() -> None:
@@ -76,4 +79,16 @@ def test_headless_cli_spec_is_a_console_artifact() -> None:
   assert 'name="flowdesk-cli"' in text
   assert "console=True" in text
   assert "copy_metadata(\"flowdesk\")" in text
+  assert 'project_root / "LICENSE"' in text
+  assert 'project_root / "THIRD_PARTY_NOTICES.md"' in text
   assert "numpy.tests" in text
+
+
+def test_third_party_notices_separates_dependency_licenses() -> None:
+  text = NOTICES.read_text(encoding="utf-8")
+
+  assert "BSD 3-Clause License" in text
+  assert "Qt licensing" in text
+  assert "GNU LGPL version 3" in text
+  assert "GNU GPL version 3" in text
+  assert "PyInstaller" in text

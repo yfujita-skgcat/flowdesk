@@ -8,6 +8,10 @@ from PyInstaller.utils.hooks import copy_metadata
 
 project_root = Path(SPECPATH).parent
 src_dir = project_root / "src"
+release_documents = [
+  (str(project_root / "LICENSE"), "."),
+  (str(project_root / "THIRD_PARTY_NOTICES.md"), "."),
+]
 
 # The CLI has no GUI entry point.  These exclusions also keep optional test
 # modules out when NumPy's package hook is evaluated for the headless build.
@@ -25,7 +29,7 @@ analysis = Analysis(
   [str(src_dir / "flowdesk_cli" / "main.py")],
   pathex=[str(src_dir)],
   binaries=[],
-  datas=copy_metadata("flowdesk"),
+  datas=[*copy_metadata("flowdesk"), *release_documents],
   hiddenimports=[],
   hookspath=[],
   hooksconfig={},

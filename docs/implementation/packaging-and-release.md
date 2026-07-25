@@ -102,7 +102,7 @@ tag `vX.Y.Z`を起点に、次をnative runnerで実行する。
 
 ## Licensing
 
-配布物へFlowdeskのlicenseと、少なくともPySide6/Qt、NumPy、FlowIO、pyqtgraphのthird-party license情報を含める。
+配布物へFlowdeskの`LICENSE`と`THIRD_PARTY_NOTICES.md`を必ず含める。`THIRD_PARTY_NOTICES.md`はFlowdesk本体のBSD 3-Clauseを変更せず、PySide6/Qt、NumPy、FlowIO、pyqtgraph、PyInstallerの適用ライセンスと、native packageで追加確認が必要な事項を明示する。GUI/CLIのPyInstaller specは両文書を成果物のルートへ同梱する。
 ライセンス選択やLGPL遵守は法的助言ではないため、外部公開前に確認する。配布物の生成とlicense文書の更新を別工程にせず、同じrelease workflowで検証する。
 
 ## Acceptance criteria

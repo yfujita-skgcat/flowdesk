@@ -15,4 +15,7 @@ dist/
 artifacts/
 data/
 logs/
-ref_docs
+ref_docs/
+.envrc
+.opencode/
+*.zip
