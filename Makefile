@@ -17,6 +17,7 @@
 #   make help       - Show this help
 
 PYTHON ?= python3
+GIT ?= $(shell command -v git 2>/dev/null)
 PACKAGE_SMOKE_DIR ?= artifacts/package-smoke
 QT_PLATFORM ?=
 PACKAGE_VERSION := $(shell $(PYTHON) tools/version.py --read)
@@ -30,7 +31,8 @@ gui:
 
 zip:
 	rm -f rep.zip
-	git archive --format=zip --output=rep.zip HEAD
+	@test -n "$(GIT)" || (echo "Git executable not found" >&2; exit 1)
+	$(GIT) archive --format=zip --output=rep.zip HEAD
 
 # Legacy working-tree archive command. Kept for reference; use git archive above
 # so the source archive matches the committed content uploaded by git push.
