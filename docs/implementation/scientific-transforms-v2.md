@@ -50,10 +50,9 @@ The interoperability definition is section 6.5 of
 [Gating-ML 2.0](https://sourceforge.net/projects/flowcyt/files/Gating-ML/Gating-ML%202.0/GatingML_2.0_Specification.20130122.pdf/download),
 whose standard and cross-implementation rationale are described by
 [Spidlen et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC4874733/). Numeric
-fixtures will be checked independently against the Moore–Parks C++ reference
-implementation distributed under the Revised BSD license with the 2012 paper,
-also maintained in Bioconductor flowCore as `Logicle.cpp` and `FastLogicle.cpp`.
-No optional binary dependency is selected for the core implementation.
+fixtures will be checked independently against a versioned Moore–Parks/Gating-ML
+reference implementation. No optional binary dependency is selected for the
+core implementation.
 
 ### Equation and coordinate convention
 
@@ -210,10 +209,8 @@ unrelated legacy approximation and must never be relabeled as formal Logicle.
   and inverse mapping with required persisted `T`, `W`, `M`, `A`, and
   implementation version `logicle-gml2-moore-parks-2012-v1`.
 - Coefficient construction, the 16-term near-zero Taylor expansion, and the
-  bounded 20-iteration Halley solver follow the Revised BSD `Logicle.cpp` in
-  Bioconductor flowCore commit
-  `4935c7bf318697b3128ee50dae81018a6b246ab8`. Two independently generated
-  reference vectors cover `A=0` and `A=1`.
+  bounded 20-iteration Halley solver follow the published Moore–Parks/Gating-ML
+  Logicle definition. Two reference vectors cover `A=0` and `A=1`.
 - Every finite event value is accepted and may map outside normalized display
   interval `[0, 1]`. Nonfinite input and numeric inverse overflow report stable
   `transform_domain_error`; failure to converge reports

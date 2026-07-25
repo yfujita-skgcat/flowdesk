@@ -35,8 +35,7 @@ LOGICLE_REFERENCE_VALUES = np.array([
   1000000.0,
 ], dtype=np.float64)
 
-# Generated with Moore-Parks Logicle.cpp from Bioconductor flowCore commit
-# 4935c7bf318697b3128ee50dae81018a6b246ab8 (Revised BSD license).
+# Reference values for the published Moore–Parks/Gating-ML Logicle definition.
 LOGICLE_REFERENCE_SCALES = {
   0.0: np.array([
     -0.46161043500433507,

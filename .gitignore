@@ -14,3 +14,5 @@ dist/
 *.flowdesk/exports/
 artifacts/
 data/
+logs/
+ref_docs
