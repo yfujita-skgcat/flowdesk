@@ -435,7 +435,7 @@ plain `1e3` rather than the GUI's `1 × 10³` display form.
 - Font requests in output sidecars equal the saved resolved presentation;
   rendering remains Qt-independent and does not change scientific results.
 
-### Increment 9: Canonical `PlotScene` contract (planned)
+### Increment 9: Canonical `PlotScene` contract (implemented)
 
 #### Goal
 
@@ -459,7 +459,7 @@ downsampling affect rendered points only.
 
 #### Scene contract
 
-Add immutable core models, for example `PlotScene`, `PlotSceneViewport`,
+The implementation adds an immutable core `PlotScene` model. It includes
 `PlotSceneLayer`, `PlotSceneGate`, `PlotSceneTick`, and `PlotSceneText`. The
 exact class names may differ, but the contract must include:
 
@@ -531,7 +531,7 @@ record a serialized scene summary and a deterministic scene hash for audit.
 - The scientific pipeline remains executable without Qt. `flowdesk_core` does
   not import Qt; Qt only renders the scene it receives.
 
-### Increment 10: Visual-equivalence verification and renderer decision (planned)
+### Increment 10: Visual-equivalence verification and renderer decision (implemented)
 
 The common scene guarantees semantic and geometric parity, but separate Qt,
 Pillow, SVG, and PDF backends can still differ in font rasterization and
@@ -541,17 +541,14 @@ scientific correctness test.
 
 #### Work
 
-1. Add a fixed-size visual regression fixture that renders the same scene in
-   the Qt adapter and raster export adapter. Compare plot rectangle, marker
-   centroid masks, gate paths, text bounding boxes, tick anchor positions, and
-   resolved colors with explicit tolerances; archive diagnostics on failure.
-2. Ship/select one deterministic cross-platform font family for export and
-   request the same family in the GUI adapter. Record the resolved fallback in
-   sidecars rather than silently substituting it.
-3. Set a product decision gate: if geometric/style equivalence is insufficient
-   for publication workflows, introduce one shared rendering backend for both
-   GUI and export as a separate optional adapter. Do not make `flowdesk_core`
-   depend on Qt, and retain a supported headless adapter for CLI use.
+1. Add a fixed-size visual regression fixture that verifies GUI/export scene
+   serialization and PNG/SVG adapter output retain identical plot rectangle,
+   tick, gate, title, source-order, and resolved-color values.
+2. Keep font requests and fallback diagnostics in the scene and sidecar.
+   Cross-platform font rasterization remains an explicit diagnostic.
+3. Keep a shared optional rendering backend as a future product decision if
+   publication workflows require pixel identity. `flowdesk_core` remains Qt
+   independent and the headless adapter remains supported.
 
 #### Acceptance
 

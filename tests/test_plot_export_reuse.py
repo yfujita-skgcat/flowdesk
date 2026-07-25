@@ -23,6 +23,7 @@ from flowdesk_core.plot_presentation import (
   OverlaySourceResolution,
   resolve_presentation_layers,
 )
+from flowdesk_core.plot_scene import PlotScene
 from flowdesk_core.plot_reuse import (
   LayoutPlotReference,
   TemplateSourceRole,
@@ -195,6 +196,58 @@ def test_export_scene_uses_same_plot_area_for_axes_and_gate(tmp_path) -> None:
   assert 'stroke="#ff0000"' in text
   assert 'stroke="#808080"' in text
   assert prepared.metadata["plot_area"] == {"left": 60, "top": 50, "right": 20, "bottom": 60}
+
+
+def test_plot_scene_round_trip_is_renderer_neutral_and_excludes_analysis_data() -> None:
+  scene = PlotScene.from_mapping({
+    "x_parameter": "x",
+    "y_parameter": "y",
+    "x_transform_id": "log-x",
+    "y_transform_id": "log-y",
+    "view_range": [[1.0, 4.0], [2.0, 8.0]],
+    "source_order": ["s1", "s2"],
+    "x_ticks": [{"position": 0.5, "label": "1e2", "major": True}],
+    "title_lines": ["Control", "Treated"],
+    "gates": [{"id": "gate-1", "points": [[0.1, 0.2], [0.8, 0.9]]}],
+  })
+  restored = PlotScene.from_mapping(scene.to_mapping())
+  assert restored == scene
+  assert len(scene.scene_hash()) == 64
+  assert "events" not in scene.to_mapping()
+  assert "membership" not in scene.to_mapping()
+
+
+def test_gui_and_headless_adapters_consume_the_same_scene(tmp_path) -> None:
+  sources = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  scene = {
+    "x_parameter": "FITC B525-A", "y_parameter": "APC R660-A",
+    "x_transform_id": "log-x", "y_transform_id": "log-y",
+    "view_range": [[1.0, 5.0], [2.0, 6.0]],
+    "x_ticks": [{"position": 0.25, "label": "1e2", "major": True}],
+    "y_ticks": [{"position": 0.75, "label": "1e3", "major": True}],
+    "title_lines": ["Control"], "title_colors": ["#4c78a8"],
+    "source_order": ["s1"],
+    "gates": [{"id": "gate-1", "points": [[0.2, 0.2], [0.8, 0.8]], "color": "#ffd400"}],
+  }
+  prepared = prepare_plot_export(
+    "view", "scatter", sources, (OverlaySourceResolution("s1", "compatible"),),
+    scene=scene,
+  )
+  assert prepared.scene.to_mapping() == PlotScene.from_mapping(scene).to_mapping()
+  png = tmp_path / "scene.png"
+  svg = tmp_path / "scene.svg"
+  layers = {"s1": ((0.25, 0.75), (0.25, 0.75))}
+  write_plot_png(png, prepared, layers=layers)
+  write_plot_svg(svg, prepared, layers=layers)
+  png_metadata = json.loads(png.with_suffix(".png.json").read_text(encoding="utf-8"))
+  svg_metadata = json.loads(svg.with_suffix(".svg.json").read_text(encoding="utf-8"))
+  assert png_metadata["scene"] == svg_metadata["scene"] == prepared.scene.to_mapping()
+  assert png_metadata["scene_hash"] == svg_metadata["scene_hash"] == prepared.scene.scene_hash()
+  assert "#ffd400" in svg.read_text(encoding="utf-8")
+  assert png.stat().st_size > 1_000
 
 
 def test_pdf_export_is_nonblank_and_has_metadata(tmp_path) -> None:

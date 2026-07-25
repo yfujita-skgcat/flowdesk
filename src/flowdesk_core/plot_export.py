@@ -20,6 +20,7 @@ from flowdesk_core.plot_presentation import (
   resolve_presentation_title,
   validate_presentation,
 )
+from flowdesk_core.plot_scene import PlotScene
 
 
 class PlotExportError(ValueError):
@@ -34,6 +35,7 @@ class PreparedPlotExport:
   metadata: dict[str, Any]
   resolved_presentation: ResolvedPresentation
   gate_overlays: tuple[dict[str, Any], ...] = ()
+  scene: PlotScene = PlotScene()
 
 
 def _diagnostic_mapping(value: PresentationDiagnostic) -> dict[str, Any]:
@@ -106,6 +108,10 @@ def prepare_plot_export(
     "title_lines",
     resolve_presentation_title(resolved.presentation, source_labels).splitlines(),
   )
+  scene_value.setdefault("source_order", list(visible_order))
+  scene_value.setdefault("x_axis_label", resolved.presentation.x_axis_display_label or "")
+  scene_value.setdefault("y_axis_label", resolved.presentation.y_axis_display_label or "")
+  scene_value.setdefault("gates", [dict(gate) for gate in gate_overlays])
   scene_value.setdefault(
     "title_colors",
     [
@@ -114,6 +120,7 @@ def prepare_plot_export(
       for source_id in visible_order
     ],
   )
+  scene_model = PlotScene.from_mapping(scene_value)
   validate_presentation(plot_type, resolved.presentation)
   metadata = {
     "plot_id": plot_id,
@@ -146,7 +153,8 @@ def prepare_plot_export(
       "message": "The renderer backend determines the actual fallback face.",
     }],
     "gate_overlays": [dict(gate) for gate in gate_overlays],
-    "scene": scene_value,
+    "scene": scene_model.to_mapping(),
+    "scene_hash": scene_model.scene_hash(),
     "plot_area": {"left": 60, "top": 50, "right": 20, "bottom": 60},
     "diagnostics": diagnostics,
     "scientific_note": (
@@ -155,7 +163,7 @@ def prepare_plot_export(
   }
   return PreparedPlotExport(
     plot_id, plot_type, tuple(visible_order), metadata, resolved,
-    tuple(dict(gate) for gate in gate_overlays),
+    tuple(dict(gate) for gate in gate_overlays), scene_model,
   )
 
 
@@ -225,7 +233,7 @@ def write_plot_svg(
         f"{escape(str(label))}</text>"
       )
   if options is None or options.include_gates:
-    elements.extend(_svg_gates(prepared.gate_overlays, left, top, plot_width, plot_height))
+    elements.extend(_svg_gates(_scene_gates(prepared), left, top, plot_width, plot_height))
   svg = (
     f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
     + "".join(elements) + "</svg>\n"
@@ -296,7 +304,7 @@ def write_plot_png(
     image.alpha_composite(layer)
   draw = ImageDraw.Draw(image)
   if options is None or options.include_gates:
-    _draw_raster_gates(draw, prepared.gate_overlays, left, top, plot_width, plot_height, scale)
+    _draw_raster_gates(draw, _scene_gates(prepared), left, top, plot_width, plot_height, scale)
   _draw_raster_text(draw, prepared, selected, width * scale, height * scale,
                     left, top, plot_width, plot_height, options, scale)
   out_path = Path(path)
@@ -347,7 +355,7 @@ def write_plot_pdf(
       y = height - top - float(y_value) * plot_height
       commands.append(f"{x:g} {y:g} 2 2 re f")
   if options is None or options.include_gates:
-    commands.extend(_pdf_gates(prepared.gate_overlays, left, top, plot_width, plot_height, height))
+    commands.extend(_pdf_gates(_scene_gates(prepared), left, top, plot_width, plot_height, height))
   stream = ("\n".join(commands) + "\n").encode("ascii")
   objects = [
     b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -534,9 +542,22 @@ def _raster_layout(
 
 
 def _scene_lines(prepared: PreparedPlotExport) -> list[str]:
-  scene = prepared.metadata.get("scene", {})
-  raw = scene.get("title_lines", ()) if isinstance(scene, dict) else ()
+  raw = prepared.scene.title_lines
   return [str(value) for value in raw if str(value)]
+
+
+def _scene_mapping(prepared: PreparedPlotExport) -> dict[str, Any]:
+  """Return the typed scene for renderer adapters.
+
+  Renderers must not reconstruct scene state from raw metadata; the metadata
+  copy is only for sidecars and provenance.
+  """
+  return prepared.scene.to_mapping()
+
+
+def _scene_gates(prepared: PreparedPlotExport) -> tuple[dict[str, Any], ...]:
+  """Return gate geometry from the canonical scene, never sidecar metadata."""
+  return prepared.scene.gates
 
 
 def _font(size: float, *, bold: bool = False) -> Any:
@@ -565,7 +586,7 @@ def _draw_raster_axes(
   bottom = top + plot_height
   if selected.show_grid:
     grid_color = (216, 216, 216, 255)
-    scene = prepared.metadata.get("scene", {})
+    scene = _scene_mapping(prepared)
     for axis, origin, extent, horizontal in (
       ("x_ticks", left, plot_width, True),
       ("y_ticks", bottom, plot_height, False),
@@ -584,7 +605,7 @@ def _draw_raster_axes(
   draw.rectangle(
     (left, top, left + plot_width, bottom), outline=color, width=width
   )
-  scene = prepared.metadata.get("scene", {})
+  scene = _scene_mapping(prepared)
   for axis, origin, extent, horizontal in (
     ("x_ticks", left, plot_width, True),
     ("y_ticks", bottom, plot_height, False),
@@ -643,7 +664,7 @@ def _draw_raster_text(
   options: BatchPlotExportSpec | None,
   scale: int,
 ) -> None:
-  scene = prepared.metadata.get("scene", {})
+  scene = _scene_mapping(prepared)
   title_lines = _scene_lines(prepared)
   title_colors = scene.get("title_colors", ()) if isinstance(scene, dict) else ()
   if options is None or options.include_title:

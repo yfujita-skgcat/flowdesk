@@ -73,6 +73,7 @@ from flowdesk_core.plot_presentation import (
     resolve_presentation_layers,
     resolve_presentation_title,
 )
+from flowdesk_core.plot_scene import PlotScene
 from flowdesk_core.preview import (
     PreviewReport,
     PreviewRequest,
@@ -4722,6 +4723,25 @@ class MainWindow(QMainWindow):
         resolved_presentation["title"] = resolve_presentation_title(
             resolved.presentation, self._current_plot_sample_titles()
         )
+        display_scene = view.get("display_scene", {})
+        scene = PlotScene.from_mapping({
+            "x_parameter": view.get("x_parameter", ""),
+            "y_parameter": view.get("y_parameter"),
+            "x_transform_id": view.get("x_transform_id"),
+            "y_transform_id": view.get("y_transform_id"),
+            "view_range": display_scene.get("view_range"),
+            "x_ticks": display_scene.get("x_ticks", ()),
+            "y_ticks": display_scene.get("y_ticks", ()),
+            "x_axis_label": display_scene.get("x_axis_label", ""),
+            "y_axis_label": display_scene.get("y_axis_label", ""),
+            "source_order": source_ids,
+            "title_lines": resolved_presentation["title"].splitlines(),
+            "title_colors": [
+                next((style.color for style in resolved.presentation.source_styles
+                      if style.source_id == source_id and style.color), "#000000")
+                for source_id in source_ids
+            ],
+        })
         return {
             "plot_id": view.get("id"),
             "definition_version": 1,
@@ -4741,6 +4761,7 @@ class MainWindow(QMainWindow):
                 for source in visible
             ],
             "presentation": resolved_presentation,
+            "scene": scene.to_mapping(),
             "style_provenance": dict(resolved.provenance),
             "integrated_overlay": self._sample_browser.overlay_state(),
             "integrated_style_provenance": self._integrated_style_provenance(),
