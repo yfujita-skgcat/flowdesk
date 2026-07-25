@@ -22,15 +22,20 @@ QT_PLATFORM ?=
 PACKAGE_VERSION := $(shell $(PYTHON) tools/version.py --read)
 PACKAGE_TAG := v$(PACKAGE_VERSION)
 
-.PHONY: test test-core test-gui test-all gui-debug lint type-check check fmt all \
+.PHONY: test test-core test-gui test-all gui-debug lint type-check check fmt all zip \
 	package package-smoke package-check package-manifest upversion pushtag clean help
 
 gui:
 	flowdesk-gui
 
 zip:
-	if [ -e rep.zip ]; then rm rep.zip; fi
-	zip -r rep.zip *.md Makefile packaging/ .github/ docs/ examples/ logs/ pyproject.toml schemas/ src/ tests/ tools/
+	rm -f rep.zip
+	git archive --format=zip --output=rep.zip HEAD
+
+# Legacy working-tree archive command. Kept for reference; use git archive above
+# so the source archive matches the committed content uploaded by git push.
+#	if [ -e rep.zip ]; then rm rep.zip; fi
+#	zip -r rep.zip *.md Makefile packaging/ .github/ docs/ examples/ logs/ pyproject.toml schemas/ src/ tests/ tools/
 
 help:
 	@echo "Flowdesk Makefile targets:"
@@ -39,6 +44,7 @@ help:
 	@echo "  test-gui    - Run strict GUI tests with artifacts"
 	@echo "  test-all    - Run core and GUI tests in separate processes"
 	@echo "  gui-debug   - Launch GUI with diagnostic logging"
+	@echo "  zip         - Create a source archive from the current Git commit"
 	@echo "  lint        - Run ruff linter (src/ tests/)"
 	@echo "  type-check  - Run mypy type checker"
 	@echo "  check       - Run lint + type-check"
