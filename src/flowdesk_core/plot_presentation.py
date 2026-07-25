@@ -145,6 +145,7 @@ def _presentation_fields() -> tuple[str, ...]:
     "background_color", "legend_visible", "legend_position", "legend_source_ids",
     "title_font", "axis_label_font", "tick_font", "legend_font",
     "gate_outline_color", "gate_outline_width", "gate_outline_style", "axis_line_width",
+    "show_grid",
     "colormap",
     "automatic_style_policy",
   )

@@ -110,7 +110,7 @@ def prepare_plot_export(
     "title_colors",
     [
       (style.color if (style := style_by_id.get(source_id)) is not None else None)
-      or "#b8c7ff"
+      or "#000000"
       for source_id in visible_order
     ],
   )
@@ -210,7 +210,7 @@ def write_plot_svg(
   }
   for index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
-    color = "#4c78a8" if style is None or style.color is None else style.color
+    color = "#000000" if style is None or style.color is None else style.color
     x_values, y_values = layers[source_id]
     for x_value, y_value in zip(x_values, y_values, strict=False):
       x = left + float(x_value) * plot_width
@@ -280,7 +280,7 @@ def write_plot_png(
   style_by_id = {style.source_id: style for style in selected.source_styles}
   for source_id in prepared.source_order:
     style = style_by_id.get(source_id)
-    color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
+    color = _rgb("#000000" if style is None or style.color is None else style.color)
     alpha = 1.0 if style is None else style.alpha
     marker_size = 3.0 if style is None else style.marker_size
     radius = max(1, round(marker_size * scale / 2))
@@ -522,12 +522,12 @@ def _raster_layout(
   """Reserve text margins before rendering the normalized data rectangle."""
   title_lines = _scene_lines(prepared)
   title_height = (
-    max(24, round(selected.title_font.size * 1.8)) * max(1, len(title_lines)) + 10
+    max(38, round(selected.title_font.size * 1.8)) * max(1, len(title_lines)) + 10
     if (options is None or options.include_title) and title_lines else 18
   )
-  left = max(70, round(selected.tick_font.size * 4.8))
-  bottom = max(72, round(selected.tick_font.size * 3.4))
-  right = 26
+  left = max(74, round(selected.tick_font.size * 5.2))
+  bottom = max(48, round(selected.tick_font.size * 3.4))
+  right = 22
   plot_width = max(1, width - left - right)
   plot_height = max(1, height - title_height - bottom)
   return left, title_height, plot_width, plot_height
@@ -560,10 +560,30 @@ def _draw_raster_axes(
   plot_height: int,
   scale: int,
 ) -> None:
-  color = (176, 199, 255, 255)
-  width = max(1, round(selected.axis_line_width * scale / 2))
+  color = _foreground_rgba(selected.background_color)
+  width = max(1, round(selected.axis_line_width * scale))
   bottom = top + plot_height
-  draw.line((left, top, left, bottom, left + plot_width, bottom), fill=color, width=width)
+  if selected.show_grid:
+    grid_color = (216, 216, 216, 255)
+    scene = prepared.metadata.get("scene", {})
+    for axis, origin, extent, horizontal in (
+      ("x_ticks", left, plot_width, True),
+      ("y_ticks", bottom, plot_height, False),
+    ):
+      ticks = scene.get(axis, ()) if isinstance(scene, dict) else ()
+      for tick in ticks:
+        if not isinstance(tick, dict) or not tick.get("major", True):
+          continue
+        position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
+        if horizontal:
+          x = round(origin + position * extent)
+          draw.line((x, top, x, bottom), fill=grid_color, width=max(1, scale // 2))
+        else:
+          y = round(origin - position * extent)
+          draw.line((left, y, left + plot_width, y), fill=grid_color, width=max(1, scale // 2))
+  draw.rectangle(
+    (left, top, left + plot_width, bottom), outline=color, width=width
+  )
   scene = prepared.metadata.get("scene", {})
   for axis, origin, extent, horizontal in (
     ("x_ticks", left, plot_width, True),
@@ -631,8 +651,9 @@ def _draw_raster_text(
     line_height = round(selected.title_font.size * 1.45 * scale)
     for index, line in enumerate(title_lines):
       color = str(title_colors[index]) if index < len(title_colors) else "#b8c7ff"
-      _draw_centered(draw, width // 2, 5 * scale + index * line_height, line,
+      _draw_centered(draw, width // 2, 20 * scale + index * line_height, line,
                      title_font, _rgb(color) + (255,))
+  foreground = _foreground_rgba(selected.background_color)
   tick_font = _font(selected.tick_font.size * scale, bold=selected.tick_font.weight == "bold")
   if options is None or options.include_ticks:
     for axis, origin, extent, horizontal in (
@@ -649,28 +670,35 @@ def _draw_raster_text(
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
         if horizontal:
           _draw_centered(draw, round(origin + position * extent), top + plot_height + 9 * scale,
-                         label, tick_font, (176, 199, 255, 255))
+                         label, tick_font, foreground)
         else:
           bbox = draw.textbbox((0, 0), label, font=tick_font)
           x = left - 9 * scale - (bbox[2] - bbox[0])
           y = round(origin - position * extent) - (bbox[3] - bbox[1]) // 2
-          draw.text((x, y), label, font=tick_font, fill=(176, 199, 255, 255))
+          draw.text((x, y), label, font=tick_font, fill=foreground)
   if options is None or options.include_axis_labels:
     axis_font = _font(selected.axis_label_font.size * scale,
                       bold=selected.axis_label_font.weight == "bold")
     _draw_centered(draw, left + plot_width // 2, height - 27 * scale,
-                   selected.x_axis_display_label or "", axis_font, (176, 199, 255, 255))
+                   selected.x_axis_display_label or "", axis_font, foreground)
     label = selected.y_axis_display_label or ""
     if label:
       _draw_vertical(
         draw, 18 * scale, top + plot_height // 2, label, axis_font,
-        (176, 199, 255, 255),
+        foreground,
       )
 
 
 def _draw_centered(draw: Any, x: int, y: int, text: str, font: Any, fill: Any) -> None:
   bbox = draw.textbbox((0, 0), text, font=font)
   draw.text((x - (bbox[2] - bbox[0]) // 2, y), text, font=font, fill=fill)
+
+
+def _foreground_rgba(background_color: str) -> tuple[int, int, int, int]:
+  """Return a legible monochrome foreground for the selected plot background."""
+  red, green, blue = _rgb(background_color)
+  luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+  return (0, 0, 0, 255) if luminance >= 128 else (232, 232, 232, 255)
 
 
 def _draw_vertical(draw: Any, x: int, y: int, text: str, font: Any, fill: Any) -> None:

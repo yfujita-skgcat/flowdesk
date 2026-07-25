@@ -946,9 +946,9 @@ class SourceStyleSpec:
   source_id: str
   legend_label: str | None = None
   color: str | None = None
-  alpha: float = 1.0
+  alpha: float = 0.60
   marker_shape: MarkerShape | None = None
-  marker_size: float = 4.0
+  marker_size: float = 1.5
   line_color: str | None = None
   line_width: float = 1.5
   line_style: LineStyle = "solid"
@@ -986,18 +986,23 @@ class PlotPresentationSpec:
   subtitle: str = ""
   x_axis_display_label: str | None = None
   y_axis_display_label: str | None = None
-  background_color: str = "#000000"
+  background_color: str = "#ffffff"
   legend_visible: bool = True
   legend_position: LegendPosition = "right"
   legend_source_ids: tuple[str, ...] = ()
   title_font: FontSpec = field(default_factory=lambda: FontSpec(size=14, weight="bold"))
-  axis_label_font: FontSpec = field(default_factory=FontSpec)
-  tick_font: FontSpec = field(default_factory=FontSpec)
+  axis_label_font: FontSpec = field(
+    default_factory=lambda: FontSpec(size=16, weight="bold")
+  )
+  tick_font: FontSpec = field(
+    default_factory=lambda: FontSpec(size=10, weight="bold")
+  )
   legend_font: FontSpec = field(default_factory=FontSpec)
-  gate_outline_color: str = "#555555"
+  gate_outline_color: str = "#e00000"
   gate_outline_width: float = 1.5
   gate_outline_style: LineStyle = "solid"
   axis_line_width: float = 2.0
+  show_grid: bool = True
   colormap: str | None = None
   automatic_style_policy: str = "palette.v1"
   source_styles: tuple[SourceStyleSpec, ...] = ()

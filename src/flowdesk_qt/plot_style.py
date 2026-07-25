@@ -18,27 +18,27 @@ class PlotStyleSettings:
     """
 
     # Background
-    background_color: str = "#000000"
+    background_color: str = "#ffffff"
 
     # Dot appearance
-    dot_color: str = "#b8c7ff"
-    selected_dot_color: str = "#ffffff"
-    dot_size: float = 3.0
-    dot_opacity: float = 0.75
+    dot_color: str = "#000000"
+    selected_dot_color: str = "#e00000"
+    dot_size: float = 1.5
+    dot_opacity: float = 0.60
 
     # Gate overlay appearance
-    gate_outline_color: str = "#ffff00"
-    gate_fill_color: str = "#ffff00"
+    gate_outline_color: str = "#e00000"
+    gate_fill_color: str = "#e00000"
     gate_fill_opacity: float = 0.0
 
     # Axis and tick readability
     axis_line_width: float = 2.0
     tick_font_family: str = "DejaVu Sans"
-    tick_font_size: float = 12.0
+    tick_font_size: float = 10.0
     tick_font_weight: str = "bold"
 
     # Optional features
-    show_grid: bool = False
+    show_grid: bool = True
 
     # Viewport behaviour
     use_robust_range: bool = True

@@ -90,6 +90,7 @@ class PlotStyleEditorDialog(QDialog):
       "gate_outline_width": self._gate_width_spin.value(),
       "gate_outline_style": self._gate_style_combo.currentData(),
       "axis_line_width": self._axis_width_spin.value(),
+      "show_grid": self._show_grid_check.isChecked(),
       "colormap": self._colormap_edit.text().strip() or None,
       "automatic_style_policy": self._presentation.get(
         "automatic_style_policy", "palette.v1"
@@ -200,6 +201,9 @@ class PlotStyleEditorDialog(QDialog):
     self._axis_width_spin = self._spin(0.5, 20.0, 2.0, 0.5)
     self._axis_width_spin.setObjectName("plotAxisLineWidthSpinBox")
     form.addRow("Axis line width:", self._axis_width_spin)
+    self._show_grid_check = QCheckBox("Show major grid lines")
+    self._show_grid_check.setObjectName("plotShowGridCheckBox")
+    form.addRow("Grid:", self._show_grid_check)
     self._colormap_edit = QLineEdit()
     self._colormap_edit.setObjectName("plotColormapEdit")
     self._colormap_edit.setPlaceholderText("e.g. viridis")
@@ -425,11 +429,12 @@ class PlotStyleEditorDialog(QDialog):
         self._legend_position_combo,
         self._presentation.get("legend_position", "right"),
       )
-      self._background_edit.setText(str(self._presentation.get("background_color", "#000000")))
+      self._background_edit.setText(str(self._presentation.get("background_color", "#ffffff")))
       self._gate_color_edit.setText(str(self._presentation.get("gate_outline_color", "#555555")))
       self._gate_width_spin.setValue(float(self._presentation.get("gate_outline_width", 1.5)))
       self._set_data(self._gate_style_combo, self._presentation.get("gate_outline_style", "solid"))
       self._axis_width_spin.setValue(float(self._presentation.get("axis_line_width", 2.0)))
+      self._show_grid_check.setChecked(bool(self._presentation.get("show_grid", True)))
       self._colormap_edit.setText(str(self._presentation.get("colormap") or ""))
       self._legend_list.clear()
       legend_ids = list(self._presentation.get("legend_source_ids", self._source_ids))
@@ -618,6 +623,7 @@ class PlotStyleEditorDialog(QDialog):
       gate_outline_width=float(result["gate_outline_width"]),
       gate_outline_style=str(result["gate_outline_style"]),
       axis_line_width=float(result["axis_line_width"]),
+      show_grid=bool(result["show_grid"]),
       colormap=result["colormap"],
       automatic_style_policy=str(result["automatic_style_policy"]),
       source_styles=source_styles,

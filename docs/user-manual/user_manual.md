@@ -56,6 +56,8 @@ Flowdesk では、次の三つの選択状態を区別する必要がある。
 
 `Display max points` による点数制限、色、背景、凡例、フォント、軸ラベル、オーバーレイは**表示専用**である。ゲート membership、イベント数、frequency、統計、TSV/CSV 出力は全イベントを使う。
 
+通常の active sample は plot appearance の base dot color で描画する。Samples ペインの色見本は manual overlay 用であり、別 sample の overlay を有効にした場合だけそのレイヤーへ適用される。population に明示した表示色は base dot color より優先する。
+
 ### 1.2 Results の鮮度
 
 Gate、compensation、derived parameter、analysis transform、statistic definition などを変更すると Results は `stale` になる。`Run Pipeline` または Results の `Auto` による再計算が完了するまで、古い結果を最新値として扱わない。
@@ -804,11 +806,12 @@ Analysis → Use Multiple Analysis Groups をオンにすると Gating tab 下�
 |Show legend|legend visibility。|
 |Legend position|right / left / top / bottom / inside|
 |Legend order list|source order。Up/Down で変更。|
-|Plot background|入力欄または `Choose…` のカラーパレット。`#RRGGBB` として保存する。|
+|Plot background|入力欄または `Choose…` のカラーパレット。`#RRGGBB` として保存する。描画域だけでなく、title・axis label・tick label の余白にも同じ背景色を適用し、文字色は読めるコントラストへ自動調整する。|
 |Gate outline color|入力欄または `Choose…` のカラーパレット。individual population setting が優先する場合がある。|
 |Gate outline width|0.1–100。|
 |Gate outline style|solid / dashed / dotted / dashdot。|
 |Axis line width|0.5–20。|
+|Show major grid lines|主目盛位置の薄い補助線を表示する。既定値はオン。|
 |Colormap|例 `viridis`。plot type に非対応なら disabled/validation error。|
 
 #### Sources tab
@@ -832,6 +835,8 @@ Analysis → Use Multiple Analysis Groups をオンにすると Gating tab 下�
 #### Fonts tab
 
 Title font、Axis label font、Tick font、Legend font のそれぞれに `family`、`size`、`weight` (`normal`, `bold`, `light`) がある。
+
+新規 plot の既定表示は、白背景、黒の円形 marker（1.5 px・alpha 0.60）、2 px の黒い全周 frame、6 px の主目盛と薄い主目盛 grid、赤い gate outline である。title は 14 pt 太字、axis label は 16 pt 太字、tick label は 10 pt 太字を使用する。これらは presentation/display-only の既定値なので、既存 plot に明示保存された appearance は維持され、補償、transform、gate membership、統計は変わらない。
 
 下部 status は valid、unsupported/invalid の詳細を示す。`OK` は validation 成功時だけ受理する。
 
@@ -1192,6 +1197,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`plot_style_editor.py`|`plotGateOutlineColorEdit`|
 |`plot_style_editor.py`|`plotGateOutlineWidthSpinBox`|
 |`plot_style_editor.py`|`plotAxisLineWidthSpinBox`|
+|`plot_style_editor.py`|`plotShowGridCheckBox`|
 |`plot_style_editor.py`|`plotColormapEdit`|
 |`plot_style_editor.py`|`plotStyleSourceCombo`|
 |`plot_style_editor.py`|`plotStyleSourceProvenanceLabel`|

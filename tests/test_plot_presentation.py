@@ -105,9 +105,18 @@ def test_presentation_labels_are_independent_from_analysis_identity() -> None:
   assert view.presentation.x_axis_display_label == "Publication CD3"
 
 
-def test_plot_presentation_defaults_to_black_background() -> None:
-  assert PlotPresentationSpec().background_color == "#000000"
-  assert PlotPresentationSpec().title_mode == "overlay_sample_titles"
+def test_plot_presentation_defaults_to_white_background() -> None:
+  presentation = PlotPresentationSpec()
+
+  assert presentation.background_color == "#ffffff"
+  assert presentation.title_mode == "overlay_sample_titles"
+  assert presentation.axis_line_width == 2.0
+  assert presentation.show_grid is True
+  assert presentation.title_font == FontSpec(size=14, weight="bold")
+  assert presentation.axis_label_font == FontSpec(size=16, weight="bold")
+  assert presentation.tick_font == FontSpec(size=10, weight="bold")
+  assert SourceStyleSpec(source_id="source").marker_size == 1.5
+  assert SourceStyleSpec(source_id="source").alpha == 0.60
 
 
 def test_overlay_title_mode_joins_runtime_sample_titles_without_persisting_them() -> None:

@@ -1774,12 +1774,8 @@ class MainWindow(QMainWindow):
                 display_mask,
                 report=processed.preview_report,
             )
-            if event_colors is None:
-                event_colors = np.full(
-                    int(display_mask.sum()),
-                    self._sample_overlay_color(self._current_sample_id),
-                    dtype="<U7",
-                )
+            # The active sample is the base layer. Its dots use the plot's
+            # base style; Samples-pane colors apply only to manual overlays.
 
             # For marginal histograms, use unfiltered data (or population-filtered if preferred).
             # Use the same filtered data for marginal histograms.

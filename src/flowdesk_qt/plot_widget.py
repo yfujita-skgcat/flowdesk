@@ -231,6 +231,7 @@ class PlotWidget(QWidget):
             family=family,
             size=f"{size:g}pt",
             bold=weight == "bold",
+            color=self._foreground_color(str(value.get("background_color", "#ffffff"))),
         )
         title_qfont = QFont(family)
         title_qfont.setPointSizeF(size)
@@ -269,6 +270,8 @@ class PlotWidget(QWidget):
             })
         if value.get("axis_line_width") is not None:
             style_updates["axis_line_width"] = float(value["axis_line_width"])
+        if value.get("show_grid") is not None:
+            style_updates["show_grid"] = bool(value["show_grid"])
         if style_updates:
             self.set_style(replace(self._style, **style_updates))
 
@@ -1161,14 +1164,17 @@ class PlotWidget(QWidget):
         s = self._style
 
         from pyqtgraph import mkPen  # type: ignore[attr-defined]
-        axis_pen = mkPen(color="#b8c7ff", width=s.axis_line_width)
+        axis_pen = mkPen(
+            color=self._foreground_color(s.background_color),
+            width=s.axis_line_width,
+        )
         tick_font = QFont(s.tick_font_family, round(s.tick_font_size))
         tick_font.setBold(s.tick_font_weight == "bold")
         for axis_name in ("bottom", "left"):
             axis = self._plot_item.getAxis(axis_name)
             axis.setPen(axis_pen)
             axis.setTextPen(axis_pen)
-            axis.setStyle(tickFont=tick_font)
+            axis.setStyle(tickFont=tick_font, tickLength=6)
             if not hasattr(axis, "_flowdesk_original_tick_strings"):
                 original_tick_strings = axis.tickStrings
                 axis._flowdesk_original_tick_strings = original_tick_strings
@@ -1191,17 +1197,29 @@ class PlotWidget(QWidget):
 
                 axis.tickStrings = formatted_tick_strings
 
-        # Background (set on ViewBox, not PlotItem)
+        # A closed frame matches exported plots while retaining labels and ticks
+        # only on the conventional bottom/left axes.
+        for axis_name in ("top", "right"):
+            self._plot_item.showAxis(axis_name, show=True)
+            axis = self._plot_item.getAxis(axis_name)
+            axis.setPen(axis_pen)
+            axis.setTextPen(axis_pen)
+            axis.setStyle(showValues=False, tickLength=0)
+
+        # ViewBox holds event pixels while GraphicsLayoutWidget holds title,
+        # axis labels, and tick labels.  They must share a background so
+        # contrast-safe text cannot disappear in the surrounding margin.
         vb = self._view_box()
         if vb is not None and (
             previous is None or previous.background_color != s.background_color
         ):
             vb.setBackgroundColor(s.background_color)
+            self._glw.setBackground(s.background_color)
 
         # Grid
         if previous is None or previous.show_grid != s.show_grid:
             if s.show_grid:
-                self._plot_item.showGrid(True, True, alpha=0.3)
+                self._plot_item.showGrid(True, True, alpha=0.15)
             else:
                 self._plot_item.showGrid(False, False)
 
@@ -1230,6 +1248,19 @@ class PlotWidget(QWidget):
         )
         if gate_style_changed:
             self._refresh_gate_colors()
+
+    @staticmethod
+    def _foreground_color(background_color: str) -> str:
+        """Choose a readable monochrome foreground for a plot background."""
+        color = QColor(background_color)
+        if not color.isValid():
+            return "#000000"
+        luminance = (
+            0.2126 * color.red()
+            + 0.7152 * color.green()
+            + 0.0722 * color.blue()
+        )
+        return "#000000" if luminance >= 128 else "#e8e8e8"
 
     def _refresh_gate_colors(self) -> None:
         """Update gate overlay outline and fill colors without removing items."""

@@ -260,13 +260,13 @@ def batch_plot_command(project_path: str, export_id: str, output_dir: str) -> in
         style = source_styles.setdefault(source_id, {"source_id": source_id})
         manual_fields = set(style.get("manual_fields", ()))
         if not style.get("color"):
-          style["color"] = "#4c78a8"
+          style["color"] = "#000000"
         if "alpha" not in manual_fields:
-          style["alpha"] = 0.75 if source_id == sample_id else 0.65
+          style["alpha"] = 0.60
         if "marker_shape" not in manual_fields:
           style["marker_shape"] = "circle"
         if "marker_size" not in manual_fields:
-          style["marker_size"] = 3.0
+          style["marker_size"] = 1.5
       presentation["source_styles"] = list(source_styles.values())
       scene = {
         "x_ticks": _normalized_ticks(

@@ -387,7 +387,7 @@ def test_population_event_colors_preserve_full_hex_values() -> None:
     window._last_result_report = Report()
     colors = window._population_event_colors("s1", 3, None)
     assert colors is not None
-    assert colors.tolist() == ["#800080", "#b8c7ff", "#800080"]
+    assert colors.tolist() == ["#800080", "#000000", "#800080"]
     window._plot_widget.plot_events(
       np.arange(3.0), np.arange(3.0), event_colors=colors
     )
@@ -395,13 +395,29 @@ def test_population_event_colors_preserve_full_hex_values() -> None:
       color: item.xData.tolist()
       for item, color in window._plot_widget._population_scatter_items
     }
-    assert rendered == {"#800080": [0.0, 2.0], "#b8c7ff": [1.0]}
+    assert rendered == {"#800080": [0.0, 2.0], "#000000": [1.0]}
     window._plot_widget.set_presentation({})
     rendered_after_presentation = {
       color: item.xData.tolist()
       for item, color in window._plot_widget._population_scatter_items
     }
     assert rendered_after_presentation == rendered
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_active_base_layer_does_not_inherit_manual_overlay_color() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    window._sample_browser._manual_overlay_colors["active"] = "#ff6600"
+
+    # Without an explicit population color, MainWindow leaves event_colors
+    # unset and PlotWidget uses its base-layer dot color.
+    assert window._population_event_colors("active", 2, None) is None
+    assert window._plot_widget.style().dot_color == "#000000"
   finally:
     window.close()
     window.deleteLater()
@@ -1214,6 +1230,8 @@ def test_plot_widget_formats_exponent_ticks_and_applies_readable_tick_style() ->
     assert widget._format_tick_label("1e+06") == "1 × 10⁶"
     assert widget._format_tick_label("-2.5e-03") == "-2.5 × 10⁻³"
     assert widget._format_tick_label("0") == "0"
+    assert widget._foreground_color("#ffffff") == "#000000"
+    assert widget._foreground_color("#000000") == "#e8e8e8"
     axis = widget._plot_item.getAxis("bottom")
     assert "⁶" in axis.tickStrings([1_000_000.0], 1.0, 1_000_000.0)[0]
     widget.resize(320, 240)
