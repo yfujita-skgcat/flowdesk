@@ -254,6 +254,16 @@ class _PipelineWorker(QThread):
 # ---------------------------------------------------------------------------
 
 
+def _project_bundle_path(value: str | Path) -> Path:
+    """Convert a user-entered save name to a portable bundle directory path."""
+    path = Path(value)
+    if not path.name:
+        raise ValueError("project name must not be empty")
+    if path.suffix.lower() != ".flowdesk":
+        path = Path(f"{path}.flowdesk")
+    return path
+
+
 class MainWindow(QMainWindow):
     """Main application window.
 
@@ -2849,18 +2859,17 @@ class MainWindow(QMainWindow):
         self._save_project_interactively()
 
     def _save_project_interactively(self) -> bool:
-        """Ask for a project path and save, returning whether it succeeded."""
-        initial = str(self._project_path or Path.cwd())
-        path_str = QFileDialog.getExistingDirectory(
+        """Ask for a project name and save it as a bundle directory."""
+        initial = str(self._project_path or (Path.cwd() / "project.flowdesk"))
+        path_str, _filter = QFileDialog.getSaveFileName(
             self,
-            "Select project bundle directory",
+            "Save project",
             initial,
+            "Flowdesk projects (*.flowdesk);;All files (*)",
         )
         if not path_str:
             return False
-        path = Path(path_str)
-        if path.suffix != ".flowdesk":
-            path = path.with_suffix(".flowdesk")
+        path = _project_bundle_path(path_str)
         try:
             self._save_project_to_path(path)
             self._update_status(f"Project saved to {path}")

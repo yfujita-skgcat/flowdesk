@@ -25,6 +25,10 @@ Implement robust loading, validation, and saving for `.flowdesk` project bundles
 - Do not import PySide6 or `flowdesk_qt`.
 - Use structured JSON parsing, not string manipulation.
 - Return typed dataclasses or clearly documented dictionaries. Avoid mixing both styles without an adapter.
+- The GUI Save Project action accepts a user-entered name with `QFileDialog.getSaveFileName()`;
+  the selected name is normalized to one `.flowdesk` suffix and passed to the storage
+  API as a directory path. Storage remains GUI-independent and creates the bundle
+  structure through `save_project()`.
 
 ## Required Behavior
 

@@ -56,7 +56,7 @@ from flowdesk_qt.channel_metadata import ChannelMetadataWorkspace  # noqa: E402
 from flowdesk_qt.gate_editor import GateEditor, _GateDialog  # noqa: E402
 from flowdesk_qt.gate_override_editor import GateOverrideDialog  # noqa: E402
 from flowdesk_qt.group_panel import GroupPanel  # noqa: E402
-from flowdesk_qt.main_window import MainWindow  # noqa: E402
+from flowdesk_qt.main_window import MainWindow, _project_bundle_path  # noqa: E402
 from flowdesk_qt.plot_export_dialog import PlotExportDialog  # noqa: E402
 from flowdesk_qt.plot_widget import PlotWidget  # noqa: E402
 from flowdesk_qt.sample_browser import SampleBrowser  # noqa: E402
@@ -522,6 +522,36 @@ def test_project_manifest_persists_complete_active_plot_view() -> None:
     assert view["display_scene"]["x_axis_label"] == "FITC B525-A"
     assert view["display_scene"]["y_axis_label"] == "APC R660-A"
     assert view["display_scene"]["view_range"] == ((1.0, 6.0), (0.5, 4.5))
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_project_save_name_becomes_flowdesk_bundle_directory(tmp_path: Path) -> None:
+  assert _project_bundle_path(tmp_path / "experiment") == (
+    tmp_path / "experiment.flowdesk"
+  )
+  assert _project_bundle_path(tmp_path / "experiment.flowdesk") == (
+    tmp_path / "experiment.flowdesk"
+  )
+  assert _project_bundle_path(tmp_path / "Experiment.FLOWDESK") == (
+    tmp_path / "Experiment.FLOWDESK"
+  )
+
+
+def test_save_project_dialog_uses_entered_name(monkeypatch, tmp_path: Path) -> None:
+  app = _app()
+  window = MainWindow()
+  saved: list[Path] = []
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.QFileDialog.getSaveFileName",
+    lambda *_args, **_kwargs: (str(tmp_path / "named-analysis"), "Flowdesk projects (*.flowdesk)"),
+  )
+  monkeypatch.setattr(window, "_save_project_to_path", saved.append)
+  try:
+    assert window._save_project_interactively()
+    assert saved == [tmp_path / "named-analysis.flowdesk"]
   finally:
     window.close()
     window.deleteLater()
