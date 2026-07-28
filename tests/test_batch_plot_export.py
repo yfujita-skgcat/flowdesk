@@ -95,12 +95,14 @@ def test_batch_run_writes_outputs_sidecars_and_manifest(tmp_path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"<svg>{sample['id']}</svg>", encoding="utf-8")
 
-  report = run_batch_plot_export(spec, _samples(), tmp_path, render)
+  preflight = {"value": {"mode": "full_vector", "status": "ok"}}
+  report = run_batch_plot_export(spec, _samples(), tmp_path, render, preflight=preflight)
   assert report.status == "success"
   assert len(report.items) == 2
   manifest = json.loads((tmp_path / "export.batch.json").read_text(encoding="utf-8"))
   assert manifest["status"] == "success"
   assert manifest["export_options"]["formats"] == ["svg"]
+  assert manifest["vector_scatter_preflight"]["mode"] == "full_vector"
   sidecar = tmp_path / "Control_s1_main-view.svg.json"
   sidecar_data = json.loads(sidecar.read_text(encoding="utf-8"))
   assert sidecar_data["sample_id"] == "s1"

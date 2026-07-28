@@ -29,6 +29,7 @@ def test_batch_plot_dialog_creates_new_definition_with_explicit_samples(qapp, tm
     assert request.definition["raster_resolution_mode"] == "dpi_scaled"
     assert request.definition["vector_scatter_mode"] == "hybrid_raster"
     assert request.definition["hybrid_scatter_dpi"] == 600
+    assert dialog._scatter_mode.currentData() == "hybrid_raster"
     assert request.output_dir == str(tmp_path)
   finally:
     dialog.deleteLater()
@@ -58,6 +59,7 @@ def test_batch_plot_dialog_loads_saved_definition(qapp) -> None:
     assert request.definition["width"] == 1200
     assert request.definition["raster_resolution_mode"] == "legacy_pixel_dimensions"
     assert request.definition["vector_scatter_mode"] == "full_vector"
+    assert dialog._hybrid_scatter_dpi_spin.isEnabled() is False
   finally:
     dialog.deleteLater()
 

@@ -5,6 +5,7 @@ from flowdesk_core.plot_export import resolve_export_canvas
 from flowdesk_core.vector_scatter import (
   VectorScatterLayer,
   build_vector_scatter_plan,
+  preflight_vector_scatter_export,
 )
 
 
@@ -72,3 +73,27 @@ def test_non_hybrid_plan_does_not_record_raster_dpi():
     sampling_identity="s1",
   )
   assert plan.provenance_mapping()["scatter_image_dpi"] is None
+
+
+def test_preflight_reports_hybrid_raster_dimensions_and_never_changes_mode():
+  spec = BatchPlotExportSpec(
+    id="h", name="H", vector_scatter_mode="hybrid_raster", hybrid_scatter_dpi=600
+  )
+  report = preflight_vector_scatter_export(
+    spec, rendered_event_count=100, logical_plot_width=720, logical_plot_height=490
+  )
+  assert report.status == "ok"
+  assert report.mode == "hybrid_raster"
+  assert report.raster_width == 4500
+  assert report.raster_height == 3062
+
+
+def test_preflight_returns_structured_failure_without_auto_fallback():
+  spec = BatchPlotExportSpec(id="f", name="F", vector_scatter_mode="full_vector")
+  report = preflight_vector_scatter_export(
+    spec, rendered_event_count=11, logical_plot_width=720, logical_plot_height=490,
+    max_events=10,
+  )
+  assert report.status == "failed"
+  assert report.mode == "full_vector"
+  assert report.diagnostics[0]["code"] == "scatter_events_exceeded"

@@ -759,10 +759,12 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
   rasterとのRMSE、tile seam、rare-event visibility、memory limitをtestする。
   透明RGBA PNG scatter layerを共通生成し、SVGはembedded PNG、PDFはsoft-mask付きImage
   XObjectとしてplot rectangleへ配置する実装と、画像・DPI・provenanceのtestを追加した。
-- [ ] Increment 16: Batch Plot Export GUIへ3 mode selector、hybrid時だけ有効なscatter DPI、
+- [x] Increment 16: Batch Plot Export GUIへ3 mode selector、hybrid時だけ有効なscatter DPI、
   point/node/path/pixel/memory preflightを追加し、CLI/headlessと同じ保存済みplanを実行する。
   resource limit時はmodeを自動変更せずstructured failure/warningを返す。sidecar/manifest、
   cancel/save/restore/strict/partial failure、旧project互換、ユーザーマニュアルを完成する。
+  GUI selector、hybrid DPI、canvas/memory preflight表示、CLIの同一spec実行、structured
+  preflight diagnosticsのsidecar/manifest記録を実装した。resource limit時はmodeを変更せず失敗する。
 - [ ] Increment 17: 1k/5k/20k/100k/1M points、sparse/dense/overlap、複数alpha/color/source、
   rare populationを含む決定的benchmarkを追加する。bytes、時間、peak RSS、SVG DOM数、
   PDF resource/command数、parse/open/rasterize時間、visual RMSE、科学的結果の完全一致を測る。

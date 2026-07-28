@@ -148,6 +148,97 @@ class CompactScatterBatch:
   batch_key: tuple[int, int, int]
 
 
+@dataclass(frozen=True)
+class VectorScatterPreflight:
+  """Structured resource estimate; it never changes the requested mode."""
+
+  mode: VectorScatterMode
+  rendered_event_count: int | None
+  estimated_placements: int | None
+  estimated_paths: int | None
+  raster_width: int | None
+  raster_height: int | None
+  estimated_memory_bytes: int
+  status: Literal["ok", "warning", "failed"]
+  diagnostics: tuple[dict[str, Any], ...] = ()
+
+  def to_mapping(self) -> dict[str, Any]:
+    return {
+      "mode": self.mode,
+      "rendered_event_count": self.rendered_event_count,
+      "estimated_placements": self.estimated_placements,
+      "estimated_paths": self.estimated_paths,
+      "raster_width": self.raster_width,
+      "raster_height": self.raster_height,
+      "estimated_memory_bytes": self.estimated_memory_bytes,
+      "status": self.status,
+      "diagnostics": [dict(item) for item in self.diagnostics],
+    }
+
+
+def preflight_vector_scatter_export(
+  spec: Any,
+  *,
+  rendered_event_count: int | None,
+  logical_plot_width: float,
+  logical_plot_height: float,
+  estimated_compact_paths: int | None = None,
+  max_events: int = 2_000_000,
+  max_paths: int = 1_000_000,
+  max_raster_pixels: int = 100_000_000,
+  max_memory_bytes: int = 512 * 1024 * 1024,
+) -> VectorScatterPreflight:
+  """Estimate output resources and return explicit structured diagnostics."""
+  mode = spec.vector_scatter_mode
+  count = rendered_event_count
+  placements = count
+  paths = count if mode == "full_vector" else (
+    estimated_compact_paths if estimated_compact_paths is not None else count
+  )
+  raster_width = raster_height = None
+  memory = 0
+  diagnostics: list[dict[str, Any]] = []
+  if mode == "hybrid_raster":
+    raster_scale = spec.hybrid_scatter_dpi / 96.0
+    raster_width = max(1, round(logical_plot_width * raster_scale))
+    raster_height = max(1, round(logical_plot_height * raster_scale))
+    pixels = raster_width * raster_height
+    memory = pixels * 4 + max(pixels // 2, 1024)
+    if pixels > max_raster_pixels:
+      diagnostics.append({
+        "code": "hybrid_raster_pixels_exceeded", "severity": "error",
+        "message": "hybrid scatter raster exceeds the configured pixel limit",
+        "value": pixels, "limit": max_raster_pixels,
+      })
+  elif count is not None:
+    # Conservative estimates are used until the renderer has built its exact
+    # compact batches; this never authorizes an automatic mode change.
+    memory = count * (64 if mode == "full_vector" else 32)
+  if count is not None and count > max_events:
+    diagnostics.append({
+      "code": "scatter_events_exceeded", "severity": "error",
+      "message": "rendered event count exceeds the configured preflight limit",
+      "value": count, "limit": max_events,
+    })
+  if paths is not None and paths > max_paths:
+    diagnostics.append({
+      "code": "vector_paths_exceeded", "severity": "error",
+      "message": "estimated vector path/placement count exceeds the configured limit",
+      "value": paths, "limit": max_paths,
+    })
+  if memory > max_memory_bytes:
+    diagnostics.append({
+      "code": "scatter_memory_exceeded", "severity": "error",
+      "message": "estimated scatter memory exceeds the configured limit",
+      "value": memory, "limit": max_memory_bytes,
+    })
+  status: Literal["ok", "warning", "failed"] = "failed" if diagnostics else "ok"
+  return VectorScatterPreflight(
+    mode, count, placements, paths, raster_width, raster_height, memory, status,
+    tuple(diagnostics),
+  )
+
+
 def compact_scatter_batches(
   layers: tuple[VectorScatterLayer, ...],
   *,

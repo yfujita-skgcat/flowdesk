@@ -136,6 +136,7 @@ def run_batch_plot_export(
   group_members: Mapping[str, Sequence[str]] | None = None,
   annotations: Sequence[Any] = (),
   overlay_sample_ids: Mapping[str, Sequence[str]] | None = None,
+  preflight: dict[str, Any] | None = None,
 ) -> BatchPlotExportReport:
   """Render each planned sample and persist per-file provenance plus a manifest."""
   items = plan_batch_plot_export(
@@ -203,6 +204,7 @@ def run_batch_plot_export(
     "export_id": spec.id,
     "export_options": asdict(spec),
     "export_canvas": resolve_export_canvas(spec).to_mapping(),
+    "vector_scatter_preflight": (preflight or {}).get("value"),
     "status": status,
     "items": [asdict(item) for item in completed],
   }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

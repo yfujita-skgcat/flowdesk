@@ -124,12 +124,23 @@ class BatchPlotExportDialog(QDialog):
     self._resolution_mode.setObjectName("batchPlotRasterResolutionModeCombo")
     self._resolution_mode.addItem("Legacy pixel dimensions", "legacy_pixel_dimensions")
     self._resolution_mode.addItem("Scale pixels by DPI", "dpi_scaled")
+    self._scatter_mode = QComboBox()
+    self._scatter_mode.setObjectName("batchPlotVectorScatterModeCombo")
+    self._scatter_mode.addItem("Full vector", "full_vector")
+    self._scatter_mode.addItem("Compact vector", "compact_vector")
+    self._scatter_mode.addItem("Hybrid raster", "hybrid_raster")
+    self._hybrid_scatter_dpi_spin = self._spin(
+      "batchPlotHybridScatterDPISpinBox", 72, 2400, 600
+    )
     self._resolution_preview = QLabel()
     self._resolution_preview.setObjectName("batchPlotResolutionPreviewLabel")
     self._resolution_preview.setWordWrap(True)
     for widget in (self._width, self._height, self._dpi):
       widget.valueChanged.connect(self._update_resolution_preview)
     self._resolution_mode.currentIndexChanged.connect(self._update_resolution_preview)
+    self._scatter_mode.currentIndexChanged.connect(self._update_vector_mode_widgets)
+    self._scatter_mode.currentIndexChanged.connect(self._update_resolution_preview)
+    self._hybrid_scatter_dpi_spin.valueChanged.connect(self._update_resolution_preview)
     for check in self._formats.values():
       check.toggled.connect(self._update_resolution_preview)
     self._aspect = self._check("1:1 aspect", "batchPlotAspectCheckBox")
@@ -178,6 +189,8 @@ class BatchPlotExportDialog(QDialog):
     form.addRow("Canvas height (logical px @ 96 DPI)", self._height)
     form.addRow("Raster DPI", self._dpi)
     form.addRow("Raster resolution", self._resolution_mode)
+    form.addRow("Vector scatter", self._scatter_mode)
+    form.addRow("Hybrid scatter DPI", self._hybrid_scatter_dpi_spin)
     form.addRow("Effective output", self._resolution_preview)
     form.addRow("Aspect", self._aspect)
     form.addRow("Layout", self._layout_policy)
@@ -245,6 +258,12 @@ class BatchPlotExportDialog(QDialog):
     self._group.setEnabled(target == "group")
     self._update_resolution_preview()
 
+  def _update_vector_mode_widgets(self) -> None:
+    self._vector_scatter_mode = str(self._scatter_mode.currentData() or "hybrid_raster")
+    self._hybrid_scatter_dpi_spin.setEnabled(self._vector_scatter_mode == "hybrid_raster")
+    self._hybrid_scatter_dpi = self._hybrid_scatter_dpi_spin.value()
+    self._update_resolution_preview()
+
   def _load_selected_definition(self, _index: int) -> None:
     definition_id = str(self._definition.currentData() or "")
     value = next(
@@ -283,6 +302,9 @@ class BatchPlotExportDialog(QDialog):
       defaults["vector_scatter_mode"] = "full_vector"
     self._vector_scatter_mode = str(defaults["vector_scatter_mode"])
     self._hybrid_scatter_dpi = int(defaults["hybrid_scatter_dpi"])
+    mode_index = self._scatter_mode.findData(self._vector_scatter_mode)
+    self._scatter_mode.setCurrentIndex(max(0, mode_index))
+    self._hybrid_scatter_dpi_spin.setValue(self._hybrid_scatter_dpi)
     self._name.setText(str(defaults["name"]))
     target_index = self._target.findData(defaults["target"])
     self._target.setCurrentIndex(max(0, target_index))
@@ -325,19 +347,28 @@ class BatchPlotExportDialog(QDialog):
       "dpi": self._dpi.value(),
       "raster_resolution_mode": self._resolution_mode.currentData(),
       "vector_scatter_mode": self._vector_scatter_mode,
-      "hybrid_scatter_dpi": self._hybrid_scatter_dpi,
+      "hybrid_scatter_dpi": self._hybrid_scatter_dpi_spin.value(),
       "aspect_1_to_1": self._aspect.isChecked(),
     }
     from flowdesk_core.models import BatchPlotExportSpec
+    from flowdesk_core.vector_scatter import preflight_vector_scatter_export
     try:
       spec = BatchPlotExportSpec(
         id="preview", name="preview", target="all", sample_ids=(),
         group_id=None, plot_view_id="preview", formats=("png",),
         width=options["width"], height=options["height"], dpi=options["dpi"],
         raster_resolution_mode=options["raster_resolution_mode"],
+        vector_scatter_mode=options["vector_scatter_mode"],
+        hybrid_scatter_dpi=options["hybrid_scatter_dpi"],
         aspect_1_to_1=options["aspect_1_to_1"],
       )
       canvas = resolve_export_canvas(spec)
+      preflight = preflight_vector_scatter_export(
+        spec,
+        rendered_event_count=None,
+        logical_plot_width=max(1.0, canvas.logical_width - 80.0),
+        logical_plot_height=max(1.0, canvas.logical_height - 110.0),
+      )
       raster = (
         f"{canvas.raster_width} × {canvas.raster_height} px "
         f"({canvas.physical_width_in:.2f} × {canvas.physical_height_in:.2f} in)"
@@ -345,11 +376,21 @@ class BatchPlotExportDialog(QDialog):
       vector = any(self._formats[key].isChecked() for key in ("svg", "pdf"))
       raster_selected = any(self._formats[key].isChecked() for key in ("png", "jpg"))
       if vector and not raster_selected:
-        self._resolution_preview.setText("DPI not applicable to vector geometry")
+        scatter = (
+          f"scatter: {options['vector_scatter_mode']}"
+          + (f" @ {options['hybrid_scatter_dpi']} DPI" if options["vector_scatter_mode"] == "hybrid_raster" else "")
+        )
+        self._resolution_preview.setText(f"DPI not applicable to vector geometry; {scatter}")
       elif vector:
-        self._resolution_preview.setText(f"Raster: {raster}; vector: DPI not applicable")
+        self._resolution_preview.setText(f"Raster: {raster}; vector: {options['vector_scatter_mode']}")
       else:
         self._resolution_preview.setText(raster)
+      if preflight.raster_width is not None:
+        self._resolution_preview.setText(
+          self._resolution_preview.text()
+          + f"; preflight: {preflight.raster_width} × {preflight.raster_height} px, "
+          f"~{preflight.estimated_memory_bytes / (1024 * 1024):.1f} MiB"
+        )
     except (TypeError, ValueError):
       self._resolution_preview.clear()
 
@@ -397,8 +438,8 @@ class BatchPlotExportDialog(QDialog):
       "height": self._height.value(),
       "dpi": self._dpi.value(),
       "raster_resolution_mode": self._resolution_mode.currentData(),
-      "vector_scatter_mode": self._vector_scatter_mode,
-      "hybrid_scatter_dpi": self._hybrid_scatter_dpi,
+      "vector_scatter_mode": str(self._scatter_mode.currentData()),
+      "hybrid_scatter_dpi": self._hybrid_scatter_dpi_spin.value(),
       "aspect_1_to_1": self._aspect.isChecked(),
       "layout_policy": self._layout_policy.currentData(),
       **{key: check.isChecked() for key, check in self._visibility.items()},

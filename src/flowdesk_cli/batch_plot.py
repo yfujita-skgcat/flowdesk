@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -23,6 +24,7 @@ from flowdesk_core.plot_export import (
   write_plot_png,
   write_plot_svg,
 )
+from flowdesk_core.vector_scatter import preflight_vector_scatter_export
 from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.processed_display import ProcessedDisplayRequest
 from flowdesk_core.transforms import apply_transform, generate_transform_ticks
@@ -81,6 +83,7 @@ def batch_plot_command(
     layer_metadata: dict[str, dict[str, Any]] = {}
     layer_event_colors: dict[str, np.ndarray] = {}
     shared_bounds: tuple[float, float, float, float] | None = None
+    preflight_holder: dict[str, Any] = {}
     display_scene = dict(view.get("display_scene", {}))
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -170,6 +173,15 @@ def batch_plot_command(
             float(np.min(all_x)), float(np.max(all_x)),
             float(np.min(all_y)), float(np.max(all_y)),
           )
+        preflight = preflight_vector_scatter_export(
+          spec,
+          rendered_event_count=sum(len(value[0]) for value in prepared_layers.values()),
+          logical_plot_width=max(1.0, spec.width - 80.0),
+          logical_plot_height=max(1.0, spec.height - 110.0),
+        )
+        preflight_holder["value"] = preflight.to_mapping()
+        if preflight.status == "failed":
+          raise ValueError(json.dumps(preflight.to_mapping(), ensure_ascii=False))
       x_values, y_values = prepared_layers[sample_id]
       metadata = layer_metadata[sample_id]
       x_id, y_id = metadata["x_id"], metadata["y_id"]
@@ -320,6 +332,7 @@ def batch_plot_command(
         ),
         scene=scene,
       )
+      prepared.metadata["vector_scatter_preflight"] = dict(preflight_holder.get("value", {}))
       if renderer_backend == "qt" and path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
         from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 
@@ -373,6 +386,7 @@ def batch_plot_command(
 
     batch_report = run_batch_plot_export(
       spec, samples, output_dir, render, annotations=annotations,
+      preflight=preflight_holder,
       overlay_sample_ids={
         str(sample.get("id")): tuple(
           str(value) for value in view.get("manual_overlay_sample_ids", ())

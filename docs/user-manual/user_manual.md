@@ -922,7 +922,11 @@ SVG/PDFの散布点表現は、旧projectでは`full_vector`（イベントご�
 半透明点の重なり濃度をunionで消すことはありません。`hybrid_raster`では散布点だけを
 透明RGBA PNGとして埋め込み、plotの軸・grid・ticks・文字・gate・legendはベクターのまま
 保持します。散布レイヤーのpixelサイズ、DPI、lossless encoding、point-plan hashはsidecar
-provenanceに記録されます。現在のmode選択UIとresource preflightは後続incrementで追加されます。
+provenanceに記録されます。ダイアログの`Vector scatter`で`Full vector`、`Compact vector`、
+`Hybrid raster`を選択でき、Hybrid時だけ`Hybrid scatter DPI`を編集できます。Effective output
+には散布レイヤーのpixel数と概算memoryが表示されます。CLIもprojectに保存された同じ定義を使い、
+点数・path数・raster pixel数・memoryのpreflightを実行します。制限超過時はmodeを自動変更せず、
+structured failureとして出力を停止します。
 
 `Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、Width/Height、DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。Batch Exportは保存時点のactive plot view（X/Y channel、transform、population、overlay、presentation）を使用する。未保存projectでは、保存または実行時に通常のproject保存を行う。
 
