@@ -765,13 +765,15 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
   cancel/save/restore/strict/partial failure、旧project互換、ユーザーマニュアルを完成する。
   GUI selector、hybrid DPI、canvas/memory preflight表示、CLIの同一spec実行、structured
   preflight diagnosticsのsidecar/manifest記録を実装した。resource limit時はmodeを変更せず失敗する。
-- [ ] Increment 17: 1k/5k/20k/100k/1M points、sparse/dense/overlap、複数alpha/color/source、
+- [x] Increment 17: 1k/5k/20k/100k/1M points、sparse/dense/overlap、複数alpha/color/source、
   rare populationを含む決定的benchmarkを追加する。bytes、時間、peak RSS、SVG DOM数、
   PDF resource/command数、parse/open/rasterize時間、visual RMSE、科学的結果の完全一致を測る。
   最初にthresholdなしbaselineを保存し、安定したCI metricだけに回帰thresholdを設定する。
   Hybridの大規模出力改善、Compactのnode削減、Fullの完全配置、3 mode間でraw events、
   membership、counts、frequencies、statistics、sampling identityが不変であることをrelease
-  acceptanceとする。
+  acceptanceとする。`vector_scatter_benchmark.py`と決定的fixture、3 modeのbytes/time/RSS/
+  SVG/PDF構造測定、chunk制限、layer hash/event count不変性検査を追加した。thresholdはbaseline
+  保存時点では未設定とし、CI回帰値を固定しない。
 
 `docs/bug.md` のplot画像export要求は、既存のsingle PNG/SVG/PDF exportと
 `BatchPlotExportSpec`だけでは完了していない。実装前に

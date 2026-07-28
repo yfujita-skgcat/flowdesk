@@ -29,6 +29,9 @@ PACKAGE_TAG := v$(PACKAGE_VERSION)
 gui:
 	flowdesk-gui
 
+benchmark:
+	python tools/benchmark_vector_scatter.py
+
 zip:
 	rm -f rep.zip
 	@test -n "$(GIT)" || (echo "Git executable not found" >&2; exit 1)

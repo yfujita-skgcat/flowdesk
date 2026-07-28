@@ -3,9 +3,17 @@ import pytest
 from flowdesk_core.models import BatchPlotExportSpec
 from flowdesk_core.plot_export import resolve_export_canvas
 from flowdesk_core.vector_scatter import (
+  COMPACT_VECTOR_CHUNK_POINTS,
   VectorScatterLayer,
   build_vector_scatter_plan,
+  compact_scatter_batches,
   preflight_vector_scatter_export,
+)
+from flowdesk_core.vector_scatter_benchmark import (
+  ScatterBenchmarkMeasurement,
+  deterministic_scatter_fixture,
+  release_acceptance_invariants,
+  run_scatter_benchmark,
 )
 
 
@@ -97,3 +105,29 @@ def test_preflight_returns_structured_failure_without_auto_fallback():
   assert report.status == "failed"
   assert report.mode == "full_vector"
   assert report.diagnostics[0]["code"] == "scatter_events_exceeded"
+
+
+def test_compact_batches_are_chunked_at_the_documented_limit():
+  points = tuple((index / 10000, 0.5) for index in range(COMPACT_VECTOR_CHUNK_POINTS + 7))
+  batches = compact_scatter_batches(
+    (VectorScatterLayer("s", points),), plot_width=720, plot_height=490
+  )
+  assert max(len(batch.points) for batch in batches) <= COMPACT_VECTOR_CHUNK_POINTS
+  assert sum(len(batch.points) for batch in batches) == len(points)
+
+
+def test_benchmark_fixture_and_small_baseline_are_deterministic():
+  first, first_hash = deterministic_scatter_fixture(1000, profile="mixed")
+  second, second_hash = deterministic_scatter_fixture(1000, profile="mixed")
+  assert first == second
+  assert first_hash == second_hash
+  result = run_scatter_benchmark((1000,), profile="sparse", hybrid_scatter_dpi=72)
+  measurements = [
+    item for values in result["measurements"].values() for item in values
+  ]
+  assert {item["mode"] for item in measurements} == {
+    "full_vector", "compact_vector", "hybrid_raster"
+  }
+  invariant_inputs = [ScatterBenchmarkMeasurement(**item) for item in measurements]
+  assert release_acceptance_invariants(invariant_inputs)["status"] == "ok"
+  assert all(item["rendered_event_count"] == 1000 for item in measurements)

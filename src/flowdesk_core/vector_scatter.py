@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 VectorScatterMode = Literal["full_vector", "compact_vector", "hybrid_raster"]
 Point = tuple[float, float]
+COMPACT_VECTOR_CHUNK_POINTS = 4096
 
 
 @dataclass(frozen=True)
@@ -268,16 +269,19 @@ def compact_scatter_batches(
       key = (cell[0] % 3, cell[1] % 3, slot)
       grouped.setdefault(key, []).append(point)
     for key in sorted(grouped):
-      result.append(CompactScatterBatch(
-        source_id=layer.source_id,
-        points=tuple(grouped[key]),
-        color=layer.color,
-        alpha=layer.alpha,
-        marker_shape=layer.marker_shape,
-        marker_size=layer.marker_size,
-        z_index=layer.z_index,
-        batch_key=key,
-      ))
+      points = grouped[key]
+      for chunk_index in range(0, len(points), COMPACT_VECTOR_CHUNK_POINTS):
+        chunk = tuple(points[chunk_index:chunk_index + COMPACT_VECTOR_CHUNK_POINTS])
+        result.append(CompactScatterBatch(
+          source_id=layer.source_id,
+          points=chunk,
+          color=layer.color,
+          alpha=layer.alpha,
+          marker_shape=layer.marker_shape,
+          marker_size=layer.marker_size,
+          z_index=layer.z_index,
+          batch_key=(key[0], key[1], key[2] * COMPACT_VECTOR_CHUNK_POINTS + chunk_index // COMPACT_VECTOR_CHUNK_POINTS),
+        ))
   return tuple(result)
 
 
