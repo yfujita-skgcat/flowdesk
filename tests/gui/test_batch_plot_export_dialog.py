@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import pytest
 from PySide6.QtCore import QSettings
 
 from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportDialog
+
+pytestmark = pytest.mark.gui
 
 
 def test_batch_plot_dialog_creates_new_definition_with_explicit_samples(qapp, tmp_path) -> None:

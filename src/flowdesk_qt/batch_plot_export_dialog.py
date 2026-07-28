@@ -312,7 +312,9 @@ class BatchPlotExportDialog(QDialog):
   def request(self) -> BatchPlotExportRequest:
     output_dir = self._output.text().strip()
     if output_dir:
-      QSettings().setValue(self._OUTPUT_DIRECTORY_KEY, output_dir)
+      settings = QSettings()
+      settings.setValue(self._OUTPUT_DIRECTORY_KEY, output_dir)
+      settings.sync()
     return BatchPlotExportRequest(self.definition_mapping(), output_dir, self._run)
 
   def definition_mapping(self) -> dict[str, Any]:
