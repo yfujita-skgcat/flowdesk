@@ -130,6 +130,10 @@
         "raster_resolution_mode": {
           "enum": ["legacy_pixel_dimensions", "dpi_scaled"]
         },
+        "vector_scatter_mode": {
+          "enum": ["full_vector", "compact_vector", "hybrid_raster"]
+        },
+        "hybrid_scatter_dpi": { "type": "integer", "minimum": 72, "maximum": 2400 },
         "aspect_1_to_1": { "type": "boolean" },
         "layout_policy": { "enum": ["current_view", "shared_ranges"] },
         "include_title": { "type": "boolean" },

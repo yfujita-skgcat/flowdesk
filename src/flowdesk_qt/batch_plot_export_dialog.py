@@ -60,6 +60,8 @@ class BatchPlotExportDialog(QDialog):
     self._groups = [dict(item) for item in groups]
     self._views = [dict(item) for item in plot_views]
     self._run = False
+    self._vector_scatter_mode = "hybrid_raster"
+    self._hybrid_scatter_dpi = 600
 
     self._definition = QComboBox()
     self._definition.setObjectName("batchPlotDefinitionCombo")
@@ -260,6 +262,8 @@ class BatchPlotExportDialog(QDialog):
       "height": 600,
       "dpi": 96,
       "raster_resolution_mode": "dpi_scaled",
+      "vector_scatter_mode": "hybrid_raster",
+      "hybrid_scatter_dpi": 600,
       "aspect_1_to_1": False,
       "layout_policy": "current_view",
       "include_title": True,
@@ -275,6 +279,10 @@ class BatchPlotExportDialog(QDialog):
     defaults.update(value)
     if value and "raster_resolution_mode" not in value:
       defaults["raster_resolution_mode"] = "legacy_pixel_dimensions"
+    if value and "vector_scatter_mode" not in value:
+      defaults["vector_scatter_mode"] = "full_vector"
+    self._vector_scatter_mode = str(defaults["vector_scatter_mode"])
+    self._hybrid_scatter_dpi = int(defaults["hybrid_scatter_dpi"])
     self._name.setText(str(defaults["name"]))
     target_index = self._target.findData(defaults["target"])
     self._target.setCurrentIndex(max(0, target_index))
@@ -316,6 +324,8 @@ class BatchPlotExportDialog(QDialog):
       "height": self._height.value(),
       "dpi": self._dpi.value(),
       "raster_resolution_mode": self._resolution_mode.currentData(),
+      "vector_scatter_mode": self._vector_scatter_mode,
+      "hybrid_scatter_dpi": self._hybrid_scatter_dpi,
       "aspect_1_to_1": self._aspect.isChecked(),
     }
     from flowdesk_core.models import BatchPlotExportSpec
@@ -387,6 +397,8 @@ class BatchPlotExportDialog(QDialog):
       "height": self._height.value(),
       "dpi": self._dpi.value(),
       "raster_resolution_mode": self._resolution_mode.currentData(),
+      "vector_scatter_mode": self._vector_scatter_mode,
+      "hybrid_scatter_dpi": self._hybrid_scatter_dpi,
       "aspect_1_to_1": self._aspect.isChecked(),
       "layout_policy": self._layout_policy.currentData(),
       **{key: check.isChecked() for key, check in self._visibility.items()},

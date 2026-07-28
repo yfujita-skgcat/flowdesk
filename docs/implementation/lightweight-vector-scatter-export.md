@@ -1,6 +1,6 @@
 # Lightweight Vector Scatter Export
 
-Status: planned
+Status: Increment 12 implemented; Increments 13-17 planned
 
 This guide defines the implementation contract for lightweight SVG/PDF scatter
 export. It extends `docs/implementation/plot-export-completion.md` without
@@ -662,4 +662,3 @@ The feature is complete only when:
 - analytical outputs and sampling identities are unchanged;
 - benchmark evidence documents size, time, memory, and object-count tradeoffs;
 - `ToDo.md`, this guide, and the user manual match implementation.
-

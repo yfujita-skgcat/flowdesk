@@ -730,12 +730,14 @@ items so future changes do not regress the behavior.
 一度のLLM/Codex実行では、以下の番号付きincrementを一つだけ実装し、test、文書更新、
 commitを完了してから停止する。後続incrementを同じ実行で開始しない。
 
-- [ ] Increment 12: `BatchPlotExportSpec`、schema、migrationへ
+- [x] Increment 12: `BatchPlotExportSpec`、schema、migrationへ
   `vector_scatter_mode = full_vector | compact_vector | hybrid_raster` と
   `hybrid_scatter_dpi`を追加する。既存definitionは`full_vector`、新規definitionは
   `hybrid_raster`/600 DPIへ解決する。Qt非依存`VectorScatterPlan`、mode別typed layer、
   point/style/z-order/sampling identityを含む決定的hashとprovenance skeletonを実装する。
-  rendererの出力形式はまだ変更しない。
+  rendererの出力形式はまだ変更しない。`VectorScatterPlan`の決定的hash/provenance、
+  旧定義のfull_vector解決、新規定義のhybrid_raster/600 DPI既定値を実装し、core testと
+  schema互換testを追加した。
 - [ ] Increment 13: `full_vector`を実装する。SVGはmarkerを`<defs>`で一度定義して
   eventごとに`<use>`を配置し、PDFはmarker Form XObject、graphics state、Flate圧縮
   content streamを再利用する。1 rendered event = 1 placement、scatter imageなし、

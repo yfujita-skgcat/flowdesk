@@ -31,6 +31,10 @@ def batch_plot_export_spec_from_mapping(value: Mapping[str, Any]) -> BatchPlotEx
   data = dict(value)
   data["sample_ids"] = tuple(data.get("sample_ids", ()))
   data["formats"] = tuple(data.get("formats", ("png",)))
+  # Definitions written before lightweight vector scatter support retain the
+  # historical one-object-per-event SVG/PDF representation.
+  data.setdefault("vector_scatter_mode", "full_vector")
+  data.setdefault("hybrid_scatter_dpi", 600)
   return BatchPlotExportSpec(**data)
 
 
