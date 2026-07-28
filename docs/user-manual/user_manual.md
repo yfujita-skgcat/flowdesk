@@ -913,11 +913,11 @@ export画像では、解析中の編集用gateハンドルを表示せず、gate
 
 ### 15.5 Batch Plot Export
 
-`Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、サイズ・DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。Batch Exportは保存時点のactive plot view（X/Y channel、transform、population、overlay、presentation）を使用する。未保存projectでは、保存または実行時に通常のproject保存を行う。
+`Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、Width/Height、DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。Batch Exportは保存時点のactive plot view（X/Y channel、transform、population、overlay、presentation）を使用する。未保存projectでは、保存または実行時に通常のproject保存を行う。
 
 output directoryはprojectには保存されず、アプリケーション設定（`QSettings`）に最後に使用した値だけが保存される。次回ダイアログを開くと復元されるため、同じ場所へ繰り返し出力できる。projectを別のディレクトリへ移動しても、この設定はprojectとは独立している。
 
-Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベル・目盛・gate・legend・status banner の表示、`current_view` / `shared_ranges` layout policy を保存できる。旧 project で省略された項目は既定値が適用される。JPG出力には Pillow が必要で、`shared_ranges` は全sampleの変換後X/Y範囲を共有する。`current_view` は保存時に画面で見えていた変換後のX/Y範囲と軸表示名を使うため、FCS内部名（例: `FL1-A`）ではなく画面のラベル（例: `FITC B525-A`）を出力し、画面外の点は描かない。CLI batch exportではmanual overlay、persisted gate geometry、軸とplot marginも同じrenderer-neutral sceneへ反映される。PNG/JPGでは、表示と同様にsourceごとの小さな半透明円、overlayのtitle行と対応色、`10³`（mantissa が 1 の場合）または `2 × 10³`形式のtransform目盛、縦向きY軸label、実線gate outlineを描く。title/axis/tick fontはPlot Appearanceの保存済みfont指定（既定では14 pt/10 pt/10 pt）を出力解像度に換算して使用する。これはheadless rendererで再現するため、GUI画面のスクリーンショットや編集用ハンドルは出力しない。
+Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベル・目盛・gate・legend・status banner の表示、`current_view` / `shared_ranges` layout policy を保存できる。旧 project で省略された項目は既定値が適用される。JPG出力には Pillow が必要で、`shared_ranges` は全sampleの変換後X/Y範囲を共有する。`current_view` は保存時に画面で見えていた変換後のX/Y範囲と軸表示名を使うため、FCS内部名（例: `FL1-A`）ではなく画面のラベル（例: `FITC B525-A`）を出力し、画面外の点は描かない。CLI batch exportではmanual overlay、persisted gate geometry、軸とplot marginも同じrenderer-neutral sceneへ反映される。PNG/JPGでは、表示と同様にsourceごとの小さな半透明円、overlayのtitle行と対応色、`10³`（mantissa が 1 の場合）または `2 × 10³`形式のtransform目盛、縦向きY軸label、実線gate outlineを描く。現行のQt batch PNGではWidth/Heightが最終pixel寸法であり、DPIを増やしてもpixel数は増えない。Width/Heightだけを増やすとfont、tick、dot、lineの比率は自動では維持されない。Qt batch PDFも現状はplot領域をraster化するため、publication-qualityのベクター出力を保証しない。高解像度・ベクター出力の改善方針は`docs/implementation/plot-export-completion.md`のIncrement 11を参照する。これはheadless rendererで再現するため、GUI画面のスクリーンショットや編集用ハンドルは出力しない。
 
 GUIとheadless exportは、X/Y parameter、transform ID、viewport、tick、title/source色、gate geometry、clip、z-orderを含む共通のrenderer-neutral `PlotScene`を使用する。sidecarにはsceneの決定的hashも記録される。作成中gateのpreviewや編集用handleはsceneに含まれないため、exportへ混入しない。OSやフォントbackendが異なる場合はpixel完全一致ではなく、scene値と幾何・色・文字配置の許容差を再現性の基準とする。
 

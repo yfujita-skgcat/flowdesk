@@ -7,6 +7,9 @@
 
 Flowdesk is an early-stage Python project for a Linux-first FlowJo-like flow cytometry analysis application.
 
+For the user-facing workflow and feature reference, see the
+[User Manual](docs/user-manual/user_manual.md).
+
 ## MVP Scope
 
 - Represent FCS samples, channels, compensation matrices, derived parameters, transforms, gates, population trees, and export records.

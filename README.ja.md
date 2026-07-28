@@ -8,6 +8,9 @@
 Flowdesk は、Linux-first の FlowJo 類似フローサイトメトリー解析アプリケーションを
 開発するための初期段階の Python プロジェクトです。
 
+利用者向けの操作方法と機能説明は、[ユーザーマニュアル](docs/user-manual/user_manual.md)
+を参照してください。
+
 ## MVP の範囲
 
 - FCS sample、channel、compensation matrix、derived parameter、transform、gate、population tree、export recordを扱う。

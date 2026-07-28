@@ -573,6 +573,116 @@ falling back to the GUI overlay palette.
   same optional rendering backend; otherwise the supported guarantee is equal
   canonical scene plus bounded visual geometry/style differences.
 
+### Increment 11: Resolution semantics and publication-quality export (planned)
+
+#### Observed problem
+
+The current batch dialog exposes Width, Height, and DPI, but the Qt PNG path
+uses only Width and Height as final raster pixels. Increasing DPI therefore
+does not increase PNG detail. The Qt PDF path also fixes its writer to 96 DPI
+and an A4 page, then renders the widget directly; the plot viewport and
+`pxMode=True` scatter-symbol cache can be embedded as raster images. Increasing
+Width/Height alone increases the plot rectangle while leaving fonts, tick
+lengths, pen widths, and marker sizes effectively screen-pixel sized, so the
+visual proportions are not preserved.
+
+This increment changes only display/export rendering. It must not change raw
+events, processing order, gate membership, statistics, or the deterministic
+display-sampling selection.
+
+#### Target terminology and persisted contract
+
+Use one reference density, `96 DPI`, for logical layout units.
+
+| Field | Meaning | Raster PNG/JPEG behavior | Vector SVG/PDF behavior |
+|---|---|---|---|
+| `width` | Logical canvas width in px at 96 DPI | Defines layout width before raster scaling | Defines page/artboard width as `width / 96` inch |
+| `height` | Logical canvas height in px at 96 DPI | Defines layout height before raster scaling | Defines page/artboard height as `height / 96` inch |
+| `dpi` | Requested raster density | `pixel_width = round(width * dpi / 96)` and equivalent height; write matching image density metadata | Not a raster-quality control; the vector page geometry is independent of it |
+
+All scene geometry is expressed in logical units: plot rectangle and margins,
+font point requests, tick length, axis/gate pen width, marker diameter, and
+legend spacing. A raster renderer applies one `raster_scale = dpi / 96` to
+every logical visual quantity. DPI must never change event sampling, ranges,
+transforms, gate geometry, colors, alpha, or z-order.
+
+The existing project schema has historically treated Width/Height as final
+pixels and ignored DPI for PNG. To preserve reproducibility, add a persisted
+`raster_resolution_mode` with values:
+
+- `legacy_pixel_dimensions`: Width/Height remain final output pixels and DPI is
+  metadata only. Missing values in existing projects resolve to this mode.
+- `dpi_scaled`: Width/Height are 96-DPI logical canvas units and DPI controls
+  the effective raster dimensions. Newly created definitions default to this
+  mode.
+
+The dialog must label the controls as `Canvas width (logical px @ 96 DPI)`,
+`Canvas height (logical px @ 96 DPI)`, and `Raster DPI`. It must display the
+effective PNG/JPEG dimensions and physical size before execution, for example
+`800 × 600 @ 300 DPI -> 2500 × 1875 px (2.67 × 2.00 in)`. For SVG/PDF, show
+`DPI not applicable to vector geometry` rather than implying that it changes
+vector detail.
+
+#### Renderer design
+
+1. Add a Qt-independent `ExportCanvasSpec` or equivalent to the core export
+   contract. It resolves the logical canvas, raster scale, actual raster size,
+   physical size, and compatibility mode once. GUI, CLI, PNG/JPEG/SVG/PDF
+   adapters consume this resolved object; no adapter reinterprets DPI.
+2. Keep `PlotScene` in logical coordinates. Raster adapters create a
+   high-resolution paint device, set its density metadata, and map the painter
+   by `raster_scale`, or render an equivalently scaled scene. Fonts, tick
+   lengths, marker diameters, line widths, margins, title reservation, and
+   clipping must scale together. Do not render a low-resolution widget and
+   upsample it.
+3. Make SVG/PDF true vector adapters. Page/artboard dimensions come from the
+   logical canvas, never a hard-coded A4 page. Render scatter symbols, lines,
+   text, ticks, and gates as vector primitives; do not embed a full-canvas
+   QPixmap or pyqtgraph symbol atlas. If a future performance policy requires
+   raster fallback for a very large layer, it must be explicit in the UI and
+   sidecar, include its effective pixels/DPI, and never be silently selected.
+4. Keep the live `PlotWidget` as a Qt scene adapter only. Export construction,
+   canvas resolution, and display-sampling identity belong in the
+   GUI-independent export contract. The Qt adapter may receive a resolved
+   scene and canvas but must not calculate scientific values or choose a
+   different event subset.
+5. Treat event-count/display-sampling limits separately from image resolution.
+   A sidecar must record input event count, rendered event count, sampling
+   policy/indices identity, logical canvas, actual raster dimensions, density,
+   and any explicit raster fallback.
+
+#### Target files
+
+- `src/flowdesk_core/models.py`, `plot_scene.py`, `plot_export.py`, and
+  `batch_plot_export.py`
+- storage schema/migration and project serialization
+- `src/flowdesk_qt/batch_plot_export_dialog.py`, `plot_widget.py`, and
+  `qt_plot_export.py`
+- `src/flowdesk_cli/batch_plot.py`
+- core, CLI, and GUI export tests; `docs/user-manual/user_manual.md`
+
+#### Required tests and acceptance criteria
+
+- A 800 × 600 logical canvas at 96 DPI produces 800 × 600 px; at 300 DPI in
+  `dpi_scaled` mode it produces 2500 × 1875 px. Legacy definitions retain
+  their historical final pixel dimensions.
+- PNG/JPEG density metadata matches the requested DPI within the format's
+  integer rounding rules. Raster dimensions, physical size, and resolution
+  mode appear in every sidecar and batch manifest.
+- A 96-DPI export and a 300-DPI export, resized to the same logical canvas,
+  have equivalent scene geometry: title/axis/tick font proportions, tick
+  lengths, marker diameters, pen widths, margins, plot rectangle, clipping,
+  colors, alpha, and gate geometry.
+- SVG/PDF page dimensions derive from the logical canvas and contain vector
+  scatter/gate/text primitives. A fixture inspection must reject a full-canvas
+  embedded raster image or cached marker atlas for normal scatter export.
+- GUI, CLI, and batch paths resolve equal `ExportCanvasSpec` and `PlotScene`
+  values for the same saved definition. DPI/resolution changes do not change
+  raw events, transforms, gate membership, counts, frequencies, statistics,
+  or selected display-event identities.
+- Update the user manual only with the implemented behavior, compatibility
+  mode, effective-size preview, and vector-format limitation/guarantee.
+
 ## Non-goals
 
 - Report/layout editing belongs to Phase C2.
