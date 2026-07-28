@@ -11,6 +11,7 @@ from typing import Any
 
 from flowdesk_core.annotations import resolve_sample_title
 from flowdesk_core.models import AnnotationSpec, BatchPlotExportSpec
+from flowdesk_core.plot_export import resolve_export_canvas
 
 
 class BatchPlotExportError(ValueError):
@@ -197,6 +198,7 @@ def run_batch_plot_export(
   manifest.write_text(json.dumps({
     "export_id": spec.id,
     "export_options": asdict(spec),
+    "export_canvas": resolve_export_canvas(spec).to_mapping(),
     "status": status,
     "items": [asdict(item) for item in completed],
   }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

@@ -114,6 +114,7 @@ class PlotWidget(QWidget):
         # Display style settings (display-only, never affects analysis).
         self._style: PlotStyleSettings = PlotStyleSettings()
         self._export_metadata: dict[str, Any] | None = None
+        self._export_resolution_scale = 1.0
         # Cached raw data for range reset operations.
         self._cached_x: NDArray[np.float64] | None = None
         self._cached_y: NDArray[np.float64] | None = None
@@ -756,6 +757,7 @@ class PlotWidget(QWidget):
         height: int | None = None,
         aspect_1_to_1: bool = False,
         export_options: Mapping[str, object] | None = None,
+        resolution_scale: float = 1.0,
     ) -> None:
         """Render the current plot widget to a PNG file.
 
@@ -763,6 +765,7 @@ class PlotWidget(QWidget):
         change event data, or affect gate membership.
         """
         original_size = self.size()
+        self._export_resolution_scale = max(0.01, float(resolution_scale))
         visibility = self._begin_export_visibility(export_options)
         export_view_range = self.view_range()
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
@@ -779,6 +782,7 @@ class PlotWidget(QWidget):
             image = QImage(self.size(), QImage.Format_ARGB32)
             image.fill(Qt.white)
             self.render(image, QPoint(0, 0))
+            self._set_export_density(image)
 
             out_path = Path(path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -798,6 +802,7 @@ class PlotWidget(QWidget):
                 encoding="utf-8",
             )
         finally:
+            self._export_resolution_scale = 1.0
             self._end_export_aspect(original_aspect)
             self._end_export_visibility(visibility)
             if resized:
@@ -810,9 +815,11 @@ class PlotWidget(QWidget):
         height: int | None = None,
         aspect_1_to_1: bool = False,
         export_options: Mapping[str, object] | None = None,
+        resolution_scale: float = 1.0,
     ) -> None:
         """Render the current display-only scene to a JPEG file."""
         original_size = self.size()
+        self._export_resolution_scale = max(0.01, float(resolution_scale))
         visibility = self._begin_export_visibility(export_options)
         export_view_range = self.view_range()
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
@@ -826,6 +833,7 @@ class PlotWidget(QWidget):
             image = QImage(self.size(), QImage.Format.Format_RGB32)
             image.fill(Qt.GlobalColor.white)
             self.render(image, QPoint(0, 0))
+            self._set_export_density(image)
             out_path = Path(path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             if not image.save(str(out_path), "JPEG", quality=95):
@@ -841,6 +849,7 @@ class PlotWidget(QWidget):
                 json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
             )
         finally:
+            self._export_resolution_scale = 1.0
             self._end_export_aspect(original_aspect)
             self._end_export_visibility(visibility)
             if resized:
@@ -854,11 +863,13 @@ class PlotWidget(QWidget):
         width: int | None = None,
         height: int | None = None,
         export_options: Mapping[str, object] | None = None,
+        resolution_scale: float = 1.0,
     ) -> None:
         """Export the display-only scene as SVG/PDF and write a metadata sidecar."""
         out_path = Path(path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         original_size = self.size()
+        self._export_resolution_scale = max(0.01, float(resolution_scale))
         visibility = self._begin_export_visibility(export_options)
         export_view_range = self.view_range()
         resized = width is not None or height is not None
@@ -894,6 +905,7 @@ class PlotWidget(QWidget):
                 encoding="utf-8",
             )
         finally:
+            self._export_resolution_scale = 1.0
             self._end_export_aspect(original_aspect)
             self._end_export_visibility(visibility)
             if resized:
@@ -931,6 +943,17 @@ class PlotWidget(QWidget):
             self._status_banner.setVisible(False)
         return state
 
+    def _set_export_density(self, image: QImage) -> None:
+        """Set PNG/JPEG density metadata when a resolved canvas is attached."""
+        canvas = (self._export_metadata or {}).get("export_canvas", {})
+        try:
+            dpi = int(canvas.get("dpi", 96))
+        except (AttributeError, TypeError, ValueError):
+            dpi = 96
+        dots_per_meter = max(1, round(dpi / 0.0254))
+        image.setDotsPerMeterX(dots_per_meter)
+        image.setDotsPerMeterY(dots_per_meter)
+
     def _end_export_visibility(self, state: dict[str, object]) -> None:
         if not state:
             return
@@ -958,7 +981,7 @@ class PlotWidget(QWidget):
             try:
                 original_pen = item.pen() if callable(item.pen) else item.pen
                 color = original_pen.color()
-                width = max(1.0, float(original_pen.widthF()))
+                width = max(1.0, float(original_pen.widthF())) * self._export_resolution_scale
                 item.setPen(mkPen(color=color, width=width, style=Qt.SolidLine))
             except Exception:
                 original_pen = None

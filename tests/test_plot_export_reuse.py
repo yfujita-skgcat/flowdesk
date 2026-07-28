@@ -14,6 +14,7 @@ from flowdesk_core.plot_export import (
   PlotExportError,
   _display_tick_label,
   prepare_plot_export,
+  resolve_export_canvas,
   write_plot_jpg,
   write_plot_pdf,
   write_plot_png,
@@ -23,12 +24,12 @@ from flowdesk_core.plot_presentation import (
   OverlaySourceResolution,
   resolve_presentation_layers,
 )
-from flowdesk_core.plot_scene import PlotScene
 from flowdesk_core.plot_reuse import (
   LayoutPlotReference,
   TemplateSourceRole,
   map_template_sources,
 )
+from flowdesk_core.plot_scene import PlotScene
 from flowdesk_storage.project import load_project, save_project
 
 
@@ -110,6 +111,52 @@ def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   write_plot_png(path, prepared, layers={"s1": ((0.2, 0.8), (0.2, 0.8))})
   assert path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
   assert path.stat().st_size > 100
+
+
+def test_dpi_scaled_png_preserves_logical_canvas_and_increases_pixels(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all_events",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  options = BatchPlotExportSpec(
+    id="export", name="Export", width=800, height=600, dpi=300,
+    raster_resolution_mode="dpi_scaled",
+  )
+  canvas = resolve_export_canvas(options)
+  assert canvas.raster_width == 2500
+  assert canvas.raster_height == 1875
+  path = tmp_path / "scaled.png"
+  write_plot_png(path, prepared, layers={"s1": ((0.2,), (0.8,))}, options=options)
+  from PIL import Image
+
+  with Image.open(path) as image:
+    assert image.size == (2500, 1875)
+    assert image.info["dpi"] == pytest.approx((300, 300), abs=0.5)
+  metadata = json.loads(path.with_suffix(".png.json").read_text(encoding="utf-8"))
+  assert metadata["export_canvas"]["raster_resolution_mode"] == "dpi_scaled"
+
+
+def test_legacy_png_dimensions_ignore_dpi_for_compatibility(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all_events",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  options = BatchPlotExportSpec(
+    id="export", name="Export", width=800, height=600, dpi=300,
+    raster_resolution_mode="legacy_pixel_dimensions",
+  )
+  path = tmp_path / "legacy.png"
+  write_plot_png(path, prepared, layers={"s1": ((0.2,), (0.8,))}, options=options)
+  from PIL import Image
+
+  with Image.open(path) as image:
+    assert image.size == (800, 600)
 
 
 def test_png_export_scene_preserves_colored_titles_and_labeled_ticks(tmp_path) -> None:
@@ -262,6 +309,27 @@ def test_pdf_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   write_plot_pdf(path, prepared, layers={"s1": ((0.2,), (0.8,))})
   assert path.read_bytes().startswith(b"%PDF-1.4")
   assert path.stat().st_size > 100
+  assert b"/Subtype /Image" not in path.read_bytes()
+
+
+def test_vector_canvas_ignores_raster_dpi(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all_events",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  options = BatchPlotExportSpec(
+    id="export", name="Export", width=800, height=600, dpi=300,
+    raster_resolution_mode="dpi_scaled",
+  )
+  path = tmp_path / "vector.pdf"
+  write_plot_pdf(path, prepared, layers={"s1": ((0.2,), (0.8,))}, options=options)
+  metadata = json.loads(path.with_suffix(".pdf.json").read_text(encoding="utf-8"))
+  assert metadata["export_canvas"]["raster_width"] == 2500
+  assert metadata["export_canvas"]["logical_width"] == 800
+  assert b"/Subtype /Image" not in path.read_bytes()
 
 
 def test_jpeg_export_is_nonblank_and_has_metadata(tmp_path) -> None:

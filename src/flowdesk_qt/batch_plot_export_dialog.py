@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
   QWidget,
 )
 
+from flowdesk_core.plot_export import resolve_export_canvas
+
 
 @dataclass(frozen=True)
 class BatchPlotExportRequest:
@@ -116,6 +118,18 @@ class BatchPlotExportDialog(QDialog):
     self._width = self._spin("batchPlotWidthSpinBox", 1, 20000, 800)
     self._height = self._spin("batchPlotHeightSpinBox", 1, 20000, 600)
     self._dpi = self._spin("batchPlotDPISpinBox", 1, 1200, 96)
+    self._resolution_mode = QComboBox()
+    self._resolution_mode.setObjectName("batchPlotRasterResolutionModeCombo")
+    self._resolution_mode.addItem("Legacy pixel dimensions", "legacy_pixel_dimensions")
+    self._resolution_mode.addItem("Scale pixels by DPI", "dpi_scaled")
+    self._resolution_preview = QLabel()
+    self._resolution_preview.setObjectName("batchPlotResolutionPreviewLabel")
+    self._resolution_preview.setWordWrap(True)
+    for widget in (self._width, self._height, self._dpi):
+      widget.valueChanged.connect(self._update_resolution_preview)
+    self._resolution_mode.currentIndexChanged.connect(self._update_resolution_preview)
+    for check in self._formats.values():
+      check.toggled.connect(self._update_resolution_preview)
     self._aspect = self._check("1:1 aspect", "batchPlotAspectCheckBox")
     self._layout_policy = QComboBox()
     self._layout_policy.setObjectName("batchPlotLayoutPolicyCombo")
@@ -158,9 +172,11 @@ class BatchPlotExportDialog(QDialog):
     form.addRow("Group", self._group)
     form.addRow("Plot view", self._view)
     form.addRow("Formats", format_layout)
-    form.addRow("Width", self._width)
-    form.addRow("Height", self._height)
-    form.addRow("DPI", self._dpi)
+    form.addRow("Canvas width (logical px @ 96 DPI)", self._width)
+    form.addRow("Canvas height (logical px @ 96 DPI)", self._height)
+    form.addRow("Raster DPI", self._dpi)
+    form.addRow("Raster resolution", self._resolution_mode)
+    form.addRow("Effective output", self._resolution_preview)
     form.addRow("Aspect", self._aspect)
     form.addRow("Layout", self._layout_policy)
     form.addRow("Visibility", self._visibility["include_title"])
@@ -225,6 +241,7 @@ class BatchPlotExportDialog(QDialog):
     target = str(self._target.currentData())
     self._sample_list.setEnabled(target == "explicit")
     self._group.setEnabled(target == "group")
+    self._update_resolution_preview()
 
   def _load_selected_definition(self, _index: int) -> None:
     definition_id = str(self._definition.currentData() or "")
@@ -242,6 +259,7 @@ class BatchPlotExportDialog(QDialog):
       "width": 800,
       "height": 600,
       "dpi": 96,
+      "raster_resolution_mode": "dpi_scaled",
       "aspect_1_to_1": False,
       "layout_policy": "current_view",
       "include_title": True,
@@ -255,6 +273,8 @@ class BatchPlotExportDialog(QDialog):
       "strict": True,
     }
     defaults.update(value)
+    if value and "raster_resolution_mode" not in value:
+      defaults["raster_resolution_mode"] = "legacy_pixel_dimensions"
     self._name.setText(str(defaults["name"]))
     target_index = self._target.findData(defaults["target"])
     self._target.setCurrentIndex(max(0, target_index))
@@ -274,6 +294,8 @@ class BatchPlotExportDialog(QDialog):
     self._width.setValue(int(defaults["width"]))
     self._height.setValue(int(defaults["height"]))
     self._dpi.setValue(int(defaults["dpi"]))
+    resolution_index = self._resolution_mode.findData(defaults["raster_resolution_mode"])
+    self._resolution_mode.setCurrentIndex(max(0, resolution_index))
     self._aspect.setChecked(bool(defaults["aspect_1_to_1"]))
     layout_index = self._layout_policy.findData(defaults["layout_policy"])
     if layout_index >= 0:
@@ -286,6 +308,40 @@ class BatchPlotExportDialog(QDialog):
       self._collision.setCurrentIndex(collision_index)
     self._strict.setChecked(bool(defaults["strict"]))
     self._update_target_widgets()
+    self._update_resolution_preview()
+
+  def _update_resolution_preview(self) -> None:
+    options = {
+      "width": self._width.value(),
+      "height": self._height.value(),
+      "dpi": self._dpi.value(),
+      "raster_resolution_mode": self._resolution_mode.currentData(),
+      "aspect_1_to_1": self._aspect.isChecked(),
+    }
+    from flowdesk_core.models import BatchPlotExportSpec
+    try:
+      spec = BatchPlotExportSpec(
+        id="preview", name="preview", target="all", sample_ids=(),
+        group_id=None, plot_view_id="preview", formats=("png",),
+        width=options["width"], height=options["height"], dpi=options["dpi"],
+        raster_resolution_mode=options["raster_resolution_mode"],
+        aspect_1_to_1=options["aspect_1_to_1"],
+      )
+      canvas = resolve_export_canvas(spec)
+      raster = (
+        f"{canvas.raster_width} × {canvas.raster_height} px "
+        f"({canvas.physical_width_in:.2f} × {canvas.physical_height_in:.2f} in)"
+      )
+      vector = any(self._formats[key].isChecked() for key in ("svg", "pdf"))
+      raster_selected = any(self._formats[key].isChecked() for key in ("png", "jpg"))
+      if vector and not raster_selected:
+        self._resolution_preview.setText("DPI not applicable to vector geometry")
+      elif vector:
+        self._resolution_preview.setText(f"Raster: {raster}; vector: DPI not applicable")
+      else:
+        self._resolution_preview.setText(raster)
+    except (TypeError, ValueError):
+      self._resolution_preview.clear()
 
   def _accept_save(self) -> None:
     self._run = False
@@ -330,6 +386,7 @@ class BatchPlotExportDialog(QDialog):
       "width": self._width.value(),
       "height": self._height.value(),
       "dpi": self._dpi.value(),
+      "raster_resolution_mode": self._resolution_mode.currentData(),
       "aspect_1_to_1": self._aspect.isChecked(),
       "layout_policy": self._layout_policy.currentData(),
       **{key: check.isChecked() for key, check in self._visibility.items()},

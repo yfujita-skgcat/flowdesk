@@ -27,6 +27,61 @@ class PlotExportError(ValueError):
   """Raised when a plot cannot be exported without losing visible content."""
 
 
+REFERENCE_DPI = 96
+
+
+@dataclass(frozen=True)
+class ExportCanvasSpec:
+  """Resolved logical and raster dimensions for one export request."""
+
+  logical_width: int
+  logical_height: int
+  dpi: int
+  raster_resolution_mode: str
+  raster_scale: float
+  raster_width: int
+  raster_height: int
+  physical_width_in: float
+  physical_height_in: float
+
+  def to_mapping(self) -> dict[str, Any]:
+    return asdict(self)
+
+
+def resolve_export_canvas(
+  options: BatchPlotExportSpec | None = None,
+  *,
+  width: int = 800,
+  height: int = 600,
+) -> ExportCanvasSpec:
+  """Resolve canvas dimensions once for all format adapters."""
+  width = width if options is None else options.width
+  height = height if options is None else options.height
+  dpi = REFERENCE_DPI if options is None else options.dpi
+  mode = "legacy_pixel_dimensions" if options is None else options.raster_resolution_mode
+  if options is not None and options.aspect_1_to_1:
+    width = height = min(width, height)
+  if mode == "dpi_scaled":
+    scale = dpi / REFERENCE_DPI
+    raster_width = max(1, round(width * scale))
+    raster_height = max(1, round(height * scale))
+  else:
+    scale = 1.0
+    raster_width = width
+    raster_height = height
+  return ExportCanvasSpec(
+    logical_width=width,
+    logical_height=height,
+    dpi=dpi,
+    raster_resolution_mode=mode,
+    raster_scale=scale,
+    raster_width=raster_width,
+    raster_height=raster_height,
+    physical_width_in=width / REFERENCE_DPI,
+    physical_height_in=height / REFERENCE_DPI,
+  )
+
+
 @dataclass(frozen=True)
 class PreparedPlotExport:
   plot_id: str
@@ -260,7 +315,8 @@ def write_plot_png(
   """Write an antialiased PNG from the prepared renderer-neutral scene."""
   if width < 1 or height < 1:
     raise PlotExportError("PNG dimensions must be positive")
-  width, height = _dimensions(width, height, options)
+  canvas = resolve_export_canvas(options, width=width, height=height)
+  width, height = canvas.raster_width, canvas.raster_height
   selected = presentation or prepared.resolved_presentation.presentation
   layers = layers or {}
   if not prepared.source_order:
@@ -272,26 +328,29 @@ def write_plot_png(
   except ImportError as exc:
     raise PlotExportError("PNG export requires the Pillow package") from exc
   scale = 2
+  device_scale = scale * canvas.raster_scale
   image = Image.new(
     "RGBA", (width * scale, height * scale), _rgb(selected.background_color) + (255,)
   )
   draw = ImageDraw.Draw(image)
   left, top, plot_width, plot_height = _raster_layout(
-    width, height, prepared, selected, options
+    canvas.logical_width, canvas.logical_height, prepared, selected, options,
   )
-  left *= scale
-  top *= scale
-  plot_width *= scale
-  plot_height *= scale
+  left = round(left * device_scale)
+  top = round(top * device_scale)
+  plot_width = round(plot_width * device_scale)
+  plot_height = round(plot_height * device_scale)
   if options is None or options.include_ticks:
-    _draw_raster_axes(draw, prepared, selected, left, top, plot_width, plot_height, scale)
+    _draw_raster_axes(
+      draw, prepared, selected, left, top, plot_width, plot_height, device_scale
+    )
   style_by_id = {style.source_id: style for style in selected.source_styles}
   for source_id in prepared.source_order:
     style = style_by_id.get(source_id)
     color = _rgb("#000000" if style is None or style.color is None else style.color)
     alpha = 1.0 if style is None else style.alpha
     marker_size = 3.0 if style is None else style.marker_size
-    radius = max(1, round(marker_size * scale / 2))
+    radius = max(1, round(marker_size * device_scale / 2))
     layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
     layer_draw = ImageDraw.Draw(layer)
     for x_value, y_value in zip(*layers[source_id], strict=False):
@@ -304,14 +363,18 @@ def write_plot_png(
     image.alpha_composite(layer)
   draw = ImageDraw.Draw(image)
   if options is None or options.include_gates:
-    _draw_raster_gates(draw, _scene_gates(prepared), left, top, plot_width, plot_height, scale)
-  _draw_raster_text(draw, prepared, selected, width * scale, height * scale,
-                    left, top, plot_width, plot_height, options, scale)
+    _draw_raster_gates(
+      draw, _scene_gates(prepared), left, top, plot_width, plot_height, device_scale
+    )
+  _draw_raster_text(
+    draw, prepared, selected, width * scale, height * scale,
+    left, top, plot_width, plot_height, options, device_scale,
+  )
   out_path = Path(path)
   out_path.parent.mkdir(parents=True, exist_ok=True)
   image.convert("RGB").resize(
     (width, height), Image.Resampling.LANCZOS
-  ).save(out_path, format="PNG")
+  ).save(out_path, format="PNG", dpi=(canvas.dpi, canvas.dpi))
   out_path.with_suffix(out_path.suffix + ".json").write_text(
     json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
@@ -427,10 +490,10 @@ def write_plot_jpg(
 def _dimensions(width: int, height: int, options: BatchPlotExportSpec | None) -> tuple[int, int]:
   if width < 1 or height < 1:
     raise PlotExportError("plot dimensions must be positive")
-  if options and options.aspect_1_to_1:
-    size = min(width, height)
-    return size, size
-  return width, height
+  if options is None:
+    return width, height
+  canvas = resolve_export_canvas(options)
+  return canvas.logical_width, canvas.logical_height
 
 
 def _export_metadata(
@@ -438,6 +501,7 @@ def _export_metadata(
   options: BatchPlotExportSpec | None,
 ) -> dict[str, Any]:
   metadata = dict(prepared.metadata)
+  metadata["export_canvas"] = resolve_export_canvas(options).to_mapping()
   if options is not None:
     metadata["export_options"] = asdict(options)
   return metadata
@@ -538,7 +602,9 @@ def _raster_layout(
   right = 22
   plot_width = max(1, width - left - right)
   plot_height = max(1, height - title_height - bottom)
-  return left, title_height, plot_width, plot_height
+  return (
+    round(left), round(title_height), round(plot_width), round(plot_height)
+  )
 
 
 def _scene_lines(prepared: PreparedPlotExport) -> list[str]:
@@ -598,10 +664,14 @@ def _draw_raster_axes(
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
         if horizontal:
           x = round(origin + position * extent)
-          draw.line((x, top, x, bottom), fill=grid_color, width=max(1, scale // 2))
+          draw.line((x, top, x, bottom), fill=grid_color, width=max(1, round(scale / 2)))
         else:
           y = round(origin - position * extent)
-          draw.line((left, y, left + plot_width, y), fill=grid_color, width=max(1, scale // 2))
+          draw.line(
+            (left, y, left + plot_width, y),
+            fill=grid_color,
+            width=max(1, round(scale / 2)),
+          )
   draw.rectangle(
     (left, top, left + plot_width, bottom), outline=color, width=width
   )
@@ -732,7 +802,9 @@ def _draw_vertical(draw: Any, x: int, y: int, text: str, font: Any, fill: Any) -
   label = Image.new("RGBA", (text_width + 4, text_height + 4), (0, 0, 0, 0))
   ImageDraw.Draw(label).text((2, 2), text, font=font, fill=fill)
   rotated = label.rotate(90, expand=True)
-  draw._image.alpha_composite(rotated, (x - rotated.width // 2, y - rotated.height // 2))
+  draw._image.alpha_composite(
+    rotated, (round(x - rotated.width // 2), round(y - rotated.height // 2))
+  )
 
 
 def _display_tick_label(label: str) -> str:

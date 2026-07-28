@@ -25,6 +25,7 @@ BatchPlotTarget = Literal["all", "explicit", "group"]
 BatchPlotFormat = Literal["svg", "png", "jpg", "pdf"]
 BatchPlotCollisionPolicy = Literal["fail", "replace", "suffix"]
 BatchPlotLayoutPolicy = Literal["current_view", "shared_ranges"]
+BatchPlotRasterResolutionMode = Literal["legacy_pixel_dimensions", "dpi_scaled"]
 InteractionMode = Literal["pan", "select", "gate"]
 OverlayMode = Literal["manual_only", "manual_plus_comparison", "comparison_only"]
 ComparisonRole = Literal[
@@ -115,6 +116,7 @@ class BatchPlotExportSpec:
   width: int = 800
   height: int = 600
   dpi: int = 96
+  raster_resolution_mode: BatchPlotRasterResolutionMode = "legacy_pixel_dimensions"
   aspect_1_to_1: bool = False
   layout_policy: BatchPlotLayoutPolicy = "current_view"
   include_title: bool = True
@@ -142,6 +144,10 @@ class BatchPlotExportSpec:
       raise ValueError("batch plot dimensions must be positive")
     if self.dpi <= 0:
       raise ValueError("batch plot dpi must be positive")
+    if self.raster_resolution_mode not in {"legacy_pixel_dimensions", "dpi_scaled"}:
+      raise ValueError(
+        f"invalid batch plot raster resolution mode {self.raster_resolution_mode!r}"
+      )
     if self.layout_policy not in {"current_view", "shared_ranges"}:
       raise ValueError(f"invalid batch plot layout policy {self.layout_policy!r}")
     if self.collision_policy not in {"fail", "replace", "suffix"}:

@@ -320,7 +320,7 @@ def batch_plot_command(
         ),
         scene=scene,
       )
-      if renderer_backend == "qt":
+      if renderer_backend == "qt" and path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
         from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 
         render_batch_plot_qt(

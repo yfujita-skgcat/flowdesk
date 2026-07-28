@@ -721,7 +721,7 @@ items so future changes do not regress the behavior.
 - [x] GUIから実行するBatch Plot Exportは、GUIと同じQt/pyqtgraph `PlotWidget` adapterで描画する。CLIはPySide6がない環境でも動作するQt非依存rendererを維持し、Qt backendは明示選択時に使用する。
 - [x] Batch Plot Exportで出力サイズや1:1設定がGUIの現在ViewBox範囲を上書きしないようにし、population display colorとoverlay source colorをGUIと同じ表示レイヤーへ反映する。
 
-- [ ] Increment 11: Batch Plot ExportのWidth/Height/DPIを、Width/Heightは96 DPI基準の論理canvas、DPIはPNG/JPEGのraster densityとして明確化する。新規definitionではDPI倍率に応じて実pixel数と全visual要素（font、tick、dot、line、margin）を同倍率で描画し、既存projectは`legacy_pixel_dimensions`互換modeで過去の出力pixel寸法を維持する。SVG/PDFはA4固定やQt/pyqtgraphのPixmap cacheを使わず、canvasからpage sizeを決めたvector primitive出力とする。effective pixel/physical sizeのUI preview、sidecar/manifest provenance、PNG/JPEG density metadata、PDF/SVGにfull-canvas rasterがないこと、GUI/CLI/batchのscene/canvas一致、resolution変更がscientific resultとdisplay-sampling identityを変えないことをtestする。詳細は`docs/implementation/plot-export-completion.md` Increment 11。
+- [x] Increment 11: Batch Plot ExportのWidth/Height/DPIを、Width/Heightは96 DPI基準の論理canvas、DPIはPNG/JPEGのraster densityとして明確化する。新規definitionではDPI倍率に応じて実pixel数と全visual要素（font、tick、dot、line、margin）を同倍率で描画し、既存projectは`legacy_pixel_dimensions`互換modeで過去の出力pixel寸法を維持する。SVG/PDFはA4固定やQt/pyqtgraphのPixmap cacheを使わず、canvasからpage sizeを決めたvector primitive出力とする。effective pixel/physical sizeのUI preview、sidecar/manifest provenance、PNG/JPEG density metadata、PDF/SVGにfull-canvas rasterがないこと、GUI/CLI/batchのscene/canvas一致、resolution変更がscientific resultとdisplay-sampling identityを変えないことをtestする。実装、互換性、残る単一plot Qt PDFの制限は`docs/implementation/plot-export-completion.md` Increment 11に記載。
 
 `docs/bug.md` のplot画像export要求は、既存のsingle PNG/SVG/PDF exportと
 `BatchPlotExportSpec`だけでは完了していない。実装前に

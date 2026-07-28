@@ -127,6 +127,9 @@
         "width": { "type": "integer", "minimum": 1 },
         "height": { "type": "integer", "minimum": 1 },
         "dpi": { "type": "integer", "minimum": 1 },
+        "raster_resolution_mode": {
+          "enum": ["legacy_pixel_dimensions", "dpi_scaled"]
+        },
         "aspect_1_to_1": { "type": "boolean" },
         "layout_policy": { "enum": ["current_view", "shared_ranges"] },
         "include_title": { "type": "boolean" },

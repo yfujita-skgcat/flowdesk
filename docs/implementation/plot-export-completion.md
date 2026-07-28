@@ -573,11 +573,11 @@ falling back to the GUI overlay palette.
   same optional rendering backend; otherwise the supported guarantee is equal
   canonical scene plus bounded visual geometry/style differences.
 
-### Increment 11: Resolution semantics and publication-quality export (planned)
+### Increment 11: Resolution semantics and publication-quality export (implemented)
 
 #### Observed problem
 
-The current batch dialog exposes Width, Height, and DPI, but the Qt PNG path
+The former batch dialog exposed Width, Height, and DPI, but the Qt PNG path
 uses only Width and Height as final raster pixels. Increasing DPI therefore
 does not increase PNG detail. The Qt PDF path also fixes its writer to 96 DPI
 and an A4 page, then renders the widget directly; the plot viewport and
@@ -585,6 +585,12 @@ and an A4 page, then renders the widget directly; the plot viewport and
 Width/Height alone increases the plot rectangle while leaving fonts, tick
 lengths, pen widths, and marker sizes effectively screen-pixel sized, so the
 visual proportions are not preserved.
+
+The implementation now resolves one `ExportCanvasSpec` for each export,
+shows effective dimensions in the batch dialog, persists the compatibility mode,
+and writes the resolved canvas to per-file sidecars and the batch manifest.
+Batch SVG/PDF uses the Qt-independent vector renderer; the single-plot Qt PDF
+adapter remains a separate legacy path and is not covered by this guarantee.
 
 This increment changes only display/export rendering. It must not change raw
 events, processing order, gate membership, statistics, or the deterministic

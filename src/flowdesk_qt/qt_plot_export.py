@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 
 from flowdesk_core.models import BatchPlotExportSpec, GateSpec, TransformSpec
 from flowdesk_core.overlays import Overlay2DLayer
+from flowdesk_core.plot_export import resolve_export_canvas
 from flowdesk_core.transforms import apply_transform
 from flowdesk_qt.plot_style import PlotStyleSettings
 from flowdesk_qt.plot_widget import PlotWidget
@@ -53,12 +54,24 @@ def render_batch_plot_qt(
   owns_app = app is None
   if app is None:
     app = QApplication(["flowdesk-batch-export"])
+  canvas = resolve_export_canvas(options)
+  render_width = canvas.raster_width
+  render_height = canvas.raster_height
+  render_scale = canvas.raster_scale
+  render_presentation = _scale_presentation(presentation, render_scale)
+  render_source_styles = {
+    source_id: {
+      **dict(style),
+      "marker_size": float(style.get("marker_size", 1.5)) * render_scale,
+    }
+    for source_id, style in source_styles.items()
+  }
   widget = PlotWidget()
-  widget.resize(max(1, width), max(1, height))
+  widget.resize(max(1, render_width), max(1, render_height))
   x_spec = _transform_spec(x_transform)
   y_spec = _transform_spec(y_transform)
   widget.set_axis_transform_specs(x_spec, y_spec)
-  style = _style_from_presentation(presentation, source_styles, source_ids)
+  style = _style_from_presentation(presentation, source_styles, source_ids, render_scale)
   widget.set_style(style)
 
   active_id = source_ids[0]
@@ -69,14 +82,18 @@ def render_batch_plot_qt(
       **style.__dict__,
       "dot_color": str(active_style.get("color", style.dot_color)),
       "dot_opacity": float(active_style.get("alpha", style.dot_opacity)),
-      "dot_size": float(active_style.get("marker_size", style.dot_size)),
+      "dot_size": float(active_style.get("marker_size", style.dot_size / render_scale))
+      * render_scale,
     }
   ))
-  widget.set_export_metadata(None if export_metadata is None else dict(export_metadata))
+  metadata = None if export_metadata is None else dict(export_metadata)
+  if metadata is not None:
+    metadata["export_canvas"] = canvas.to_mapping()
+  widget.set_export_metadata(metadata)
   widget.plot_events(
     active_x, active_y,
-    x_label=str(presentation.get("x_axis_display_label", "")),
-    y_label=str(presentation.get("y_axis_display_label", "")),
+    x_label=str(render_presentation.get("x_axis_display_label", "")),
+    y_label=str(render_presentation.get("y_axis_display_label", "")),
     event_colors=None if event_colors is None else event_colors.get(active_id),
   )
   overlay_layers: list[Overlay2DLayer] = []
@@ -87,13 +104,13 @@ def render_batch_plot_qt(
     if y_spec is not None:
       y_values = apply_transform(y_spec, y_values)
     overlay_layers.append(Overlay2DLayer(
-      source_id, x_values, y_values, dict(source_styles.get(source_id, {})),
+    source_id, x_values, y_values, dict(render_source_styles.get(source_id, {})),
     ))
   if overlay_layers:
     widget.plot_overlay_layers(overlay_layers)
 
   widget.set_presentation(
-    dict(presentation),
+    dict(render_presentation),
     title_override="\n".join(title_lines),
     title_colors=title_colors,
   )
@@ -125,27 +142,30 @@ def render_batch_plot_qt(
   if suffix == ".png":
     widget.export_png(
       path,
-      width=width,
-      height=height,
+      width=render_width,
+      height=render_height,
       aspect_1_to_1=options.aspect_1_to_1,
       export_options=export_options,
+      resolution_scale=render_scale,
     )
   elif suffix in {".jpg", ".jpeg"}:
     widget.export_jpg(
       path,
-      width=width,
-      height=height,
+      width=render_width,
+      height=render_height,
       aspect_1_to_1=options.aspect_1_to_1,
       export_options=export_options,
+      resolution_scale=render_scale,
     )
   elif suffix in {".svg", ".pdf"}:
     widget.export_vector(
       path,
       "SVG" if suffix == ".svg" else "PDF",
-      width=width,
-      height=height,
+      width=render_width,
+      height=render_height,
       aspect_1_to_1=options.aspect_1_to_1,
       export_options=export_options,
+      resolution_scale=render_scale,
     )
   else:
     raise ValueError(f"Qt plot renderer does not support {suffix!r}")
@@ -168,7 +188,10 @@ def _transform_spec(value: Mapping[str, Any] | None) -> TransformSpec | None:
 
 def _gate_spec(value: Mapping[str, Any]) -> GateSpec | None:
   try:
-    coordinates = tuple(tuple(float(item) for item in point[:2]) for point in value.get("coordinates", ()))
+    coordinates = tuple(
+      tuple(float(item) for item in point[:2])
+      for point in value.get("coordinates", ())
+    )
     thresholds = dict(value.get("thresholds", {}))
     return GateSpec(
       id=str(value["id"]), name=str(value.get("name", value["id"])),
@@ -187,19 +210,33 @@ def _style_from_presentation(
   presentation: Mapping[str, Any],
   source_styles: Mapping[str, Mapping[str, Any]],
   source_ids: tuple[str, ...],
+  scale: float = 1.0,
 ) -> PlotStyleSettings:
   tick_font = presentation.get("tick_font", {})
   return PlotStyleSettings(
     background_color=str(presentation.get("background_color", "#ffffff")),
     dot_color=str(source_styles.get(source_ids[0], {}).get("color", "#000000")),
-    dot_size=float(source_styles.get(source_ids[0], {}).get("marker_size", 1.5)),
+    dot_size=float(source_styles.get(source_ids[0], {}).get("marker_size", 1.5)) * scale,
     dot_opacity=float(source_styles.get(source_ids[0], {}).get("alpha", 0.6)),
     gate_outline_color=str(presentation.get("gate_outline_color", "#e00000")),
     gate_fill_color=str(presentation.get("gate_outline_color", "#e00000")),
     gate_fill_opacity=0.0,
-    axis_line_width=float(presentation.get("axis_line_width", 2.0)),
+    axis_line_width=float(presentation.get("axis_line_width", 2.0)) * scale,
     tick_font_family=str(tick_font.get("family", "DejaVu Sans")),
-    tick_font_size=float(tick_font.get("size", 10.0)),
+    tick_font_size=float(tick_font.get("size", 10.0)) * scale,
     tick_font_weight=str(tick_font.get("weight", "bold")),
     show_grid=bool(presentation.get("show_grid", True)),
   )
+
+
+def _scale_presentation(presentation: Mapping[str, Any], scale: float) -> dict[str, Any]:
+  """Scale logical visual dimensions while preserving data coordinates."""
+  result = dict(presentation)
+  for key in ("title_font", "axis_label_font", "tick_font", "legend_font"):
+    value = result.get(key)
+    if isinstance(value, Mapping):
+      result[key] = {**value, "size": float(value.get("size", 10.0)) * scale}
+  for key in ("axis_line_width", "gate_outline_width"):
+    if result.get(key) is not None:
+      result[key] = float(result[key]) * scale
+  return result

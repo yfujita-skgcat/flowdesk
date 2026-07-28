@@ -148,5 +148,6 @@ def test_batch_spec_mapping_normalizes_json_lists() -> None:
   assert spec.formats == ("jpg",)
   assert spec.sample_ids == ("s1",)
   assert spec.dpi == 144
+  assert spec.raster_resolution_mode == "legacy_pixel_dimensions"
   assert spec.aspect_1_to_1 is True
   assert spec.layout_policy == "shared_ranges"
