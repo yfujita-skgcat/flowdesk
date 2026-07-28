@@ -31,7 +31,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -41,6 +41,7 @@ from PySide6.QtGui import (
     QPageSize,
     QPainter,
     QPdfWriter,
+    QPen,
 )
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
@@ -770,6 +771,8 @@ class PlotWidget(QWidget):
         export_view_range = self.view_range()
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
         resized = width is not None or height is not None
+        frozen_ticks: tuple[tuple[Any, Any], ...] = ()
+        cosmetic_pens: tuple[tuple[Any, QPen, QPen], ...] = ()
         try:
             if resized:
                 if width is None:
@@ -778,10 +781,16 @@ class PlotWidget(QWidget):
                     height = max(1, original_size.height())
                 self.resize(max(1, width), max(1, height))
             self._restore_export_view_range(export_view_range)
+            frozen_ticks = self._begin_export_tick_levels()
+            cosmetic_pens = self._begin_export_cosmetic_pens()
 
-            image = QImage(self.size(), QImage.Format_ARGB32)
+            image = self._export_raster_image(QImage.Format_ARGB32)
             image.fill(Qt.white)
-            self.render(image, QPoint(0, 0))
+            painter = QPainter(image)
+            try:
+                self.render(painter, QPoint(0, 0))
+            finally:
+                painter.end()
             self._set_export_density(image)
 
             out_path = Path(path)
@@ -802,6 +811,8 @@ class PlotWidget(QWidget):
                 encoding="utf-8",
             )
         finally:
+            self._end_export_cosmetic_pens(cosmetic_pens)
+            self._end_export_tick_levels(frozen_ticks)
             self._export_resolution_scale = 1.0
             self._end_export_aspect(original_aspect)
             self._end_export_visibility(visibility)
@@ -824,15 +835,23 @@ class PlotWidget(QWidget):
         export_view_range = self.view_range()
         original_aspect = self._begin_export_aspect(aspect_1_to_1)
         resized = width is not None or height is not None
+        frozen_ticks: tuple[tuple[Any, Any], ...] = ()
+        cosmetic_pens: tuple[tuple[Any, QPen, QPen], ...] = ()
         try:
             if resized:
                 width = width or max(1, original_size.width())
                 height = height or max(1, original_size.height())
                 self.resize(max(1, width), max(1, height))
             self._restore_export_view_range(export_view_range)
-            image = QImage(self.size(), QImage.Format.Format_RGB32)
+            frozen_ticks = self._begin_export_tick_levels()
+            cosmetic_pens = self._begin_export_cosmetic_pens()
+            image = self._export_raster_image(QImage.Format.Format_RGB32)
             image.fill(Qt.GlobalColor.white)
-            self.render(image, QPoint(0, 0))
+            painter = QPainter(image)
+            try:
+                self.render(painter, QPoint(0, 0))
+            finally:
+                painter.end()
             self._set_export_density(image)
             out_path = Path(path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -849,6 +868,8 @@ class PlotWidget(QWidget):
                 json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
             )
         finally:
+            self._end_export_cosmetic_pens(cosmetic_pens)
+            self._end_export_tick_levels(frozen_ticks)
             self._export_resolution_scale = 1.0
             self._end_export_aspect(original_aspect)
             self._end_export_visibility(visibility)
@@ -954,6 +975,74 @@ class PlotWidget(QWidget):
         image.setDotsPerMeterX(dots_per_meter)
         image.setDotsPerMeterY(dots_per_meter)
 
+    def _export_raster_image(self, image_format: QImage.Format) -> QImage:
+        """Create a high-density device with the widget's logical dimensions."""
+        scale = self._export_resolution_scale
+        image = QImage(
+            QSize(
+                max(1, round(self.width() * scale)),
+                max(1, round(self.height() * scale)),
+            ),
+            image_format,
+        )
+        image.setDevicePixelRatio(scale)
+        return image
+
+    def _begin_export_tick_levels(self) -> tuple[tuple[Any, Any], ...]:
+        """Freeze logical-canvas tick density before high-density painting."""
+        if self._export_resolution_scale == 1.0:
+            return ()
+        QApplication.processEvents()
+        state: list[tuple[Any, Any]] = []
+        for axis_name in ("bottom", "left"):
+            axis = self._plot_item.getAxis(axis_name)
+            original = axis._tickLevels
+            state.append((axis, original))
+            if original is not None:
+                continue
+            length = axis.width() if axis_name == "bottom" else axis.height()
+            levels = axis.tickValues(axis.range[0], axis.range[1], max(1.0, length))
+            ticks = []
+            for spacing, values in levels:
+                labels = axis.tickStrings(
+                    values, axis.autoSIPrefixScale * axis.scale, spacing
+                )
+                ticks.append(list(zip(values, labels, strict=False)))
+            axis.setTicks(ticks)
+        return tuple(state)
+
+    @staticmethod
+    def _end_export_tick_levels(state: tuple[tuple[Any, Any], ...]) -> None:
+        for axis, original in state:
+            axis.setTicks(original)
+
+    def _begin_export_cosmetic_pens(self) -> tuple[tuple[Any, QPen, QPen], ...]:
+        """Scale cosmetic pens for a high-density paint device."""
+        scale = self._export_resolution_scale
+        if scale == 1.0:
+            return ()
+        state: list[tuple[Any, QPen, QPen]] = []
+        for axis_name in ("bottom", "left", "top", "right"):
+            axis = self._plot_item.getAxis(axis_name)
+            original_pen = axis.pen()
+            original_tick_pen = axis.tickPen()
+            pen = QPen(original_pen)
+            pen.setWidthF(max(1.0, original_pen.widthF()) * scale)
+            tick_pen = QPen(original_tick_pen)
+            tick_pen.setWidthF(max(1.0, original_tick_pen.widthF()) * scale)
+            axis.setPen(pen)
+            axis.setTickPen(tick_pen)
+            state.append((axis, original_pen, original_tick_pen))
+        return tuple(state)
+
+    @staticmethod
+    def _end_export_cosmetic_pens(
+        state: tuple[tuple[Any, QPen, QPen], ...]
+    ) -> None:
+        for axis, pen, tick_pen in state:
+            axis.setPen(pen)
+            axis.setTickPen(tick_pen)
+
     def _end_export_visibility(self, state: dict[str, object]) -> None:
         if not state:
             return
@@ -981,7 +1070,10 @@ class PlotWidget(QWidget):
             try:
                 original_pen = item.pen() if callable(item.pen) else item.pen
                 color = original_pen.color()
-                width = max(1.0, float(original_pen.widthF())) * self._export_resolution_scale
+                width = (
+                    max(1.0, float(original_pen.widthF()))
+                    * self._export_resolution_scale
+                )
                 item.setPen(mkPen(color=color, width=width, style=Qt.SolidLine))
             except Exception:
                 original_pen = None

@@ -722,6 +722,7 @@ items so future changes do not regress the behavior.
 - [x] Batch Plot Exportで出力サイズや1:1設定がGUIの現在ViewBox範囲を上書きしないようにし、population display colorとoverlay source colorをGUIと同じ表示レイヤーへ反映する。
 
 - [x] Increment 11: Batch Plot ExportのWidth/Height/DPIを、Width/Heightは96 DPI基準の論理canvas、DPIはPNG/JPEGのraster densityとして明確化する。新規definitionではDPI倍率に応じて実pixel数と全visual要素（font、tick、dot、line、margin）を同倍率で描画し、既存projectは`legacy_pixel_dimensions`互換modeで過去の出力pixel寸法を維持する。SVG/PDFはA4固定やQt/pyqtgraphのPixmap cacheを使わず、canvasからpage sizeを決めたvector primitive出力とする。effective pixel/physical sizeのUI preview、sidecar/manifest provenance、PNG/JPEG density metadata、PDF/SVGにfull-canvas rasterがないこと、GUI/CLI/batchのscene/canvas一致、resolution変更がscientific resultとdisplay-sampling identityを変えないことをtestする。実装、互換性、残る単一plot Qt PDFの制限は`docs/implementation/plot-export-completion.md` Increment 11に記載。
+  - [x] Qt raster出力をlogical-size widgetからdevice-pixel-ratio付きpaint deviceへ描く方式に修正し、既定font・axis label・tick density・cosmetic pen・dot・gateを含む表示比率がDPIで変わらないことを正規化画像testと実FCS出力で確認した。
 
 `docs/bug.md` のplot画像export要求は、既存のsingle PNG/SVG/PDF exportと
 `BatchPlotExportSpec`だけでは完了していない。実装前に

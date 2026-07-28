@@ -592,6 +592,15 @@ and writes the resolved canvas to per-file sidecars and the batch manifest.
 Batch SVG/PDF uses the Qt-independent vector renderer; the single-plot Qt PDF
 adapter remains a separate legacy path and is not covered by this guarantee.
 
+The Qt raster adapter keeps the widget at the logical canvas size and paints it
+onto a `QImage` whose device-pixel ratio is the resolved raster scale. This is
+required to keep pyqtgraph layout geometry independent of DPI. Cosmetic axis,
+grid, and gate pens are scaled once for the paint device, while Qt text and
+scatter symbols follow the device-pixel ratio directly. Tick levels are frozen
+from the logical canvas before painting so a higher DPI cannot add extra grid
+or tick levels. A normalized-image regression test compares low- and high-DPI
+output after resizing both to the same logical canvas.
+
 This increment changes only display/export rendering. It must not change raw
 events, processing order, gate membership, statistics, or the deterministic
 display-sampling selection.
