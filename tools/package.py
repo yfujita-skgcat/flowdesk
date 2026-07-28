@@ -8,7 +8,7 @@ import platform
 import subprocess
 import sys
 from datetime import UTC, datetime
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError, metadata, version
 from pathlib import Path
 
 from flowdesk_qt._version import __version__
@@ -67,15 +67,22 @@ def smoke(
 
 def manifest(output: Path) -> None:
   """Write build provenance without requiring a VCS or packaging service."""
+  dependency_names = (
+    "numpy",
+    "flowio",
+    "Pillow",
+    "PySide6",
+    "pyqtgraph",
+    "PyInstaller",
+  )
   data = {
     "flowdesk_version": _flowdesk_version(),
     "build_os": platform.system(),
     "architecture": platform.machine(),
     "python_version": platform.python_version(),
-    "pyinstaller_version": _package_version("PyInstaller"),
-    "pyside6_version": _package_version("PySide6"),
-    "numpy_version": _package_version("numpy"),
-    "flowio_version": _package_version("flowio"),
+    "dependencies": {
+      name: _package_license_metadata(name) for name in dependency_names
+    },
     "build_timestamp_utc": datetime.now(UTC).isoformat(),
   }
   output.parent.mkdir(parents=True, exist_ok=True)
@@ -87,6 +94,25 @@ def _package_version(name: str) -> str | None:
     return version(name)
   except PackageNotFoundError:
     return None
+
+
+def _package_license_metadata(name: str) -> dict[str, object] | None:
+  """Return the installed package version and declared license metadata."""
+  try:
+    package_metadata = metadata(name)
+  except PackageNotFoundError:
+    return None
+  license_files = package_metadata.get_all("License-File") or []
+  expression = package_metadata.get("License-Expression")
+  legacy_license = package_metadata.get("License")
+  result: dict[str, object] = {"version": package_metadata.get("Version")}
+  if expression:
+    result["license_expression"] = expression
+  if legacy_license:
+    result["license"] = legacy_license
+  if license_files:
+    result["license_files"] = license_files
+  return result
 
 
 def main() -> int:

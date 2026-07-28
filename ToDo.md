@@ -1,6 +1,6 @@
 # Flowdesk LLM実装指令書
 
-対象リポジトリ: `/home/yfujita/work/bin/python/flowdesk`
+対象リポジトリ: `<repository-root>`
 
 要求仕様: [specs.md](specs.md)
 

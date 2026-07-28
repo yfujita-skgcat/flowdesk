@@ -30,10 +30,18 @@ Their own licenses remain applicable when they are installed or bundled:
 
 - NumPy: BSD-style license and notices for bundled components
 - FlowIO: BSD 3-Clause License
-- Pillow: HPND license
+- Pillow: MIT-CMU license (for current Pillow releases; verify the exact
+  installed release metadata when building a package)
 - pyqtgraph: MIT License and notices for included data
 - PyInstaller: GPL with its bootloader exception when used for native builds
 
-The dependency versions and their license files should be recorded in the
+Development-only dependencies are not part of the application runtime package:
+pytest, pytest-qt, ruff, and mypy are distributed under the MIT License. If a
+development environment or test artifact is redistributed, retain their own
+license and copyright notices as well.
+
+The dependency versions and their license metadata should be recorded in the
 release build manifest. This summary is not a substitute for the license
-files shipped by each dependency.
+files shipped by each dependency. Because dependency versions are intentionally
+not pinned, every release build must inspect the manifest and update this file
+if a dependency changes its license or bundled third-party components.
