@@ -724,6 +724,45 @@ items so future changes do not regress the behavior.
 - [x] Increment 11: Batch Plot ExportのWidth/Height/DPIを、Width/Heightは96 DPI基準の論理canvas、DPIはPNG/JPEGのraster densityとして明確化する。新規definitionではDPI倍率に応じて実pixel数と全visual要素（font、tick、dot、line、margin）を同倍率で描画し、既存projectは`legacy_pixel_dimensions`互換modeで過去の出力pixel寸法を維持する。SVG/PDFはA4固定やQt/pyqtgraphのPixmap cacheを使わず、canvasからpage sizeを決めたvector primitive出力とする。effective pixel/physical sizeのUI preview、sidecar/manifest provenance、PNG/JPEG density metadata、PDF/SVGにfull-canvas rasterがないこと、GUI/CLI/batchのscene/canvas一致、resolution変更がscientific resultとdisplay-sampling identityを変えないことをtestする。実装、互換性、残る単一plot Qt PDFの制限は`docs/implementation/plot-export-completion.md` Increment 11に記載。
   - [x] Qt raster出力をlogical-size widgetからdevice-pixel-ratio付きpaint deviceへ描く方式に修正し、既定font・axis label・tick density・cosmetic pen・dot・gateを含む表示比率がDPIで変わらないことを正規化画像testと実FCS出力で確認した。
 
+#### Phase B7.3.F: Lightweight SVG/PDF scatter export
+
+実装前に`docs/implementation/lightweight-vector-scatter-export.md`を全文読む。
+一度のLLM/Codex実行では、以下の番号付きincrementを一つだけ実装し、test、文書更新、
+commitを完了してから停止する。後続incrementを同じ実行で開始しない。
+
+- [ ] Increment 12: `BatchPlotExportSpec`、schema、migrationへ
+  `vector_scatter_mode = full_vector | compact_vector | hybrid_raster` と
+  `hybrid_scatter_dpi`を追加する。既存definitionは`full_vector`、新規definitionは
+  `hybrid_raster`/600 DPIへ解決する。Qt非依存`VectorScatterPlan`、mode別typed layer、
+  point/style/z-order/sampling identityを含む決定的hashとprovenance skeletonを実装する。
+  rendererの出力形式はまだ変更しない。
+- [ ] Increment 13: `full_vector`を実装する。SVGはmarkerを`<defs>`で一度定義して
+  eventごとに`<use>`を配置し、PDFはmarker Form XObject、graphics state、Flate圧縮
+  content streamを再利用する。1 rendered event = 1 placement、scatter imageなし、
+  clip/source order/style/alphaの一致をparser testで保証し、既存projectの出力意味を維持する。
+- [ ] Increment 14: `compact_vector`を実装する。同一styleごとにmarker footprintを
+  spatial hashで決定的に非重複batchへ分割し、半透明dotの重なり濃度を失わない
+  compound pathを最大4096 marker単位でSVG/PDFへ出力する。座標誤差を
+  `1e-4` logical px以下にし、full vectorとのsame-backend RMSE、rare color、
+  dense/sparse/duplicate/multi-source、path/node削減をtestする。単純な全circle unionは禁止する。
+- [ ] Increment 15: `hybrid_raster`を実装する。既存の決定的display pointsだけを
+  canonical source-over順で透明lossless scatter layerへ描画し、SVGは埋め込みPNG、
+  PDFはsoft mask付きImage XObjectとしてplot rectangleへ配置する。grid/axes/ticks/text/
+  gates/legendはvectorのまま保持し、full-canvas raster、JPEG、silent DPI低下を禁止する。
+  raster bounds/DPI/pixel size/encoding/point-plan hashをprovenanceへ記録し、canonical
+  rasterとのRMSE、tile seam、rare-event visibility、memory limitをtestする。
+- [ ] Increment 16: Batch Plot Export GUIへ3 mode selector、hybrid時だけ有効なscatter DPI、
+  point/node/path/pixel/memory preflightを追加し、CLI/headlessと同じ保存済みplanを実行する。
+  resource limit時はmodeを自動変更せずstructured failure/warningを返す。sidecar/manifest、
+  cancel/save/restore/strict/partial failure、旧project互換、ユーザーマニュアルを完成する。
+- [ ] Increment 17: 1k/5k/20k/100k/1M points、sparse/dense/overlap、複数alpha/color/source、
+  rare populationを含む決定的benchmarkを追加する。bytes、時間、peak RSS、SVG DOM数、
+  PDF resource/command数、parse/open/rasterize時間、visual RMSE、科学的結果の完全一致を測る。
+  最初にthresholdなしbaselineを保存し、安定したCI metricだけに回帰thresholdを設定する。
+  Hybridの大規模出力改善、Compactのnode削減、Fullの完全配置、3 mode間でraw events、
+  membership、counts、frequencies、statistics、sampling identityが不変であることをrelease
+  acceptanceとする。
+
 `docs/bug.md` のplot画像export要求は、既存のsingle PNG/SVG/PDF exportと
 `BatchPlotExportSpec`だけでは完了していない。実装前に
 `docs/implementation/plot-export-completion.md`を全文読む。一度のLLM/Codex実行では

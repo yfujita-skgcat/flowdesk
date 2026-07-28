@@ -698,6 +698,14 @@ vector detail.
 - Update the user manual only with the implemented behavior, compatibility
   mode, effective-size preview, and vector-format limitation/guarantee.
 
+### Follow-on: lightweight SVG/PDF scatter representation
+
+The planned `full_vector`, `compact_vector`, and `hybrid_raster` scatter modes
+are specified in `docs/implementation/lightweight-vector-scatter-export.md`.
+That guide supersedes only the scatter representation rules after its numbered
+increments are implemented. Until then, the current no-raster SVG/PDF
+acceptance contract in this guide remains authoritative.
+
 ## Non-goals
 
 - Report/layout editing belongs to Phase C2.
