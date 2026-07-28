@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import math
 import re
 import struct
 import zlib
@@ -274,6 +277,18 @@ def write_plot_svg(
   }
   full_vector = options is None or options.vector_scatter_mode == "full_vector"
   compact_vector = options is not None and options.vector_scatter_mode == "compact_vector"
+  hybrid_raster = options is not None and options.vector_scatter_mode == "hybrid_raster"
+  hybrid_info: dict[str, Any] | None = None
+  if hybrid_raster:
+    hybrid_info = _hybrid_scatter_raster(
+      prepared, selected, layers, plot_width=plot_width, plot_height=plot_height,
+      dpi=options.hybrid_scatter_dpi,
+    )
+    elements.append(
+      f'<image x="{left:g}" y="{top:g}" width="{plot_width:g}" height="{plot_height:g}" '
+      f'preserveAspectRatio="none" data-scatter-dpi="{hybrid_info["dpi"]}" '
+      f'href="data:image/png;base64,{base64.b64encode(hybrid_info["png"]).decode("ascii")}"/>'
+    )
   marker_ids: dict[str, str] = {}
   if full_vector:
     defs: list[str] = ['<defs><clipPath id="plot-clip">'
@@ -304,7 +319,7 @@ def write_plot_svg(
     style = style_by_id.get(source_id)
     color = "#000000" if style is None or style.color is None else style.color
     x_values, y_values = layers[source_id]
-    if not compact_vector:
+    if not compact_vector and not hybrid_raster:
       for x_value, y_value in zip(x_values, y_values, strict=False):
         x = left + float(x_value) * plot_width
         y = top + (1.0 - float(y_value)) * plot_height
@@ -345,7 +360,7 @@ def write_plot_svg(
   out_path.parent.mkdir(parents=True, exist_ok=True)
   out_path.write_text(svg, encoding="utf-8")
   out_path.with_suffix(out_path.suffix + ".json").write_text(
-    json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
+    json.dumps(_export_metadata(prepared, options, hybrid_info), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
   )
 
@@ -459,6 +474,13 @@ def write_plot_pdf(
   style_by_id = {style.source_id: style for style in selected.source_styles}
   full_vector = options is None or options.vector_scatter_mode == "full_vector"
   compact_vector = options is not None and options.vector_scatter_mode == "compact_vector"
+  hybrid_raster = options is not None and options.vector_scatter_mode == "hybrid_raster"
+  hybrid_info: dict[str, Any] | None = None
+  if hybrid_raster:
+    hybrid_info = _hybrid_scatter_raster(
+      prepared, selected, layers, plot_width=plot_width, plot_height=plot_height,
+      dpi=options.hybrid_scatter_dpi,
+    )
   form_specs: list[tuple[tuple[int, int, int], float, str, float]] = []
   marker_refs: dict[str, int] = {}
   if full_vector:
@@ -489,6 +511,9 @@ def write_plot_pdf(
       commands.append(_pdf_compound_path(batch.points, batch.marker_shape, batch.marker_size,
                                           left, top, plot_width, plot_height) + " f")
     commands.append("Q")
+  elif hybrid_raster:
+    commands.extend(("q", f"{plot_width:g} 0 0 {plot_height:g} {left:g} {height - top - plot_height:g} cm",
+                     "/ImScatter Do", "Q"))
   elif not full_vector:
     for source_id in prepared.source_order:
       style = style_by_id.get(source_id)
@@ -524,6 +549,9 @@ def write_plot_pdf(
     resources += f" /XObject << {xobjects} >>"
   if extgstates:
     resources += f" /ExtGState << {extgstates} >>"
+  image_start = extgstate_start + len(compact_alpha_values)
+  if hybrid_info is not None:
+    resources += f" /XObject << /ImScatter {image_start} 0 R >>"
   resources += " >>"
   objects = [
     b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -551,6 +579,26 @@ def write_plot_pdf(
     )
   for alpha in compact_alpha_values:
     objects.append(f"<< /Type /ExtGState /ca {alpha:g} /CA {alpha:g} >>".encode("ascii"))
+  if hybrid_info is not None:
+    mask_start = image_start + 1
+    rgb_data = _pdf_scanlines(hybrid_info["rgb"], hybrid_info["width"], hybrid_info["height"], 3)
+    alpha_data = _pdf_scanlines(hybrid_info["alpha"], hybrid_info["width"], hybrid_info["height"], 1)
+    compressed_rgb = zlib.compress(rgb_data, 6)
+    compressed_alpha = zlib.compress(alpha_data, 6)
+    objects.append(
+      (
+        f"<< /Type /XObject /Subtype /Image /Width {hybrid_info['width']} "
+        f"/Height {hybrid_info['height']} /ColorSpace /DeviceRGB /BitsPerComponent 8 "
+        f"/Filter /FlateDecode /SMask {mask_start} 0 R /Length {len(compressed_rgb)} >>\nstream\n"
+      ).encode("ascii") + compressed_rgb + b"\nendstream"
+    )
+    objects.append(
+      (
+        f"<< /Type /XObject /Subtype /Image /Width {hybrid_info['width']} "
+        f"/Height {hybrid_info['height']} /ColorSpace /DeviceGray /BitsPerComponent 8 "
+        f"/Filter /FlateDecode /Length {len(compressed_alpha)} >>\nstream\n"
+      ).encode("ascii") + compressed_alpha + b"\nendstream"
+    )
   pdf = bytearray(b"%PDF-1.4\n")
   offsets = [0]
   for index, obj in enumerate(objects, start=1):
@@ -571,7 +619,7 @@ def write_plot_pdf(
   out_path.parent.mkdir(parents=True, exist_ok=True)
   out_path.write_bytes(bytes(pdf))
   out_path.with_suffix(out_path.suffix + ".json").write_text(
-    json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
+    json.dumps(_export_metadata(prepared, options, hybrid_info), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
   )
 
@@ -620,11 +668,27 @@ def _dimensions(width: int, height: int, options: BatchPlotExportSpec | None) ->
 def _export_metadata(
   prepared: PreparedPlotExport,
   options: BatchPlotExportSpec | None,
+  vector_scatter: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
   metadata = dict(prepared.metadata)
   metadata["export_canvas"] = resolve_export_canvas(options).to_mapping()
   if options is not None:
     metadata["export_options"] = asdict(options)
+    metadata["vector_scatter"] = {
+      "requested_mode": options.vector_scatter_mode,
+      "resolved_mode": options.vector_scatter_mode,
+      "hybrid_scatter_dpi": options.hybrid_scatter_dpi,
+    }
+  if vector_scatter is not None:
+    metadata["vector_scatter"].update({
+      "algorithm_version": vector_scatter["algorithm_version"],
+      "raster_width": vector_scatter["width"],
+      "raster_height": vector_scatter["height"],
+      "scatter_image_dpi": vector_scatter["dpi"],
+      "rendered_event_count": vector_scatter["rendered_event_count"],
+      "point_plan_hash": vector_scatter["point_plan_hash"],
+      "encoding": "png_rgba_lossless",
+    })
   return metadata
 
 
@@ -1100,3 +1164,103 @@ def _png_chunk(kind: bytes, payload: bytes) -> bytes:
     struct.pack(">I", len(payload)) + kind + payload
     + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
   )
+
+
+def _pdf_scanlines(data: bytes, width: int, height: int, channels: int) -> bytes:
+  row_size = width * channels
+  return b"".join(
+    b"\x00" + data[row * row_size:(row + 1) * row_size]
+    for row in range(height)
+  )
+
+
+def _hybrid_scatter_raster(
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+  *,
+  plot_width: float,
+  plot_height: float,
+  dpi: int,
+) -> dict[str, Any]:
+  """Render only scatter markers into a transparent lossless RGBA raster."""
+  if dpi < 72 or dpi > 2400:
+    raise PlotExportError("hybrid scatter dpi must be between 72 and 2400")
+  raster_scale = dpi / 96.0
+  raster_width = max(1, round(plot_width * raster_scale))
+  raster_height = max(1, round(plot_height * raster_scale))
+  pixels = bytearray(raster_width * raster_height * 4)
+  style_by_id = {style.source_id: style for style in selected.source_styles}
+  point_records: list[dict[str, Any]] = []
+
+  def blend(index: int, color: tuple[int, int, int], alpha: float) -> None:
+    src_a = max(0.0, min(1.0, alpha))
+    if src_a <= 0:
+      return
+    dst_a = pixels[index + 3] / 255.0
+    out_a = src_a + dst_a * (1.0 - src_a)
+    if out_a <= 0:
+      return
+    for offset, channel in enumerate(color):
+      value = (channel * src_a + pixels[index + offset] * dst_a * (1.0 - src_a)) / out_a
+      pixels[index + offset] = max(0, min(255, round(value)))
+    pixels[index + 3] = max(0, min(255, round(out_a * 255)))
+
+  for z_index, source_id in enumerate(prepared.source_order):
+    style = style_by_id.get(source_id)
+    color_text = "#000000" if style is None or style.color is None else style.color
+    color = _rgb(color_text)
+    alpha = 1.0 if style is None else style.alpha
+    shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
+    marker_size = 3.0 if style is None else style.marker_size
+    radius = marker_size * raster_scale / 2.0
+    x_values, y_values = layers[source_id]
+    for x_value, y_value in zip(x_values, y_values, strict=False):
+      x = float(x_value) * (raster_width - 1)
+      y = (1.0 - float(y_value)) * (raster_height - 1)
+      point_records.append({
+        "source_id": source_id, "x": float(x_value), "y": float(y_value),
+        "color": color_text, "alpha": alpha, "marker_shape": shape,
+        "marker_size": marker_size, "z_index": z_index,
+      })
+      min_x = max(0, math.floor(x - radius - 1))
+      max_x = min(raster_width - 1, math.ceil(x + radius + 1))
+      min_y = max(0, math.floor(y - radius - 1))
+      max_y = min(raster_height - 1, math.ceil(y + radius + 1))
+      for pixel_y in range(min_y, max_y + 1):
+        for pixel_x in range(min_x, max_x + 1):
+          dx = pixel_x + 0.5 - x
+          dy = pixel_y + 0.5 - y
+          inside = (
+            dx * dx + dy * dy <= radius * radius
+            if shape == "circle"
+            else abs(dx) <= radius and abs(dy) <= radius
+          )
+          if inside:
+            blend((pixel_y * raster_width + pixel_x) * 4, color, alpha)
+
+  raw_rows = b"".join(
+    b"\x00" + bytes(pixels[row * raster_width * 4:(row + 1) * raster_width * 4])
+    for row in range(raster_height)
+  )
+  png = (
+    b"\x89PNG\r\n\x1a\n"
+    + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", raster_width, raster_height, 8, 6, 0, 0, 0))
+    + _png_chunk(b"IDAT", zlib.compress(raw_rows, 6))
+    + _png_chunk(b"IEND", b"")
+  )
+  canonical = json.dumps(
+    {
+      "mode": "hybrid_raster", "algorithm_version": "hybrid_scatter_raster.v1",
+      "dpi": dpi, "width": raster_width, "height": raster_height,
+      "source_order": list(prepared.source_order), "points": point_records,
+    }, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+  ).encode("utf-8")
+  return {
+    "png": png, "rgb": bytes(value for index, value in enumerate(pixels) if index % 4 != 3),
+    "alpha": bytes(pixels[index] for index in range(3, len(pixels), 4)),
+    "width": raster_width, "height": raster_height, "dpi": dpi,
+    "rendered_event_count": len(point_records),
+    "point_plan_hash": hashlib.sha256(canonical).hexdigest(),
+    "algorithm_version": "hybrid_scatter_raster.v1",
+  }

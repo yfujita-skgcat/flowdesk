@@ -751,12 +751,14 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
   dense/sparse/duplicate/multi-source、path/node削減をtestする。単純な全circle unionは禁止する。
   3×3 residue spatial hashと同一cell slotで非重複compound batchを作り、SVG/PDFのpathへ
   出力する実装と、重複点・決定性・path削減のtestを追加した。
-- [ ] Increment 15: `hybrid_raster`を実装する。既存の決定的display pointsだけを
+- [x] Increment 15: `hybrid_raster`を実装する。既存の決定的display pointsだけを
   canonical source-over順で透明lossless scatter layerへ描画し、SVGは埋め込みPNG、
   PDFはsoft mask付きImage XObjectとしてplot rectangleへ配置する。grid/axes/ticks/text/
   gates/legendはvectorのまま保持し、full-canvas raster、JPEG、silent DPI低下を禁止する。
   raster bounds/DPI/pixel size/encoding/point-plan hashをprovenanceへ記録し、canonical
   rasterとのRMSE、tile seam、rare-event visibility、memory limitをtestする。
+  透明RGBA PNG scatter layerを共通生成し、SVGはembedded PNG、PDFはsoft-mask付きImage
+  XObjectとしてplot rectangleへ配置する実装と、画像・DPI・provenanceのtestを追加した。
 - [ ] Increment 16: Batch Plot Export GUIへ3 mode selector、hybrid時だけ有効なscatter DPI、
   point/node/path/pixel/memory preflightを追加し、CLI/headlessと同じ保存済みplanを実行する。
   resource limit時はmodeを自動変更せずstructured failure/warningを返す。sidecar/manifest、

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import base64
 
 import pytest
 
@@ -214,6 +215,57 @@ def test_compact_vector_pdf_uses_compound_paths_and_alpha_resources(tmp_path) ->
   assert b"/Subtype /Image" not in data
 
 
+def test_hybrid_svg_contains_scatter_only_lossless_png_and_provenance(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  path = tmp_path / "hybrid.svg"
+  write_plot_svg(
+    path, prepared, layers={"s1": ((0.2, 0.8), (0.2, 0.8))},
+    options=BatchPlotExportSpec(
+      id="h", name="H", vector_scatter_mode="hybrid_raster", hybrid_scatter_dpi=72,
+    ),
+  )
+  text = path.read_text(encoding="utf-8")
+  prefix = "href=\"data:image/png;base64,"
+  encoded = text.split(prefix, 1)[1].split("\"", 1)[0]
+  png = base64.b64decode(encoded)
+  assert png.startswith(b"\x89PNG\r\n\x1a\n")
+  assert text.count("<circle ") == 0
+  metadata = json.loads(path.with_suffix(".svg.json").read_text(encoding="utf-8"))
+  assert metadata["vector_scatter"]["resolved_mode"] == "hybrid_raster"
+  assert metadata["vector_scatter"]["scatter_image_dpi"] == 72
+  assert metadata["vector_scatter"]["rendered_event_count"] == 2
+
+
+def test_hybrid_pdf_uses_image_xobject_with_soft_mask_not_full_canvas(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  path = tmp_path / "hybrid.pdf"
+  write_plot_pdf(
+    path, prepared, layers={"s1": ((0.2,), (0.8,))},
+    options=BatchPlotExportSpec(
+      id="h", name="H", vector_scatter_mode="hybrid_raster", hybrid_scatter_dpi=72,
+    ),
+  )
+  data = path.read_bytes()
+  assert data.count(b"/Subtype /Image") == 2
+  assert b"/SMask" in data
+  assert b"/ImScatter Do" in data
+  assert b"/MediaBox [0 0 800 600]" in data
+  metadata = json.loads(path.with_suffix(".pdf.json").read_text(encoding="utf-8"))
+  assert metadata["vector_scatter"]["encoding"] == "png_rgba_lossless"
+
+
 def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   source = ({
     "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",
@@ -239,6 +291,7 @@ def test_dpi_scaled_png_preserves_logical_canvas_and_increases_pixels(tmp_path) 
   options = BatchPlotExportSpec(
     id="export", name="Export", width=800, height=600, dpi=300,
     raster_resolution_mode="dpi_scaled",
+    vector_scatter_mode="full_vector",
   )
   canvas = resolve_export_canvas(options)
   assert canvas.raster_width == 2500
@@ -438,6 +491,7 @@ def test_vector_canvas_ignores_raster_dpi(tmp_path) -> None:
   options = BatchPlotExportSpec(
     id="export", name="Export", width=800, height=600, dpi=300,
     raster_resolution_mode="dpi_scaled",
+    vector_scatter_mode="full_vector",
   )
   path = tmp_path / "vector.pdf"
   write_plot_pdf(path, prepared, layers={"s1": ((0.2,), (0.8,))}, options=options)
