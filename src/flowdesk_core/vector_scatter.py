@@ -134,6 +134,62 @@ class VectorScatterPlan:
     }
 
 
+@dataclass(frozen=True)
+class CompactScatterBatch:
+  """A non-overlapping compound-path batch for one source/style."""
+
+  source_id: str
+  points: tuple[Point, ...]
+  color: str
+  alpha: float
+  marker_shape: str
+  marker_size: float
+  z_index: int
+  batch_key: tuple[int, int, int]
+
+
+def compact_scatter_batches(
+  layers: tuple[VectorScatterLayer, ...],
+  *,
+  plot_width: float,
+  plot_height: float,
+) -> tuple[CompactScatterBatch, ...]:
+  """Partition markers into deterministic, non-overlapping compound batches.
+
+  A 3x3 residue class separates neighboring spatial cells by at least two
+  marker diameters. Points sharing a cell receive distinct slots, preserving
+  repeated source-over alpha instead of unioning their geometry.
+  """
+  if plot_width <= 0 or plot_height <= 0:
+    raise ValueError("compact scatter plot dimensions must be positive")
+  result: list[CompactScatterBatch] = []
+  for layer in layers:
+    cell_size = max(layer.marker_size, 1e-9)
+    grouped: dict[tuple[int, int, int], list[Point]] = {}
+    cell_counts: dict[tuple[int, int], int] = {}
+    for point in layer.points:
+      cell = (
+        math.floor(point[0] * plot_width / cell_size),
+        math.floor(point[1] * plot_height / cell_size),
+      )
+      slot = cell_counts.get(cell, 0)
+      cell_counts[cell] = slot + 1
+      key = (cell[0] % 3, cell[1] % 3, slot)
+      grouped.setdefault(key, []).append(point)
+    for key in sorted(grouped):
+      result.append(CompactScatterBatch(
+        source_id=layer.source_id,
+        points=tuple(grouped[key]),
+        color=layer.color,
+        alpha=layer.alpha,
+        marker_shape=layer.marker_shape,
+        marker_size=layer.marker_size,
+        z_index=layer.z_index,
+        batch_key=key,
+      ))
+  return tuple(result)
+
+
 def build_vector_scatter_plan(
   *,
   mode: VectorScatterMode,
@@ -157,4 +213,3 @@ def build_vector_scatter_plan(
     input_event_count=input_event_count,
     hybrid_scatter_dpi=hybrid_scatter_dpi if mode == "hybrid_raster" else None,
   )
-

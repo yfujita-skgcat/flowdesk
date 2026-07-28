@@ -21,6 +21,7 @@ from flowdesk_core.plot_presentation import (
   validate_presentation,
 )
 from flowdesk_core.plot_scene import PlotScene
+from flowdesk_core.vector_scatter import VectorScatterLayer, compact_scatter_batches
 
 
 class PlotExportError(ValueError):
@@ -272,6 +273,7 @@ def write_plot_svg(
     for source_id in prepared.source_order
   }
   full_vector = options is None or options.vector_scatter_mode == "full_vector"
+  compact_vector = options is not None and options.vector_scatter_mode == "compact_vector"
   marker_ids: dict[str, str] = {}
   if full_vector:
     defs: list[str] = ['<defs><clipPath id="plot-clip">'
@@ -291,17 +293,40 @@ def write_plot_svg(
     defs.append("</defs>")
     elements.insert(0, "".join(defs))
     elements.append('<g clip-path="url(#plot-clip)">')
+  compact_batches = ()
+  if compact_vector:
+    compact_batches = compact_scatter_batches(
+      _vector_layers(prepared, selected, layers),
+      plot_width=plot_width,
+      plot_height=plot_height,
+    )
   for index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
     color = "#000000" if style is None or style.color is None else style.color
     x_values, y_values = layers[source_id]
-    for x_value, y_value in zip(x_values, y_values, strict=False):
-      x = left + float(x_value) * plot_width
-      y = top + (1.0 - float(y_value)) * plot_height
-      if full_vector:
-        elements.append(f'<use href="#{marker_ids[source_id]}" x="{x:g}" y="{y:g}"/>')
-      else:
-        elements.append(f'<circle cx="{x:g}" cy="{y:g}" r="3" fill="{escape(color)}"/>')
+    if not compact_vector:
+      for x_value, y_value in zip(x_values, y_values, strict=False):
+        x = left + float(x_value) * plot_width
+        y = top + (1.0 - float(y_value)) * plot_height
+        if full_vector:
+          elements.append(f'<use href="#{marker_ids[source_id]}" x="{x:g}" y="{y:g}"/>')
+        else:
+          elements.append(f'<circle cx="{x:g}" cy="{y:g}" r="3" fill="{escape(color)}"/>')
+    if compact_vector:
+      for batch in compact_batches:
+        if batch.source_id != source_id:
+          continue
+        radius = batch.marker_size / 2
+        path_data = " ".join(
+          _svg_marker_path(batch.marker_shape, radius,
+                           left + point[0] * plot_width,
+                           top + (1.0 - point[1]) * plot_height)
+          for point in batch.points
+        )
+        elements.append(
+          f'<path d="{path_data}" fill="{escape(batch.color)}" '
+          f'fill-opacity="{batch.alpha:g}"/>'
+        )
     label = style.legend_label if style and style.legend_label else source_labels[source_id]
     if options is None or options.include_legend:
       elements.append(
@@ -433,6 +458,7 @@ def write_plot_pdf(
     commands.extend(_pdf_axes(left, top, plot_width, plot_height, height))
   style_by_id = {style.source_id: style for style in selected.source_styles}
   full_vector = options is None or options.vector_scatter_mode == "full_vector"
+  compact_vector = options is not None and options.vector_scatter_mode == "compact_vector"
   form_specs: list[tuple[tuple[int, int, int], float, str, float]] = []
   marker_refs: dict[str, int] = {}
   if full_vector:
@@ -446,20 +472,40 @@ def write_plot_pdf(
       form_specs.append((color, alpha, marker_shape, marker_size))
     commands.append("q")
     commands.append(f"{left:g} {height - top - plot_height:g} {plot_width:g} {plot_height:g} re W n")
-  for source_id in prepared.source_order:
-    style = style_by_id.get(source_id)
-    color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
-    if not full_vector:
+  compact_batches = compact_scatter_batches(
+    _vector_layers(prepared, selected, layers),
+    plot_width=plot_width,
+    plot_height=plot_height,
+  ) if compact_vector else ()
+  compact_alpha_values = tuple(dict.fromkeys(batch.alpha for batch in compact_batches))
+  if compact_vector:
+    commands.append("q")
+    commands.append(f"{left:g} {height - top - plot_height:g} {plot_width:g} {plot_height:g} re W n")
+    alpha_index = {alpha: index for index, alpha in enumerate(compact_alpha_values)}
+    for batch in compact_batches:
+      color = _rgb(batch.color)
+      commands.extend((f"/C{alpha_index[batch.alpha]} gs",
+                       f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg"))
+      commands.append(_pdf_compound_path(batch.points, batch.marker_shape, batch.marker_size,
+                                          left, top, plot_width, plot_height) + " f")
+    commands.append("Q")
+  elif not full_vector:
+    for source_id in prepared.source_order:
+      style = style_by_id.get(source_id)
+      color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
       commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg")
-    for x_value, y_value in zip(*layers[source_id], strict=False):
-      x = left + float(x_value) * plot_width
-      y = height - top - float(y_value) * plot_height
-      if full_vector:
+      for x_value, y_value in zip(*layers[source_id], strict=False):
+        x = left + float(x_value) * plot_width
+        y = height - top - float(y_value) * plot_height
+        commands.append(f"{x:g} {y:g} 2 2 re f")
+  elif full_vector:
+    for source_id in prepared.source_order:
+      style = style_by_id.get(source_id)
+      for x_value, y_value in zip(*layers[source_id], strict=False):
+        x = left + float(x_value) * plot_width
+        y = height - top - float(y_value) * plot_height
         size = (2.0 if style is None else style.marker_size) / 2.0
         commands.extend(("q", f"{size:g} 0 0 {size:g} {x:g} {y:g} cm", f"/M{marker_refs[source_id]} Do", "Q"))
-      else:
-        commands.append(f"{x:g} {y:g} 2 2 re f")
-  if full_vector:
     commands.append("Q")
   if options is None or options.include_gates:
     commands.extend(_pdf_gates(_scene_gates(prepared), left, top, plot_width, plot_height, height))
@@ -468,12 +514,23 @@ def write_plot_pdf(
   xobjects = " ".join(
     f"/M{index} {form_start + index * 2} 0 R" for index in range(len(form_specs))
   )
+  extgstate_start = form_start + len(form_specs) * 2
+  extgstates = " ".join(
+    f"/C{index} {extgstate_start + index} 0 R"
+    for index in range(len(compact_alpha_values))
+  )
+  resources = "/Resources <<"
+  if xobjects:
+    resources += f" /XObject << {xobjects} >>"
+  if extgstates:
+    resources += f" /ExtGState << {extgstates} >>"
+  resources += " >>"
   objects = [
     b"<< /Type /Catalog /Pages 2 0 R >>",
     b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
     (
       f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] "
-      f"/Resources << /XObject << {xobjects} >> >> /Contents 4 0 R >>"
+      f"{resources} /Contents 4 0 R >>"
     ).encode("ascii"),
     b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n"
     + stream + b"endstream",
@@ -492,6 +549,8 @@ def write_plot_pdf(
     objects.append(
       f"<< /Type /ExtGState /ca {alpha:g} /CA {alpha:g} >>".encode("ascii")
     )
+  for alpha in compact_alpha_values:
+    objects.append(f"<< /Type /ExtGState /ca {alpha:g} /CA {alpha:g} >>".encode("ascii"))
   pdf = bytearray(b"%PDF-1.4\n")
   offsets = [0]
   for index, obj in enumerate(objects, start=1):
@@ -597,6 +656,52 @@ def _svg_marker_shape(shape: str, radius: float, color: str, alpha: float) -> st
       return f'<path d="M {-radius:g} {-radius:g} L {radius:g} {radius:g} M {radius:g} {-radius:g} L {-radius:g} {radius:g}" fill="none" {stroke}/>'
     return f'<path d="M {-radius:g} 0 H {radius:g} M 0 {-radius:g} V {radius:g}" fill="none" {stroke}/>'
   return f'<circle cx="0" cy="0" r="{radius:g}" {fill}/>'
+
+
+def _svg_marker_path(shape: str, radius: float, x: float, y: float) -> str:
+  """Return one translated marker subpath for a compact compound path."""
+  if shape == "square":
+    return f"M {x - radius:g} {y - radius:g} h {2 * radius:g} v {2 * radius:g} h {-2 * radius:g} Z"
+  if shape == "triangle":
+    return f"M {x:g} {y - radius:g} L {x + radius:g} {y + radius:g} L {x - radius:g} {y + radius:g} Z"
+  # Cross and plus are stroked markers; use a small filled square footprint
+  # in compact mode so all markers in one compound path share one fill.
+  if shape in {"cross", "plus"}:
+    half = max(radius / 3, 0.5)
+    return f"M {x - half:g} {y - half:g} h {2 * half:g} v {2 * half:g} h {-2 * half:g} Z"
+  k = radius * 0.55228475
+  return (
+    f"M {x:g} {y - radius:g} C {x + k:g} {y - radius:g} {x + radius:g} {y - k:g} {x + radius:g} {y:g} "
+    f"C {x + radius:g} {y + k:g} {x + k:g} {y + radius:g} {x:g} {y + radius:g} "
+    f"C {x - k:g} {y + radius:g} {x - radius:g} {y + k:g} {x - radius:g} {y:g} "
+    f"C {x - radius:g} {y - k:g} {x - k:g} {y - radius:g} {x:g} {y - radius:g} Z"
+  )
+
+
+def _vector_layers(
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+) -> tuple[VectorScatterLayer, ...]:
+  style_by_id = {style.source_id: style for style in selected.source_styles}
+  result: list[VectorScatterLayer] = []
+  for z_index, source_id in enumerate(prepared.source_order):
+    style = style_by_id.get(source_id)
+    color = "#000000" if style is None or style.color is None else style.color
+    points = tuple(
+      (float(x), float(y))
+      for x, y in zip(*layers[source_id], strict=False)
+    )
+    result.append(VectorScatterLayer(
+      source_id=source_id,
+      points=points,
+      color=color,
+      alpha=1.0 if style is None else style.alpha,
+      marker_shape="circle" if style is None or style.marker_shape is None else style.marker_shape,
+      marker_size=3.0 if style is None else style.marker_size,
+      z_index=z_index,
+    ))
+  return tuple(result)
 
 
 def _svg_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,
@@ -931,6 +1036,38 @@ def _pdf_marker_stream(shape: str, color: tuple[int, int, int]) -> bytes:
       "-1 0.5523 -0.5523 1 0 1 c f\n"
     )
   return (prefix + body).encode("ascii")
+
+
+def _pdf_compound_path(
+  points: tuple[tuple[float, float], ...],
+  shape: str,
+  marker_size: float,
+  left: float,
+  top: float,
+  plot_width: float,
+  plot_height: float,
+) -> str:
+  """Create one compound path containing non-overlapping marker subpaths."""
+  radius = marker_size / 2
+  commands: list[str] = []
+  for x_value, y_value in points:
+    x = left + x_value * plot_width
+    y = top + (1.0 - y_value) * plot_height
+    if shape == "square":
+      commands.append(f"{x - radius:g} {y - radius:g} {2 * radius:g} {2 * radius:g} re")
+    elif shape == "triangle":
+      commands.append(f"{x:g} {y - radius:g} m {x + radius:g} {y + radius:g} l {x - radius:g} {y + radius:g} l h")
+    else:
+      # Circle and line-like markers use a filled circular footprint in the
+      # compact path; full_vector retains their exact stroke geometry.
+      k = radius * 0.55228475
+      commands.append(
+        f"{x:g} {y - radius:g} m {x + k:g} {y - radius:g} {x + radius:g} {y - k:g} {x + radius:g} {y:g} c "
+        f"{x + radius:g} {y + k:g} {x + k:g} {y + radius:g} {x:g} {y + radius:g} c "
+        f"{x - k:g} {y + radius:g} {x - radius:g} {y + k:g} {x - radius:g} {y:g} c "
+        f"{x - radius:g} {y - k:g} {x - k:g} {y - radius:g} {x:g} {y - radius:g} c h"
+      )
+  return " ".join(commands)
 
 
 def _pdf_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,

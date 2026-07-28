@@ -1,6 +1,6 @@
 # Lightweight Vector Scatter Export
 
-Status: Increments 12-13 implemented; Increments 14-17 planned
+Status: Increments 12-14 implemented; Increments 15-17 planned
 
 This guide defines the implementation contract for lightweight SVG/PDF scatter
 export. It extends `docs/implementation/plot-export-completion.md` without

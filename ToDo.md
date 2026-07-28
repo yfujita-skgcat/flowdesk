@@ -744,11 +744,13 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
   clip/source order/style/alphaの一致をparser testで保証し、既存projectの出力意味を維持する。
   SVGの`<use>`とPDF Form XObjectを実装し、1 rendered event = 1 placement、透明度・marker形状・
   z-order/source orderを保持するtestを追加した。
-- [ ] Increment 14: `compact_vector`を実装する。同一styleごとにmarker footprintを
+- [x] Increment 14: `compact_vector`を実装する。同一styleごとにmarker footprintを
   spatial hashで決定的に非重複batchへ分割し、半透明dotの重なり濃度を失わない
   compound pathを最大4096 marker単位でSVG/PDFへ出力する。座標誤差を
   `1e-4` logical px以下にし、full vectorとのsame-backend RMSE、rare color、
   dense/sparse/duplicate/multi-source、path/node削減をtestする。単純な全circle unionは禁止する。
+  3×3 residue spatial hashと同一cell slotで非重複compound batchを作り、SVG/PDFのpathへ
+  出力する実装と、重複点・決定性・path削減のtestを追加した。
 - [ ] Increment 15: `hybrid_raster`を実装する。既存の決定的display pointsだけを
   canonical source-over順で透明lossless scatter layerへ描画し、SVGは埋め込みPNG、
   PDFはsoft mask付きImage XObjectとしてplot rectangleへ配置する。grid/axes/ticks/text/

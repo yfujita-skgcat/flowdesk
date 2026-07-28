@@ -31,6 +31,7 @@ from flowdesk_core.plot_reuse import (
   map_template_sources,
 )
 from flowdesk_core.plot_scene import PlotScene
+from flowdesk_core.vector_scatter import VectorScatterLayer, compact_scatter_batches
 from flowdesk_storage.project import load_project, save_project
 
 
@@ -149,6 +150,67 @@ def test_full_vector_pdf_uses_form_xobject_and_one_do_per_event(tmp_path) -> Non
   assert data.count(b"/Subtype /Form") == 1
   assert data.count(b"/M0 Do") == 2
   assert b"/XObject << /M0 5 0 R >>" in data
+  assert b"/Subtype /Image" not in data
+
+
+def test_compact_batches_are_deterministic_and_preserve_duplicate_slots() -> None:
+  layer = VectorScatterLayer(
+    "s1", ((0.2, 0.2), (0.2, 0.2), (0.21, 0.2), (0.8, 0.8)), marker_size=3.0
+  )
+  batches = compact_scatter_batches((layer,), plot_width=800, plot_height=600)
+  again = compact_scatter_batches((layer,), plot_width=800, plot_height=600)
+  assert batches == again
+  assert sum(len(batch.points) for batch in batches) == 4
+  assert len(batches) >= 3
+  assert all(batch.batch_key == key for batch, key in zip(batches, sorted(batch.batch_key for batch in batches)))
+
+
+def test_compact_vector_svg_reduces_object_count_without_losing_points(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  layers = {"s1": (tuple(index / 100 for index in range(20)), (0.5,) * 20)}
+  full = tmp_path / "full.svg"
+  compact = tmp_path / "compact.svg"
+  write_plot_svg(
+    full, prepared, layers=layers,
+    options=BatchPlotExportSpec(id="f", name="F", vector_scatter_mode="full_vector"),
+  )
+  write_plot_svg(
+    compact, prepared, layers=layers,
+    options=BatchPlotExportSpec(id="c", name="C", vector_scatter_mode="compact_vector"),
+  )
+  full_text = full.read_text(encoding="utf-8")
+  compact_text = compact.read_text(encoding="utf-8")
+  assert full_text.count("<use ") == 20
+  assert compact_text.count("<path d=") < full_text.count("<use ")
+  assert compact_text.count("fill-opacity=") > 0
+
+
+def test_compact_vector_pdf_uses_compound_paths_and_alpha_resources(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  path = tmp_path / "compact.pdf"
+  write_plot_pdf(
+    path, prepared,
+    layers={"s1": ((0.1, 0.2, 0.3), (0.4, 0.4, 0.4))},
+    options=BatchPlotExportSpec(
+      id="c", name="C", vector_scatter_mode="compact_vector"
+    ),
+  )
+  data = path.read_bytes()
+  assert data.count(b"/Subtype /Form") == 0
+  assert b"/ExtGState" in data
+  assert b" re f" in data or b" c h f" in data
   assert b"/Subtype /Image" not in data
 
 
