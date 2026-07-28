@@ -915,8 +915,10 @@ export画像では、解析中の編集用gateハンドルを表示せず、gate
 
 SVG/PDFの散布点表現は、旧projectでは`full_vector`（イベントごとの配置を保持）として
 解釈されます。新規定義は将来の軽量出力に備えて`hybrid_raster`、散布レイヤー600 DPIを
-既定値として保存しますが、現段階では既存rendererの出力は変更されません。実際の
-`full_vector`、`compact_vector`、`hybrid_raster`の選択UIと出力方式は後続incrementで追加されます。
+既定値として保存します。`full_vector`を選択したSVG/PDFではmarker本体を一度だけ定義し、
+各イベントはその参照を一つだけ配置します。これにより点の位置・順序・色・透明度を維持した
+まま、marker定義の重複を避けます。`compact_vector`と`hybrid_raster`の選択UIと出力方式は
+後続incrementで追加されます。
 
 `Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、Width/Height、DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。Batch Exportは保存時点のactive plot view（X/Y channel、transform、population、overlay、presentation）を使用する。未保存projectでは、保存または実行時に通常のproject保存を行う。
 

@@ -7,6 +7,7 @@ import pytest
 from flowdesk_core.models import (
   BatchPlotExportSpec,
   PlotPresentationSpec,
+  SourceStyleSpec,
   PlotViewRegistry,
   PlotViewSpec,
 )
@@ -97,6 +98,58 @@ def test_svg_export_contains_title_labels_legend_and_metadata(tmp_path) -> None:
   metadata = json.loads(path.with_suffix(".svg.json").read_text(encoding="utf-8"))
   assert metadata["ordered_source_ids"] == ["s1"]
   assert metadata["scientific_note"]
+
+
+def test_full_vector_svg_reuses_markers_and_places_each_event_once(tmp_path) -> None:
+  sources = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", sources, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  presentation = PlotPresentationSpec(
+    source_styles=(
+      SourceStyleSpec(
+        source_id="s1", color="#ff0000", alpha=0.4, marker_shape="square"
+      ),
+    )
+  )
+  options = BatchPlotExportSpec(
+    id="full", name="Full", formats=("svg",), vector_scatter_mode="full_vector"
+  )
+  path = tmp_path / "full.svg"
+  write_plot_svg(
+    path, prepared, presentation, {"s1": ((0.1, 0.2, 0.3), (0.2, 0.3, 0.4))},
+    options=options,
+  )
+  text = path.read_text(encoding="utf-8")
+  assert text.count('id="scatter-marker-0"') == 1
+  assert text.count("<use ") == 3
+  assert 'clip-path="url(#plot-clip)"' in text
+  assert 'fill-opacity="0.4"' in text
+
+
+def test_full_vector_pdf_uses_form_xobject_and_one_do_per_event(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  options = BatchPlotExportSpec(
+    id="full", name="Full", formats=("pdf",), vector_scatter_mode="full_vector"
+  )
+  path = tmp_path / "full.pdf"
+  write_plot_pdf(
+    path, prepared, layers={"s1": ((0.1, 0.2), (0.2, 0.3))}, options=options
+  )
+  data = path.read_bytes()
+  assert data.count(b"/Subtype /Form") == 1
+  assert data.count(b"/M0 Do") == 2
+  assert b"/XObject << /M0 5 0 R >>" in data
+  assert b"/Subtype /Image" not in data
 
 
 def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:

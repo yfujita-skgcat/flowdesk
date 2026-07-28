@@ -271,6 +271,26 @@ def write_plot_svg(
     )
     for source_id in prepared.source_order
   }
+  full_vector = options is None or options.vector_scatter_mode == "full_vector"
+  marker_ids: dict[str, str] = {}
+  if full_vector:
+    defs: list[str] = ['<defs><clipPath id="plot-clip">'
+                       f'<rect x="{left:g}" y="{top:g}" width="{plot_width:g}" '
+                       f'height="{plot_height:g}"/></clipPath>']
+    for index, source_id in enumerate(prepared.source_order):
+      style = style_by_id.get(source_id)
+      color = "#000000" if style is None or style.color is None else style.color
+      alpha = 1.0 if style is None else style.alpha
+      marker_size = 3.0 if style is None else style.marker_size
+      marker_shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
+      marker_id = f"scatter-marker-{index}"
+      marker_ids[source_id] = marker_id
+      radius = marker_size / 2
+      shape = _svg_marker_shape(marker_shape, radius, color, alpha)
+      defs.append(f'<g id="{marker_id}">{shape}</g>')
+    defs.append("</defs>")
+    elements.insert(0, "".join(defs))
+    elements.append('<g clip-path="url(#plot-clip)">')
   for index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
     color = "#000000" if style is None or style.color is None else style.color
@@ -278,15 +298,18 @@ def write_plot_svg(
     for x_value, y_value in zip(x_values, y_values, strict=False):
       x = left + float(x_value) * plot_width
       y = top + (1.0 - float(y_value)) * plot_height
-      elements.append(
-        f'<circle cx="{x:g}" cy="{y:g}" r="3" fill="{escape(color)}"/>'
-      )
+      if full_vector:
+        elements.append(f'<use href="#{marker_ids[source_id]}" x="{x:g}" y="{y:g}"/>')
+      else:
+        elements.append(f'<circle cx="{x:g}" cy="{y:g}" r="3" fill="{escape(color)}"/>')
     label = style.legend_label if style and style.legend_label else source_labels[source_id]
     if options is None or options.include_legend:
       elements.append(
         f'<text x="{width - 180:g}" y="{55 + index * 20}" fill="{escape(color)}">'
         f"{escape(str(label))}</text>"
       )
+  if full_vector:
+    elements.append("</g>")
   if options is None or options.include_gates:
     elements.extend(_svg_gates(_scene_gates(prepared), left, top, plot_width, plot_height))
   svg = (
@@ -409,27 +432,66 @@ def write_plot_pdf(
   if options is None or options.include_ticks:
     commands.extend(_pdf_axes(left, top, plot_width, plot_height, height))
   style_by_id = {style.source_id: style for style in selected.source_styles}
+  full_vector = options is None or options.vector_scatter_mode == "full_vector"
+  form_specs: list[tuple[tuple[int, int, int], float, str, float]] = []
+  marker_refs: dict[str, int] = {}
+  if full_vector:
+    for source_id in prepared.source_order:
+      style = style_by_id.get(source_id)
+      color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
+      alpha = 1.0 if style is None else style.alpha
+      marker_size = 2.0 if style is None else style.marker_size
+      marker_shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
+      marker_refs[source_id] = len(form_specs)
+      form_specs.append((color, alpha, marker_shape, marker_size))
+    commands.append("q")
+    commands.append(f"{left:g} {height - top - plot_height:g} {plot_width:g} {plot_height:g} re W n")
   for source_id in prepared.source_order:
     style = style_by_id.get(source_id)
     color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
-    commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg")
+    if not full_vector:
+      commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg")
     for x_value, y_value in zip(*layers[source_id], strict=False):
       x = left + float(x_value) * plot_width
       y = height - top - float(y_value) * plot_height
-      commands.append(f"{x:g} {y:g} 2 2 re f")
+      if full_vector:
+        size = (2.0 if style is None else style.marker_size) / 2.0
+        commands.extend(("q", f"{size:g} 0 0 {size:g} {x:g} {y:g} cm", f"/M{marker_refs[source_id]} Do", "Q"))
+      else:
+        commands.append(f"{x:g} {y:g} 2 2 re f")
+  if full_vector:
+    commands.append("Q")
   if options is None or options.include_gates:
     commands.extend(_pdf_gates(_scene_gates(prepared), left, top, plot_width, plot_height, height))
   stream = ("\n".join(commands) + "\n").encode("ascii")
+  form_start = 5
+  xobjects = " ".join(
+    f"/M{index} {form_start + index * 2} 0 R" for index in range(len(form_specs))
+  )
   objects = [
     b"<< /Type /Catalog /Pages 2 0 R >>",
     b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
     (
       f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] "
-      "/Resources << >> /Contents 4 0 R >>"
+      f"/Resources << /XObject << {xobjects} >> >> /Contents 4 0 R >>"
     ).encode("ascii"),
     b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n"
     + stream + b"endstream",
   ]
+  for color, alpha, marker_shape, _marker_size in form_specs:
+    marker_stream = _pdf_marker_stream(marker_shape, color)
+    form_index = len(objects) + 1
+    alpha_index = form_index + 1
+    objects.append(
+      (
+        f"<< /Type /XObject /Subtype /Form /FormType 1 /BBox [-1 -1 1 1] "
+        f"/Resources << /ExtGState << /GS0 {alpha_index} 0 R >> >> "
+        f"/Length {len(marker_stream)} >>\nstream\n"
+      ).encode("ascii") + marker_stream + b"\nendstream"
+    )
+    objects.append(
+      f"<< /Type /ExtGState /ca {alpha:g} /CA {alpha:g} >>".encode("ascii")
+    )
   pdf = bytearray(b"%PDF-1.4\n")
   offsets = [0]
   for index, obj in enumerate(objects, start=1):
@@ -518,6 +580,23 @@ def _svg_axes(left: int, top: int, width: int, height: int) -> list[str]:
     elements.append(f'<path d="M {x:g} {top + height} v 5 M {left - 5} {y:g} h 5" '
                     'stroke="#808080" stroke-width="1"/>')
   return elements
+
+
+def _svg_marker_shape(shape: str, radius: float, color: str, alpha: float) -> str:
+  """Return one reusable marker footprint centered at the SVG origin."""
+  fill = f'fill="{escape(color)}" fill-opacity="{alpha:g}"'
+  if shape == "square":
+    return f'<rect x="{-radius:g}" y="{-radius:g}" width="{2 * radius:g}" height="{2 * radius:g}" {fill}/>'
+  if shape == "triangle":
+    return (
+      f'<path d="M 0 {-radius:g} L {radius:g} {radius:g} L {-radius:g} {radius:g} Z" {fill}/>'
+    )
+  if shape in {"cross", "plus"}:
+    stroke = f'stroke="{escape(color)}" stroke-opacity="{alpha:g}" stroke-width="{max(1.0, radius / 2):g}"'
+    if shape == "cross":
+      return f'<path d="M {-radius:g} {-radius:g} L {radius:g} {radius:g} M {radius:g} {-radius:g} L {-radius:g} {radius:g}" fill="none" {stroke}/>'
+    return f'<path d="M {-radius:g} 0 H {radius:g} M 0 {-radius:g} V {radius:g}" fill="none" {stroke}/>'
+  return f'<circle cx="0" cy="0" r="{radius:g}" {fill}/>'
 
 
 def _svg_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,
@@ -829,6 +908,29 @@ def _pdf_axes(left: int, top: int, width: int, plot_height: int, height: int) ->
     y = top + fraction * plot_height
     commands.append(f"{x:g} {bottom} m {x:g} {bottom - 5} l {left - 5} {y:g} m {left} {y:g} l S")
   return commands
+
+
+def _pdf_marker_stream(shape: str, color: tuple[int, int, int]) -> bytes:
+  """Build a normalized reusable Form XObject marker centered at (0, 0)."""
+  red, green, blue = (value / 255 for value in color)
+  prefix = f"{red:g} {green:g} {blue:g} rg\n"
+  if shape == "square":
+    body = "-1 -1 2 2 re f\n"
+  elif shape == "triangle":
+    body = "0 1 m 1 -1 l -1 -1 l h f\n"
+  elif shape == "cross":
+    body = "0.35 w -1 -1 m 1 1 l S 1 -1 m -1 1 l S\n"
+  elif shape == "plus":
+    body = "0.35 w -1 0 m 1 0 l S 0 -1 m 0 1 l S\n"
+  else:
+    # A four-segment cubic approximation of a unit circle.
+    body = (
+      "0 1 m 0.5523 1 1 0.5523 1 0 c "
+      "1 -0.5523 0.5523 -1 0 -1 c "
+      "-0.5523 -1 -1 -0.5523 -1 0 c "
+      "-1 0.5523 -0.5523 1 0 1 c f\n"
+    )
+  return (prefix + body).encode("ascii")
 
 
 def _pdf_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,

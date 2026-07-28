@@ -738,10 +738,12 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
   rendererの出力形式はまだ変更しない。`VectorScatterPlan`の決定的hash/provenance、
   旧定義のfull_vector解決、新規定義のhybrid_raster/600 DPI既定値を実装し、core testと
   schema互換testを追加した。
-- [ ] Increment 13: `full_vector`を実装する。SVGはmarkerを`<defs>`で一度定義して
+- [x] Increment 13: `full_vector`を実装する。SVGはmarkerを`<defs>`で一度定義して
   eventごとに`<use>`を配置し、PDFはmarker Form XObject、graphics state、Flate圧縮
   content streamを再利用する。1 rendered event = 1 placement、scatter imageなし、
   clip/source order/style/alphaの一致をparser testで保証し、既存projectの出力意味を維持する。
+  SVGの`<use>`とPDF Form XObjectを実装し、1 rendered event = 1 placement、透明度・marker形状・
+  z-order/source orderを保持するtestを追加した。
 - [ ] Increment 14: `compact_vector`を実装する。同一styleごとにmarker footprintを
   spatial hashで決定的に非重複batchへ分割し、半透明dotの重なり濃度を失わない
   compound pathを最大4096 marker単位でSVG/PDFへ出力する。座標誤差を
