@@ -88,6 +88,9 @@ check: lint type-check
 fmt:
 	ruff format src/ tests/
 
+release:
+	./tools/create-release.sh
+
 all: fmt check test
 
 package:

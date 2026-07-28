@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Read or increment the Flowdesk application version."""
 
 from __future__ import annotations
