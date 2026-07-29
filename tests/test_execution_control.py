@@ -12,6 +12,8 @@ from flowdesk_core.execution_control import (
   ExecutionControl,
   ExecutionOptions,
   ProgressEvent,
+  numeric_library_inner_thread_count,
+  resolve_execution_workers,
 )
 
 
@@ -88,3 +90,44 @@ def test_execution_control_has_no_qt_dependency() -> None:
   module = importlib.import_module("flowdesk_core.execution_control")
 
   assert not any(name.startswith(("PySide6", "pyqtgraph")) for name in module.__dict__)
+
+
+def test_thread_worker_resolution_is_bounded_by_all_runtime_limits() -> None:
+  resolution = resolve_execution_workers(
+    ExecutionOptions(
+      backend="thread", max_workers=8, memory_budget_bytes=500,
+    ),
+    selected_sample_count=3,
+    estimated_sample_bytes=200,
+    available_cpu_count=4,
+    numeric_inner_threads=2,
+  )
+
+  assert resolution.backend == "thread"
+  assert resolution.effective_max_workers == 2
+  assert set(resolution.limiting_factors) >= {
+    "memory_budget", "numeric_inner_threads",
+  }
+  assert resolution.to_mapping()["estimated_sample_bytes"] == 200
+
+
+def test_sequential_worker_resolution_remains_one_even_when_requested_higher() -> None:
+  resolution = resolve_execution_workers(
+    ExecutionOptions(max_workers=8, memory_budget_bytes=500),
+    selected_sample_count=4,
+    estimated_sample_bytes=100,
+    available_cpu_count=16,
+    numeric_inner_threads=1,
+  )
+
+  assert resolution.effective_max_workers == 1
+  assert resolution.limiting_factors == ("backend_sequential",)
+
+
+def test_numeric_library_thread_detection_uses_largest_valid_setting() -> None:
+  assert numeric_library_inner_thread_count({
+    "OMP_NUM_THREADS": "2",
+    "OPENBLAS_NUM_THREADS": "invalid",
+    "MKL_NUM_THREADS": "4",
+    "NUMEXPR_NUM_THREADS": "0",
+  }) == 4

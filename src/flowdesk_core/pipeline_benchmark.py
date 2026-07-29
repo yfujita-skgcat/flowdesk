@@ -1,9 +1,9 @@
 """Deterministic, opt-in baseline measurement for canonical pipelines.
 
 This module creates synthetic immutable :class:`SampleData` only at runtime.
-It does not write generated events or FCS files into the repository and does
-not enable parallel execution.  The baseline is intentionally separate from
-display and export benchmarks.
+It does not write generated events or FCS files into the repository. Pipeline
+execution policy is explicit so sequential and bounded-thread measurements can
+be compared without claiming a display or export speedup.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import platform
 import sys
 import time
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -120,6 +120,14 @@ def _peak_rss_kib() -> int | None:
   return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 
 
+def pipeline_scientific_report_hash(report: object) -> str:
+  """Hash report scientific content without runtime executor provenance."""
+  if not hasattr(report, "execution_provenance"):
+    raise TypeError("report must provide execution_provenance")
+  scientific_report = replace(report, execution_provenance={})
+  return hashlib.sha256(repr(scientific_report).encode("utf-8")).hexdigest()
+
+
 def benchmark_environment() -> dict[str, Any]:
   """Return non-invasive environment provenance without importing Qt."""
   try:
@@ -144,9 +152,9 @@ def run_pipeline_benchmark(
 ) -> dict[str, Any]:
   """Measure fixture construction and whole canonical pipeline separately.
 
-  This baseline deliberately uses the current sequential runner.  It records
-  the requested runtime policy for later comparison but does not claim an
-  analysis speedup from rendering or display preparation.
+  The resulting report carries the resolved worker/memory policy.  This
+  benchmark measures canonical analysis only; it does not claim a display or
+  rendering speedup.
   """
   if repeats < 1:
     raise ValueError("repeats must be positive")
@@ -161,6 +169,7 @@ def run_pipeline_benchmark(
   }
   elapsed_ms: list[float] = []
   report_hashes: list[str] = []
+  execution_provenance: dict[str, Any] | None = None
   for _ in range(repeats):
     started = time.perf_counter()
     report = PipelineRunner(project).run_samples(
@@ -178,7 +187,11 @@ def run_pipeline_benchmark(
     }
     if root_counts != expected_root_counts:
       raise RuntimeError("benchmark root population counts changed")
-    report_hashes.append(hashlib.sha256(repr(report).encode("utf-8")).hexdigest())
+    if execution_provenance is None:
+      execution_provenance = dict(report.execution_provenance)
+    elif report.execution_provenance != execution_provenance:
+      raise RuntimeError("benchmark execution resolution changed between repeats")
+    report_hashes.append(pipeline_scientific_report_hash(report))
   return {
     "algorithm_version": "pipeline_benchmark.v1",
     "thresholds": None,
@@ -190,12 +203,7 @@ def run_pipeline_benchmark(
       "generated_event_data_persisted": False,
     },
     "environment": benchmark_environment(),
-    "execution": {
-      "backend": resolved_options.backend,
-      "requested_max_workers": resolved_options.max_workers,
-      "memory_budget_bytes": resolved_options.memory_budget_bytes,
-      "effective_workers": 1,
-    },
+    "execution": execution_provenance or {},
     "stage_boundaries_ms": {
       "fixture_construction": fixture_ms,
       "canonical_pipeline": elapsed_ms,

@@ -6,6 +6,7 @@ persisted project definition and must never change the scientific pipeline.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from threading import Event
@@ -41,6 +42,137 @@ class ExecutionOptions:
       raise ValueError("max_workers must be positive")
     if self.memory_budget_bytes is not None and self.memory_budget_bytes < 1:
       raise ValueError("memory_budget_bytes must be positive when set")
+
+
+@dataclass(frozen=True)
+class ExecutionResolution:
+  """Resolved bounded-worker policy recorded for one runtime operation.
+
+  This is runtime provenance, not a persisted project setting.  ``estimated`` is
+  a conservative worst selected-sample in-flight estimate, so a memory limit
+  bounds concurrent sample work rather than attempting to consume every CPU.
+  """
+
+  backend: ExecutionBackend
+  requested_max_workers: int
+  effective_max_workers: int
+  selected_sample_count: int
+  available_cpu_count: int
+  memory_budget_bytes: int | None
+  estimated_sample_bytes: int
+  numeric_inner_threads: int
+  limiting_factors: tuple[str, ...] = ()
+
+  def to_mapping(self) -> dict[str, object]:
+    """Return stable report-ready execution provenance."""
+    return {
+      "backend": self.backend,
+      "requested_max_workers": self.requested_max_workers,
+      "effective_max_workers": self.effective_max_workers,
+      "selected_sample_count": self.selected_sample_count,
+      "available_cpu_count": self.available_cpu_count,
+      "memory_budget_bytes": self.memory_budget_bytes,
+      "estimated_sample_bytes": self.estimated_sample_bytes,
+      "numeric_inner_threads": self.numeric_inner_threads,
+      "limiting_factors": list(self.limiting_factors),
+    }
+
+
+_NUMERIC_THREAD_ENVIRONMENT_KEYS = (
+  "OMP_NUM_THREADS",
+  "OPENBLAS_NUM_THREADS",
+  "MKL_NUM_THREADS",
+  "NUMEXPR_NUM_THREADS",
+)
+
+
+def numeric_library_inner_thread_count(
+  environment: dict[str, str] | None = None,
+) -> int:
+  """Return a conservative native numeric-library thread count.
+
+  Unset, malformed, and non-positive values mean the library has not declared
+  an outer-thread-relevant limit, so the runtime uses one for this policy.
+  """
+  values = environment if environment is not None else os.environ
+  counts: list[int] = []
+  for key in _NUMERIC_THREAD_ENVIRONMENT_KEYS:
+    raw = values.get(key)
+    if raw is None:
+      continue
+    try:
+      count = int(raw)
+    except ValueError:
+      continue
+    if count > 0:
+      counts.append(count)
+  return max(counts, default=1)
+
+
+def resolve_execution_workers(
+  options: ExecutionOptions,
+  *,
+  selected_sample_count: int,
+  estimated_sample_bytes: int,
+  available_cpu_count: int | None = None,
+  numeric_inner_threads: int | None = None,
+) -> ExecutionResolution:
+  """Resolve a bounded worker count without assuming all CPUs are usable."""
+  if selected_sample_count < 0:
+    raise ValueError("selected_sample_count must not be negative")
+  if estimated_sample_bytes < 0:
+    raise ValueError("estimated_sample_bytes must not be negative")
+  cpu_count = max(1, available_cpu_count or os.cpu_count() or 1)
+  inner_threads = max(
+    1,
+    numeric_inner_threads
+    if numeric_inner_threads is not None else numeric_library_inner_thread_count(),
+  )
+  sample_bound = max(1, selected_sample_count)
+  factors: list[str] = []
+  if options.backend == "sequential":
+    factors.append("backend_sequential")
+    return ExecutionResolution(
+      backend=options.backend,
+      requested_max_workers=options.max_workers,
+      effective_max_workers=1,
+      selected_sample_count=selected_sample_count,
+      available_cpu_count=cpu_count,
+      memory_budget_bytes=options.memory_budget_bytes,
+      estimated_sample_bytes=estimated_sample_bytes,
+      numeric_inner_threads=inner_threads,
+      limiting_factors=tuple(factors),
+    )
+
+  limits = [options.max_workers, sample_bound, cpu_count]
+  if options.max_workers <= min(sample_bound, cpu_count):
+    factors.append("requested_max_workers")
+  if sample_bound <= min(options.max_workers, cpu_count):
+    factors.append("selected_sample_count")
+  if cpu_count <= min(options.max_workers, sample_bound):
+    factors.append("available_cpu_count")
+  if inner_threads > 1:
+    outer_thread_limit = max(1, cpu_count // inner_threads)
+    limits.append(outer_thread_limit)
+    if outer_thread_limit <= min(limits):
+      factors.append("numeric_inner_threads")
+  if options.memory_budget_bytes is not None and estimated_sample_bytes > 0:
+    memory_limit = max(1, options.memory_budget_bytes // estimated_sample_bytes)
+    limits.append(memory_limit)
+    if memory_limit <= min(limits):
+      factors.append("memory_budget")
+  effective = max(1, min(limits))
+  return ExecutionResolution(
+    backend=options.backend,
+    requested_max_workers=options.max_workers,
+    effective_max_workers=effective,
+    selected_sample_count=selected_sample_count,
+    available_cpu_count=cpu_count,
+    memory_budget_bytes=options.memory_budget_bytes,
+    estimated_sample_bytes=estimated_sample_bytes,
+    numeric_inner_threads=inner_threads,
+    limiting_factors=tuple(dict.fromkeys(factors)),
+  )
 
 
 class CancellationToken:

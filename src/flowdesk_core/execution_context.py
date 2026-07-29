@@ -23,3 +23,6 @@ class ExecutionContext:
   execution_control: ExecutionControl | None = field(
     default=None, compare=False, repr=False
   )
+  # Thread workers retain cooperative cancellation but do not publish progress.
+  # Progress sinks are coordinator-owned so Qt adapters never run in workers.
+  report_progress: bool = field(default=True, compare=False, repr=False)

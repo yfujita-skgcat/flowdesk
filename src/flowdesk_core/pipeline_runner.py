@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -46,7 +47,13 @@ from flowdesk_core.derived_parameters import (
 )
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.execution_context import ExecutionContext
-from flowdesk_core.execution_control import ExecutionControl, ProgressEvent
+from flowdesk_core.execution_control import (
+  ExecutionControl,
+  ExecutionOptions,
+  ExecutionResolution,
+  ProgressEvent,
+  resolve_execution_workers,
+)
 from flowdesk_core.execution_report import ExecutionDiagnostic, ExecutionReport
 from flowdesk_core.gating_strategy import (
   GatingStrategyError,
@@ -729,22 +736,24 @@ class PipelineRunner:
         messages.append(f"compensation_calculation=failed: {exc}")
         raise
 
-    sample_results: list[SampleExecutionResult] = []
-    for sample_index, sample_meta in enumerate(selected_samples):
-      sid = str(sample_meta.get("id", "unknown"))
-      sample_result = self._execute_sample(
-        sample_meta=sample_meta,
-        sample=sample_data.get(sid),
-        project_order=sample_index,
-        context=context,
-        operation_id=operation_id,
-        total_samples=total_samples,
-        gating_strategy_id=sample_strategy_ids.get(sid, gating_strategy_id),
-        statistic_ids=sample_assignments.get(sid, (None, ()))[1],
-        derived_plan=derived_plan,
-        extra_matrices=extra_matrices,
-      )
-      sample_results.append(sample_result)
+    resolution = self._resolve_sample_execution_resolution(
+      context=context,
+      selected_samples=selected_samples,
+      sample_data=sample_data,
+      derived_plan=derived_plan,
+    )
+    sample_results = self._execute_selected_samples(
+      selected_samples=selected_samples,
+      sample_data=sample_data,
+      context=context,
+      operation_id=operation_id,
+      gating_strategy_id=gating_strategy_id,
+      sample_strategy_ids=sample_strategy_ids,
+      sample_assignments=sample_assignments,
+      derived_plan=derived_plan,
+      extra_matrices=extra_matrices,
+      resolution=resolution,
+    )
 
     merged_samples = self._merge_sample_execution_results(sample_results)
     all_population_results.extend(merged_samples.population_results)
@@ -796,7 +805,171 @@ class PipelineRunner:
       auto_gate_fits=tuple(all_auto_gate_fits),
       magnetic_gate_fits=tuple(all_magnetic_gate_fits),
       tethered_gate_fits=tuple(all_tethered_gate_fits),
+      execution_provenance=resolution.to_mapping(),
     )
+
+  def _resolve_sample_execution_resolution(
+    self,
+    *,
+    context: ExecutionContext,
+    selected_samples: Sequence[Mapping[str, Any]],
+    sample_data: Mapping[str, SampleData],
+    derived_plan: DerivedParameterPlan,
+  ) -> ExecutionResolution:
+    """Resolve bounded runtime concurrency from immutable selected inputs."""
+    control = context.execution_control
+    options = control.options if control is not None else ExecutionOptions()
+    estimated_sample_bytes = max(
+      (
+        self._estimate_sample_execution_bytes(
+          sample_data.get(str(sample_meta.get("id", "unknown"))),
+          derived_parameter_count=len(derived_plan.execution_order),
+        )
+        for sample_meta in selected_samples
+      ),
+      default=0,
+    )
+    return resolve_execution_workers(
+      options,
+      selected_sample_count=len(selected_samples),
+      estimated_sample_bytes=estimated_sample_bytes,
+    )
+
+  def _estimate_sample_execution_bytes(
+    self,
+    sample: SampleData | None,
+    *,
+    derived_parameter_count: int,
+  ) -> int:
+    """Conservatively estimate one sample's canonical in-flight arrays.
+
+    The estimate includes source, compensated, derived, transformed, and one
+    temporary derived/transformed-sized array, plus a boolean membership mask
+    for every known gate. It deliberately rounds unknown/missing sample input
+    to zero; no worker is submitted for a missing event array.
+    """
+    if sample is None:
+      return 0
+    source_bytes = int(sample.events.nbytes)
+    channel_count = max(1, len(sample.channels))
+    derived_multiplier = 1.0 + (derived_parameter_count / channel_count)
+    derived_bytes = int(np.ceil(source_bytes * derived_multiplier))
+    gate_count = self._maximum_gate_count()
+    membership_bytes = int(sample.events.shape[0]) * gate_count
+    return source_bytes + source_bytes + derived_bytes * 3 + membership_bytes
+
+  def _maximum_gate_count(self) -> int:
+    """Return a conservative gate-mask count without constructing strategies."""
+    count = 1
+    strategies = self._project.get("gating_strategies_data", {})
+    if not isinstance(strategies, Mapping):
+      return count
+    for value in strategies.values():
+      if isinstance(value, Mapping):
+        gates = value.get("gates", ())
+      elif isinstance(value, GatingStrategySpec):
+        gates = value.gates
+      else:
+        continue
+      if isinstance(gates, Sequence):
+        count = max(count, len(gates) + 1)
+    return count
+
+  def _execute_selected_samples(
+    self,
+    *,
+    selected_samples: Sequence[Mapping[str, Any]],
+    sample_data: Mapping[str, SampleData],
+    context: ExecutionContext,
+    operation_id: str | None,
+    gating_strategy_id: str | None,
+    sample_strategy_ids: Mapping[str, str | None],
+    sample_assignments: Mapping[str, tuple[str | None, Sequence[str]]],
+    derived_plan: DerivedParameterPlan,
+    extra_matrices: Mapping[str, Mapping[str, Any]],
+    resolution: ExecutionResolution,
+  ) -> list[SampleExecutionResult]:
+    """Execute independent samples sequentially or in bounded coordinator threads."""
+    total_samples = len(selected_samples)
+
+    def arguments(
+      project_order: int,
+      sample_meta: Mapping[str, Any],
+      execution_context: ExecutionContext,
+    ) -> dict[str, Any]:
+      sid = str(sample_meta.get("id", "unknown"))
+      return {
+        "sample_meta": sample_meta,
+        "sample": sample_data.get(sid),
+        "project_order": project_order,
+        "context": execution_context,
+        "operation_id": operation_id,
+        "total_samples": total_samples,
+        "gating_strategy_id": sample_strategy_ids.get(sid, gating_strategy_id),
+        "statistic_ids": sample_assignments.get(sid, (None, ()))[1],
+        "derived_plan": derived_plan,
+        "extra_matrices": extra_matrices,
+      }
+
+    if resolution.backend == "sequential" or resolution.effective_max_workers == 1:
+      return [
+        self._execute_sample(**arguments(index, sample_meta, context))
+        for index, sample_meta in enumerate(selected_samples)
+      ]
+
+    # Keep cancellation checks in worker stage boundaries, but make all callback
+    # delivery coordinator-owned so Qt/CLI adapters observe monotonic progress.
+    worker_context = replace(context, report_progress=False)
+    sample_iterator = iter(enumerate(selected_samples))
+    results: list[SampleExecutionResult] = []
+    active: dict[Future[SampleExecutionResult], tuple[int, Mapping[str, Any]]] = {}
+    completed = 0
+
+    def submit_one(executor: ThreadPoolExecutor) -> bool:
+      try:
+        project_order, sample_meta = next(sample_iterator)
+      except StopIteration:
+        return False
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_queued", completed_units=completed,
+        total_units=total_samples,
+        sample_id=str(sample_meta.get("id", "unknown")),
+      )
+      future = executor.submit(
+        self._execute_sample, **arguments(project_order, sample_meta, worker_context)
+      )
+      active[future] = (project_order, sample_meta)
+      return True
+
+    executor = ThreadPoolExecutor(
+      max_workers=resolution.effective_max_workers,
+      thread_name_prefix="flowdesk-pipeline",
+    )
+    try:
+      for _ in range(resolution.effective_max_workers):
+        if not submit_one(executor):
+          break
+      while active:
+        done, _ = wait(tuple(active), return_when=FIRST_COMPLETED)
+        for future in done:
+          _, sample_meta = active.pop(future)
+          result = future.result()
+          results.append(result)
+          completed += 1
+          self._pipeline_checkpoint(
+            context, operation_id, "sample_complete", completed_units=completed,
+            total_units=total_samples, sample_id=result.sample_id,
+          )
+          submit_one(executor)
+    except BaseException:
+      for future in active:
+        future.cancel()
+      raise
+    finally:
+      # Active workers cooperatively see the shared token at their next stage
+      # boundary; shutdown waits so no background work survives this operation.
+      executor.shutdown(wait=True, cancel_futures=True)
+    return results
 
   @staticmethod
   def _merge_sample_execution_results(
@@ -1042,15 +1215,16 @@ class PipelineRunner:
     if control is None:
       return
     control.cancellation_token.raise_if_cancelled()
-    control.emit_progress(ProgressEvent(
-      operation_id=operation_id or control.begin_operation("pipeline"),
-      operation="pipeline",
-      phase=phase,
-      completed_units=completed_units,
-      total_units=total_units,
-      sample_id=sample_id,
-      message=message,
-    ))
+    if context.report_progress:
+      control.emit_progress(ProgressEvent(
+        operation_id=operation_id or control.begin_operation("pipeline"),
+        operation="pipeline",
+        phase=phase,
+        completed_units=completed_units,
+        total_units=total_units,
+        sample_id=sample_id,
+        message=message,
+      ))
     control.cancellation_token.raise_if_cancelled()
 
   def _group_override_qc_diagnostics(

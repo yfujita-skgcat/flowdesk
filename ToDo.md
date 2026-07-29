@@ -1386,15 +1386,19 @@ thread backend（Increment 8）とは別の計画である。
 
 #### Increment 8: bounded thread sample-level parallelism
 
-- [ ] `sequential`/`thread` backendとpositive `max_workers`をruntime optionとして追加する。
+- [x] `sequential`/`thread` backendとpositive `max_workers`をruntime optionとして追加する。
   project scientific definitionへcallback/thread objectを保存しない。
-- [ ] input events bytes、compensated/derived/transformed temporary、membershipを含む保守的な
+- [x] input events bytes、compensated/derived/transformed temporary、membershipを含む保守的な
   sample memory estimatorを追加し、requested workers、sample数、CPU、memory budget、numeric
   library inner threadsからeffective worker数を決める。全CPUを無条件に使わない。
-- [ ] pending futureのcancel、active taskの協調終了、sample failure policy、deterministic merge、
+- [x] pending futureのcancel、active taskの協調終了、sample failure policy、deterministic merge、
   resolved backend/worker/memory provenanceを実装する。
-- [ ] workers=1/2/Nでcount、frequency、membership mask、statistics、diagnostics、report order、
+- [x] workers=1/2/Nでcount、frequency、membership mask、statistics、diagnostics、report order、
   raw eventsがsequentialと一致するtestを追加する。通常CIに絶対時間thresholdを置かない。
+  2026-07-30のopt-in small benchmark（100,000 events × 8、fallback root population）では
+  sequential中央値3.37 ms、thread/2 workers中央値4.65 ms、scientific report hash一致だった。
+  この軽量workloadでspeedupは得られなかったため、thread backendは明示指定時のみとし、defaultを
+  sequentialから変更しない。代表的なcompensation/derived/gating workloadで再計測する。
 
 #### Increment 9: bounded Batch Export parallel rendering
 

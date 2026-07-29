@@ -19,6 +19,9 @@ def main() -> int:
   parser.add_argument("--profile", choices=sorted(PIPELINE_BENCHMARK_PROFILES), default="small")
   parser.add_argument("--repeats", type=int, default=1)
   parser.add_argument("--seed", type=int, default=1729)
+  parser.add_argument("--backend", choices=("sequential", "thread"), default="sequential")
+  parser.add_argument("--max-workers", type=int, default=1)
+  parser.add_argument("--memory-budget-bytes", type=int)
   parser.add_argument(
     "--output", type=Path, default=Path("artifacts/pipeline-benchmark.json"),
   )
@@ -27,7 +30,11 @@ def main() -> int:
     PIPELINE_BENCHMARK_PROFILES[args.profile],
     repeats=args.repeats,
     seed=args.seed,
-    options=ExecutionOptions(),
+    options=ExecutionOptions(
+      backend=args.backend,
+      max_workers=args.max_workers,
+      memory_budget_bytes=args.memory_budget_bytes,
+    ),
   )
   args.output.parent.mkdir(parents=True, exist_ok=True)
   args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

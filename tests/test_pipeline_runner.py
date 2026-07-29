@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from threading import Event
+
 import numpy as np
 import pytest
 
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.execution_context import ExecutionContext
-from flowdesk_core.execution_control import ExecutionCancelled, ExecutionControl
+from flowdesk_core.execution_control import (
+  ExecutionCancelled,
+  ExecutionControl,
+  ExecutionOptions,
+)
 from flowdesk_core.models import ChannelSpec, GateSpec, GatingStrategySpec
 from flowdesk_core.overrides import gate_version_hash
 from flowdesk_core.pipeline_runner import (
@@ -208,6 +214,110 @@ def test_sample_execution_merge_uses_project_order_not_completion_order() -> Non
   ]
   assert [item["sample_id"] for item in merged.auto_gate_fits] == ["s1", "s2"]
   assert merged.failed_sample_count == 1
+
+
+@pytest.mark.parametrize("max_workers", [1, 2, 8])
+def test_threaded_samples_match_sequential_report_and_keep_raw_events(
+  max_workers: int,
+) -> None:
+  strategy = GatingStrategySpec(
+    id="thread-parity",
+    name="Thread parity",
+    gates=(GateSpec(
+      id="positive", name="Positive", gate_type="range", x_parameter="signal",
+      thresholds={"min": 2.0, "max": 5.0},
+    ),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}, {"id": "s2"}, {"id": "s3"}],
+    execution_profiles=[{
+      "id": "default", "name": "Default", "gating_strategy_id": strategy.id,
+    }],
+    gating_strategies_data={strategy.id: strategy},
+    statistics=[
+      {
+        "id": "root_count", "name": "Root count",
+        "population_id": "all_events", "metric": "count",
+      },
+      {
+        "id": "positive_mean", "name": "Positive mean",
+        "population_id": "positive", "parameter_id": "signal", "metric": "mean",
+      },
+    ],
+  )
+  channels = (ChannelSpec(id="signal", name="Signal"),)
+  samples = (
+    SampleData("s1", np.array([[1.0], [2.0]]), channels),
+    SampleData("s2", np.array([[3.0], [4.0], [5.0]]), channels),
+    SampleData("s3", np.array([[6.0]]), channels),
+  )
+  before = tuple(sample.events.copy() for sample in samples)
+  parallel = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_control=ExecutionControl(options=ExecutionOptions(
+      backend="thread", max_workers=max_workers,
+    ))),
+    samples,
+  )
+  sequential = PipelineRunner(project).run_samples(ExecutionContext(), samples)
+
+  assert parallel.status == sequential.status
+  assert parallel.population_results == sequential.population_results
+  assert parallel.statistic_results == sequential.statistic_results
+  assert parallel.input_files == sequential.input_files
+  assert parallel.messages == sequential.messages
+  assert parallel.diagnostics == sequential.diagnostics
+  assert parallel.execution_provenance["backend"] == "thread"
+  assert parallel.execution_provenance["requested_max_workers"] == max_workers
+  assert 1 <= parallel.execution_provenance["effective_max_workers"] <= max_workers
+  for actual, expected in zip(
+    parallel.population_membership,
+    sequential.population_membership,
+    strict=True,
+  ):
+    assert (actual.sample_id, actual.population_id) == (
+      expected.sample_id, expected.population_id,
+    )
+    np.testing.assert_array_equal(actual.mask, expected.mask)
+  for sample, raw in zip(samples, before, strict=True):
+    np.testing.assert_array_equal(sample.events, raw)
+
+
+def test_threaded_pipeline_cancels_active_worker_without_returning_partial_report(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  project = _make_project(samples=[{"id": "s1"}, {"id": "s2"}])
+  channels = (ChannelSpec(id="signal", name="Signal"),)
+  samples = (
+    SampleData("s1", np.array([[1.0], [2.0]]), channels),
+    SampleData("s2", np.array([[3.0], [4.0]]), channels),
+  )
+  raw = tuple(sample.events.copy() for sample in samples)
+  started = Event()
+  pause = Event()
+  control = ExecutionControl(options=ExecutionOptions(backend="thread", max_workers=2))
+  runner = PipelineRunner(project)
+  original = runner._execute_sample
+
+  def delayed_execute_sample(**kwargs):
+    if kwargs["sample_meta"]["id"] == "s1":
+      started.set()
+      while not control.cancellation_token.is_cancelled():
+        pause.wait(0.001)
+      control.cancellation_token.raise_if_cancelled()
+    return original(**kwargs)
+
+  monkeypatch.setattr(runner, "_execute_sample", delayed_execute_sample)
+
+  def cancel_after_second_submission(event) -> None:
+    if event.phase == "sample_queued" and event.sample_id == "s2":
+      assert started.wait(timeout=1.0)
+      control.cancellation_token.cancel()
+
+  control.progress_sink = cancel_after_second_submission
+  with pytest.raises(ExecutionCancelled):
+    runner.run_samples(ExecutionContext(execution_control=control), samples)
+  for sample, expected in zip(samples, raw, strict=True):
+    np.testing.assert_array_equal(sample.events, expected)
 
 
 # ---------------------------------------------------------------------------

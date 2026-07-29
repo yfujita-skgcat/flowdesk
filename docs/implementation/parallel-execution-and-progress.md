@@ -823,10 +823,35 @@ statistics equal the original serial implementation.
 
 ### Increment 8: Bounded thread sample-level pipeline parallelism
 
-- Add explicit sequential/thread executor selection.
-- Add effective-worker and memory-budget resolution.
-- Cancel pending work cooperatively and wait for active tasks.
-- Record resolved execution provenance.
+Status (2026-07-30): complete. `ExecutionOptions` remains runtime-only and defaults to
+the compatible sequential backend.  An explicit `thread` backend runs only complete,
+immutable `SampleExecutionResult` jobs after the serial shared preparation barrier.
+`ExecutionResolution` bounds requested workers by selected samples, logical CPUs, an
+optional memory budget, conservative worst-sample in-flight bytes, and declared
+OpenMP/BLAS/NumExpr inner-thread environment settings; it never enables all CPUs by
+default.  The full resolution is recorded in `ExecutionReport.execution_provenance`.
+
+Workers keep the shared cancellation token but suppress progress callbacks.  The
+coordinator submits at most the resolved worker count, publishes monotonic queued/completed
+events, cancels unstarted futures on an error/cancellation path, and waits for active
+workers before returning or raising.  Shared report mutation, deterministic project-order
+merge, cross-sample QC, and final report construction remain coordinator work.  Existing
+sample failure policy is unchanged: a non-recoverable sample exception aborts the
+authoritative report, while the existing recoverable derived-parameter policy returns a
+`failed_sample` result for deterministic merge.
+
+The opt-in small benchmark on 2026-07-30 (100,000 events × 8, fallback-root
+population, one repeat) measured 3.37 ms sequential and 4.65 ms with two thread
+workers; the scientific report hashes matched.  This deliberately lightweight
+workload does not demonstrate a speedup, so the default remains sequential.
+Repeat the benchmark with representative compensation, derived-parameter, and
+gating workloads before exposing or recommending a thread setting to users.
+
+- Add explicit sequential/thread executor selection without project serialization.
+- Estimate canonical per-sample array and membership memory before submission.
+- Bound and record effective workers; retain coordinator-owned cancellation/progress.
+- Test resolution limits, workers 1/2/N parity for gating/statistics/masks/order/raw input,
+  and cancellation while an active worker is waiting at a safe checkpoint.
 
 Acceptance: worker counts 1, 2, and N return identical ordered reports; failures and
 cancellation are deterministic; measured benchmark and peak memory are reported.
