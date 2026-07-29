@@ -14,6 +14,7 @@ from flowdesk_core.batch_plot_export import (
   batch_plot_export_spec_from_mapping,
   run_batch_plot_export,
 )
+from flowdesk_core.density_colors import density_event_colors
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
@@ -24,10 +25,10 @@ from flowdesk_core.plot_export import (
   write_plot_png,
   write_plot_svg,
 )
-from flowdesk_core.vector_scatter import preflight_vector_scatter_export
 from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.processed_display import ProcessedDisplayRequest
 from flowdesk_core.transforms import apply_transform, generate_transform_ticks
+from flowdesk_core.vector_scatter import preflight_vector_scatter_export
 from flowdesk_storage.project import load_project, resolve_sample_paths
 
 
@@ -252,6 +253,15 @@ def batch_plot_command(
           ),
         })
       presentation = dict(view.get("presentation", {}))
+      density_coloring = presentation.get("colormap") == "density" and len(source_ids) == 1
+      if density_coloring:
+        active_id = source_ids[0]
+        visible_event_colors = {
+          active_id: tuple(density_event_colors(
+            np.asarray(layers[active_id][0], dtype=np.float64),
+            np.asarray(layers[active_id][1], dtype=np.float64),
+          ))
+        }
       presentation["x_axis_display_label"] = str(
         display_scene.get("x_axis_label") or metadata["x_label"]
       )
@@ -348,7 +358,8 @@ def batch_plot_command(
         write_plot_jpg(path, prepared, layers=layers, width=spec.width, height=spec.height,
                        options=spec, event_colors=visible_event_colors)
       elif path.suffix.lower() == ".svg":
-        write_plot_svg(path, prepared, layers=layers, options=spec)
+        write_plot_svg(path, prepared, layers=layers, options=spec,
+                       event_colors=visible_event_colors)
       elif path.suffix.lower() == ".pdf":
         write_plot_pdf(path, prepared, layers=layers, width=spec.width, height=spec.height,
                        options=spec, event_colors=visible_event_colors)

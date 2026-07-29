@@ -113,10 +113,10 @@ package-manifest:
 upversion:
 	$(PYTHON) tools/version.py --increment-patch
 
-pushtag:
-	@test -n "$(PACKAGE_VERSION)" || (echo "Could not read application version" >&2; exit 1)
-	git tag "$(PACKAGE_TAG)"
-	git push origin "$(PACKAGE_TAG)"
+# pushtag:
+# 	@test -n "$(PACKAGE_VERSION)" || (echo "Could not read application version" >&2; exit 1)
+# 	git tag "$(PACKAGE_TAG)"
+# 	git push origin "$(PACKAGE_TAG)"
 
 clean:
 	rm -rf build/

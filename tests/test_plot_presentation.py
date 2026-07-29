@@ -135,6 +135,12 @@ def test_unsupported_style_is_rejected_by_shared_validator() -> None:
     validate_presentation("histogram", presentation)
 
 
+def test_scatter_density_colormap_is_the_only_supported_scatter_colormap() -> None:
+  validate_presentation("scatter", PlotPresentationSpec(colormap="density"))
+  with pytest.raises(PresentationValidationError, match="None or 'density'"):
+    validate_presentation("scatter", PlotPresentationSpec(colormap="viridis"))
+
+
 def test_typed_plot_definition_round_trips_as_json_and_legacy_migration_is_explicit() -> None:
   view = PlotViewSpec(
     id="view", population_id="all_events", x_parameter="cd3",

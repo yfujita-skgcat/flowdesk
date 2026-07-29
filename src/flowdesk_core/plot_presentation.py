@@ -67,8 +67,8 @@ class ResolvedPresentation:
 
 
 SUPPORTED_STYLE_FIELDS: dict[PlotType, frozenset[str]] = {
-  "dot": frozenset({"marker_shape", "marker_size", "color", "alpha"}),
-  "scatter": frozenset({"marker_shape", "marker_size", "color", "alpha"}),
+  "dot": frozenset({"marker_shape", "marker_size", "color", "alpha", "colormap"}),
+  "scatter": frozenset({"marker_shape", "marker_size", "color", "alpha", "colormap"}),
   "pseudocolor": frozenset({"colormap"}),
   "density": frozenset({"colormap"}),
   "contour": frozenset({"colormap", "line_color", "line_width", "line_style"}),
@@ -137,6 +137,10 @@ def validate_presentation(
       raise PresentationValidationError(
         f"style field colormap is unsupported for plot type {plot_type!r}"
       )
+  if plot_type in {"dot", "scatter"} and presentation.colormap not in {None, "density"}:
+    raise PresentationValidationError(
+      "scatter colormap must be None or 'density'"
+    )
 
 
 def _presentation_fields() -> tuple[str, ...]:

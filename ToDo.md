@@ -65,6 +65,7 @@ git status --short
 | B7 | `docs/implementation/overlay-and-backgating.md` |
 | B7.1 | `docs/implementation/multi-sample-overlay-and-plot-presentation.md` |
 | B7.2 | `docs/implementation/integrated-overlay-controls-and-plot-appearance.md` |
+| B7.2.Density | `docs/implementation/density-event-coloring.md` |
 | B7.3 | `docs/implementation/sample-sheet-results-and-batch-plot-export.md` |
 | B7.3.E | `docs/implementation/plot-export-completion.md` |
 | B7.4 | `docs/implementation/analysis-workflow-integration.md` |
@@ -670,6 +671,26 @@ items so future changes do not regress the behavior.
 
 - [x] Plot Presentationの色入力欄をQColorDialogまたは同等のカラーパレットから選択できるようにする。background、gate outline、source、line、histogram fill/outlineの各色でCancel時の非変更、hex値の正規化、project save/load、PNG/SVG/PDF表示一致を検証する。色変更はpipeline、gate geometry、membership、count、frequency、statisticsを変更しない。
 - [x] Samples paneのmanual overlay色をクリアする`Clear Overlay Color`操作を追加する。色のクリアはsampleのoverlay選択状態やcomparison roleを変更せず、明示色を削除して自動色/fallbackへ戻す。project save/load、active sample変更、overlay描画、GUI/headless/exportの色解決を検証する。
+
+#### Phase B7.2.Density: 滑らかな単一sample density color
+
+現行の`Density color (single sample)`は、保存・overlay排他・表示専用という基本契約は
+実装済みである。しかし固定128×128 occupancy grid、5色の最近傍色、表示downsample後の
+入力によって、矩形の色ブロックと平坦な高密度領域が見える。詳細な実装指示、非目標、
+アルゴリズム、cache key、test、benchmarkは
+`docs/implementation/density-event-coloring.md`を唯一の正とする。一回のLLM実行で下記の
+increment一つだけを実装する。
+
+- [ ] Increment 1: core NumPy estimatorを、全有効・変換後・viewport内イベントの
+  aspect-aware histogram、Gaussian smoothing、bilinear interpolation、`log1p` + robust
+  percentile normalization、連続256段階以上paletteへ置換する。raw/events、gate membership、
+  count、frequency、statistics、pipeline revisionは不変であることを数値testする。
+- [ ] Increment 2: Qt previewでfull density inputとdisplay marker downsamplingを分離し、
+  range/resize/transform/population/sample/revisionに対するdebounced cache invalidationを
+  実装する。overlay中はdensityを無効にし、gating色へ戻す。20k/100k/1Mの測定を記録する。
+- [ ] Increment 3: batch PNG/SVG/PDFを同じcore estimator・logical viewport・event orderへ
+  接続し、DPIがdensity値を変えないこと、vector modeで点や色を落とさないこと、sidecar
+  provenance、GUI/export parity、user manualを完了する。
 
 ### Phase B7.3: Sample sheet、Results statistics、batch plot export [S02/S09/S11/S14]
 

@@ -91,7 +91,7 @@ class PlotStyleEditorDialog(QDialog):
       "gate_outline_style": self._gate_style_combo.currentData(),
       "axis_line_width": self._axis_width_spin.value(),
       "show_grid": self._show_grid_check.isChecked(),
-      "colormap": self._colormap_edit.text().strip() or None,
+      "colormap": self._colormap_value(),
       "automatic_style_policy": self._presentation.get(
         "automatic_style_policy", "palette.v1"
       ),
@@ -204,10 +204,12 @@ class PlotStyleEditorDialog(QDialog):
     self._show_grid_check = QCheckBox("Show major grid lines")
     self._show_grid_check.setObjectName("plotShowGridCheckBox")
     form.addRow("Grid:", self._show_grid_check)
-    self._colormap_edit = QLineEdit()
+    self._colormap_edit = QComboBox()
     self._colormap_edit.setObjectName("plotColormapEdit")
-    self._colormap_edit.setPlaceholderText("e.g. viridis")
-    form.addRow("Colormap:", self._colormap_edit)
+    self._colormap_edit.setEditable(True)
+    self._colormap_edit.addItem("Single color", None)
+    self._colormap_edit.addItem("Density color (single sample)", "density")
+    form.addRow("Event colors:", self._colormap_edit)
     pages.addTab(form_widget, "General")
 
     source_form = QWidget()
@@ -435,7 +437,7 @@ class PlotStyleEditorDialog(QDialog):
       self._set_data(self._gate_style_combo, self._presentation.get("gate_outline_style", "solid"))
       self._axis_width_spin.setValue(float(self._presentation.get("axis_line_width", 2.0)))
       self._show_grid_check.setChecked(bool(self._presentation.get("show_grid", True)))
-      self._colormap_edit.setText(str(self._presentation.get("colormap") or ""))
+      self._set_colormap(self._presentation.get("colormap"))
       self._legend_list.clear()
       legend_ids = list(self._presentation.get("legend_source_ids", self._source_ids))
       legend_ids.extend(source_id for source_id in self._source_ids if source_id not in legend_ids)
@@ -461,6 +463,20 @@ class PlotStyleEditorDialog(QDialog):
   def _set_data(combo: QComboBox, value: Any) -> None:
     index = combo.findData(value)
     combo.setCurrentIndex(index if index >= 0 else 0)
+
+  def _set_colormap(self, value: Any) -> None:
+    index = self._colormap_edit.findData(value)
+    if index >= 0:
+      self._colormap_edit.setCurrentIndex(index)
+    else:
+      self._colormap_edit.setEditText(str(value or ""))
+
+  def _colormap_value(self) -> str | None:
+    value = self._colormap_edit.currentData()
+    if value is not None:
+      return str(value)
+    text = self._colormap_edit.currentText().strip()
+    return None if text in {"", "Single color"} else text
 
   def _font_mapping(self, field_name: str) -> dict[str, Any]:
     family, size, weight = self._font_controls[field_name]

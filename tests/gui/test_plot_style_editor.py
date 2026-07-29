@@ -131,6 +131,27 @@ def test_style_editor_uses_compact_pages_for_small_monitors(qapp) -> None:
     qapp.processEvents()
 
 
+def test_style_editor_persists_single_sample_density_coloring(qapp) -> None:
+  dialog = PlotStyleEditorDialog("scatter", {}, ())
+  restored: PlotStyleEditorDialog | None = None
+  try:
+    selector = dialog.findChild(QComboBox, "plotColormapEdit")
+    assert selector is not None
+    selector.setCurrentIndex(selector.findData("density"))
+    assert dialog.presentation()["colormap"] == "density"
+    restored = PlotStyleEditorDialog("scatter", {"colormap": "density"}, ())
+    selector = restored.findChild(QComboBox, "plotColormapEdit")
+    assert selector is not None
+    assert selector.currentData() == "density"
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    if restored is not None:
+      restored.close()
+      restored.deleteLater()
+    qapp.processEvents()
+
+
 def test_style_editor_color_button_uses_palette_and_normalizes_hex(qapp, monkeypatch) -> None:
   dialog = PlotStyleEditorDialog(
     "histogram",

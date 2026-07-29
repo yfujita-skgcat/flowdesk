@@ -336,6 +336,25 @@ def test_plot_events_accepts_population_display_colors_without_changing_data() -
     QApplication.processEvents()
 
 
+def test_density_coloring_replaces_supplied_population_colors_for_display() -> None:
+  _app()
+  plot = PlotWidget()
+  x = np.array([0.1, 0.1, 0.1, 0.9])
+  y = np.array([0.1, 0.1, 0.1, 0.9])
+  try:
+    plot.plot_events(
+      x, y, event_colors=np.array(["#ff00ff"] * 4), density_coloring=True,
+    )
+    assert plot._event_colors is not None
+    assert plot._event_colors.tolist() == ["#ed1c24"] * 3 + ["#1f3cff"]
+    assert np.array_equal(plot._cached_x, x)
+    assert np.array_equal(plot._cached_y, y)
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
 def test_population_colors_render_as_uniform_layers_without_per_event_brushes() -> None:
   _app()
   plot = PlotWidget()

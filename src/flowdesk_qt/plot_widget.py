@@ -46,6 +46,7 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 
+from flowdesk_core.density_colors import density_event_colors
 from flowdesk_core.models import GateSpec, TransformSpec
 from flowdesk_core.plot_presentation import resolve_presentation_layers
 from flowdesk_core.transforms import (
@@ -455,6 +456,7 @@ class PlotWidget(QWidget):
         marginal_x_data: NDArray[np.float64] | None = None,
         marginal_y_data: NDArray[np.float64] | None = None,
         event_colors: NDArray[np.str_] | list[str] | None = None,
+        density_coloring: bool = False,
     ) -> None:
         """Render a scatter plot.
 
@@ -505,6 +507,8 @@ class PlotWidget(QWidget):
             y_plot = y_plot[sample_indices]
             if colors_plot is not None:
                 colors_plot = colors_plot[sample_indices]
+        if density_coloring:
+            colors_plot = density_event_colors(x_plot, y_plot)
         self._displayed_event_count = len(x_plot)
         self._rendered_x = x_plot
         self._rendered_y = y_plot

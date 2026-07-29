@@ -1784,7 +1784,8 @@ class MainWindow(QMainWindow):
             # Apply population membership mask (display filter, Phase 3).
             display_mask = processed.display_mask
             x_data, y_data = x_data[display_mask], y_data[display_mask]
-            event_colors = self._population_event_colors(
+            density_coloring = self._density_coloring_active(view)
+            event_colors = None if density_coloring else self._population_event_colors(
                 self._current_sample_id,
                 data.shape[0],
                 display_mask,
@@ -1807,8 +1808,13 @@ class MainWindow(QMainWindow):
                 marginal_x_data=marginal_x,
                 marginal_y_data=marginal_y,
                 event_colors=event_colors,
+                density_coloring=density_coloring,
             )
             self._render_manual_overlays(x_id, y_id)
+            if self._density_coloring_requested(view) and not density_coloring:
+                self._plot_widget.set_status_banner(
+                    "Density colors are available only when no overlay is displayed"
+                )
 
             # Refresh gate overlays
             self._plot_widget.clear_gates()
@@ -2110,6 +2116,26 @@ class MainWindow(QMainWindow):
         self._plot_widget.plot_overlay_layers(layers)
         if diagnostics:
             self._plot_widget.set_status_banner("Overlay warning: " + "; ".join(diagnostics))
+
+    def _density_coloring_requested(self, view: dict[str, Any] | None) -> bool:
+        return bool(view and view.get("presentation", {}).get("colormap") == "density")
+
+    def _density_coloring_active(self, view: dict[str, Any] | None) -> bool:
+        """Enable density colors only for a true single-sample display."""
+        if not self._density_coloring_requested(view):
+            return False
+        state = self._sample_browser.overlay_state()
+        selected = set(state.get("manual_overlay_sample_ids", []))
+        selected.update(
+            self._sample_browser.comparison_overlay_sample_ids(self._current_sample_id)
+        )
+        selected.update(
+            str(source.get("sample_id"))
+            for source in (view or {}).get("overlay_sources", [])
+            if source.get("visible", True) and source.get("sample_id")
+        )
+        selected.discard(self._current_sample_id)
+        return not selected
 
     def _sample_overlay_color(self, sample_id: str | None) -> str:
         """Return a stable fallback color for one sample's display layer."""

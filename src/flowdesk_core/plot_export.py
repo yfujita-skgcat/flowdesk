@@ -9,10 +9,10 @@ import math
 import re
 import struct
 import zlib
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from html import escape
 from pathlib import Path
-from collections.abc import Mapping
 from typing import Any
 
 from flowdesk_core.models import BatchPlotExportSpec, PlotPresentationSpec, PlotType
@@ -232,6 +232,7 @@ def write_plot_svg(
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
   layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   options: BatchPlotExportSpec | None = None,
 ) -> None:
@@ -278,13 +279,17 @@ def write_plot_svg(
     for source_id in prepared.source_order
   }
   full_vector = options is None or options.vector_scatter_mode == "full_vector"
-  compact_vector = options is not None and options.vector_scatter_mode == "compact_vector"
+  compact_vector = (
+    options is not None
+    and options.vector_scatter_mode == "compact_vector"
+    and not event_colors
+  )
   hybrid_raster = options is not None and options.vector_scatter_mode == "hybrid_raster"
   hybrid_info: dict[str, Any] | None = None
   if hybrid_raster:
     hybrid_info = _hybrid_scatter_raster(
       prepared, selected, layers, plot_width=plot_width, plot_height=plot_height,
-      dpi=options.hybrid_scatter_dpi,
+      dpi=options.hybrid_scatter_dpi, event_colors=event_colors,
     )
     elements.append(
       f'<image x="{left:g}" y="{top:g}" width="{plot_width:g}" height="{plot_height:g}" '
@@ -320,15 +325,23 @@ def write_plot_svg(
   for index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
     color = "#000000" if style is None or style.color is None else style.color
+    alpha = 1.0 if style is None else style.alpha
+    marker_size = 3.0 if style is None else style.marker_size
+    marker_shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
     x_values, y_values = layers[source_id]
     if not compact_vector and not hybrid_raster:
-      for x_value, y_value in zip(x_values, y_values, strict=False):
+      colors = None if event_colors is None else event_colors.get(source_id)
+      for point_index, (x_value, y_value) in enumerate(zip(x_values, y_values, strict=False)):
         x = left + float(x_value) * plot_width
         y = top + (1.0 - float(y_value)) * plot_height
-        if full_vector:
+        point_color = color if colors is None or point_index >= len(colors) else colors[point_index]
+        if full_vector and point_color == color:
           elements.append(f'<use href="#{marker_ids[source_id]}" x="{x:g}" y="{y:g}"/>')
         else:
-          elements.append(f'<circle cx="{x:g}" cy="{y:g}" r="3" fill="{escape(color)}"/>')
+          marker = _svg_marker_shape(marker_shape, marker_size / 2, point_color, alpha)
+          elements.append(marker.replace(
+            "/>", f' transform="translate({x:g} {y:g})"/>'
+          ))
     if compact_vector:
       for batch in compact_batches:
         if batch.source_id != source_id:
