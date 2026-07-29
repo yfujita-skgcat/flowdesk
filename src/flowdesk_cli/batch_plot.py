@@ -85,6 +85,47 @@ def batch_plot_command(
       str(item.get("id")): item for item in project.get("transforms", [])
       if isinstance(item, Mapping) and item.get("id")
     }
+    sample_by_id = {str(sample.get("id")): sample for sample in samples}
+    group_members: dict[str, tuple[str, ...]] = {}
+    for group in project.get("sample_groups", ()):
+      if not isinstance(group, Mapping) or not group.get("id"):
+        continue
+      members = tuple(str(value) for value in group.get("sample_ids", ()))
+      rule = group.get("membership_rule")
+      if isinstance(rule, Mapping) and set(rule) == {"all"}:
+        members = tuple(sample_by_id)
+      group_members[str(group["id"])] = members
+    if spec.target == "all":
+      target_sample_ids = tuple(sample_by_id)
+    elif spec.target == "explicit":
+      target_sample_ids = tuple(spec.sample_ids)
+    else:
+      target_sample_ids = group_members.get(spec.group_id or "", ())
+    advanced_overlay_ids = tuple(
+      str(source.get("sample_id"))
+      for source in sorted(
+        view.get("overlay_sources", ()),
+        key=lambda item: (int(item.get("order", 0)), str(item.get("source_id", ""))),
+      )
+      if source.get("visible", True) and source.get("sample_id")
+    )
+    overlay_ids_by_sample = {
+      sample_id: tuple(dict.fromkeys((
+        *advanced_overlay_ids,
+        *(str(value) for value in view.get("manual_overlay_sample_ids", ())),
+      )))
+      for sample_id in sample_by_id
+    }
+    required_source_ids = {
+      sample_id
+      for sample_id in target_sample_ids
+      if sample_id in sample_by_id
+    }
+    for sample_id in target_sample_ids:
+      required_source_ids.update(overlay_ids_by_sample.get(sample_id, ()))
+    required_source_ids = {
+      sample_id for sample_id in required_source_ids if sample_id in sample_by_id
+    }
     prepared_layers: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     layer_metadata: dict[str, dict[str, Any]] = {}
     layer_event_colors: dict[str, np.ndarray] = {}
@@ -163,6 +204,8 @@ def batch_plot_command(
       nonlocal shared_bounds
       for candidate in samples:
         candidate_id = str(candidate["id"])
+        if candidate_id not in required_source_ids:
+          continue
         x_values, y_values, metadata = extract_layer(candidate)
         prepared_layers[candidate_id] = (x_values, y_values)
         layer_metadata[candidate_id] = metadata
@@ -175,9 +218,23 @@ def batch_plot_command(
           float(np.min(all_x)), float(np.max(all_x)),
           float(np.min(all_y)), float(np.max(all_y)),
         )
+      max_rendered_event_count = max(
+        (
+          sum(
+            len(prepared_layers[source_id][0])
+            for source_id in (
+              sample_id,
+              *overlay_ids_by_sample.get(sample_id, ()),
+            )
+            if source_id in prepared_layers
+          )
+          for sample_id in target_sample_ids
+        ),
+        default=0,
+      )
       preflight = preflight_vector_scatter_export(
         spec,
-        rendered_event_count=sum(len(value[0]) for value in prepared_layers.values()),
+        rendered_event_count=max_rendered_event_count,
         logical_plot_width=max(1.0, spec.width - 80.0),
         logical_plot_height=max(1.0, spec.height - 110.0),
       )
@@ -411,11 +468,10 @@ def batch_plot_command(
       prepare=prepare_sources,
       estimate_render_bytes=estimate_render_bytes,
       execution_control=execution_control,
+      group_members=group_members,
       overlay_sample_ids={
-        str(sample.get("id")): tuple(
-          str(value) for value in view.get("manual_overlay_sample_ids", ())
-        )
-        for sample in samples
+        sample_id: overlay_ids_by_sample[sample_id]
+        for sample_id in sample_by_id
       },
     )
     print(f"Batch plot export {batch_report.status}: {len(batch_report.items)} samples")

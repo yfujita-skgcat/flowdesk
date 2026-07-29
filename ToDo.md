@@ -1465,6 +1465,12 @@ prepared layerではsequential 1.833 s、thread/2 1.580 s、出力bytes一致（
 実FCSのcompensation/derived/gating workloadでは未測定であり、Windows/PyInstaller確認も残るため、
 既定値へ変更しない。
 
+実FCSの`data/analysis.flowdesk`（4 samples、`max_points=0`、PNG/PDF、DPI 300、hybrid raster）では、
+2026-07-30にsequential 22.63 s / 最大RSS 270,084 KB、thread/2 21.43 s / 最大RSS 483,888 KBを
+測定した。8出力のサイズとSHA-256は完全一致したが、speedupは約1.06倍、peak RSSは約1.8倍だった。
+compensation/derived parameterを含む代表workloadとWindows/PyInstaller確認は未完了であり、threadは
+明示指定時だけ許可し、既定値へ変更しない。
+
 - [ ] 「1 FCS = 1 worker」とは定義しない。FCSはsource/dependencyの単位であり、overlay出力は
   複数FCSへ依存し、1 FCSから複数view/formatが生成され得る。全source準備、overlay dependency、
   `shared_ranges`を解決した後のimmutable `prepared output item`をexecutorの最小仕事単位とする。
@@ -1472,6 +1478,9 @@ prepared layerではsequential 1.833 s、thread/2 1.580 s、出力bytes一致（
   sample間で独立にrender可能であることを明示し、この単純ケースからparallel parity testを追加する。
   同一sceneからPNG/SVG/PDFを作る場合は、formatごとの完全独立jobとsample/view単位bundleの両方を
   benchmarkし、prepared arrayの再利用、peak memory、cancel granularityを比較して仕事単位を決める。
+- [x] batch targetがexplicit/groupの場合は、target sampleとoverlay依存sourceだけをprepareする。
+  `shared_ranges`は必要source全体をreduceし、vector preflightは各output itemの最大event数で判定する。
+  無関係sampleのFCS load、transform、density準備を行わず、unknown overlay sourceのvalidationは維持する。
 - [ ] headless core rendererのreentrancyと共有mutable global stateがないことをtestしてから、
   prepared output itemをbounded executorへ渡す。Qt/pyqtgraph/QPainter/QPixmapをworkerで
   操作しない。

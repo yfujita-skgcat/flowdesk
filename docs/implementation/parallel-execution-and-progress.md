@@ -929,6 +929,22 @@ measured 1.833 s sequential versus 1.580 s thread/2 (1.16x) with identical
 full compensation/derived/gating FCS workload; repeat representative measurements
 before recommending this backend or enabling it by default.
 
+The CLI preparation path now resolves the batch target and overlay dependency map
+before reading FCS files. An explicit or group target prepares only its target samples
+and required overlay sources; unrelated samples are not loaded or transformed. A
+`shared_ranges` reduction still includes every required source, while vector preflight
+uses the maximum event count of one planned output item rather than summing unrelated
+batch items. This source-scope optimization is covered by a group/overlay test and
+must preserve the existing unknown-source validation.
+
+An actual local FCS comparison on 2026-07-30 used `data/analysis.flowdesk` (4 samples,
+`max_points=0`, PNG/PDF, DPI 300, hybrid raster): sequential took 22.63 s with a
+270,084 KB maximum RSS, while thread/2 took 21.43 s with a 483,888 KB maximum RSS.
+All eight PNG/PDF output hashes and sizes matched exactly. The measured speedup was
+only 1.06x while peak RSS was about 1.8x, and this project does not exercise a full
+compensation/derived-parameter workload. Keep thread rendering opt-in and repeat the
+measurement after any renderer or source-preparation change.
+
 - Treat the FCS file as a dependency source, not automatically as one executor job.
 - Submit only dependency-complete immutable prepared output items; begin parity testing
   with non-overlay, one-source outputs.

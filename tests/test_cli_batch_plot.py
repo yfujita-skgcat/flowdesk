@@ -134,6 +134,62 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   assert metadata["ordered_source_ids"] == ["s1", "s2"]
 
 
+def test_batch_plot_prepares_only_target_and_overlay_sources(
+  tmp_path: Path, monkeypatch
+) -> None:
+  project = {
+    "project_id": "batch-source-scope",
+    "project_version": CURRENT_PROJECT_VERSION,
+    "pipeline_version": "0.1",
+    "execution_profiles": [{"id": "default", "name": "Default"}],
+    "samples": [
+      {"id": "s1", "path": "s1.fcs", "name": "A", "channels": []},
+      {"id": "s2", "path": "s2.fcs", "name": "B", "channels": []},
+      {"id": "s3", "path": "s3.fcs", "name": "Unused", "channels": []},
+    ],
+    "sample_groups": [{"id": "selected", "role": "user", "sample_ids": ["s1"]}],
+    "plot_views": [{
+      "id": "view", "plot_type": "scatter", "population_id": "all_events",
+      "x_parameter": "x", "y_parameter": "y", "rendering_downsample": {"max_points": 0},
+      "manual_overlay_sample_ids": ["s2"],
+    }],
+    "batch_plot_exports": [{
+      "id": "source-scope", "name": "Source scope", "target": "group",
+      "group_id": "selected", "plot_view_id": "view", "formats": ["svg"],
+    }],
+  }
+  project_path = tmp_path / "source-scope.flowdesk"
+  save_project(project_path, project)
+  sample_data = {
+    sample_id: SampleData(
+      sample_id,
+      np.array([[1.0, 1.0], [2.0, 2.0]]),
+      (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y")),
+    )
+    for sample_id in ("s1", "s2", "s3")
+  }
+  loaded_ids: list[str] = []
+  monkeypatch.setattr(
+    "flowdesk_cli.batch_plot.resolve_sample_paths",
+    lambda *_args: [
+      {"id": sample_id, "path": f"{sample_id}.fcs", "name": sample_id}
+      for sample_id in ("s1", "s2", "s3")
+    ],
+  )
+
+  def read_sample(path, *_args):
+    sample_id = Path(path).stem
+    loaded_ids.append(sample_id)
+    return None, sample_data[sample_id]
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.read_fcs_sample", read_sample)
+
+  assert batch_plot_command(
+    str(project_path), "source-scope", str(tmp_path / "exports")
+  ) == 0
+  assert loaded_ids == ["s1", "s2"]
+
+
 def test_batch_plot_clips_gate_edges_at_the_viewport_boundary() -> None:
   project = {
     "gating_strategies_data": {"default": {"gates": [{
