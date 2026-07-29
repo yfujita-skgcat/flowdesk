@@ -1833,6 +1833,15 @@ class MainWindow(QMainWindow):
             self._gate_editor.set_overlay_status(
                 self._plot_widget.display_state()["hidden_gate_reasons"]
             )
+            display_state = self._plot_widget.display_state()
+            if (
+                density_coloring
+                and display_state["display_max_points"] == 0
+                and display_state["displayed_event_count"] > 20_000
+            ):
+                self._plot_widget.set_status_banner(
+                    "Density colors are drawing all events; display may be slow"
+                )
 
         if self._old_membership_banner:
             self._plot_widget.set_status_banner(
