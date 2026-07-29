@@ -190,6 +190,7 @@ def test_batch_plot_applies_persisted_transform_once(
     next((tmp_path / "exports").glob("*.svg.json")).read_text(encoding="utf-8")
   )
   assert len(sidecar["gate_overlays"]) == 1
+  assert sidecar["gate_overlays"][0]["color"] == "#e00000"
 
 
 def test_batch_plot_current_view_uses_persisted_labels_and_range(

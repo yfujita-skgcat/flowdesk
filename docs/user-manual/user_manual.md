@@ -923,8 +923,14 @@ SVG/PDFの散布点表現は、旧projectでは`full_vector`（イベントご�
 透明RGBA PNGとして埋め込み、plotの軸・grid・ticks・文字・gate・legendはベクターのまま
 保持します。散布レイヤーのpixelサイズ、DPI、lossless encoding、point-plan hashはsidecar
 provenanceに記録されます。ダイアログの`Vector scatter`で`Full vector`、`Compact vector`、
-`Hybrid raster`を選択でき、Hybrid時だけ`Hybrid scatter DPI`を編集できます。Effective output
-には散布レイヤーのpixel数と概算memoryが表示されます。CLIもprojectに保存された同じ定義を使い、
+`Hybrid raster`を選択でき、Hybrid時だけ`Hybrid scatter DPI`を編集できます。Effective outputには散布レイヤーのpixel数と概算memoryが表示されます。CLIもprojectに保存された同じ定義で実行します。
+
+3モードとも、PNGと同じPlotScene（表示範囲、正規化済み点座標、全major/minor tick、gate、
+タイトル、軸ラベル）を使います。PDFで見る点の上下位置、gateの位置、指数目盛の表記は、
+PNGの同じ出力と一致します。PDFの比較は72 DPIでラスター化して行います。フォントの
+アンチエイリアスはPDF viewerによってわずかに異なる場合がありますが、点・gate・tickの
+幾何は変わりません。イベント単位のpopulation色がある`compact_vector`では、半透明の
+重なり順を維持するため、圧縮率が`full_vector`に近づく場合があります。
 点数・path数・raster pixel数・memoryのpreflightを実行します。制限超過時はmodeを自動変更せず、
 structured failureとして出力を停止します。
 

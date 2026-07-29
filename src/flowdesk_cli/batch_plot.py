@@ -333,6 +333,7 @@ def batch_plot_command(
         gate_overlays=_gate_overlays(
           project, x_id, y_id, active_bounds,
           view.get("x_transform_id"), view.get("y_transform_id"),
+          default_color=str(presentation.get("gate_outline_color") or "#e00000"),
         ),
         scene=scene,
       )
@@ -376,7 +377,7 @@ def batch_plot_command(
         return
       if path.suffix.lower() == ".png":
         write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height,
-                       options=spec)
+                       options=spec, event_colors=visible_event_colors)
       elif path.suffix.lower() in {".jpg", ".jpeg"}:
         write_plot_jpg(path, prepared, layers=layers, width=spec.width, height=spec.height,
                        options=spec)
@@ -522,6 +523,8 @@ def _gate_overlays(
   bounds: tuple[tuple[float, float], tuple[float, float]],
   x_transform_id: str | None,
   y_transform_id: str | None,
+  *,
+  default_color: str,
 ) -> tuple[dict[str, Any], ...]:
   """Convert persisted gate geometry to the renderer's normalized scene."""
   x_low, x_high = bounds[0]
@@ -567,7 +570,7 @@ def _gate_overlays(
         result.append({
           "id": str(gate.get("id", "gate")),
           "points": tuple(normalized),
-          "color": str(gate.get("color", "#ffffff")),
+          "color": str(gate.get("color") or default_color),
         })
   return tuple(result)
 

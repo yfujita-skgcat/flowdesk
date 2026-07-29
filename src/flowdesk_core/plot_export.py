@@ -372,6 +372,7 @@ def write_plot_png(
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
   layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   width: int = 800,
   height: int = 600,
@@ -412,13 +413,15 @@ def write_plot_png(
   style_by_id = {style.source_id: style for style in selected.source_styles}
   for source_id in prepared.source_order:
     style = style_by_id.get(source_id)
-    color = _rgb("#000000" if style is None or style.color is None else style.color)
+    color_text = "#000000" if style is None or style.color is None else style.color
     alpha = 1.0 if style is None else style.alpha
     marker_size = 3.0 if style is None else style.marker_size
     radius = max(1, round(marker_size * device_scale / 2))
     layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
     layer_draw = ImageDraw.Draw(layer)
-    for x_value, y_value in zip(*layers[source_id], strict=False):
+    colors = None if event_colors is None else event_colors.get(source_id)
+    for index, (x_value, y_value) in enumerate(zip(*layers[source_id], strict=False)):
+      color = _rgb(color_text if colors is None or index >= len(colors) else colors[index])
       x = round(left + float(x_value) * plot_width)
       y = round(top + (1.0 - float(y_value)) * plot_height)
       layer_draw.ellipse(
@@ -484,38 +487,75 @@ def write_plot_pdf(
       dpi=options.hybrid_scatter_dpi, event_colors=event_colors,
     )
   form_specs: list[tuple[tuple[int, int, int], float, str, float]] = []
-  marker_refs: dict[str, int] = {}
+  marker_refs: dict[tuple[str, str], int] = {}
   if full_vector:
     for source_id in prepared.source_order:
       style = style_by_id.get(source_id)
-      color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
+      default_color = "#4c78a8" if style is None or style.color is None else style.color
       alpha = 1.0 if style is None else style.alpha
       marker_size = 2.0 if style is None else style.marker_size
       marker_shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
-      marker_refs[source_id] = len(form_specs)
-      form_specs.append((color, alpha, marker_shape, marker_size))
+      colors = None if event_colors is None else event_colors.get(source_id)
+      point_count = len(layers[source_id][0])
+      for index in range(point_count):
+        color_text = default_color if colors is None or index >= len(colors) else colors[index]
+        key = (source_id, color_text)
+        if key not in marker_refs:
+          marker_refs[key] = len(form_specs)
+          form_specs.append((_rgb(color_text), alpha, marker_shape, marker_size))
     commands.append("q")
     commands.append(f"{left:g} {height - top - plot_height:g} {plot_width:g} {plot_height:g} re W n")
+  preserve_event_colors = compact_vector and bool(event_colors)
   compact_batches = compact_scatter_batches(
     _vector_layers(prepared, selected, layers),
     plot_width=plot_width,
     plot_height=plot_height,
-  ) if compact_vector else ()
-  compact_alpha_values = tuple(dict.fromkeys(batch.alpha for batch in compact_batches))
+  ) if compact_vector and not preserve_event_colors else ()
+  compact_alpha_values = (
+    tuple(dict.fromkeys(
+      1.0 if style_by_id.get(source_id) is None else style_by_id[source_id].alpha
+      for source_id in prepared.source_order
+    ))
+    if preserve_event_colors
+    else tuple(dict.fromkeys(batch.alpha for batch in compact_batches))
+  )
   if compact_vector:
     commands.append("q")
     commands.append(f"{left:g} {height - top - plot_height:g} {plot_width:g} {plot_height:g} re W n")
     alpha_index = {alpha: index for index, alpha in enumerate(compact_alpha_values)}
-    for batch in compact_batches:
-      color = _rgb(batch.color)
-      commands.extend((f"/C{alpha_index[batch.alpha]} gs",
-                       f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg"))
-      commands.append(_pdf_compound_path(batch.points, batch.marker_shape, batch.marker_size,
-                                          left, top, plot_width, plot_height) + " f")
+    if preserve_event_colors:
+      # Do not regroup different per-event colors: doing so can reorder
+      # translucent overlaps and change the visual density.
+      for source_id in prepared.source_order:
+        style = style_by_id.get(source_id)
+        alpha = 1.0 if style is None else style.alpha
+        marker_size = 3.0 if style is None else style.marker_size
+        marker_shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
+        default_color = "#000000" if style is None or style.color is None else style.color
+        colors = event_colors.get(source_id) if event_colors is not None else None
+        for index, point in enumerate(zip(*layers[source_id], strict=False)):
+          color_text = default_color if colors is None or index >= len(colors) else colors[index]
+          color = _rgb(color_text)
+          commands.extend((f"/C{alpha_index[alpha]} gs",
+                           f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg"))
+          commands.append(_pdf_compound_path(
+            ((float(point[0]), float(point[1])),), marker_shape, marker_size,
+            left, top, plot_width, plot_height, height,
+          ) + " f")
+    else:
+      for batch in compact_batches:
+        color = _rgb(batch.color)
+        commands.extend((f"/C{alpha_index[batch.alpha]} gs",
+                         f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg"))
+        commands.append(_pdf_compound_path(
+          batch.points, batch.marker_shape, batch.marker_size,
+          left, top, plot_width, plot_height, height,
+        ) + " f")
     commands.append("Q")
   elif hybrid_raster:
-    # PNG rows are top-to-bottom while PDF image coordinates are bottom-to-top.
-    commands.extend(("q", f"{plot_width:g} 0 0 {-plot_height:g} {left:g} {height - top:g} cm",
+    # PDF decoders map the first image row to the visual top edge. The
+    # hybrid raster already stores rows in the PNG top-to-bottom order.
+    commands.extend(("q", f"{plot_width:g} 0 0 {plot_height:g} {left:g} {height - top - plot_height:g} cm",
                      "/ImScatter Do", "Q"))
   elif not full_vector:
     for source_id in prepared.source_order:
@@ -529,11 +569,14 @@ def write_plot_pdf(
   elif full_vector:
     for source_id in prepared.source_order:
       style = style_by_id.get(source_id)
-      for x_value, y_value in zip(*layers[source_id], strict=False):
+      default_color = "#4c78a8" if style is None or style.color is None else style.color
+      colors = None if event_colors is None else event_colors.get(source_id)
+      for index, (x_value, y_value) in enumerate(zip(*layers[source_id], strict=False)):
         x = left + float(x_value) * plot_width
         y = height - top - float(y_value) * plot_height
         size = (2.0 if style is None else style.marker_size) / 2.0
-        commands.extend(("q", f"{size:g} 0 0 {size:g} {x:g} {y:g} cm", f"/M{marker_refs[source_id]} Do", "Q"))
+        color_text = default_color if colors is None or index >= len(colors) else colors[index]
+        commands.extend(("q", f"{size:g} 0 0 {size:g} {x:g} {y:g} cm", f"/M{marker_refs[(source_id, color_text)]} Do", "Q"))
     commands.append("Q")
   # Place the opaque PDF image before the axes.  This also avoids Poppler
   # losing pre-image strokes when decoding an image soft mask.
@@ -921,7 +964,7 @@ def _draw_raster_axes(
     ):
       ticks = scene.get(axis, ()) if isinstance(scene, dict) else ()
       for tick in ticks:
-        if not isinstance(tick, dict) or not tick.get("major", True):
+        if not isinstance(tick, dict):
           continue
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
         if horizontal:
@@ -1101,12 +1144,15 @@ def _pdf_scene_axes(
   commands: list[str] = []
   scene = _scene_mapping(prepared)
   if selected.show_grid:
-    commands.append("0.847 0.847 0.847 RG 0.5 w")
     for axis, horizontal in (("x_ticks", True), ("y_ticks", False)):
       for tick in scene.get(axis, ()):
-        if not isinstance(tick, dict) or not tick.get("major", True):
+        if not isinstance(tick, dict):
           continue
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
+        is_major = bool(tick.get("major", True))
+        commands.append(
+          "0.72 0.72 0.72 RG 0.75 w" if is_major else "0.88 0.88 0.88 RG 0.35 w"
+        )
         if horizontal:
           x = left + position * width
           commands.append(f"{x:g} {pdf_bottom:g} m {x:g} {pdf_top:g} l S")
@@ -1164,18 +1210,18 @@ def _pdf_scene_text(
       for tick in scene.get(axis, ()):
         if not isinstance(tick, dict) or not tick.get("major", True):
           continue
-        text = _pdf_text(str(tick.get("label", "")))
-        if not text:
+        label = str(tick.get("label", ""))
+        if not label:
           continue
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
         size = selected.tick_font.size
         if horizontal:
-          x = left + position * width - len(text) * size * 0.28
+          x = left + position * width - _pdf_tick_label_width(label, size) / 2
           y = page_height - (top + plot_height + 9 + size)
         else:
-          x = left - 10 - len(text) * size * 0.55
+          x = left - 10 - _pdf_tick_label_width(label, size)
           y = page_height - (top + plot_height - position * plot_height) - size * 0.35
-        commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} {y:g} Td ({text}) Tj ET")
+        commands.extend(_pdf_tick_label_commands(label, x, y, size, red, green, blue))
   if options is None or options.include_axis_labels:
     size = selected.axis_label_font.size
     x_label = _pdf_text(selected.x_axis_display_label or "")
@@ -1191,6 +1237,43 @@ def _pdf_scene_text(
 
 def _pdf_text(value: str) -> str:
   return value.encode("latin-1", "replace").decode("latin-1").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _pdf_tick_label_width(label: str, size: float) -> float:
+  """Estimate the width used by the Type1 PDF tick-label fallback."""
+  match = re.fullmatch(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))e([+-]?\d+)", label.strip(), re.I)
+  if match is None:
+    return len(label) * size * 0.55
+  mantissa, exponent = match.groups()
+  prefix = "" if float(mantissa) == 1.0 else f"{mantissa} × "
+  return (len(prefix) + 2) * size * 0.55 + len(str(int(exponent))) * size * 0.36
+
+
+def _pdf_tick_label_commands(
+  label: str,
+  x: float,
+  y: float,
+  size: float,
+  red: float,
+  green: float,
+  blue: float,
+) -> list[str]:
+  """Draw scientific ticks with a raised exponent using portable Type1 fonts."""
+  match = re.fullmatch(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))e([+-]?\d+)", label.strip(), re.I)
+  if match is None:
+    text = _pdf_text(label)
+    return [f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} {y:g} Td ({text}) Tj ET"]
+  mantissa, exponent = match.groups()
+  prefix = "" if float(mantissa) == 1.0 else f"{mantissa} × "
+  normal = _pdf_text(f"{prefix}10")
+  exponent_text = _pdf_text(str(int(exponent)))
+  exponent_x = x + len(prefix + "10") * size * 0.55
+  exponent_y = y + size * 0.35
+  exponent_size = size * 0.65
+  return [
+    f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} {y:g} Td ({normal}) Tj ET",
+    f"BT /F2 {exponent_size:g} Tf {red:g} {green:g} {blue:g} rg {exponent_x:g} {exponent_y:g} Td ({exponent_text}) Tj ET",
+  ]
 
 
 def _pdf_marker_stream(shape: str, color: tuple[int, int, int]) -> bytes:
@@ -1224,13 +1307,14 @@ def _pdf_compound_path(
   top: float,
   plot_width: float,
   plot_height: float,
+  page_height: float,
 ) -> str:
   """Create one compound path containing non-overlapping marker subpaths."""
   radius = marker_size / 2
   commands: list[str] = []
   for x_value, y_value in points:
     x = left + x_value * plot_width
-    y = top + (1.0 - y_value) * plot_height
+    y = page_height - top - (1.0 - y_value) * plot_height
     if shape == "square":
       commands.append(f"{x - radius:g} {y - radius:g} {2 * radius:g} {2 * radius:g} re")
     elif shape == "triangle":

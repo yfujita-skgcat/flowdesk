@@ -330,6 +330,71 @@ def test_hybrid_pdf_matches_png_layout_at_pdf_logical_resolution(tmp_path) -> No
   assert normalized_mean_error < 0.03
 
 
+@pytest.mark.parametrize("mode", ("full_vector", "compact_vector", "hybrid_raster"))
+def test_all_pdf_scatter_modes_keep_y_axis_gates_and_scientific_ticks(mode, tmp_path) -> None:
+  if shutil.which("pdftoppm") is None:
+    pytest.skip("pdftoppm is required to rasterize PDF for this comparison")
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),),
+    view_presentation={
+      "source_styles": [{
+        "source_id": "s1", "color": "#ff00ff", "alpha": 1.0,
+        "marker_shape": "square", "marker_size": 12.0,
+      }],
+    },
+    gate_overlays=({
+      "id": "gate", "points": ((0.65, 0.65), (0.9, 0.65), (0.9, 0.9)),
+      "color": "#e00000",
+    },),
+    scene={
+      "x_ticks": [{"position": 0.5, "label": "1e6", "major": True}],
+      "y_ticks": [{"position": 0.5, "label": "1e6", "major": True}],
+    },
+  )
+  path = tmp_path / f"{mode}.pdf"
+  png_path = tmp_path / f"{mode}.png"
+  options = BatchPlotExportSpec(
+    id=mode, name=mode, width=400, height=300,
+    vector_scatter_mode=mode, hybrid_scatter_dpi=96,
+  )
+  write_plot_pdf(
+    path, prepared, layers={"s1": ((0.75,), (0.8,))},
+    event_colors={"s1": ("#ff00ff",)}, options=options,
+  )
+  write_plot_png(
+    png_path, prepared, layers={"s1": ((0.75,), (0.8,))},
+    event_colors={"s1": ("#ff00ff",)}, options=options,
+  )
+  data = path.read_bytes()
+  assert b"(1e6)" not in data
+  assert b"(10)" in data
+  raster_prefix = tmp_path / mode
+  subprocess.run(
+    ["pdftoppm", "-r", "72", "-png", "-singlefile", str(path), str(raster_prefix)],
+    check=True, capture_output=True,
+  )
+  with Image.open(raster_prefix.with_suffix(".png")) as image:
+    pixels = np.asarray(image.convert("RGB"))
+  with Image.open(png_path) as image:
+    png_pixels = np.asarray(image.convert("RGB"))
+  magenta = (pixels[:, :, 0] > 180) & (pixels[:, :, 1] < 80) & (pixels[:, :, 2] > 180)
+  png_magenta = (
+    (png_pixels[:, :, 0] > 180) & (png_pixels[:, :, 1] < 80)
+    & (png_pixels[:, :, 2] > 180)
+  )
+  assert np.any(magenta)
+  assert np.any(png_magenta)
+  # A normalized Y value of 0.8 must remain in the upper half of the plot,
+  # not be reflected into the lower half by a PDF coordinate conversion.
+  assert float(np.mean(np.where(magenta)[0])) < pixels.shape[0] / 2
+  assert abs(float(np.mean(np.where(magenta)[0])) - float(np.mean(np.where(png_magenta)[0]))) < 3
+  assert np.any((pixels[:, :, 0] > 180) & (pixels[:, :, 1] < 80) & (pixels[:, :, 2] < 80))
+
+
 def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:
   source = ({
     "source_id": "s1", "sample_id": "sample-1", "population_id": "cd3",
