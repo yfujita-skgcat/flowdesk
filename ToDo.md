@@ -1258,31 +1258,35 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
 - [ ] densityをrenderer-neutralなhistogram/smoothing/global normalization/color-index結果と
   GUI presentationへ分離する。数値arrayだけをowned workerで計算し、`QBrush`、pyqtgraph
   item、widget mutationはGUI threadに限定する。
-- [ ] `id(array)`依存cache keyを廃止し、analysis/display revision、sample/population、axes、
-  transforms/range、selected/display event identity、density algorithm/version/parametersを
-  含むsemantic immutable keyへ変更する。
+- [x] `id(array)`だけに依存するcache keyを廃止し、canonical processed-display identity
+  （analysis/display revision、sample/population、axes、transform、display event selection）を
+  含むsemantic keyへ変更した。density algorithm/parametersは現時点で固定実装のため、可変化する
+  incrementで明示version/parameterをkeyへ追加する。
 - [ ] whole-population densityがviewport非依存というcontractの範囲ではpan/zoomでdensity
   fieldを再利用し、generation checkでstale resultを破棄する。viewport変更だけで同じeventの
   density colorを変えない。
 - [ ] profiling後にper-event Qt payloadを最小化する。palette index/grouped layerを使う場合も
   draw order、rare color、alpha、selection、interactionを維持する。
-- [ ] 新規/default設定ではfinite display maximumを維持する。明示的な`0 (all events)`は
+- [x] 新規/default設定ではfinite display maximumを維持する。明示的な`0 (all events)`は
   勝手にsamplingせず、large event+density時のperformance status/warningを表示する。
 - [ ] cached/uncachedのcolor一致、全関連設定のcache invalidation、rapid pan/zoom/sample
   switch、shutdownをtestする。
 
-#### Increment 4: benchmark baselineと共通runtime control
+#### Increment 4: benchmark baselineと共通runtime control（進行中）
 
-- [ ] 10万events × 8 samples、100万events × 8 samples、1000万events × 2–4 samplesの
+- [x] 10万events × 8 samples、100万events × 8 samples、1000万events × 2 samplesの
   deterministic synthetic profileを追加し、seed、channel数、expected population count、
   OS/Python/NumPy/Qt/CPU、worker数、peak RSSをJSONへ記録する。生成event array/FCSはcommit
-  しない。
+  しない。`make benchmark-pipeline`はcanonical pipelineだけを測定し、defaultではsmall
+  profileを実行する。
 - [ ] display preparation、pipeline stage、batch source preparation、rendererを別々に計測し、
-  rendering時間をanalysis speedupとして報告しない。
-- [ ] Qt非依存の`ExecutionOptions`、`ExecutionControl`、`ProgressEvent`、
+  rendering時間をanalysis speedupとして報告しない。density displayは
+  `make benchmark-density`、vector rendererは`make benchmark`で既に別測定であり、次は
+  batch source preparationを明示して同じreport catalogへ追加する。
+- [x] Qt非依存の`ExecutionOptions`、`ExecutionControl`、`ProgressEvent`、
   `CancellationToken`、typed cancellation outcomeを定義する。control未指定時は既存の
   sequential APIと結果を維持する。
-- [ ] progressのphase、completed/total単調性、callback failure、cooperative cancellation、
+- [x] progressのphase、completed/total単調性、callback failure、cooperative cancellation、
   Qt非依存性のcontract testを先に追加する。
 
 #### Increment 5: sequential pipeline progress/cancel

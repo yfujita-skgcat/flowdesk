@@ -1,5 +1,12 @@
 """Core models and analysis primitives for Flowdesk."""
 
+from flowdesk_core.execution_control import (
+  CancellationToken,
+  ExecutionCancelled,
+  ExecutionControl,
+  ExecutionOptions,
+  ProgressEvent,
+)
 from flowdesk_core.models import (
   ChannelSpec,
   ComparisonMemberSpec,
@@ -29,11 +36,15 @@ from flowdesk_core.sample import SampleData
 
 __all__ = [
   "ChannelSpec",
+  "CancellationToken",
   "ComparisonMemberSpec",
   "ComparisonSetSpec",
   "CompensationMatrixSpec",
   "DerivedFailurePolicy",
   "DerivedParameterSpec",
+  "ExecutionCancelled",
+  "ExecutionControl",
+  "ExecutionOptions",
   "ExportRecord",
   "FontSpec",
   "GateSpec",
@@ -43,6 +54,7 @@ __all__ = [
   "PopulationDisplaySpec",
   "PlotPresentationSpec",
   "PopulationResult",
+  "ProgressEvent",
   "PreviewReport",
   "PreviewRequest",
   "PreviewRevisionState",

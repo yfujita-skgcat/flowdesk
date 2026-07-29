@@ -622,6 +622,12 @@ core result; no worker remains at shutdown.
 
 ### Increment 3: Off-thread density arrays and semantic cache
 
+Status (2026-07-29): the semantic cache key and explicit all-event warning are
+implemented.  A first QThreadPool/NumPy density-worker attempt produced a fatal
+shutdown crash during the focused Qt tests, so it was reverted rather than
+shipping unsafe concurrency.  The remaining off-thread numeric result requires
+an owned-worker lifetime test and a GUI-thread-only final presentation step.
+
 - Split density work into a renderer-neutral numeric result and GUI presentation.
   Numeric histogram/smoothing/normalization/color-index arrays may run in an owned worker;
   `QBrush`, pyqtgraph items, and widget mutation remain on the GUI thread.
@@ -643,6 +649,18 @@ not change merely because the viewport changes; cache invalidates for every rele
 upstream/display change; GUI remains responsive; cached/uncached colors are identical.
 
 ### Increment 4: Benchmark baseline and progress/cancel core types
+
+Status (2026-07-29): `flowdesk_core.pipeline_benchmark` now provides deterministic
+small (100k × 8), medium (1M × 8), and large (10M × 2) immutable sample profiles;
+`make benchmark-pipeline` writes the opt-in JSON baseline.  The report records its
+fixture fingerprint, expected all-events counts, OS/Python/NumPy/PySide6/CPU,
+requested/effective workers, peak RSS, and separate fixture/pipeline timing.  It
+does not measure display or rendering and must not be cited as a rendering speedup.
+`ExecutionOptions`, `ExecutionControl`, `ProgressEvent`, `CancellationToken`, and
+`ExecutionCancelled` are Qt-independent runtime-only types.  They are accepted
+optionally by `ExecutionContext`, but checkpoints and parallel execution are not
+implemented until Increment 5 and Increment 8.  Batch-source timing is still
+required before this increment can be marked complete.
 
 - Add deterministic multi-sample generator and opt-in benchmark report.
 - Add Qt-independent `ExecutionOptions`, `ExecutionControl`, `ProgressEvent`,

@@ -56,7 +56,7 @@ Flowdesk では、次の三つの選択状態を区別する必要がある。
 
 `Display max points` による点数制限、色、背景、凡例、フォント、軸ラベル、オーバーレイは**表示専用**である。ゲート membership、イベント数、frequency、統計、TSV/CSV 出力は全イベントを使う。
 
-通常の active sample は plot appearance の base dot color で描画する。Samples ペインの色見本は manual overlay 用であり、別 sample の overlay を有効にした場合だけそのレイヤーへ適用される。population に明示した表示色は base dot color より優先する。ただし overlay が一つでも有効な比較表示では、active sample を含む全 source を source ごとの単一色で描画し、population/gating の event 色は使わない。単一sampleでは Plot Presentation の `Event colors` から **Density color (single sample)** を選べる。このモードは、全有効表示イベントから局所密度をGaussian smoothingした連続的な青→シアン→緑→黄→赤で示す一方、描画する点数は `Display max points` の上限を維持する。高密度側は最大密度まで連続正規化するため、compactな集団も一律の赤ではなく内部の勾配を保つ。density色は選択populationの変換後分布に対して一度決まり、zoom、pan、plot resize、DPIでは変化しない。イベントごとのpopulation/gating色は使わない。overlayが一つでもある場合は自動的に通常色へ戻り、設定は保存されたままステータスで理由を表示する。gate outline、membership、counts、frequency、統計は変化しない。
+通常の active sample は plot appearance の base dot color で描画する。Samples ペインの色見本は manual overlay 用であり、別 sample の overlay を有効にした場合だけそのレイヤーへ適用される。population に明示した表示色は base dot color より優先する。ただし overlay が一つでも有効な比較表示では、active sample を含む全 source を source ごとの単一色で描画し、population/gating の event 色は使わない。単一sampleでは Plot Presentation の `Event colors` から **Density color (single sample)** を選べる。このモードは、全有効表示イベントから局所密度をGaussian smoothingした連続的な青→シアン→緑→黄→赤で示す一方、描画する点数は `Display max points` の上限を維持する。高密度側は最大密度まで連続正規化するため、compactな集団も一律の赤ではなく内部の勾配を保つ。density色は選択populationの変換後分布に対して一度決まり、zoom、pan、plot resize、DPIでは変化しない。イベントごとのpopulation/gating色は使わない。overlayが一つでもある場合は自動的に通常色へ戻り、設定は保存されたままステータスで理由を表示する。`Display max points = 0 (all events)` とdensity colorを組み合わせて20,000点を超える場合は、性能低下を示す非ブロッキング警告が表示される。これは表示だけの警告で、点数を自動変更しない。gate outline、membership、counts、frequency、統計は変化しない。
 
 ### 1.2 Results の鮮度
 
@@ -292,7 +292,7 @@ status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel
 |Y axis|parameter / Count|通常は縦軸 parameter。`Count` を選ぶと 1D histogram mode になる。|
 |X transform|Linear / Log10 / Asinh / Logicle / Custom…|X parameter の表示座標を選ぶ。ゲートが別の座標で作成されている場合、そのゲート輪郭は表示しない。|
 |Y transform|Linear / Log10 / Asinh / Logicle / Custom…|Y parameter の表示座標を選ぶ。ゲートが別の座標で作成されている場合、そのゲート輪郭は表示しない。Count mode では意味を持たない。|
-|Display max points|0–10,000,000、step 5,000|scatter の layer ごとに描画する最大点数。`0 (all events)` は全有限 event を描画。解析結果は常に全 event。|
+|Display max points|0–10,000,000、step 5,000|scatter の layer ごとに描画する最大点数。`0 (all events)` は全有限 event を描画。density colorで20,000点を超えると性能警告を表示するが、自動samplingはしない。解析結果は常に全 event。|
 
 ### 8.1 transform selector の挙動
 
