@@ -127,6 +127,11 @@ separate validated comparison is added.
 
 ## Increment 1 — Pure core estimator and numerical tests
 
+**Status: completed.** `smooth-density.v1` provides the pure NumPy typed result,
+aspect-aware grid, Gaussian smoothing, bilinear interpolation, robust normalization, and
+continuous palette. Increment 2 must now connect full pre-downsample input and viewport
+invalidation; it must not reimplement the estimator.
+
 Non-goals: Qt signals, cache, project schema, batch export, and UI changes.
 
 1. Add failing tests for a synthetic dense Gaussian cluster plus sparse background:

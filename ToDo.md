@@ -681,7 +681,7 @@ items so future changes do not regress the behavior.
 `docs/implementation/density-event-coloring.md`を唯一の正とする。一回のLLM実行で下記の
 increment一つだけを実装する。
 
-- [ ] Increment 1: core NumPy estimatorを、全有効・変換後・viewport内イベントの
+- [x] Increment 1: core NumPy estimatorを、全有効・変換後・viewport内イベントの
   aspect-aware histogram、Gaussian smoothing、bilinear interpolation、`log1p` + robust
   percentile normalization、連続256段階以上paletteへ置換する。raw/events、gate membership、
   count、frequency、statistics、pipeline revisionは不変であることを数値testする。
