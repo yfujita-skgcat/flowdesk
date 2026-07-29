@@ -15,6 +15,7 @@ from flowdesk_core.batch_plot_export import (
   run_batch_plot_export,
 )
 from flowdesk_core.density_colors import estimate_density_colors
+from flowdesk_core.execution_control import ExecutionControl
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
@@ -38,6 +39,7 @@ def batch_plot_command(
   output_dir: str,
   *,
   renderer_backend: str = "headless",
+  execution_control: ExecutionControl | None = None,
 ) -> int:
   try:
     project = load_project(project_path)
@@ -154,35 +156,36 @@ def batch_plot_command(
         "event_colors": event_colors,
       }
 
+    def prepare_sources() -> None:
+      nonlocal shared_bounds
+      for candidate in samples:
+        candidate_id = str(candidate["id"])
+        x_values, y_values, metadata = extract_layer(candidate)
+        prepared_layers[candidate_id] = (x_values, y_values)
+        layer_metadata[candidate_id] = metadata
+        if metadata.get("event_colors") is not None:
+          layer_event_colors[candidate_id] = metadata["event_colors"]
+      if spec.layout_policy == "shared_ranges":
+        all_x = np.concatenate([value[0] for value in prepared_layers.values()])
+        all_y = np.concatenate([value[1] for value in prepared_layers.values()])
+        shared_bounds = (
+          float(np.min(all_x)), float(np.max(all_x)),
+          float(np.min(all_y)), float(np.max(all_y)),
+        )
+      preflight = preflight_vector_scatter_export(
+        spec,
+        rendered_event_count=sum(len(value[0]) for value in prepared_layers.values()),
+        logical_plot_width=max(1.0, spec.width - 80.0),
+        logical_plot_height=max(1.0, spec.height - 110.0),
+      )
+      preflight_holder["value"] = preflight.to_mapping()
+      if preflight.status == "failed":
+        raise ValueError(json.dumps(preflight.to_mapping(), ensure_ascii=False))
+
     def render(
       sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
     ) -> None:
-      nonlocal shared_bounds
       sample_id = str(sample["id"])
-      if not prepared_layers:
-        for candidate in samples:
-          candidate_id = str(candidate["id"])
-          x_values, y_values, metadata = extract_layer(candidate)
-          prepared_layers[candidate_id] = (x_values, y_values)
-          layer_metadata[candidate_id] = metadata
-          if metadata.get("event_colors") is not None:
-            layer_event_colors[candidate_id] = metadata["event_colors"]
-        if spec.layout_policy == "shared_ranges":
-          all_x = np.concatenate([value[0] for value in prepared_layers.values()])
-          all_y = np.concatenate([value[1] for value in prepared_layers.values()])
-          shared_bounds = (
-            float(np.min(all_x)), float(np.max(all_x)),
-            float(np.min(all_y)), float(np.max(all_y)),
-          )
-        preflight = preflight_vector_scatter_export(
-          spec,
-          rendered_event_count=sum(len(value[0]) for value in prepared_layers.values()),
-          logical_plot_width=max(1.0, spec.width - 80.0),
-          logical_plot_height=max(1.0, spec.height - 110.0),
-        )
-        preflight_holder["value"] = preflight.to_mapping()
-        if preflight.status == "failed":
-          raise ValueError(json.dumps(preflight.to_mapping(), ensure_ascii=False))
       x_values, y_values = prepared_layers[sample_id]
       metadata = layer_metadata[sample_id]
       x_id, y_id = metadata["x_id"], metadata["y_id"]
@@ -393,6 +396,8 @@ def batch_plot_command(
     batch_report = run_batch_plot_export(
       spec, samples, output_dir, render, annotations=annotations,
       preflight=preflight_holder,
+      prepare=prepare_sources,
+      execution_control=execution_control,
       overlay_sample_ids={
         str(sample.get("id")): tuple(
           str(value) for value in view.get("manual_overlay_sample_ids", ())

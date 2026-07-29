@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from flowdesk_core.batch_plot_export import (
   plan_batch_plot_export,
   run_batch_plot_export,
 )
+from flowdesk_core.execution_control import ExecutionControl
 from flowdesk_core.models import BatchPlotExportSpec
 from flowdesk_storage.project import load_project, save_project
 
@@ -120,6 +122,73 @@ def test_batch_run_reports_renderer_failure(tmp_path) -> None:
   report = run_batch_plot_export(spec, _samples(), tmp_path, render)
   assert report.status == "failed"
   assert all(item.status == "failed" for item in report.items)
+
+
+def test_batch_run_prepares_once_and_reports_each_written_format(tmp_path) -> None:
+  spec = BatchPlotExportSpec(id="export", name="Export", formats=("svg", "png"))
+  prepared: list[str] = []
+  events = []
+
+  def prepare() -> None:
+    prepared.append("once")
+
+  def render(sample, path, _spec) -> None:
+    assert path.suffix in {".svg", ".png"}
+    path.write_text(sample["id"], encoding="utf-8")
+
+  report = run_batch_plot_export(
+    spec,
+    _samples(),
+    tmp_path,
+    render,
+    prepare=prepare,
+    execution_control=ExecutionControl(progress_sink=events.append),
+  )
+
+  assert report.status == "success"
+  assert prepared == ["once"]
+  rendering = [event for event in events if event.phase == "rendering"]
+  assert [event.completed_units for event in rendering] == [1, 2, 3, 4]
+  assert {event.total_units for event in events} == {4}
+  assert (tmp_path / "Control_s1_main-view.svg").read_text(encoding="utf-8") == "s1"
+  assert not list(tmp_path.glob(".*.flowdesk-*"))
+
+
+def test_batch_run_cancellation_keeps_completed_files_and_manifest(tmp_path) -> None:
+  spec = BatchPlotExportSpec(id="export", name="Export", formats=("svg",))
+  control = ExecutionControl()
+  rendered: list[Path] = []
+
+  def render(sample, path, _spec) -> None:
+    path.write_text(sample["id"], encoding="utf-8")
+    rendered.append(path)
+    control.cancellation_token.cancel()
+
+  report = run_batch_plot_export(
+    spec, _samples(), tmp_path, render, execution_control=control
+  )
+
+  assert report.status == "partial_cancelled"
+  assert [item.status for item in report.items] == ["success", "not_started"]
+  assert len(rendered) == 1
+  assert Path(report.items[0].output_paths[0]).exists()
+  manifest = json.loads((tmp_path / "export.batch.json").read_text(encoding="utf-8"))
+  assert manifest["status"] == "partial_cancelled"
+  assert [item["status"] for item in manifest["items"]] == ["success", "not_started"]
+
+
+def test_batch_run_discards_failed_staged_output(tmp_path) -> None:
+  spec = BatchPlotExportSpec(id="export", name="Export", formats=("svg",))
+
+  def render(_sample, path, _spec) -> None:
+    path.write_text("partial", encoding="utf-8")
+    raise RuntimeError("after write")
+
+  report = run_batch_plot_export(spec, _samples(), tmp_path, render)
+
+  assert report.status == "failed"
+  assert not list(tmp_path.glob("*.svg"))
+  assert not list(tmp_path.glob(".*.flowdesk-*"))
 
 
 def test_batch_definition_project_round_trip(tmp_path) -> None:

@@ -1334,13 +1334,13 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
 
 #### Increment 6: Batch Export phase分割と進捗GUI
 
-- [ ] `batch_plot_command()`の「最初のrender callbackで全sampleを準備する」処理を、
+- [x] `batch_plot_command()`の「最初のrender callbackで全sampleを準備する」処理を、
   planning、unique source loading/preparation、shared range、scene build、render、
   sidecar、manifestへ明示的に分割する。
 - [ ] overlayのbase/source依存graphを作り、同じsourceを同じcache keyで一度だけ準備する。
   `shared_ranges`は全required source準備後のbarrierとし、source/order/color/gate/labelを
   completion順で変えない。
-- [ ] sequentialのままper-item/per-format progress、cooperative cancel、atomic staged output、
+- [x] sequentialのままper-item/per-format progress、cooperative cancel、atomic staged output、
   `cancelled`/`not_started`を含むmanifestを実装する。coordinatorだけがmanifestを書く。
 - [ ] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
   `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、

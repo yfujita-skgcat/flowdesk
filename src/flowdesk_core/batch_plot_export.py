@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from flowdesk_core.annotations import resolve_sample_title
+from flowdesk_core.execution_control import (
+  ExecutionCancelled,
+  ExecutionControl,
+  ProgressEvent,
+)
 from flowdesk_core.models import AnnotationSpec, BatchPlotExportSpec
 from flowdesk_core.plot_export import resolve_export_canvas
 
@@ -137,78 +143,227 @@ def run_batch_plot_export(
   annotations: Sequence[Any] = (),
   overlay_sample_ids: Mapping[str, Sequence[str]] | None = None,
   preflight: dict[str, Any] | None = None,
+  prepare: Callable[[], None] | None = None,
+  execution_control: ExecutionControl | None = None,
 ) -> BatchPlotExportReport:
-  """Render each planned sample and persist per-file provenance plus a manifest."""
+  """Render planned outputs sequentially with optional preparation/progress control.
+
+  ``prepare`` owns shared source loading, display preparation, shared-range
+  resolution, and renderer preflight.  It runs once before the first output,
+  leaving ``render`` to build one already-prepared output.  Final files and
+  sidecars are published only through same-directory atomic replacement.
+  """
   items = plan_batch_plot_export(
     spec, samples, output_dir, group_members=group_members, annotations=annotations,
     overlay_sample_ids=overlay_sample_ids,
   )
   output_root = Path(output_dir)
   output_root.mkdir(parents=True, exist_ok=True)
+  sample_by_id = {str(sample.get("id")): sample for sample in samples}
+  total_units = sum(len(item.output_paths) for item in items if item.status != "failed")
+  operation_id = (
+    execution_control.begin_operation("batch_plot_export")
+    if execution_control is not None else "batch_plot_export"
+  )
+  completed_units = 0
+
+  def progress(
+    phase: str,
+    *,
+    sample_id: str | None = None,
+    output_path: str | None = None,
+    message: str | None = None,
+  ) -> None:
+    if execution_control is None:
+      return
+    execution_control.emit_progress(ProgressEvent(
+      operation_id=operation_id,
+      operation="batch_plot_export",
+      phase=phase,
+      completed_units=completed_units,
+      total_units=total_units,
+      sample_id=sample_id,
+      output_path=output_path,
+      message=message,
+    ))
+
+  progress("planning")
+  preparation_error: str | None = None
+  cancelled = False
+  try:
+    if execution_control is not None:
+      execution_control.cancellation_token.raise_if_cancelled()
+    if prepare is not None:
+      progress("preparing_sources")
+      prepare()
+      if execution_control is not None:
+        execution_control.cancellation_token.raise_if_cancelled()
+  except ExecutionCancelled:
+    cancelled = True
+  except Exception as exc:
+    preparation_error = str(exc)
+
   completed: list[BatchPlotExportItem] = []
-  for item in items:
+  cancellation_recorded = False
+  for item_index, item in enumerate(items):
     if item.status == "failed":
       completed.append(item)
       continue
-    sample = next(sample for sample in samples if str(sample.get("id")) == item.sample_id)
+    if (
+      execution_control is not None
+      and execution_control.cancellation_token.is_cancelled()
+    ):
+      cancelled = True
+    if cancelled:
+      has_published_output = any(existing.status == "success" for existing in completed)
+      status = (
+        "cancelled"
+        if not cancellation_recorded and not has_published_output
+        else "not_started"
+      )
+      completed.append(_replace_item_status(item, status))
+      cancellation_recorded = True
+      continue
+    if preparation_error is not None:
+      completed.append(_replace_item_status(item, "failed", preparation_error))
+      continue
+    sample = sample_by_id[item.sample_id]
     paths: list[str] = []
     diagnostic: str | None = None
     try:
       for path_text in item.output_paths:
+        if execution_control is not None:
+          execution_control.cancellation_token.raise_if_cancelled()
         path = Path(path_text)
         if path.exists() and spec.collision_policy == "fail":
           raise BatchPlotExportError(f"output already exists: {path}")
-        render(sample, path, spec)
-        if not path.exists() or path.stat().st_size == 0:
-          raise BatchPlotExportError(f"renderer produced no output: {path}")
+        staged_path = _staged_output_path(path)
+        staged_sidecar = staged_path.with_suffix(staged_path.suffix + ".json")
+        try:
+          render(sample, staged_path, spec)
+          if not staged_path.exists() or staged_path.stat().st_size == 0:
+            raise BatchPlotExportError(f"renderer produced no output: {path}")
+          _write_sidecar(
+            staged_path, item, spec,
+            final_output_path=path,
+          )
+          progress("writing_sidecars", sample_id=item.sample_id, output_path=str(path))
+          staged_path.replace(path)
+          staged_sidecar.replace(path.with_suffix(path.suffix + ".json"))
+        except Exception:
+          staged_path.unlink(missing_ok=True)
+          staged_sidecar.unlink(missing_ok=True)
+          raise
         paths.append(str(path))
-        sidecar = path.with_suffix(path.suffix + ".json")
-        renderer_metadata: dict[str, Any] = {}
-        if sidecar.exists():
-          try:
-            loaded = json.loads(sidecar.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-              renderer_metadata = loaded
-          except (OSError, json.JSONDecodeError):
-            renderer_metadata = {}
-        renderer_metadata.update({
-          "export_id": spec.id,
-          "sample_id": item.sample_id,
-          "sample_title": item.sample_title,
-          "source_sample_ids": item.source_sample_ids,
-          "well_ids": item.well_ids,
-          "well_sources": item.well_sources,
-          "export_options": asdict(spec),
-          "plot_view_id": spec.plot_view_id,
-          "output": str(path),
-        })
-        sidecar.write_text(json.dumps(
-          renderer_metadata, indent=2, ensure_ascii=False
-        ) + "\n", encoding="utf-8")
+        completed_units += 1
+        progress("rendering", sample_id=item.sample_id, output_path=str(path))
+      completed.append(BatchPlotExportItem(
+        item.sample_id, item.sample_title, tuple(paths), "success", None,
+        item.source_sample_ids, item.well_ids, item.well_sources,
+      ))
+    except ExecutionCancelled:
+      cancelled = True
+      cancellation_recorded = True
+      completed.append(BatchPlotExportItem(
+        item.sample_id, item.sample_title, tuple(paths),
+        "cancelled" if not paths else "success", None,
+        item.source_sample_ids, item.well_ids, item.well_sources,
+      ))
     except Exception as exc:
       diagnostic = str(exc)
-    completed.append(BatchPlotExportItem(
-      item.sample_id, item.sample_title, tuple(paths),
-      "success" if diagnostic is None else "failed", diagnostic,
-      item.source_sample_ids, item.well_ids, item.well_sources,
-    ))
+      completed.append(BatchPlotExportItem(
+        item.sample_id, item.sample_title, tuple(paths), "failed", diagnostic,
+        item.source_sample_ids, item.well_ids, item.well_sources,
+      ))
+    if cancelled:
+      for remainder in items[item_index + 1:]:
+        if remainder.status == "failed":
+          completed.append(remainder)
+        else:
+          completed.append(_replace_item_status(remainder, "not_started"))
+      break
   failures = [item for item in completed if item.status == "failed"]
-  if failures and len(failures) == len(completed):
+  successes = [item for item in completed if item.status == "success"]
+  if cancelled:
+    status = "partial_cancelled" if successes else "cancelled"
+  elif failures and len(failures) == len(completed):
     status = "failed"
   elif failures:
     status = "partial_success"
   else:
     status = "success"
   manifest = output_root / f"{_safe_slug(spec.id)}.batch.json"
-  manifest.write_text(json.dumps({
+  progress("finalizing_manifest")
+  _write_json_atomically(manifest, {
     "export_id": spec.id,
     "export_options": asdict(spec),
     "export_canvas": resolve_export_canvas(spec).to_mapping(),
     "vector_scatter_preflight": (preflight or {}).get("value"),
     "status": status,
     "items": [asdict(item) for item in completed],
-  }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+  })
   return BatchPlotExportReport(spec.id, status, tuple(completed), str(manifest))
+
+
+def _replace_item_status(
+  item: BatchPlotExportItem, status: str, diagnostic: str | None = None,
+) -> BatchPlotExportItem:
+  return BatchPlotExportItem(
+    item.sample_id, item.sample_title, item.output_paths, status,
+    item.diagnostic if diagnostic is None else diagnostic,
+    item.source_sample_ids, item.well_ids, item.well_sources,
+  )
+
+
+def _staged_output_path(path: Path) -> Path:
+  """Return a same-directory temporary path preserving the renderer suffix."""
+  return path.with_name(f".{path.stem}.flowdesk-{uuid.uuid4().hex}{path.suffix}")
+
+
+def _write_sidecar(
+  staged_path: Path,
+  item: BatchPlotExportItem,
+  spec: BatchPlotExportSpec,
+  *,
+  final_output_path: Path,
+) -> None:
+  """Merge renderer metadata and write the staged provenance sidecar."""
+  staged_sidecar = staged_path.with_suffix(staged_path.suffix + ".json")
+  renderer_metadata: dict[str, Any] = {}
+  if staged_sidecar.exists():
+    try:
+      loaded = json.loads(staged_sidecar.read_text(encoding="utf-8"))
+      if isinstance(loaded, dict):
+        renderer_metadata = loaded
+    except (OSError, json.JSONDecodeError):
+      renderer_metadata = {}
+  renderer_metadata.update({
+    "export_id": spec.id,
+    "sample_id": item.sample_id,
+    "sample_title": item.sample_title,
+    "source_sample_ids": item.source_sample_ids,
+    "well_ids": item.well_ids,
+    "well_sources": item.well_sources,
+    "export_options": asdict(spec),
+    "plot_view_id": spec.plot_view_id,
+    "output": str(final_output_path),
+  })
+  staged_sidecar.write_text(
+    json.dumps(renderer_metadata, indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8",
+  )
+
+
+def _write_json_atomically(path: Path, value: Mapping[str, Any]) -> None:
+  staged_path = _staged_output_path(path)
+  try:
+    staged_path.write_text(
+      json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    staged_path.replace(path)
+  except Exception:
+    staged_path.unlink(missing_ok=True)
+    raise
 
 
 def _filename_stem(
