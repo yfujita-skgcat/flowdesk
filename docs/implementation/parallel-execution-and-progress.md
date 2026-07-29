@@ -699,10 +699,16 @@ the resolved density colors and existing `ScatterPlotItem`; it does not send a n
 per-event Qt payload.  Repeating an unchanged `PlotItem.setLogMode()` is also
 avoided because pyqtgraph otherwise rebuilds existing scatter data.  A dot-size or
 opacity change refreshes Qt presentation only and reuses the normalized density
-field.  In the opt-in 20,000-event/5-repeat offscreen benchmark, cold
+field.  As of 2026-07-30, a size-only change calls `ScatterPlotItem.setSize()` and
+an opacity change calls `setBrush()` over the resolved colours; neither path resubmits
+the large X/Y payload through `setData()`. In the opt-in 20,000-event/5-repeat offscreen benchmark, cold
 `plot_events` median was 216.0 ms and the semantic cached replot median was
 1.75 ms; these environment-specific display measurements are not CI thresholds
-or analysis speedup claims.
+or analysis speedup claims. A 20,000-event/three-repeat measurement on 2026-07-30
+recorded 73.2 ms for the no-coordinate-resubmission size update and 148.6 ms for
+the opacity update, compared with 234.8 ms cold `plot_events`. Opacity still requires
+one brush per event, so this is presentation-payload evidence, not density-kernel
+speedup evidence.
 
 A first QThreadPool/NumPy density-worker attempt produced a fatal shutdown crash
 during the focused Qt tests, so it was reverted rather than shipping unsafe

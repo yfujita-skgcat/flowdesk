@@ -501,6 +501,43 @@ def test_density_style_change_reuses_density_estimate(
     QApplication.processEvents()
 
 
+def test_density_style_changes_do_not_resubmit_event_coordinates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(83)
+  x = rng.normal(size=4000)
+  y = rng.normal(size=4000)
+  calls = 0
+  original_set_data = ScatterPlotItem.setData
+
+  def counting_set_data(self, *args, **kwargs):
+    nonlocal calls
+    if kwargs.get("x") is not None or args:
+      calls += 1
+    return original_set_data(self, *args, **kwargs)
+
+  monkeypatch.setattr(ScatterPlotItem, "setData", counting_set_data)
+  try:
+    plot.plot_events(x, y, density_coloring=True, density_cache_context=("style",))
+    original_colors = plot._event_colors.copy()
+    plot.set_style(replace(plot.style(), dot_size=3.0))
+    plot.set_style(replace(plot.style(), dot_opacity=0.4))
+
+    assert calls == 1
+    assert np.array_equal(plot._event_colors, original_colors)
+    assert isinstance(plot._scatter, ScatterPlotItem)
+    assert all(
+      brush.color().alphaF() == pytest.approx(0.4)
+      for brush in plot._scatter.data["brush"]
+    )
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
 def test_population_colors_render_as_uniform_layers_without_per_event_brushes() -> None:
   _app()
   plot = PlotWidget()

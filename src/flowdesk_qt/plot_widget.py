@@ -34,6 +34,7 @@ from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined
 from PySide6.QtCore import QMarginsF, QPoint, QSize, QSizeF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
+    QBrush,
     QColor,
     QFont,
     QFontMetrics,
@@ -1448,10 +1449,20 @@ class PlotWidget(QWidget):
         )
         if self._scatter is not None and scatter_style_changed:
             if self._density_coloring_active:
-                # Dot size/opacity are presentation-only.  They require a
-                # new Qt payload, but never a new whole-population density
-                # estimate or color normalization.
-                self._refresh_density_colors()
+                # Density colors are already resolved for this semantic
+                # display identity. Dot-color is deliberately ignored by the
+                # density mode. Update only the changed per-spot presentation
+                # field: re-sending X/Y through setData is expensive for a
+                # large scatter and is not required for size or opacity.
+                if not isinstance(self._scatter, ScatterPlotItem):
+                    self._refresh_density_colors()
+                elif previous is None or previous.dot_size != s.dot_size:
+                    self._scatter.setSize(s.dot_size)
+                if (
+                    previous is None
+                    or previous.dot_opacity != s.dot_opacity
+                ):
+                    self._scatter.setBrush(self._density_brushes())
             elif self._population_scatter_items:
                 for item, color in self._population_scatter_items:
                     item.setSymbolSize(s.dot_size)
@@ -2270,11 +2281,7 @@ class PlotWidget(QWidget):
             ).colors
             self._density_color_cache = {key: colors}
         self._event_colors = colors
-        brushes_by_color = {
-            str(color): self._make_brush(str(color), self._style.dot_opacity)
-            for color in np.unique(colors)
-        }
-        brushes = [brushes_by_color[str(color)] for color in colors]
+        brushes = self._density_brushes(colors)
         if self._population_scatter_items or (
             self._scatter is not None
             and not isinstance(self._scatter, ScatterPlotItem)
@@ -2293,6 +2300,20 @@ class PlotWidget(QWidget):
             pxMode=True,
         )
         self._density_render_key = key
+
+    def _density_brushes(
+        self,
+        colors: NDArray[np.str_] | None = None,
+    ) -> list[QBrush]:
+        """Return opacity-adjusted brushes without rebuilding scatter X/Y data."""
+        resolved_colors = self._event_colors if colors is None else colors
+        if resolved_colors is None:
+            return []
+        brushes_by_color = {
+            str(color): self._make_brush(str(color), self._style.dot_opacity)
+            for color in np.unique(resolved_colors)
+        }
+        return [brushes_by_color[str(color)] for color in resolved_colors]
 
     def _density_color_key(
         self,

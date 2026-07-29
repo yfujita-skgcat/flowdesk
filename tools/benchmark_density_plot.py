@@ -9,6 +9,7 @@ import os
 import platform
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,8 @@ def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
   numeric_ms: list[float] = []
   plot_ms: list[float] = []
   cached_replot_ms: list[float] = []
+  size_update_ms: list[float] = []
+  opacity_update_ms: list[float] = []
   for _ in range(repeats):
     started = time.perf_counter()
     estimate_density_colors(
@@ -80,6 +83,17 @@ def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
       )
       app.processEvents()
       cached_replot_ms.append((time.perf_counter() - started) * 1000.0)
+
+      # Density style updates retain the existing X/Y scatter data. Size can
+      # use one scalar update; opacity still changes each resolved brush.
+      started = time.perf_counter()
+      widget.set_style(replace(widget.style(), dot_size=3.0))
+      app.processEvents()
+      size_update_ms.append((time.perf_counter() - started) * 1000.0)
+      started = time.perf_counter()
+      widget.set_style(replace(widget.style(), dot_opacity=0.4))
+      app.processEvents()
+      opacity_update_ms.append((time.perf_counter() - started) * 1000.0)
     finally:
       widget.close()
       widget.deleteLater()
@@ -97,9 +111,13 @@ def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
       "density_numeric": numeric_ms,
       "plot_events_total": plot_ms,
       "cached_density_replot": cached_replot_ms,
+      "cached_density_size_update": size_update_ms,
+      "cached_density_opacity_update": opacity_update_ms,
       "density_numeric_median": _median_ms(numeric_ms),
       "plot_events_total_median": _median_ms(plot_ms),
       "cached_density_replot_median": _median_ms(cached_replot_ms),
+      "cached_density_size_update_median": _median_ms(size_update_ms),
+      "cached_density_opacity_update_median": _median_ms(opacity_update_ms),
     },
   }
 

@@ -1314,10 +1314,15 @@ thread backend（Increment 8）とは別の計画である。
 - [x] 同一semantic processed-display identityのdensity再描画では、解決済みのcolorsと既存
   `ScatterPlotItem`を再利用し、gate/label-only replotでper-event `setData()`を再送信しない。
   unchangedな`PlotItem.setLogMode()`も再実行しない。dot size/opacity変更はQt payloadだけを
-  更新し、whole-population density推定/normalizationは再実行しない。
+  更新し、whole-population density推定/normalizationは再実行しない。2026-07-30にはdensity
+  scatterのdot size/opacity更新を`ScatterPlotItem.setSize()`/`setBrush()`へ分離し、既存event
+  X/Yを`setData()`で再送信しないようにした。
 - [x] `benchmark-density`へwarm semantic density replotを追加した。2026-07-29の20,000 events
   ×5回のoffscreen環境ではcold `plot_events`中央値216.0 msに対して、cached replot中央値は
   1.75 msだった。これは同一環境の表示測定であり、CI thresholdや解析speedupではない。
+  2026-07-30の20,000 events ×3回では、X/Yを再送信しないsize update中央値73.2 ms、
+  opacity update中央値148.6 ms、cold `plot_events`中央値234.8 msだった。opacityはeventごとの
+  brush更新を伴うため、これをdensity数値kernelのspeedupと解釈しない。
 - [ ] cached/uncachedのcolor一致、全関連設定のcache invalidation、rapid pan/zoom/sample
   switch、shutdownをtestする。
 
@@ -1401,6 +1406,54 @@ thread backend（Increment 8）とは別の計画である。
   sequentialから変更しない。headless CLIは`--execution-backend thread`、`--max-workers`、
   `--memory-budget-mib`でこのruntime optionを明示指定でき、resolved worker数を表示する。
   代表的なcompensation/derived/gating workloadで再計測する。
+
+#### 並列化の懸念・注意点・保留事項（2026-07-30）
+
+Increment 8の実装時点で、次の境界を明記しておく。ここに記載した保留事項が解消されるまでは、
+thread backendを既定値にしたり、GUI描画へ自動適用したりしない。
+
+- [x] **適用範囲**: `thread` backendはheadlessのauthoritative `Run Pipeline`におけるsample間の
+  並列化だけを対象とする。メインウィンドウのactive sample切替、Qt/pyqtgraph描画、density colorの
+  計算をこのworkerへ移してはいけない。
+- [x] **イベント分割の扱い**: 1サンプル内のeventを任意のchunkへ分割する方式は採用しない。gate、
+  frequency、statistics、diagnostics、順序依存の前処理で逐次実行と数学的に同値であること、chunk
+  境界の再現性、メモリとmergeコストを証明できるまでIncrement 11で保留する。
+- [x] **既定値とGIL**: 小規模fallback workloadではthread/2がsequentialより遅かった。Python処理が
+  GILを保持する部分やfuture作成・mergeの固定費が大きい workloadでは高速化を期待しない。native
+  NumPy等がGILを解放する代表的なcompensation/derived/gating workloadを別途計測するまで、既定値は
+  `sequential`のままとする。
+- [x] **numeric libraryの過剰並列**: BLAS/OpenMP/numexpr等の内部thread数とsample worker数が
+  掛け合わされるとoversubscriptionになる。現在のworker数解決は環境変数・既知のruntimeを考慮するが、
+  全ての実装を強制的に制御するものではない。実環境のbackendを確認し、nested parallelismとCPU負荷を
+  代表データで検証する。
+- [x] **メモリ予算**: estimatorは入力events、派生配列、membership等を含む保守的な近似であり、
+  Python allocator・NumPy temporary・native libraryのpeak RSSを完全には保証しない。1サンプル分が
+  予算を超えても実行を拒否するハード上限ではなく、effective workersを1へ抑える安全側のヒューリスティック
+  である。大規模FCSで実測peak RSS、swap、OOMを確認し、必要なら警告と推定式を改訂する。
+- [x] **raw dataと共有状態**: workerはraw FCS eventsを変更せず、共有project/cache/diagnostics
+  listへ直接書き込まない。derived/compensationの一時配列はworker内で所有し、結果はcoordinatorが
+  input sample順にmergeする。raw event hashとsequential parityを回帰テストで維持する。
+- [x] **cancelと失敗**: cancelは協調的であり、実行中のNumPy/native kernelを強制停止できない。
+  active taskは安全なstage境界で終了し、部分的なauthoritative resultを採用しない。failure/cancel時も
+  完了順をreport順にせず、無関係sampleの結果・診断・出力を破壊しないことを検証する。
+- [x] **provenance**: resolved backend、worker数、memory budget等は`ExecutionReport`のruntime
+  provenanceであり、projectのscientific definitionへ保存しない。runtimeが異なってもscientific
+  result hashの比較対象からprovenanceを除外する。
+- [ ] **代表 workloadの性能ゲート**: compensation、derived parameters、複数gate、statisticsを
+  含む実データ相当のprofileを追加し、sequential/threadのwall time、peak RSS、CPU oversubscriptionを
+  測定する。speedupが再現しない場合はthread backendを実験機能のまま維持する。
+- [ ] **Batch Plot Export並列化**: rendererのreentrancy、共有mutable state、Qt backend、overlayの
+  shared range barrierが未検証のため保留。Increment 9のparity、temporary/atomic replace、cancel、
+  plan順manifestのテスト完了前に実worker並列化を有効化しない。
+- [ ] **density histogram/chunk並列化**: global normalization、viewport変更時の色不変、cache lifetime、
+  QThreadPool終了時の安全性を満たす設計が未確定。既存のdensity cacheとstyle-only更新を優先し、任意の
+  event chunk workerやGUI thread外のQt object操作は行わない。
+- [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
+  FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
+  Increment 11のdecision recordで採否を決定する。
+- [ ] **GUI/配布環境の確認**: GUIはQt thread affinityとshutdown時のworker未残留を守る。CLI flagsは
+  opt-inのままとし、Windows/PyInstallerでworker終了、Ctrl-C、例外伝播、ログとresolved provenanceを
+  確認する。
 
 #### Increment 9: bounded Batch Export parallel rendering
 
