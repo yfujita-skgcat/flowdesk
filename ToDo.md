@@ -1351,15 +1351,17 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
 
 #### Increment 7: immutable sample resultとdeterministic merge
 
-- [ ] `_run_full_pipeline()`のsample loop本体を、immutable inputから完全な
+- [x] `_run_full_pipeline()`のsample loop本体を、immutable inputから完全な
   `SampleExecutionResult`を返すQt非依存関数へ抽出する。workerから共有list/report/cacheへ
   append/mutationしない。
-- [ ] derived plan、Group/strategy/statistic assignment、calculated compensation matrixをworker
+- [x] derived plan、Group/strategy/statistic assignment、calculated compensation matrixをworker
   開始前に一度だけ解決し、cross-sample QCは全sample merge後に実行する。
-- [ ] coordinatorがproject sample順でpopulation results、membership mask、statistics、
+- [x] coordinatorがproject sample順でpopulation results、membership mask、statistics、
   diagnostics、messages、input files、auto/magnetic/tethered fitをmergeする。future完了順を
   report順へ使用しない。
-- [ ] fake executorで完了順を逆転させても従来sequential reportと完全一致するtestを追加する。
+- [x] fake executor相当の逆順`SampleExecutionResult`をmergeしても、input files、messages、fit
+  records、failed sample countがproject順になるtestを追加する。このincrementも実worker並列化は
+  行わない。
   このincrementも実worker並列化は行わない。
 
 #### Increment 8: bounded thread sample-level parallelism

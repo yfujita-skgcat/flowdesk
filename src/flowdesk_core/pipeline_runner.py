@@ -162,6 +162,45 @@ class _CompensationStepResult:
   diagnostics: tuple[ExecutionDiagnostic, ...] = ()
 
 
+@dataclass(frozen=True)
+class SampleExecutionResult:
+  """Complete, coordinator-mergeable result for one selected sample.
+
+  This is intentionally Qt-independent and contains no shared report/cache
+  reference.  A later bounded executor can return these values in arbitrary
+  completion order while the coordinator retains project sample order.
+  """
+
+  sample_id: str
+  project_order: int
+  input_file: Mapping[str, Any] | None
+  population_results: tuple[PopulationResult, ...] = ()
+  population_membership: tuple[PopulationMembership, ...] = ()
+  statistic_results: tuple[StatisticResult, ...] = ()
+  diagnostics: tuple[ExecutionDiagnostic, ...] = ()
+  messages: tuple[str, ...] = ()
+  auto_gate_fits: tuple[dict[str, Any], ...] = ()
+  magnetic_gate_fits: tuple[dict[str, Any], ...] = ()
+  tethered_gate_fits: tuple[dict[str, Any], ...] = ()
+  status: str = "success"
+
+
+@dataclass(frozen=True)
+class _MergedSampleExecutionResults:
+  """Deterministic coordinator-owned report fragments."""
+
+  population_results: tuple[PopulationResult, ...]
+  population_membership: tuple[PopulationMembership, ...]
+  statistic_results: tuple[StatisticResult, ...]
+  input_files: tuple[dict[str, Any], ...]
+  diagnostics: tuple[ExecutionDiagnostic, ...]
+  messages: tuple[str, ...]
+  auto_gate_fits: tuple[dict[str, Any], ...]
+  magnetic_gate_fits: tuple[dict[str, Any], ...]
+  tethered_gate_fits: tuple[dict[str, Any], ...]
+  failed_sample_count: int
+
+
 def run_project_pipeline(
   project: Mapping[str, Any],
   output_dir: str | None = None,
@@ -690,172 +729,34 @@ class PipelineRunner:
         messages.append(f"compensation_calculation=failed: {exc}")
         raise
 
+    sample_results: list[SampleExecutionResult] = []
     for sample_index, sample_meta in enumerate(selected_samples):
       sid = str(sample_meta.get("id", "unknown"))
-      sample = sample_data.get(sid)
-      if sample is None:
-        messages.append(f"warning: no event data for sample {sid!r}, skipping")
-        self._pipeline_checkpoint(
-          context, operation_id, "sample_skipped",
-          completed_units=sample_index + 1, total_units=total_samples,
-          sample_id=sid, message="no event data",
-        )
-        continue
-      analysis_data = _AnalysisData(sample.events, sample.channels)
+      sample_result = self._execute_sample(
+        sample_meta=sample_meta,
+        sample=sample_data.get(sid),
+        project_order=sample_index,
+        context=context,
+        operation_id=operation_id,
+        total_samples=total_samples,
+        gating_strategy_id=sample_strategy_ids.get(sid, gating_strategy_id),
+        statistic_ids=sample_assignments.get(sid, (None, ()))[1],
+        derived_plan=derived_plan,
+        extra_matrices=extra_matrices,
+      )
+      sample_results.append(sample_result)
 
-      # Record input file metadata.
-      input_info = self._record_input_file(sample_meta, analysis_data.events)
-      input_files.append(input_info)
-
-      # --- Step 1: Compensation ---
-      self._pipeline_checkpoint(
-        context, operation_id, "sample_compensation",
-        completed_units=sample_index, total_units=total_samples, sample_id=sid,
-      )
-      compensation = self._step_compensation(
-        analysis_data,
-        sample_id=sid,
-        execution_profile_id=context.execution_profile_id,
-        group_ids=self._sample_group_ids(sample_meta),
-        extra_matrices=extra_matrices if extra_matrices else None,
-      )
-      compensated = compensation.data
-      diagnostics.extend(compensation.diagnostics)
-      messages.append(f"sample={sid} compensation=done")
-
-      # --- Step 2: Derived parameters ---
-      self._pipeline_checkpoint(
-        context, operation_id, "sample_derived",
-        completed_units=sample_index, total_units=total_samples, sample_id=sid,
-      )
-      try:
-        enriched, derived_diagnostics = self._step_derived_parameters(
-          compensated, analysis_data, sid, derived_plan
-        )
-      except _DerivedParameterStepError as exc:
-        diagnostics.append(exc.diagnostic)
-        if exc.policy is DerivedFailurePolicy.FAIL_RUN:
-          raise PipelineError(
-            f"{exc.diagnostic.code}: {exc.diagnostic.message}"
-          ) from exc
-        failed_sample_count += 1
-        messages.append(
-          f"sample={sid} derived_params=failed policy={exc.policy.value}"
-        )
-        self._pipeline_checkpoint(
-          context, operation_id, "sample_skipped",
-          completed_units=sample_index + 1, total_units=total_samples,
-          sample_id=sid, message="derived parameter failure",
-        )
-        continue
-      diagnostics.extend(derived_diagnostics)
-      messages.append(f"sample={sid} derived_params=done")
-
-      # --- Step 3: Transforms ---
-      self._pipeline_checkpoint(
-        context, operation_id, "sample_transform",
-        completed_units=sample_index, total_units=total_samples, sample_id=sid,
-      )
-      transformed = self._step_transforms(enriched)
-      messages.append(f"sample={sid} transforms=done")
-
-      # --- Step 4: Gating ---
-      self._pipeline_checkpoint(
-        context, operation_id, "sample_gating",
-        completed_units=sample_index, total_units=total_samples, sample_id=sid,
-      )
-      sample_gating_strategy_id = sample_strategy_ids.get(sid, gating_strategy_id)
-      if sample_gating_strategy_id is not None:
-        try:
-          (
-            pop_results,
-            pop_membership,
-            population_parent_ids,
-            auto_gate_fits,
-            gating_diagnostics,
-          ) = self._step_gating(
-            sample_gating_strategy_id, transformed, sid
-          )
-          diagnostics.extend(
-            diagnostic for fit in auto_gate_fits for diagnostic in fit["diagnostics"]
-          )
-          diagnostics.extend(
-            ExecutionDiagnostic(
-              code=str(item["code"]),
-              message=(
-                f"gate {item['gate_id']!r} excluded "
-                f"{item['event_count']} event(s) with non-finite coordinates"
-              ),
-              severity="warning",
-              stage="gating",
-              sample_id=sid,
-              parameter_id=(
-                str(item["x_parameter_id"])
-                if item.get("x_parameter_id") is not None else None
-              ),
-              affected_event_count=int(item["event_count"]),
-              details=dict(item),
-            )
-            for item in gating_diagnostics
-          )
-          all_auto_gate_fits.extend(
-            auto_gate_fit_to_mapping(fit["result"])
-            for fit in auto_gate_fits if fit["kind"] == "auto"
-          )
-          all_magnetic_gate_fits.extend(
-            magnetic_gate_fit_to_mapping(fit["result"])
-            for fit in auto_gate_fits if fit["kind"] == "magnetic"
-          )
-          all_tethered_gate_fits.extend(
-            tethered_gate_fit_to_mapping(fit["result"])
-            for fit in auto_gate_fits if fit["kind"] == "tethered"
-          )
-        except GatingStrategyError as exc:
-          raise PipelineError(
-            f"invalid gating strategy {sample_gating_strategy_id!r}: {exc}"
-          ) from exc
-      else:
-        pop_results = self._fallback_root_population(
-          sid, int(transformed.events.shape[0])
-        )
-        pop_membership = self._fallback_root_membership(
-          sid, int(transformed.events.shape[0])
-        )
-        population_parent_ids = {"all_events": None}
-
-      all_population_results.extend(pop_results)
-      all_population_membership.extend(pop_membership)
-
-      # --- Step 5: Statistics ---
-      self._pipeline_checkpoint(
-        context, operation_id, "sample_statistics",
-        completed_units=sample_index, total_units=total_samples, sample_id=sid,
-      )
-      statistic_data_by_stage = {
-        "raw": analysis_data,
-        "compensated": _AnalysisData(enriched.events, enriched.channels),
-        "transformed": transformed,
-      }
-      stat_results = self._step_statistics(
-        sample_id=sid,
-        data_by_stage=statistic_data_by_stage,
-        population_results=pop_results,
-        membership=pop_membership,
-        population_parent_ids=population_parent_ids,
-        statistic_ids=(
-          sample_assignments.get(sid, (None, ()))
-          [1]
-        ),
-      )
-      all_statistic_results.extend(stat_results)
-      messages.append(
-        f"sample={sid} statistics=done n={len(stat_results)}"
-      )
-      self._pipeline_checkpoint(
-        context, operation_id, "sample_complete",
-        completed_units=sample_index + 1, total_units=total_samples,
-        sample_id=sid,
-      )
+    merged_samples = self._merge_sample_execution_results(sample_results)
+    all_population_results.extend(merged_samples.population_results)
+    all_population_membership.extend(merged_samples.population_membership)
+    all_statistic_results.extend(merged_samples.statistic_results)
+    all_auto_gate_fits.extend(merged_samples.auto_gate_fits)
+    all_magnetic_gate_fits.extend(merged_samples.magnetic_gate_fits)
+    all_tethered_gate_fits.extend(merged_samples.tethered_gate_fits)
+    input_files.extend(merged_samples.input_files)
+    diagnostics.extend(merged_samples.diagnostics)
+    messages.extend(merged_samples.messages)
+    failed_sample_count += merged_samples.failed_sample_count
 
     population_tuple = tuple(all_population_results)
     membership_tuple = tuple(all_population_membership)
@@ -895,6 +796,227 @@ class PipelineRunner:
       auto_gate_fits=tuple(all_auto_gate_fits),
       magnetic_gate_fits=tuple(all_magnetic_gate_fits),
       tethered_gate_fits=tuple(all_tethered_gate_fits),
+    )
+
+  @staticmethod
+  def _merge_sample_execution_results(
+    values: Sequence[SampleExecutionResult],
+  ) -> _MergedSampleExecutionResults:
+    """Merge completed sample values in project order, never completion order."""
+    population_results: list[PopulationResult] = []
+    population_membership: list[PopulationMembership] = []
+    statistic_results: list[StatisticResult] = []
+    input_files: list[dict[str, Any]] = []
+    diagnostics: list[ExecutionDiagnostic] = []
+    messages: list[str] = []
+    auto_gate_fits: list[dict[str, Any]] = []
+    magnetic_gate_fits: list[dict[str, Any]] = []
+    tethered_gate_fits: list[dict[str, Any]] = []
+    failed_sample_count = 0
+    for value in sorted(values, key=lambda item: item.project_order):
+      if value.input_file is not None:
+        input_files.append(dict(value.input_file))
+      population_results.extend(value.population_results)
+      population_membership.extend(value.population_membership)
+      statistic_results.extend(value.statistic_results)
+      diagnostics.extend(value.diagnostics)
+      messages.extend(value.messages)
+      auto_gate_fits.extend(value.auto_gate_fits)
+      magnetic_gate_fits.extend(value.magnetic_gate_fits)
+      tethered_gate_fits.extend(value.tethered_gate_fits)
+      if value.status == "failed_sample":
+        failed_sample_count += 1
+    return _MergedSampleExecutionResults(
+      tuple(population_results),
+      tuple(population_membership),
+      tuple(statistic_results),
+      tuple(input_files),
+      tuple(diagnostics),
+      tuple(messages),
+      tuple(auto_gate_fits),
+      tuple(magnetic_gate_fits),
+      tuple(tethered_gate_fits),
+      failed_sample_count,
+    )
+
+  def _execute_sample(
+    self,
+    *,
+    sample_meta: Mapping[str, Any],
+    sample: SampleData | None,
+    project_order: int,
+    context: ExecutionContext,
+    operation_id: str | None,
+    total_samples: int,
+    gating_strategy_id: str | None,
+    statistic_ids: Sequence[str],
+    derived_plan: DerivedParameterPlan,
+    extra_matrices: Mapping[str, Mapping[str, Any]],
+  ) -> SampleExecutionResult:
+    """Execute canonical independent stages for one sample without shared mutation."""
+    sid = str(sample_meta.get("id", "unknown"))
+    if sample is None:
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_skipped",
+        completed_units=project_order + 1, total_units=total_samples,
+        sample_id=sid, message="no event data",
+      )
+      return SampleExecutionResult(
+        sample_id=sid,
+        project_order=project_order,
+        input_file=None,
+        messages=(f"warning: no event data for sample {sid!r}, skipping",),
+        status="skipped",
+      )
+
+    analysis_data = _AnalysisData(sample.events, sample.channels)
+    input_info = self._record_input_file(sample_meta, analysis_data.events)
+    messages = [f"sample={sid} compensation=done"]
+    diagnostics: list[ExecutionDiagnostic] = []
+
+    self._pipeline_checkpoint(
+      context, operation_id, "sample_compensation",
+      completed_units=project_order, total_units=total_samples, sample_id=sid,
+    )
+    compensation = self._step_compensation(
+      analysis_data,
+      sample_id=sid,
+      execution_profile_id=context.execution_profile_id,
+      group_ids=self._sample_group_ids(sample_meta),
+      extra_matrices=extra_matrices or None,
+    )
+    compensated = compensation.data
+    diagnostics.extend(compensation.diagnostics)
+
+    self._pipeline_checkpoint(
+      context, operation_id, "sample_derived",
+      completed_units=project_order, total_units=total_samples, sample_id=sid,
+    )
+    try:
+      enriched, derived_diagnostics = self._step_derived_parameters(
+        compensated, analysis_data, sid, derived_plan
+      )
+    except _DerivedParameterStepError as exc:
+      if exc.policy is DerivedFailurePolicy.FAIL_RUN:
+        raise PipelineError(
+          f"{exc.diagnostic.code}: {exc.diagnostic.message}"
+        ) from exc
+      diagnostics.append(exc.diagnostic)
+      messages.append(
+        f"sample={sid} derived_params=failed policy={exc.policy.value}"
+      )
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_skipped",
+        completed_units=project_order + 1, total_units=total_samples,
+        sample_id=sid, message="derived parameter failure",
+      )
+      return SampleExecutionResult(
+        sample_id=sid,
+        project_order=project_order,
+        input_file=input_info,
+        diagnostics=tuple(diagnostics),
+        messages=tuple(messages),
+        status="failed_sample",
+      )
+    diagnostics.extend(derived_diagnostics)
+    messages.append(f"sample={sid} derived_params=done")
+
+    self._pipeline_checkpoint(
+      context, operation_id, "sample_transform",
+      completed_units=project_order, total_units=total_samples, sample_id=sid,
+    )
+    transformed = self._step_transforms(enriched)
+    messages.append(f"sample={sid} transforms=done")
+
+    self._pipeline_checkpoint(
+      context, operation_id, "sample_gating",
+      completed_units=project_order, total_units=total_samples, sample_id=sid,
+    )
+    auto_gate_fits: tuple[dict[str, Any], ...] = ()
+    if gating_strategy_id is not None:
+      try:
+        (
+          pop_results,
+          pop_membership,
+          population_parent_ids,
+          raw_auto_gate_fits,
+          gating_diagnostics,
+        ) = self._step_gating(gating_strategy_id, transformed, sid)
+      except GatingStrategyError as exc:
+        raise PipelineError(
+          f"invalid gating strategy {gating_strategy_id!r}: {exc}"
+        ) from exc
+      diagnostics.extend(
+        diagnostic for fit in raw_auto_gate_fits for diagnostic in fit["diagnostics"]
+      )
+      diagnostics.extend(
+        ExecutionDiagnostic(
+          code=str(item["code"]),
+          message=(
+            f"gate {item['gate_id']!r} excluded "
+            f"{item['event_count']} event(s) with non-finite coordinates"
+          ),
+          severity="warning",
+          stage="gating",
+          sample_id=sid,
+          parameter_id=(
+            str(item["x_parameter_id"])
+            if item.get("x_parameter_id") is not None else None
+          ),
+          affected_event_count=int(item["event_count"]),
+          details=dict(item),
+        )
+        for item in gating_diagnostics
+      )
+      auto_gate_fits = tuple(raw_auto_gate_fits)
+    else:
+      pop_results = self._fallback_root_population(sid, int(transformed.events.shape[0]))
+      pop_membership = self._fallback_root_membership(sid, int(transformed.events.shape[0]))
+      population_parent_ids = {"all_events": None}
+
+    self._pipeline_checkpoint(
+      context, operation_id, "sample_statistics",
+      completed_units=project_order, total_units=total_samples, sample_id=sid,
+    )
+    statistic_data_by_stage = {
+      "raw": analysis_data,
+      "compensated": _AnalysisData(enriched.events, enriched.channels),
+      "transformed": transformed,
+    }
+    stat_results = self._step_statistics(
+      sample_id=sid,
+      data_by_stage=statistic_data_by_stage,
+      population_results=pop_results,
+      membership=pop_membership,
+      population_parent_ids=population_parent_ids,
+      statistic_ids=statistic_ids,
+    )
+    messages.append(f"sample={sid} statistics=done n={len(stat_results)}")
+    self._pipeline_checkpoint(
+      context, operation_id, "sample_complete",
+      completed_units=project_order + 1, total_units=total_samples, sample_id=sid,
+    )
+    return SampleExecutionResult(
+      sample_id=sid,
+      project_order=project_order,
+      input_file=input_info,
+      population_results=tuple(pop_results),
+      population_membership=tuple(pop_membership),
+      statistic_results=tuple(stat_results),
+      diagnostics=tuple(diagnostics),
+      messages=tuple(messages),
+      auto_gate_fits=tuple(
+        auto_gate_fit_to_mapping(fit["result"])
+        for fit in auto_gate_fits if fit["kind"] == "auto"
+      ),
+      magnetic_gate_fits=tuple(
+        magnetic_gate_fit_to_mapping(fit["result"])
+        for fit in auto_gate_fits if fit["kind"] == "magnetic"
+      ),
+      tethered_gate_fits=tuple(
+        tethered_gate_fit_to_mapping(fit["result"])
+        for fit in auto_gate_fits if fit["kind"] == "tethered"
+      ),
     )
 
   @staticmethod

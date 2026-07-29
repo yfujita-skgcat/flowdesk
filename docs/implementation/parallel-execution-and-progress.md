@@ -774,6 +774,15 @@ equal; worker teardown is clean.
 
 ### Increment 7: Pure per-sample pipeline result and deterministic merge
 
+Status (2026-07-30): complete.  `SampleExecutionResult` now contains all report-ready
+values for one sample—input-file provenance, population results/masks, statistics,
+diagnostics/messages, automatic/magnetic/tethered fits, and status.  Shared group,
+statistic, derived-plan, and calculated-compensation preparation remain before this
+boundary.  The sequential coordinator is the only code that merges results, always sorted
+by project order, before cross-sample QC.  An adversarial reverse-order merge test proves
+that input provenance, messages, fits, and failed-sample status do not follow completion
+order.  This increment intentionally does not create any parallel worker.
+
 - Extract one immutable per-sample execution function/result.
 - Keep the coordinator sequential initially.
 - Move cross-sample calculations before/after the worker boundary as specified.

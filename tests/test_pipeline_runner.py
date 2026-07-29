@@ -13,6 +13,7 @@ from flowdesk_core.overrides import gate_version_hash
 from flowdesk_core.pipeline_runner import (
   PipelineError,
   PipelineRunner,
+  SampleExecutionResult,
   run_project_pipeline,
 )
 from flowdesk_core.sample import SampleData
@@ -179,6 +180,34 @@ def test_pipeline_cancellation_discards_partial_report_and_keeps_raw_events() ->
 
   for sample, before in zip(samples, raw, strict=True):
     np.testing.assert_array_equal(sample.events, before)
+
+
+def test_sample_execution_merge_uses_project_order_not_completion_order() -> None:
+  later = SampleExecutionResult(
+    sample_id="s2",
+    project_order=1,
+    input_file={"sample_id": "s2"},
+    messages=("sample=s2 compensation=done",),
+    auto_gate_fits=({"sample_id": "s2"},),
+  )
+  earlier = SampleExecutionResult(
+    sample_id="s1",
+    project_order=0,
+    input_file={"sample_id": "s1"},
+    messages=("sample=s1 compensation=done",),
+    auto_gate_fits=({"sample_id": "s1"},),
+    status="failed_sample",
+  )
+
+  merged = PipelineRunner._merge_sample_execution_results((later, earlier))
+
+  assert [item["sample_id"] for item in merged.input_files] == ["s1", "s2"]
+  assert list(merged.messages) == [
+    "sample=s1 compensation=done",
+    "sample=s2 compensation=done",
+  ]
+  assert [item["sample_id"] for item in merged.auto_gate_fits] == ["s1", "s2"]
+  assert merged.failed_sample_count == 1
 
 
 # ---------------------------------------------------------------------------
