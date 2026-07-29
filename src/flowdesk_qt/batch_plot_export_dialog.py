@@ -35,6 +35,7 @@ class BatchPlotExportRequest:
   definition: dict[str, Any]
   output_dir: str
   run: bool
+  delete_definition_id: str | None = None
 
 
 class BatchPlotExportDialog(QDialog):
@@ -60,6 +61,7 @@ class BatchPlotExportDialog(QDialog):
     self._groups = [dict(item) for item in groups]
     self._views = [dict(item) for item in plot_views]
     self._run = False
+    self._delete_definition_id: str | None = None
     self._vector_scatter_mode = "hybrid_raster"
     self._hybrid_scatter_dpi = 600
 
@@ -75,6 +77,11 @@ class BatchPlotExportDialog(QDialog):
     new_button = QPushButton("New")
     new_button.setObjectName("batchPlotNewDefinitionButton")
     new_button.clicked.connect(lambda: self._definition.setCurrentIndex(0))
+    delete_button = QPushButton("Delete Definition")
+    delete_button.setObjectName("batchPlotDeleteDefinitionButton")
+    delete_button.clicked.connect(self._accept_delete)
+    self._delete_button = delete_button
+    self._definition.currentIndexChanged.connect(self._update_delete_button)
 
     self._name = QLineEdit()
     self._name.setObjectName("batchPlotNameLineEdit")
@@ -178,6 +185,7 @@ class BatchPlotExportDialog(QDialog):
     definition_row = QHBoxLayout()
     definition_row.addWidget(self._definition)
     definition_row.addWidget(new_button)
+    definition_row.addWidget(delete_button)
     form.addRow("Definition", definition_row)
     form.addRow("Name", self._name)
     form.addRow("Target", self._target)
@@ -231,6 +239,7 @@ class BatchPlotExportDialog(QDialog):
     layout.addLayout(form)
     layout.addLayout(buttons)
     self._load_selected_definition(0)
+    self._update_delete_button()
 
   @staticmethod
   def _spin(name: str, minimum: int, maximum: int, value: int) -> QSpinBox:
@@ -340,6 +349,9 @@ class BatchPlotExportDialog(QDialog):
     self._update_target_widgets()
     self._update_resolution_preview()
 
+  def _update_delete_button(self) -> None:
+    self._delete_button.setEnabled(bool(self._definition.currentData()))
+
   def _update_resolution_preview(self) -> None:
     options = {
       "width": self._width.value(),
@@ -404,6 +416,22 @@ class BatchPlotExportDialog(QDialog):
     if self._validate(True):
       self.accept()
 
+  def _accept_delete(self) -> None:
+    definition_id = str(self._definition.currentData() or "")
+    if not definition_id:
+      return
+    answer = QMessageBox.question(
+      self,
+      "Delete batch export definition",
+      "Delete the selected reusable export definition? This cannot be undone.",
+      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+      QMessageBox.StandardButton.No,
+    )
+    if answer == QMessageBox.StandardButton.Yes:
+      self._delete_definition_id = definition_id
+      self._run = False
+      self.accept()
+
   def _validate(self, require_output: bool) -> bool:
     if not self._name.text().strip():
       QMessageBox.warning(self, "Invalid batch export", "A definition name is required.")
@@ -422,7 +450,9 @@ class BatchPlotExportDialog(QDialog):
       settings = QSettings()
       settings.setValue(self._OUTPUT_DIRECTORY_KEY, output_dir)
       settings.sync()
-    return BatchPlotExportRequest(self.definition_mapping(), output_dir, self._run)
+    return BatchPlotExportRequest(
+      self.definition_mapping(), output_dir, self._run, self._delete_definition_id,
+    )
 
   def definition_mapping(self) -> dict[str, Any]:
     definition_id = str(self._definition.currentData() or "")

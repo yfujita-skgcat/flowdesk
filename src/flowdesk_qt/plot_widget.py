@@ -114,6 +114,11 @@ class PlotWidget(QWidget):
         self._tick_policy: TickPolicy = "auto"
         # Display style settings (display-only, never affects analysis).
         self._style: PlotStyleSettings = PlotStyleSettings()
+        self._axis_label_text_style: dict[str, str] = {
+            "font-family": "DejaVu Sans",
+            "font-size": "14pt",
+            "font-weight": "bold",
+        }
         self._export_metadata: dict[str, Any] | None = None
         self._export_resolution_scale = 1.0
         # Cached raw data for range reset operations.
@@ -247,11 +252,10 @@ class PlotWidget(QWidget):
         # inside the plot layout rather than being clipped at the top.
         self._plot_item.titleLabel.setMaximumHeight(title_height)
         self._plot_item.layout.setRowFixedHeight(0, title_height)
-        self._plot_item.setLabel(
-            "bottom", str(value.get("x_axis_display_label") or self._x_label)
-        )
-        self._plot_item.setLabel(
-            "left", str(value.get("y_axis_display_label") or self._y_label)
+        self._axis_label_text_style = self._label_font_style(value.get("axis_label_font"))
+        self._set_axis_labels(
+            str(value.get("x_axis_display_label") or self._x_label),
+            str(value.get("y_axis_display_label") or self._y_label),
         )
         style_updates: dict[str, Any] = {}
         for key in ("background_color", "gate_outline_color"):
@@ -959,8 +963,7 @@ class PlotWidget(QWidget):
         if options.get("include_title") is False:
             title.setVisible(False)
         if options.get("include_axis_labels") is False:
-            self._plot_item.setLabel("bottom", "")
-            self._plot_item.setLabel("left", "")
+            self._set_axis_labels("", "")
         if options.get("include_ticks") is False:
             bottom_axis.setStyle(showValues=False)
             left_axis.setStyle(showValues=False)
@@ -1054,8 +1057,9 @@ class PlotWidget(QWidget):
         if not state:
             return
         self._plot_item.titleLabel.setVisible(bool(state["title_visible"]))
-        self._plot_item.setLabel("bottom", str(state["bottom_label"]))
-        self._plot_item.setLabel("left", str(state["left_label"]))
+        self._set_axis_labels(
+            str(state["bottom_label"]), str(state["left_label"]),
+        )
         self._plot_item.getAxis("bottom").setStyle(showValues=True)
         self._plot_item.getAxis("left").setStyle(showValues=True)
         gate_visible = cast(tuple[bool, ...], state["gate_visible"])
@@ -2002,8 +2006,33 @@ class PlotWidget(QWidget):
 
     def _update_labels(self) -> None:
         # setLabel lives on PlotItem, not on ViewBox.
-        self._plot_item.setLabel("bottom", self._x_label)
-        self._plot_item.setLabel("left", self._y_label)
+        self._set_axis_labels(self._x_label, self._y_label)
+
+    @staticmethod
+    def _label_font_style(value: Any) -> dict[str, str]:
+        """Convert a resolved axis-label font into pyqtgraph CSS options."""
+        if isinstance(value, dict):
+            family = str(value.get("family", "DejaVu Sans"))
+            size = float(value.get("size", 14.0))
+            weight = str(value.get("weight", "bold"))
+        else:
+            family = str(getattr(value, "family", "DejaVu Sans"))
+            size = float(getattr(value, "size", 14.0))
+            weight = str(getattr(value, "weight", "bold"))
+        return {
+            "font-family": family,
+            "font-size": f"{size:g}pt",
+            "font-weight": weight,
+        }
+
+    def _set_axis_labels(self, x_label: str, y_label: str) -> None:
+        """Set axis labels while retaining the resolved presentation font."""
+        self._plot_item.setLabel(
+            "bottom", x_label, **self._axis_label_text_style,
+        )
+        self._plot_item.setLabel(
+            "left", y_label, **self._axis_label_text_style,
+        )
 
     def _robust_range(self, data: NDArray[np.float64]) -> tuple[float, float]:
         """Compute a robust display range using percentiles.

@@ -9,6 +9,7 @@ import pytest
 from PIL import Image
 
 from flowdesk_core.models import BatchPlotExportSpec
+from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 
 
@@ -38,6 +39,24 @@ def test_qt_batch_renderer_writes_the_shared_scene_and_image(qapp, tmp_path) -> 
   metadata = json.loads(path.with_suffix(".png.json").read_text(encoding="utf-8"))
   assert metadata["scene_hash"] == "test-scene"
   assert metadata["display_state"]["displayed_event_count"] == 2
+
+
+def test_plot_widget_uses_the_presentation_axis_label_font(qapp) -> None:
+  widget = PlotWidget()
+  try:
+    widget.set_presentation({
+      "x_axis_display_label": "FSC-A",
+      "y_axis_display_label": "SSC-A",
+    })
+    bottom_html = widget._plot_item.getAxis("bottom").label.toHtml()
+    left_html = widget._plot_item.getAxis("left").label.toHtml()
+    for html, label in ((bottom_html, "FSC-A"), (left_html, "SSC-A")):
+      assert label in html
+      assert "font-size:14pt" in html
+      assert "font-weight:700" in html
+  finally:
+    widget.close()
+    widget.deleteLater()
 
 
 def test_qt_pdf_uses_the_same_logical_canvas_as_png(qapp, tmp_path) -> None:

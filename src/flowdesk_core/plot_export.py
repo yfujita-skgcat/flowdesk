@@ -1105,17 +1105,30 @@ def _foreground_rgba(background_color: str) -> tuple[int, int, int, int]:
 
 def _draw_vertical(draw: Any, x: int, y: int, text: str, font: Any, fill: Any) -> None:
   """Draw one label rotated 90 degrees counterclockwise around its center."""
-  from PIL import Image, ImageDraw
-
-  bbox = draw.textbbox((0, 0), text, font=font)
-  text_width = bbox[2] - bbox[0]
-  text_height = bbox[3] - bbox[1]
-  label = Image.new("RGBA", (text_width + 4, text_height + 4), (0, 0, 0, 0))
-  ImageDraw.Draw(label).text((2, 2), text, font=font, fill=fill)
-  rotated = label.rotate(90, expand=True)
+  rotated = _vertical_text_image(text, font, fill)
   draw._image.alpha_composite(
     rotated, (round(x - rotated.width // 2), round(y - rotated.height // 2))
   )
+
+
+def _vertical_text_image(text: str, font: Any, fill: Any) -> Any:
+  """Render a padded vertical-label image without losing font bbox offsets."""
+  from PIL import Image, ImageDraw
+
+  probe = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+  bbox = ImageDraw.Draw(probe).textbbox((0, 0), text, font=font)
+  text_width = bbox[2] - bbox[0]
+  text_height = bbox[3] - bbox[1]
+  padding = 4
+  label = Image.new(
+    "RGBA", (text_width + 2 * padding, text_height + 2 * padding), (0, 0, 0, 0),
+  )
+  # Pillow's bbox commonly has a positive top offset.  Drawing at ``padding``
+  # alone puts the glyph below this buffer and cuts its lower part.
+  ImageDraw.Draw(label).text(
+    (padding - bbox[0], padding - bbox[1]), text, font=font, fill=fill,
+  )
+  return label.rotate(90, expand=True)
 
 
 def _display_tick_label(label: str) -> str:

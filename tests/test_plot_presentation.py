@@ -113,7 +113,7 @@ def test_plot_presentation_defaults_to_white_background() -> None:
   assert presentation.axis_line_width == 2.0
   assert presentation.show_grid is True
   assert presentation.title_font == FontSpec(size=14, weight="bold")
-  assert presentation.axis_label_font == FontSpec(size=16, weight="bold")
+  assert presentation.axis_label_font == FontSpec(size=14, weight="bold")
   assert presentation.tick_font == FontSpec(size=10, weight="bold")
   assert SourceStyleSpec(source_id="source").marker_size == 1.5
   assert SourceStyleSpec(source_id="source").alpha == 0.60

@@ -593,3 +593,35 @@ def test_gui_batch_plot_action_delegates_to_cli_core_runner(qapp, monkeypatch, t
   finally:
     window.close()
     window.deleteLater()
+
+
+def test_gui_batch_plot_action_deletes_persisted_definition(qapp, monkeypatch, tmp_path) -> None:
+  window = MainWindow()
+  window._project_path = tmp_path / "project.flowdesk"
+  window._batch_plot_exports = [{"id": "export", "name": "Export"}]
+
+  class AcceptedDialog:
+    def __init__(self, *_args, **_kwargs):
+      pass
+
+    def exec(self):
+      return QDialog.DialogCode.Accepted
+
+    def request(self):
+      from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportRequest
+
+      return BatchPlotExportRequest({}, "", False, delete_definition_id="export")
+
+  saved: list[str] = []
+  monkeypatch.setattr("flowdesk_qt.main_window.BatchPlotExportDialog", AcceptedDialog)
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.MainWindow._save_project_to_path",
+    lambda path: saved.append(str(path)),
+  )
+  try:
+    window._on_batch_plot_export()
+    assert window._batch_plot_exports == []
+    assert saved == [str(window._project_path)]
+  finally:
+    window.close()
+    window.deleteLater()

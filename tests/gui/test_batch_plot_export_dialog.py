@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QMessageBox
 
 from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportDialog
 
@@ -60,6 +61,25 @@ def test_batch_plot_dialog_loads_saved_definition(qapp) -> None:
     assert request.definition["raster_resolution_mode"] == "legacy_pixel_dimensions"
     assert request.definition["vector_scatter_mode"] == "full_vector"
     assert dialog._hybrid_scatter_dpi_spin.isEnabled() is False
+  finally:
+    dialog.deleteLater()
+
+
+def test_batch_plot_dialog_deletes_selected_definition_after_confirmation(
+  qapp, monkeypatch,
+) -> None:
+  dialog = BatchPlotExportDialog(
+    [{"id": "saved", "name": "Saved definition"}], [], [], [], "main-view",
+  )
+  monkeypatch.setattr(
+    QMessageBox, "question", lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+  )
+  try:
+    assert dialog._delete_button.isEnabled() is False
+    dialog._definition.setCurrentIndex(1)
+    assert dialog._delete_button.isEnabled() is True
+    dialog._accept_delete()
+    assert dialog.request().delete_definition_id == "saved"
   finally:
     dialog.deleteLater()
 

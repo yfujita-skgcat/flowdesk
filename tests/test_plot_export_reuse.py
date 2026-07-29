@@ -7,7 +7,7 @@ import subprocess
 
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from flowdesk_core.models import (
   BatchPlotExportSpec,
@@ -18,8 +18,10 @@ from flowdesk_core.models import (
 )
 from flowdesk_core.plot_export import (
   PlotExportError,
+  _font,
   _hybrid_scatter_raster,
   _display_tick_label,
+  _vertical_text_image,
   prepare_plot_export,
   resolve_export_canvas,
   write_plot_jpg,
@@ -39,6 +41,23 @@ from flowdesk_core.plot_reuse import (
 from flowdesk_core.plot_scene import PlotScene
 from flowdesk_core.vector_scatter import VectorScatterLayer, compact_scatter_batches
 from flowdesk_storage.project import load_project, save_project
+
+
+def test_vertical_axis_label_keeps_the_complete_pillow_glyph_bbox() -> None:
+  font = _font(96, bold=True)
+  source = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+  bbox = ImageDraw.Draw(source).textbbox((0, 0), "SSC-A", font=font)
+  source = Image.new("RGBA", (bbox[2] - bbox[0] + 8, bbox[3] - bbox[1] + 8))
+  ImageDraw.Draw(source).text((4 - bbox[0], 4 - bbox[1]), "SSC-A", font=font, fill="black")
+  source_alpha_bbox = source.getchannel("A").getbbox()
+  assert source_alpha_bbox is not None
+  rendered = _vertical_text_image("SSC-A", font, (0, 0, 0, 255))
+  alpha_bbox = rendered.getchannel("A").getbbox()
+  assert alpha_bbox is not None
+  # Rotation swaps the glyph's original width and height.  A positive bbox
+  # top must not remove a strip from the rendered text image.
+  assert alpha_bbox[2] - alpha_bbox[0] >= source_alpha_bbox[3] - source_alpha_bbox[1] - 1
+  assert alpha_bbox[3] - alpha_bbox[1] >= source_alpha_bbox[2] - source_alpha_bbox[0] - 1
 
 
 def test_presentation_precedence_and_source_provenance() -> None:

@@ -3624,6 +3624,30 @@ class MainWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         request = dialog.request()
+        if request.delete_definition_id:
+            previous_definitions = deepcopy(self._batch_plot_exports)
+            previous_dirty = self._project_dirty
+            self._batch_plot_exports = [
+                item for item in self._batch_plot_exports
+                if str(item.get("id", "")) != request.delete_definition_id
+            ]
+            self._project_dirty = True
+            if self._project_path is None:
+                saved = self._save_project_interactively()
+            else:
+                try:
+                    self._save_project_to_path(self._project_path)
+                    saved = True
+                except Exception as exc:
+                    logger.error("Project save failed after batch export deletion: %s", exc)
+                    QMessageBox.critical(self, "Project Save Error", str(exc))
+                    saved = False
+            if not saved:
+                self._batch_plot_exports = previous_definitions
+                self._project_dirty = previous_dirty
+                return
+            self._update_status("Batch plot definition deleted")
+            return
         definition = request.definition
         if not definition.get("id"):
             definition["id"] = f"batch-export-{uuid.uuid4().hex[:12]}"

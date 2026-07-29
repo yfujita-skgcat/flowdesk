@@ -1005,7 +1005,7 @@ class PlotPresentationSpec:
   legend_source_ids: tuple[str, ...] = ()
   title_font: FontSpec = field(default_factory=lambda: FontSpec(size=14, weight="bold"))
   axis_label_font: FontSpec = field(
-    default_factory=lambda: FontSpec(size=16, weight="bold")
+    default_factory=lambda: FontSpec(size=14, weight="bold")
   )
   tick_font: FontSpec = field(
     default_factory=lambda: FontSpec(size=10, weight="bold")
