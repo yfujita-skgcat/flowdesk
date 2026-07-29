@@ -338,49 +338,15 @@ def batch_plot_command(
         scene=scene,
       )
       prepared.metadata["vector_scatter_preflight"] = dict(preflight_holder.get("value", {}))
-      if renderer_backend == "qt" and path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
-        from flowdesk_qt.qt_plot_export import render_batch_plot_qt
-
-        render_batch_plot_qt(
-          path,
-          raw_layers={
-            source_id: (
-              np.asarray(layer_metadata[source_id]["raw_x"], dtype=np.float64),
-              np.asarray(layer_metadata[source_id]["raw_y"], dtype=np.float64),
-            )
-            for source_id in source_ids
-          },
-          event_colors=layer_event_colors,
-          source_ids=source_ids,
-          source_styles=source_styles,
-          presentation=presentation,
-          x_parameter=x_id,
-          y_parameter=y_id,
-          title_lines=tuple(prepared.scene.title_lines),
-          title_colors=tuple(prepared.scene.title_colors),
-          x_transform=transform_by_id.get(str(view.get("x_transform_id"))),
-          y_transform=transform_by_id.get(str(view.get("y_transform_id"))),
-          x_range=active_bounds[0],
-          y_range=active_bounds[1],
-          gates=tuple(
-            gate
-            for strategy in project.get("gating_strategies_data", {}).values()
-            if isinstance(strategy, Mapping)
-            for gate in strategy.get("gates", ())
-            if isinstance(gate, Mapping)
-          ),
-          width=spec.width,
-          height=spec.height,
-          options=spec,
-          export_metadata=prepared.metadata,
-        )
-        return
+      # Batch formats must share the renderer-neutral scene adapter. The live
+      # Qt widget remains the interactive preview, while one core renderer
+      # keeps PNG/JPEG/SVG/PDF coordinates, ticks, gates, and event order equal.
       if path.suffix.lower() == ".png":
         write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height,
                        options=spec, event_colors=visible_event_colors)
       elif path.suffix.lower() in {".jpg", ".jpeg"}:
         write_plot_jpg(path, prepared, layers=layers, width=spec.width, height=spec.height,
-                       options=spec)
+                       options=spec, event_colors=visible_event_colors)
       elif path.suffix.lower() == ".svg":
         write_plot_svg(path, prepared, layers=layers, options=spec)
       elif path.suffix.lower() == ".pdf":
@@ -566,19 +532,67 @@ def _gate_overlays(
           continue
         normalized.append((_unit_range(float(x_value), x_low, x_high),
                            _unit_range(float(y_value), y_low, y_high)))
-      if len(normalized) >= 2:
+      clipped = _clip_polygon_to_unit_square(tuple(normalized))
+      if len(clipped) >= 2:
         result.append({
           "id": str(gate.get("id", "gate")),
-          "points": tuple(normalized),
+          "points": clipped,
           "color": str(gate.get("color") or default_color),
         })
   return tuple(result)
 
 
 def _unit_range(value: float, low: float, high: float) -> float:
+  """Normalize a gate coordinate without independently clipping its vertex."""
   if high == low:
     return 0.5
-  return min(1.0, max(0.0, (value - low) / (high - low)))
+  return (value - low) / (high - low)
+
+
+def _clip_polygon_to_unit_square(
+  points: tuple[tuple[float, float], ...],
+) -> tuple[tuple[float, float], ...]:
+  """Clip a normalized gate polygon while preserving boundary intersections.
+
+  Clamping vertices one-by-one changes a polygon when it crosses a plot edge.
+  The live pyqtgraph ViewBox clips the complete path, so the headless renderer
+  must retain the same line/edge intersections.
+  """
+  clipped = list(points)
+  for axis, boundary, keep_greater in (
+    (0, 0.0, True), (0, 1.0, False), (1, 0.0, True), (1, 1.0, False),
+  ):
+    if not clipped:
+      break
+    output: list[tuple[float, float]] = []
+    previous = clipped[-1]
+    previous_inside = previous[axis] >= boundary if keep_greater else previous[axis] <= boundary
+    for current in clipped:
+      current_inside = current[axis] >= boundary if keep_greater else current[axis] <= boundary
+      if current_inside != previous_inside:
+        output.append(_polygon_boundary_intersection(previous, current, axis, boundary))
+      if current_inside:
+        output.append(current)
+      previous = current
+      previous_inside = current_inside
+    clipped = output
+  return tuple(clipped)
+
+
+def _polygon_boundary_intersection(
+  start: tuple[float, float],
+  end: tuple[float, float],
+  axis: int,
+  boundary: float,
+) -> tuple[float, float]:
+  """Return the intersection of one polygon edge with a square boundary."""
+  delta = end[axis] - start[axis]
+  if abs(delta) < 1e-12:
+    return (boundary, start[1]) if axis == 0 else (start[0], boundary)
+  fraction = (boundary - start[axis]) / delta
+  x_value = start[0] + fraction * (end[0] - start[0])
+  y_value = start[1] + fraction * (end[1] - start[1])
+  return (boundary, y_value) if axis == 0 else (x_value, boundary)
 
 
 def _transform_spec(

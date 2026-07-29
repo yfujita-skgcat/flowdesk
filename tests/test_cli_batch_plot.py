@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from flowdesk_cli.batch_plot import batch_plot_command, write_plot_svg
+from flowdesk_cli.batch_plot import _gate_overlays, batch_plot_command, write_plot_svg
 from flowdesk_core.models import ChannelSpec
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
@@ -127,6 +127,27 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   assert 'stroke="#00ff00"' in text
   metadata = json.loads(next(output_dir.glob("*.svg.json")).read_text(encoding="utf-8"))
   assert metadata["ordered_source_ids"] == ["s1", "s2"]
+
+
+def test_batch_plot_clips_gate_edges_at_the_viewport_boundary() -> None:
+  project = {
+    "gating_strategies_data": {"default": {"gates": [{
+      "id": "gate", "gate_type": "polygon", "x_parameter": "x", "y_parameter": "y",
+      # The first vertex lies above the visible range.  The two adjacent
+      # edges must intersect the top at x=0.7 and x=0.85, rather than moving
+      # the hidden vertex itself to (0.8, 1.0).
+      "coordinates": ((0.8, 1.2), (0.6, 0.8), (0.9, 0.8)),
+    }]}},
+  }
+  overlays = _gate_overlays(
+    project, "x", "y", ((0.0, 1.0), (0.0, 1.0)), None, None,
+    default_color="#e00000",
+  )
+  assert len(overlays) == 1
+  points = overlays[0]["points"]
+  assert (0.7, 1.0) in points
+  assert any(np.allclose(point, (0.85, 1.0)) for point in points)
+  assert (0.8, 1.0) not in points
 
 
 def test_batch_plot_applies_persisted_transform_once(

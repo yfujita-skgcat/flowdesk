@@ -148,14 +148,19 @@ def test_full_vector_pdf_uses_form_xobject_and_one_do_per_event(tmp_path) -> Non
   options = BatchPlotExportSpec(
     id="full", name="Full", formats=("pdf",), vector_scatter_mode="full_vector"
   )
+  presentation = PlotPresentationSpec(
+    source_styles=(SourceStyleSpec(source_id="s1", color="#000000", alpha=0.4),),
+  )
   path = tmp_path / "full.pdf"
   write_plot_pdf(
-    path, prepared, layers={"s1": ((0.1, 0.2), (0.2, 0.3))}, options=options
+    path, prepared, presentation, {"s1": ((0.1, 0.2), (0.2, 0.3))}, options=options
   )
   data = path.read_bytes()
   assert data.count(b"/Subtype /Form") == 1
   assert data.count(b"/M0 Do") == 2
   assert b"/XObject << /M0 7 0 R >>" in data
+  assert b"/GS0 gs" in data
+  assert b"/ca 0.4 /CA 0.4" in data
   assert b"/Subtype /Image" not in data
 
 
@@ -351,7 +356,7 @@ def test_all_pdf_scatter_modes_keep_y_axis_gates_and_scientific_ticks(mode, tmp_
       "color": "#e00000",
     },),
     scene={
-      "x_ticks": [{"position": 0.5, "label": "1e6", "major": True}],
+      "x_ticks": [{"position": 0.5, "label": "2e6", "major": True}],
       "y_ticks": [{"position": 0.5, "label": "1e6", "major": True}],
     },
   )
@@ -371,6 +376,7 @@ def test_all_pdf_scatter_modes_keep_y_axis_gates_and_scientific_ticks(mode, tmp_
   )
   data = path.read_bytes()
   assert b"(1e6)" not in data
+  assert b"2 \xd7 10" in data
   assert b"(10)" in data
   raster_prefix = tmp_path / mode
   subprocess.run(
@@ -392,7 +398,17 @@ def test_all_pdf_scatter_modes_keep_y_axis_gates_and_scientific_ticks(mode, tmp_
   # not be reflected into the lower half by a PDF coordinate conversion.
   assert float(np.mean(np.where(magenta)[0])) < pixels.shape[0] / 2
   assert abs(float(np.mean(np.where(magenta)[0])) - float(np.mean(np.where(png_magenta)[0]))) < 3
-  assert np.any((pixels[:, :, 0] > 180) & (pixels[:, :, 1] < 80) & (pixels[:, :, 2] < 80))
+  red = (pixels[:, :, 0] > 180) & (pixels[:, :, 1] < 80) & (pixels[:, :, 2] < 80)
+  png_red = (
+    (png_pixels[:, :, 0] > 180) & (png_pixels[:, :, 1] < 80)
+    & (png_pixels[:, :, 2] < 80)
+  )
+  assert np.any(red)
+  assert np.any(png_red)
+  # A gate is PlotScene geometry, so its PDF coordinates must use the same
+  # top-origin normalized Y convention as PNG for every scatter mode.
+  assert abs(float(np.mean(np.where(red)[0])) - float(np.mean(np.where(png_red)[0]))) < 3
+  assert abs(float(np.mean(np.where(red)[1])) - float(np.mean(np.where(png_red)[1]))) < 3
 
 
 def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:

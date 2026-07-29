@@ -563,8 +563,9 @@ def write_plot_pdf(
       color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
       commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg")
       for x_value, y_value in zip(*layers[source_id], strict=False):
-        x = left + float(x_value) * plot_width
-        y = height - top - float(y_value) * plot_height
+        x, y = _pdf_normalized_point(
+          float(x_value), float(y_value), left, top, plot_width, plot_height, height,
+        )
         commands.append(f"{x:g} {y:g} 2 2 re f")
   elif full_vector:
     for source_id in prepared.source_order:
@@ -572,8 +573,9 @@ def write_plot_pdf(
       default_color = "#4c78a8" if style is None or style.color is None else style.color
       colors = None if event_colors is None else event_colors.get(source_id)
       for index, (x_value, y_value) in enumerate(zip(*layers[source_id], strict=False)):
-        x = left + float(x_value) * plot_width
-        y = height - top - float(y_value) * plot_height
+        x, y = _pdf_normalized_point(
+          float(x_value), float(y_value), left, top, plot_width, plot_height, height,
+        )
         size = (2.0 if style is None else style.marker_size) / 2.0
         color_text = default_color if colors is None or index >= len(colors) else colors[index]
         commands.extend(("q", f"{size:g} 0 0 {size:g} {x:g} {y:g} cm", f"/M{marker_refs[(source_id, color_text)]} Do", "Q"))
@@ -589,7 +591,10 @@ def write_plot_pdf(
   commands.extend(_pdf_scene_text(
     prepared, selected, left, top, plot_width, plot_height, width, height, options,
   ))
-  stream = ("\n".join(commands) + "\n").encode("ascii")
+  # Text drawing commands may contain WinAnsi characters such as the
+  # multiplication sign used in scientific tick labels ("2 × 10⁶").
+  # PDF syntax remains ASCII, while its text operands are Latin-1/WinAnsi.
+  stream = ("\n".join(commands) + "\n").encode("latin-1")
   form_start = 7
   xobjects = " ".join(
     f"/M{index} {form_start + index * 2} 0 R" for index in range(len(form_specs))
@@ -686,6 +691,7 @@ def write_plot_jpg(
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
   layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   width: int = 800,
   height: int = 600,
@@ -699,7 +705,7 @@ def write_plot_jpg(
   width, height = _dimensions(width, height, options)
   png_path = Path(path).with_suffix(".png.tmp")
   write_plot_png(png_path, prepared, presentation, layers, width=width, height=height,
-                 options=options)
+                 options=options, event_colors=event_colors)
   try:
     with Image.open(png_path) as image:
       image.convert("RGB").save(path, format="JPEG", dpi=(options.dpi, options.dpi)
@@ -1279,7 +1285,10 @@ def _pdf_tick_label_commands(
 def _pdf_marker_stream(shape: str, color: tuple[int, int, int]) -> bytes:
   """Build a normalized reusable Form XObject marker centered at (0, 0)."""
   red, green, blue = (value / 255 for value in color)
-  prefix = f"{red:g} {green:g} {blue:g} rg\n"
+  # Each Form XObject owns GS0, whose alpha is resolved with the marker's
+  # source style. Activate it before painting so full-vector dots use the
+  # same source opacity as PNG, compact vector, and hybrid raster output.
+  prefix = f"/GS0 gs\n{red:g} {green:g} {blue:g} rg\n"
   if shape == "square":
     body = "-1 -1 2 2 re f\n"
   elif shape == "triangle":
@@ -1313,8 +1322,9 @@ def _pdf_compound_path(
   radius = marker_size / 2
   commands: list[str] = []
   for x_value, y_value in points:
-    x = left + x_value * plot_width
-    y = page_height - top - (1.0 - y_value) * plot_height
+    x, y = _pdf_normalized_point(
+      x_value, y_value, left, top, plot_width, plot_height, page_height,
+    )
     if shape == "square":
       commands.append(f"{x - radius:g} {y - radius:g} {2 * radius:g} {2 * radius:g} re")
     elif shape == "triangle":
@@ -1332,6 +1342,22 @@ def _pdf_compound_path(
   return " ".join(commands)
 
 
+def _pdf_normalized_point(
+  x_value: float,
+  y_value: float,
+  left: float,
+  top: float,
+  plot_width: float,
+  plot_height: float,
+  page_height: float,
+) -> tuple[float, float]:
+  """Map PlotScene's top-origin normalized point to PDF page coordinates."""
+  return (
+    left + x_value * plot_width,
+    page_height - (top + (1.0 - y_value) * plot_height),
+  )
+
+
 def _pdf_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,
                width: int, plot_height: int, height: int) -> list[str]:
   commands: list[str] = []
@@ -1341,7 +1367,10 @@ def _pdf_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,
       continue
     color = _rgb(str(gate.get("color", "#ffffff")))
     commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} RG 2 w")
-    transformed = [(left + x * width, height - top - y * plot_height) for x, y in points]
+    transformed = [
+      _pdf_normalized_point(x, y, left, top, width, plot_height, height)
+      for x, y in points
+    ]
     commands.append(f"{transformed[0][0]:g} {transformed[0][1]:g} m")
     commands.extend(f"{x:g} {y:g} l" for x, y in transformed[1:])
     commands.append("h S")

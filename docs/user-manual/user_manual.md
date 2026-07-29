@@ -948,7 +948,7 @@ Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベ
 
 GUIとheadless exportは、X/Y parameter、transform ID、viewport、tick、title/source色、gate geometry、clip、z-orderを含む共通のrenderer-neutral `PlotScene`を使用する。sidecarにはsceneの決定的hashも記録される。作成中gateのpreviewや編集用handleはsceneに含まれないため、exportへ混入しない。OSやフォントbackendが異なる場合はpixel完全一致ではなく、scene値と幾何・色・文字配置の許容差を再現性の基準とする。
 
-GUIから実行する`Batch Plot Export`は、現在のGUIと同じQt/pyqtgraph `PlotWidget`をoffscreenで構築してPNGを描画する。そのため、軸・grid・Log10表示・dot size/alpha・title・gateの位置はGUI表示と同じbackendで処理される。CLIを直接実行する場合は、PySide6不要のheadless rendererが既定で使用される。
+GUIから実行する`Batch Plot Export`もCLIと同じrenderer-neutral core rendererを使います。これにより、PNG/JPEG/SVG/PDFの表示範囲、点の順序と色、axis、tick、gate、title、軸ラベルは同じ`PlotScene`から出力されます。ライブ画面は引き続きQt/pyqtgraphで描画されるため、OSやフォントbackendによるアンチエイリアス差はあり得ますが、バッチ形式間で座標系や表示要素が変わることはありません。
 
 `current_view`では、出力サイズや1:1 aspectの指定があっても、GUIで現在表示している変換後のX/Y範囲を優先する。ゲートで色付けされたpopulationはcanonical previewのmembershipに従って同じ色で描画し、overlayは保存された個別色、またはGUIの既定overlay色で描画される。
 
