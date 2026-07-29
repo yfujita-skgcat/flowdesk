@@ -271,6 +271,10 @@ def batch_plot_command(
         visible_event_colors = {
           active_id: tuple(density_result.colors)
         }
+      elif len(source_ids) > 1:
+        # Overlay comparisons use one color per source.  Population/gate display
+        # colors must not leak into the active layer while overlays are present.
+        visible_event_colors = {}
       presentation["x_axis_display_label"] = str(
         display_scene.get("x_axis_label") or metadata["x_label"]
       )

@@ -487,6 +487,43 @@ def test_active_base_layer_does_not_inherit_manual_overlay_color() -> None:
     app.processEvents()
 
 
+def test_overlay_display_disables_population_colors_for_active_base_layer() -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    window._current_sample_id = "active"
+    window._sample_browser._manual_overlay_sample_ids.add("overlay")
+    window._gate_editor._population_display_colors = {"positive": "#ff0000"}
+
+    class Membership:
+      sample_id = "active"
+      population_id = "positive"
+      mask = np.array([True, False])
+
+    class Report:
+      population_membership = (Membership(),)
+
+    window._last_result_report = Report()
+    view = {"presentation": {"colormap": "density"}}
+    assert window._has_visible_overlay(view) is True
+    assert window._density_coloring_active(view) is False
+    overlay_colors = window._base_layer_event_colors(
+      "active", 2, None, overlay_display_active=True,
+    )
+    assert overlay_colors is None
+    window._plot_widget.plot_events(
+      np.arange(2.0), np.arange(2.0), event_colors=overlay_colors,
+    )
+    assert window._plot_widget._population_scatter_items == []
+    assert window._base_layer_event_colors("active", 2, None).tolist() == [
+      "#ff0000", "#000000",
+    ]
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_display_sampling_defaults_to_20000_and_zero_disables_it() -> None:
   _app()
   plot = PlotWidget()

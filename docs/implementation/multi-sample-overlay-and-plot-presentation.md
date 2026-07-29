@@ -277,6 +277,13 @@ Automatic source styles must be deterministic for a stable source order and a ve
 palette/assignment policy. Reordering may intentionally reassign only automatic fields;
 manual fields remain fixed unless the user explicitly resets them.
 
+For a single visible source, an explicit population display color may override the base
+dot color on an event-by-event basis. Once any non-base overlay source is visible, the
+plot is a source comparison: render every source, including the active base source, in
+one resolved source color and ignore all population/gating event colors. Keep gate
+outlines independent. Apply this same rule in the live Qt preview and every batch export
+format; it is display-only and does not affect memberships or statistics.
+
 Resolve presentation values in this order:
 
 1. explicit plot/view override;

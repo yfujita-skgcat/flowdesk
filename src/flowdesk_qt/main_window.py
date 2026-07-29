@@ -1784,12 +1784,18 @@ class MainWindow(QMainWindow):
             # Apply population membership mask (display filter, Phase 3).
             display_mask = processed.display_mask
             x_data, y_data = x_data[display_mask], y_data[display_mask]
+            overlay_display_active = self._has_visible_overlay(view)
             density_coloring = self._density_coloring_active(view)
-            event_colors = None if density_coloring else self._population_event_colors(
+            # An overlay is a source-comparison view.  Keep every source, including
+            # the active base layer, in its source color so population/gate display
+            # colors do not leak into the comparison.
+            event_colors = self._base_layer_event_colors(
                 self._current_sample_id,
                 data.shape[0],
                 display_mask,
                 report=processed.preview_report,
+                density_coloring=density_coloring,
+                overlay_display_active=overlay_display_active,
             )
             # The active sample is the base layer. Its dots use the plot's
             # base style; Samples-pane colors apply only to manual overlays.
@@ -2122,8 +2128,15 @@ class MainWindow(QMainWindow):
 
     def _density_coloring_active(self, view: dict[str, Any] | None) -> bool:
         """Enable density colors only for a true single-sample display."""
-        if not self._density_coloring_requested(view):
-            return False
+        return self._density_coloring_requested(view) and not self._has_visible_overlay(view)
+
+    def _has_visible_overlay(self, view: dict[str, Any] | None) -> bool:
+        """Return whether the current view requests a non-base overlay source.
+
+        This is deliberately based on the same source selections used by the overlay
+        renderer.  An overlay comparison has a source-color contract: population/gate
+        event colors are disabled for every source, including the active base layer.
+        """
         state = self._sample_browser.overlay_state()
         selected = set(state.get("manual_overlay_sample_ids", []))
         selected.update(
@@ -2135,11 +2148,28 @@ class MainWindow(QMainWindow):
             if source.get("visible", True) and source.get("sample_id")
         )
         selected.discard(self._current_sample_id)
-        return not selected
+        return bool(selected)
 
     def _sample_overlay_color(self, sample_id: str | None) -> str:
         """Return a stable fallback color for one sample's display layer."""
         return self._sample_browser.overlay_color(sample_id or "")
+
+    def _base_layer_event_colors(
+        self,
+        sample_id: str | None,
+        event_count: int,
+        display_mask: NDArray[np.bool_] | None,
+        *,
+        report: object | None = None,
+        density_coloring: bool = False,
+        overlay_display_active: bool = False,
+    ) -> NDArray[np.str_] | None:
+        """Resolve base event colors while preserving overlay source-color semantics."""
+        if density_coloring or overlay_display_active:
+            return None
+        return self._population_event_colors(
+            sample_id, event_count, display_mask, report=report
+        )
 
     def _population_event_colors(
         self,

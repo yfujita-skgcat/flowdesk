@@ -6,9 +6,9 @@ ToDo: `Phase B7.2.Density`
 
 `PlotPresentationSpec.colormap == "density"` already persists a display-only density
 color request for `dot` and `scatter` plots. It is active only for a single base sample;
-an overlay keeps the request saved but falls back to the normal source/population colors.
-Gate outlines stay visible, while per-event population/gating colors are ignored only
-when density color is active.
+an overlay keeps the request saved but falls back to uniform source colors. Gate outlines
+stay visible. Per-event population/gating colors are used only in a single-source,
+non-density display; they are ignored by both density and overlay comparison displays.
 
 The first implementation in `flowdesk_core.density_colors.density_event_colors` is an
 intentionally simple fixed 128 x 128 occupancy lookup over display-downsampled points.
