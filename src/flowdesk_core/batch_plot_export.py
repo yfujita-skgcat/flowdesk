@@ -6,6 +6,7 @@ import json
 import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import CancelledError, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,9 @@ from flowdesk_core.annotations import resolve_sample_title
 from flowdesk_core.execution_control import (
   ExecutionCancelled,
   ExecutionControl,
+  ExecutionOptions,
   ProgressEvent,
+  resolve_execution_workers,
 )
 from flowdesk_core.models import AnnotationSpec, BatchPlotExportSpec
 from flowdesk_core.plot_export import resolve_export_canvas
@@ -62,6 +65,16 @@ class BatchPlotExportReport:
   status: str
   items: tuple[BatchPlotExportItem, ...]
   manifest_path: str | None = None
+  execution_provenance: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class _BatchRenderResult:
+  item_index: int
+  paths: tuple[str, ...]
+  status: str
+  diagnostic: str | None
+  completed_units: int
 
 
 def plan_batch_plot_export(
@@ -144,14 +157,17 @@ def run_batch_plot_export(
   overlay_sample_ids: Mapping[str, Sequence[str]] | None = None,
   preflight: dict[str, Any] | None = None,
   prepare: Callable[[], None] | None = None,
+  estimate_render_bytes: Callable[[], int] | None = None,
   execution_control: ExecutionControl | None = None,
 ) -> BatchPlotExportReport:
-  """Render planned outputs sequentially with optional preparation/progress control.
+  """Render planned outputs with optional bounded sample-level parallelism.
 
   ``prepare`` owns shared source loading, display preparation, shared-range
   resolution, and renderer preflight.  It runs once before the first output,
-  leaving ``render`` to build one already-prepared output.  Final files and
-  sidecars are published only through same-directory atomic replacement.
+  leaving ``render`` to build one already-prepared output. Each sample's formats
+  are one bounded executor job so prepared arrays can be reused and item-level
+  cancellation remains deterministic. Final files and sidecars are published
+  only through same-directory atomic replacement.
   """
   items = plan_batch_plot_export(
     spec, samples, output_dir, group_members=group_members, annotations=annotations,
@@ -203,33 +219,31 @@ def run_batch_plot_export(
   except Exception as exc:
     preparation_error = str(exc)
 
-  completed: list[BatchPlotExportItem] = []
-  cancellation_recorded = False
-  for item_index, item in enumerate(items):
-    if item.status == "failed":
-      completed.append(item)
-      continue
-    if (
-      execution_control is not None
-      and execution_control.cancellation_token.is_cancelled()
-    ):
-      cancelled = True
-    if cancelled:
-      has_published_output = any(existing.status == "success" for existing in completed)
-      status = (
-        "cancelled"
-        if not cancellation_recorded and not has_published_output
-        else "not_started"
-      )
-      completed.append(_replace_item_status(item, status))
-      cancellation_recorded = True
-      continue
-    if preparation_error is not None:
-      completed.append(_replace_item_status(item, "failed", preparation_error))
-      continue
+  renderable = tuple(
+    (item_index, item) for item_index, item in enumerate(items)
+    if item.status != "failed"
+  )
+  estimated_render_bytes = 0
+  if estimate_render_bytes is not None and preparation_error is None:
+    try:
+      estimated_render_bytes = max(0, int(estimate_render_bytes()))
+    except Exception as exc:
+      preparation_error = str(exc)
+  options = (
+    execution_control.options
+    if execution_control is not None else ExecutionOptions()
+  )
+  resolution = resolve_execution_workers(
+    options,
+    selected_sample_count=len(renderable),
+    estimated_sample_bytes=estimated_render_bytes,
+  )
+  execution_provenance = resolution.to_mapping()
+  results: dict[int, _BatchRenderResult] = {}
+
+  def render_item(item_index: int, item: BatchPlotExportItem) -> _BatchRenderResult:
     sample = sample_by_id[item.sample_id]
     paths: list[str] = []
-    diagnostic: str | None = None
     try:
       for path_text in item.output_paths:
         if execution_control is not None:
@@ -243,11 +257,7 @@ def run_batch_plot_export(
           render(sample, staged_path, spec)
           if not staged_path.exists() or staged_path.stat().st_size == 0:
             raise BatchPlotExportError(f"renderer produced no output: {path}")
-          _write_sidecar(
-            staged_path, item, spec,
-            final_output_path=path,
-          )
-          progress("writing_sidecars", sample_id=item.sample_id, output_path=str(path))
+          _write_sidecar(staged_path, item, spec, final_output_path=path)
           staged_path.replace(path)
           staged_sidecar.replace(path.with_suffix(path.suffix + ".json"))
         except Exception:
@@ -255,33 +265,104 @@ def run_batch_plot_export(
           staged_sidecar.unlink(missing_ok=True)
           raise
         paths.append(str(path))
-        completed_units += 1
-        progress("rendering", sample_id=item.sample_id, output_path=str(path))
-      completed.append(BatchPlotExportItem(
-        item.sample_id, item.sample_title, tuple(paths), "success", None,
-        item.source_sample_ids, item.well_ids, item.well_sources,
-      ))
+      return _BatchRenderResult(item_index, tuple(paths), "success", None, len(paths))
     except ExecutionCancelled:
-      cancelled = True
-      cancellation_recorded = True
-      completed.append(BatchPlotExportItem(
-        item.sample_id, item.sample_title, tuple(paths),
-        "cancelled" if not paths else "success", None,
-        item.source_sample_ids, item.well_ids, item.well_sources,
-      ))
+      return _BatchRenderResult(
+        item_index, tuple(paths), "success" if paths else "cancelled", None, len(paths)
+      )
     except Exception as exc:
-      diagnostic = str(exc)
+      return _BatchRenderResult(item_index, tuple(paths), "failed", str(exc), len(paths))
+
+  def record_result(result: _BatchRenderResult) -> None:
+    nonlocal cancelled, completed_units
+    results[result.item_index] = result
+    item = items[result.item_index]
+    for path in result.paths:
+      completed_units += 1
+      progress("writing_sidecars", sample_id=item.sample_id, output_path=path)
+      progress("rendering", sample_id=item.sample_id, output_path=path)
+    if result.status == "cancelled":
+      cancelled = True
+    if (
+      execution_control is not None
+      and execution_control.cancellation_token.is_cancelled()
+    ):
+      cancelled = True
+
+  if preparation_error is None and not cancelled:
+    if (
+      execution_control is not None
+      and execution_control.cancellation_token.is_cancelled()
+    ):
+      cancelled = True
+    if not cancelled and resolution.backend == "thread" and len(renderable) > 1:
+      pending: dict[Any, tuple[int, BatchPlotExportItem]] = {}
+      next_job = 0
+      executor = ThreadPoolExecutor(
+        max_workers=resolution.effective_max_workers,
+        thread_name_prefix="flowdesk-batch-render",
+      )
+      try:
+        while pending or next_job < len(renderable):
+          while (
+            not cancelled
+            and next_job < len(renderable)
+            and len(pending) < resolution.effective_max_workers
+          ):
+            item_index, item = renderable[next_job]
+            pending[executor.submit(render_item, item_index, item)] = (item_index, item)
+            next_job += 1
+          if not pending:
+            break
+          done, _ = wait(tuple(pending), return_when="FIRST_COMPLETED")
+          for future in sorted(done, key=lambda value: pending[value][0]):
+            item_index, _item = pending.pop(future)
+            try:
+              result = future.result()
+            except CancelledError:
+              continue
+            except Exception as exc:
+              result = _BatchRenderResult(item_index, (), "failed", str(exc), 0)
+            record_result(result)
+          if (
+            execution_control is not None
+            and execution_control.cancellation_token.is_cancelled()
+          ):
+            cancelled = True
+          if cancelled:
+            for future in pending:
+              future.cancel()
+      finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+    elif not cancelled:
+      for item_index, item in renderable:
+        result = render_item(item_index, item)
+        record_result(result)
+        if cancelled:
+          break
+
+  completed: list[BatchPlotExportItem] = []
+  cancellation_recorded = any(
+    result.status == "cancelled" or result.completed_units > 0
+    for result in results.values()
+  )
+  for item_index, item in enumerate(items):
+    if item.status == "failed":
+      completed.append(item)
+    elif preparation_error is not None:
+      completed.append(_replace_item_status(item, "failed", preparation_error))
+    elif item_index in results:
+      result = results[item_index]
       completed.append(BatchPlotExportItem(
-        item.sample_id, item.sample_title, tuple(paths), "failed", diagnostic,
-        item.source_sample_ids, item.well_ids, item.well_sources,
+        item.sample_id, item.sample_title, result.paths, result.status,
+        result.diagnostic, item.source_sample_ids, item.well_ids, item.well_sources,
       ))
-    if cancelled:
-      for remainder in items[item_index + 1:]:
-        if remainder.status == "failed":
-          completed.append(remainder)
-        else:
-          completed.append(_replace_item_status(remainder, "not_started"))
-      break
+    elif cancelled:
+      status = "cancelled" if not cancellation_recorded else "not_started"
+      completed.append(_replace_item_status(item, status))
+      cancellation_recorded = True
+    else:
+      completed.append(_replace_item_status(item, "not_started"))
   failures = [item for item in completed if item.status == "failed"]
   successes = [item for item in completed if item.status == "success"]
   if cancelled:
@@ -299,10 +380,13 @@ def run_batch_plot_export(
     "export_options": asdict(spec),
     "export_canvas": resolve_export_canvas(spec).to_mapping(),
     "vector_scatter_preflight": (preflight or {}).get("value"),
+    "execution": execution_provenance,
     "status": status,
     "items": [asdict(item) for item in completed],
   })
-  return BatchPlotExportReport(spec.id, status, tuple(completed), str(manifest))
+  return BatchPlotExportReport(
+    spec.id, status, tuple(completed), str(manifest), execution_provenance
+  )
 
 
 def _replace_item_status(

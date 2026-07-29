@@ -915,6 +915,15 @@ cancellation are deterministic; measured benchmark and peak memory are reported.
 
 ### Increment 9: Bounded batch rendering parallelism
 
+Status (2026-07-30): initial bounded executor is implemented. The runtime keeps
+source preparation and shared-range/overlay resolution serial, then optionally
+renders one sample/view format bundle per thread after an immutable prepared-data
+barrier. CLI users opt in with `--execution-backend thread`; GUI execution remains
+sequential. Execution provenance is written to the batch manifest, and staged output,
+sidecar, plan-order manifest, cooperative cancellation, and memory-bound resolution
+are retained. Full renderer reentrancy/parity and representative speedup gates below
+remain open before recommending this backend or enabling it by default.
+
 - Treat the FCS file as a dependency source, not automatically as one executor job.
 - Submit only dependency-complete immutable prepared output items; begin parity testing
   with non-overlay, one-source outputs.

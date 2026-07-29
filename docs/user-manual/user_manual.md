@@ -963,6 +963,14 @@ output directoryはprojectには保存されず、アプリケーション設定
 
 `Run Export` はGUIを停止させずに実行されます。表示される `Batch Plot Export` progress windowには、準備・render・sidecar・manifestの段階と完了数が表示されます。`Cancel` は次の安全な出力境界で協調的に停止します。既に完了した画像とsidecarは保持され、未開始項目はmanifestで `not_started`、停止を受けた項目は `cancelled` と記録されます。cancel中でも、画像・sidecar・manifestが途中の内容で公開されることはありません。
 
+CLIで実行する場合は、`flowdesk batch-plot <project> --export-id <id> --output-dir <dir>` に
+`--execution-backend thread --max-workers N` を追加すると、source準備完了後の独立したsample/view
+出力をbounded threadで並列レンダリングできます。既定値は`sequential`です。`--memory-budget-mib M`
+を指定すると、準備済み配列の保守的な推定量に基づいて同時worker数を抑制します。overlay、共通軸範囲、
+collision、manifest順は並列化しても変わりません。GUIのBatch Exportは現時点では逐次renderを使用し、
+Qt/pyqtgraphの描画オブジェクトをworkerへ移しません。thread backendで速度向上が再現しない環境では、
+`sequential`を使用してください。
+
 Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベル・目盛・gate・legend・status banner の表示、`current_view` / `shared_ranges` layout policy を保存できる。新規定義は `dpi_scaled` が既定で、Width/Heightを96 DPI基準の論理canvasとして扱い、PNG/JPEGの実pixel数を `round(width × DPI / 96)`、`round(height × DPI / 96)` とする。DPIを変更してもplot margin、font、tickの位置と長さ、dot径、軸・gate・gridの線幅の相対比は変わらず、実pixel数と輪郭の鮮明さだけが変わる。旧 projectで `raster_resolution_mode` が省略された定義は `legacy_pixel_dimensions` として過去のpixel寸法を維持する。ダイアログのEffective output欄で実pixel数と物理サイズを確認できる。JPG出力には Pillow が必要で、PNG/JPEGには要求DPIのdensity metadata、sidecarとbatch manifestには解決済みcanvas情報が記録される。SVG/PDFのbatch出力は論理canvasからページサイズを決めるベクター出力で、DPIは適用されない（full-canvas rasterは埋め込まない）。PDFページはWidth × Heightと同じpoint数（1 point = 1/72 inch）で作成されるため、PNGと比較するときはPDFを72 DPIでラスター化すると同じ論理pixel寸法になる。`hybrid_raster`では散布点だけを透明なlossless imageとしてPDFへ埋め込み、軸・grid・ticks・文字・gateはベクターのまま保持する。population display colorが有効な場合は、散布imageでもPNGと同じイベント単位の色を保持する。単一plotのQt PDF exportも同じ論理canvasと余白を使用するため、PNGとの位置関係を保つ。`shared_ranges` は全sampleの変換後X/Y範囲を共有する。`current_view` は保存時に画面で見えていた変換後のX/Y範囲と軸表示名を使うため、FCS内部名（例: `FL1-A`）ではなく画面のラベル（例: `FITC B525-A`）を出力し、画面外の点は描かない。CLI batch exportではmanual overlay、persisted gate geometry、軸とplot marginも同じrenderer-neutral sceneへ反映される。PNG/JPGでは、表示と同様にsourceごとの小さな半透明円、overlayのtitle行と対応色、`10³`（mantissa が 1 の場合）または `2 × 10³`形式のtransform目盛、縦向きY軸label、実線gate outlineを描く。これはheadless rendererで再現するため、GUI画面のスクリーンショットや編集用ハンドルは出力しない。
 
 既定のtitleとX/Y axis labelはともに14 pt・boldである。Plot Styleから個別に変更でき、ライブGUIとbatch exportは同じ保存済みpresentation指定を使う。`Definition`の一覧を整理するには、対象を選んで **Delete Definition** を押し、確認ダイアログで承認する。削除はprojectへ保存され、出力済みファイルは削除しない。

@@ -15,7 +15,7 @@ from flowdesk_core.batch_plot_export import (
   run_batch_plot_export,
 )
 from flowdesk_core.density_colors import estimate_density_colors
-from flowdesk_core.execution_control import ExecutionControl
+from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
@@ -40,8 +40,11 @@ def batch_plot_command(
   *,
   renderer_backend: str = "headless",
   execution_control: ExecutionControl | None = None,
+  execution_options: ExecutionOptions | None = None,
 ) -> int:
   try:
+    if execution_control is None and execution_options is not None:
+      execution_control = ExecutionControl(options=execution_options)
     project = load_project(project_path)
     raw = next(
       item for item in project.get("batch_plot_exports", [])
@@ -181,6 +184,15 @@ def batch_plot_command(
       preflight_holder["value"] = preflight.to_mapping()
       if preflight.status == "failed":
         raise ValueError(json.dumps(preflight.to_mapping(), ensure_ascii=False))
+
+    def estimate_render_bytes() -> int:
+      """Estimate one concurrently prepared render item's working memory."""
+      if not prepared_layers:
+        return 0
+      return max(
+        int(x_values.nbytes + y_values.nbytes) * 4
+        for x_values, y_values in prepared_layers.values()
+      )
 
     def render(
       sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
@@ -397,6 +409,7 @@ def batch_plot_command(
       spec, samples, output_dir, render, annotations=annotations,
       preflight=preflight_holder,
       prepare=prepare_sources,
+      estimate_render_bytes=estimate_render_bytes,
       execution_control=execution_control,
       overlay_sample_ids={
         str(sample.get("id")): tuple(
@@ -406,6 +419,13 @@ def batch_plot_command(
       },
     )
     print(f"Batch plot export {batch_report.status}: {len(batch_report.items)} samples")
+    if batch_report.execution_provenance:
+      print(
+        "Execution: "
+        f"backend={batch_report.execution_provenance['backend']} "
+        f"workers={batch_report.execution_provenance['effective_max_workers']}/"
+        f"{batch_report.execution_provenance['requested_max_workers']}"
+      )
     return 0 if batch_report.status == "success" else 1
   except (BatchPlotExportError, FileNotFoundError, KeyError, ValueError) as exc:
     print(f"Error: batch plot export failed: {exc}")

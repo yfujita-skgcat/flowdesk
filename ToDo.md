@@ -1457,6 +1457,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 
 #### Increment 9: bounded Batch Export parallel rendering
 
+実装状況（2026-07-30）: 初期bounded executorを実装した。source準備とoverlay/shared range解決は
+逐次のまま、準備済みsample/viewのformat bundleをCLIの明示指定時だけthreadでrenderする。GUIは
+逐次renderを継続し、manifestにはresolved execution provenanceを記録する。renderer再入性、形式間
+parity、代表データでのspeedup、Windows/PyInstaller確認は未完了であり、既定値へ変更しない。
+
 - [ ] 「1 FCS = 1 worker」とは定義しない。FCSはsource/dependencyの単位であり、overlay出力は
   複数FCSへ依存し、1 FCSから複数view/formatが生成され得る。全source準備、overlay dependency、
   `shared_ranges`を解決した後のimmutable `prepared output item`をexecutorの最小仕事単位とする。

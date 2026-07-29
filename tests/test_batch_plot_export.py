@@ -11,7 +11,7 @@ from flowdesk_core.batch_plot_export import (
   plan_batch_plot_export,
   run_batch_plot_export,
 )
-from flowdesk_core.execution_control import ExecutionControl
+from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
 from flowdesk_core.models import BatchPlotExportSpec
 from flowdesk_storage.project import load_project, save_project
 
@@ -152,6 +152,55 @@ def test_batch_run_prepares_once_and_reports_each_written_format(tmp_path) -> No
   assert {event.total_units for event in events} == {4}
   assert (tmp_path / "Control_s1_main-view.svg").read_text(encoding="utf-8") == "s1"
   assert not list(tmp_path.glob(".*.flowdesk-*"))
+
+
+def test_batch_run_thread_backend_keeps_plan_order_and_manifest(tmp_path) -> None:
+  spec = BatchPlotExportSpec(id="threaded", name="Threaded", formats=("svg",))
+  control = ExecutionControl(options=ExecutionOptions(backend="thread", max_workers=2))
+
+  def render(sample, path, _spec) -> None:
+    path.write_text(sample["id"], encoding="utf-8")
+
+  report = run_batch_plot_export(
+    spec,
+    _samples(),
+    tmp_path,
+    render,
+    estimate_render_bytes=lambda: 128,
+    execution_control=control,
+  )
+
+  assert report.status == "success"
+  assert [item.sample_id for item in report.items] == ["s1", "s2"]
+  assert [item.status for item in report.items] == ["success", "success"]
+  assert report.execution_provenance is not None
+  assert report.execution_provenance["backend"] == "thread"
+  manifest = json.loads((tmp_path / "threaded.batch.json").read_text(encoding="utf-8"))
+  assert manifest["execution"]["backend"] == "thread"
+  assert not list(tmp_path.glob(".*.flowdesk-*"))
+
+
+def test_batch_run_thread_backend_respects_memory_bound(tmp_path) -> None:
+  spec = BatchPlotExportSpec(id="bounded", name="Bounded", formats=("svg",))
+  control = ExecutionControl(
+    options=ExecutionOptions(
+      backend="thread", max_workers=4, memory_budget_bytes=100,
+    )
+  )
+
+  def render(sample, path, _spec) -> None:
+    path.write_text(sample["id"], encoding="utf-8")
+
+  report = run_batch_plot_export(
+    spec, _samples(), tmp_path, render,
+    estimate_render_bytes=lambda: 100,
+    execution_control=control,
+  )
+
+  assert report.status == "success"
+  assert report.execution_provenance is not None
+  assert report.execution_provenance["effective_max_workers"] == 1
+  assert "memory_budget" in report.execution_provenance["limiting_factors"]
 
 
 def test_batch_run_cancellation_keeps_completed_files_and_manifest(tmp_path) -> None:

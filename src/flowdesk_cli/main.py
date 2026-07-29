@@ -141,6 +141,24 @@ def main() -> int:
   plot_parser.add_argument("project", help="Path to the .flowdesk project bundle.")
   plot_parser.add_argument("--export-id", required=True, help="Batch plot export definition ID.")
   plot_parser.add_argument("--output-dir", required=True, help="Output directory.")
+  plot_parser.add_argument(
+    "--execution-backend",
+    choices=("sequential", "thread"),
+    default="sequential",
+    help="Runtime renderer backend (default: sequential).",
+  )
+  plot_parser.add_argument(
+    "--max-workers",
+    type=_positive_integer,
+    default=1,
+    help="Maximum concurrent batch items for --execution-backend thread.",
+  )
+  plot_parser.add_argument(
+    "--memory-budget-mib",
+    type=_positive_integer,
+    default=None,
+    help="Maximum estimated in-flight batch render memory in MiB.",
+  )
 
   args = parser.parse_args()
 
@@ -173,7 +191,19 @@ def main() -> int:
       args.project, args.fcs_files, args.output, args.execution_profile
     )
   if args.command == "batch-plot":
-    return batch_plot_command(args.project, args.export_id, args.output_dir)
+    return batch_plot_command(
+      args.project,
+      args.export_id,
+      args.output_dir,
+      execution_options=ExecutionOptions(
+        backend=args.execution_backend,
+        max_workers=args.max_workers,
+        memory_budget_bytes=(
+          None if args.memory_budget_mib is None
+          else args.memory_budget_mib * 1024 * 1024
+        ),
+      ),
+    )
 
   parser.print_help()
   return 0
