@@ -1291,6 +1291,13 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
   draw order、rare color、alpha、selection、interactionを維持する。
 - [x] 新規/default設定ではfinite display maximumを維持する。明示的な`0 (all events)`は
   勝手にsamplingせず、large event+density時のperformance status/warningを表示する。
+- [x] 同一semantic processed-display identityのdensity再描画では、解決済みのcolorsと既存
+  `ScatterPlotItem`を再利用し、gate/label-only replotでper-event `setData()`を再送信しない。
+  unchangedな`PlotItem.setLogMode()`も再実行しない。dot size/opacity変更はQt payloadだけを
+  更新し、whole-population density推定/normalizationは再実行しない。
+- [x] `benchmark-density`へwarm semantic density replotを追加した。2026-07-29の20,000 events
+  ×5回のoffscreen環境ではcold `plot_events`中央値216.0 msに対して、cached replot中央値は
+  1.75 msだった。これは同一環境の表示測定であり、CI thresholdや解析speedupではない。
 - [ ] cached/uncachedのcolor一致、全関連設定のcache invalidation、rapid pan/zoom/sample
   switch、shutdownをtestする。
 

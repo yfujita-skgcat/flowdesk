@@ -91,6 +91,11 @@ class PlotWidget(QWidget):
         self._population_scatter_items: list[tuple[Any, str]] = []
         self._event_colors: NDArray[np.str_] | None = None
         self._density_color_cache: dict[tuple[object, ...], NDArray[np.str_]] = {}
+        # The data-bearing scatter item is expensive to rebuild for density
+        # presentation because pyqtgraph receives one resolved style per event.
+        # Keep its semantic identity separately from the numeric color cache so
+        # a replot which only changes labels/gates can retain the existing item.
+        self._density_render_key: tuple[object, ...] | None = None
         self._density_input: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None
         self._density_cache_context: tuple[object, ...] | None = None
         self._density_coloring_active = False
@@ -112,6 +117,7 @@ class PlotWidget(QWidget):
         # Axis transform state (display-only, defaults to linear).
         self._x_transform: AxisTransform = "linear"
         self._y_transform: AxisTransform = "linear"
+        self._applied_log_mode: tuple[bool, bool] | None = None
         self._x_transform_spec: TransformSpec | None = None
         self._y_transform_spec: TransformSpec | None = None
         self._x_ticks: tuple[TransformTick, ...] = ()
@@ -520,16 +526,30 @@ class PlotWidget(QWidget):
         self._displayed_event_count = len(x_plot)
         self._rendered_x = x_plot
         self._rendered_y = y_plot
-        self._event_colors = colors_plot
+
+        density_key = (
+            self._density_color_key(density_x, density_y, x_plot, y_plot)
+            if density_coloring else None
+        )
+        reuse_density_scatter = (
+            density_key is not None
+            and density_key == self._density_render_key
+            and isinstance(self._scatter, ScatterPlotItem)
+            and not self._population_scatter_items
+        )
+        if not reuse_density_scatter:
+            self._event_colors = colors_plot
 
         self._is_histogram_mode = False
         self._clear_histogram()
-        self._clear_scatter()
+        if not reuse_density_scatter:
+            self._clear_scatter()
         # Density colors replace both the uniform and population-color presentation.
         # Do not submit an intermediate scatter item here: _refresh_density_colors()
         # creates the final item after the density colors have been resolved.
         if density_coloring:
-            self._event_colors = None
+            if not reuse_density_scatter:
+                self._event_colors = None
         elif colors_plot is None:
             self._scatter = self._plot_uniform_scatter(
                 x_plot, y_plot, self._style.dot_color, self._style.dot_opacity
@@ -557,7 +577,7 @@ class PlotWidget(QWidget):
         else:
             self._auto_range()
         self._refresh_ticks_for_current_view()
-        if density_coloring:
+        if density_coloring and not reuse_density_scatter:
             self._refresh_density_colors()
 
         # Update marginal histograms if enabled.
@@ -655,6 +675,7 @@ class PlotWidget(QWidget):
         self._display_sampling_active = False
         self._event_colors = None
         self._density_color_cache.clear()
+        self._density_render_key = None
         self._density_input = None
         self._density_cache_context = None
         self._density_coloring_active = False
@@ -1427,7 +1448,9 @@ class PlotWidget(QWidget):
         )
         if self._scatter is not None and scatter_style_changed:
             if self._density_coloring_active:
-                self._density_color_cache.clear()
+                # Dot size/opacity are presentation-only.  They require a
+                # new Qt payload, but never a new whole-population density
+                # estimate or color normalization.
                 self._refresh_density_colors()
             elif self._population_scatter_items:
                 for item, color in self._population_scatter_items:
@@ -1558,10 +1581,18 @@ class PlotWidget(QWidget):
         formatting, and the linked ViewBox state.  Calling ViewBox.setLogMode
         alone only updates range constraints and does not transform points.
         """
-        self._plot_item.setLogMode(
-            x=self._x_transform_spec is None and self._x_transform == "log10",
-            y=self._y_transform_spec is None and self._y_transform == "log10",
+        mode = (
+            self._x_transform_spec is None and self._x_transform == "log10",
+            self._y_transform_spec is None and self._y_transform == "log10",
         )
+        # PlotItem.setLogMode() rebuilds existing scatter data even when the
+        # requested flags are unchanged.  Avoid that hidden per-event work on
+        # a gate/label-only replot; a changed transform still always updates
+        # the pyqtgraph mode before the plot is displayed.
+        if mode == self._applied_log_mode:
+            return
+        self._plot_item.setLogMode(x=mode[0], y=mode[1])
+        self._applied_log_mode = mode
 
     def _create_gate_item(
         self,
@@ -1858,6 +1889,7 @@ class PlotWidget(QWidget):
         return None
 
     def _clear_scatter(self) -> None:
+        self._density_render_key = None
         if self._population_scatter_items:
             for item, _color in self._population_scatter_items:
                 try:
@@ -2227,12 +2259,8 @@ class PlotWidget(QWidget):
         # the current camera. A fixed logical grid keeps colors invariant
         # across pan, zoom, resize, and screen DPI changes.
         logical_size = (512, 512)
-        key = (
-            self._density_cache_context
-            if self._density_cache_context is not None
-            else (id(input_x), id(input_y)),
-            len(input_x), len(self._rendered_x),
-            (x_min, x_max, y_min, y_max), logical_size,
+        key = self._density_color_key(
+            input_x, input_y, self._rendered_x, self._rendered_y
         )
         colors = self._density_color_cache.get(key)
         if colors is None:
@@ -2263,6 +2291,37 @@ class PlotWidget(QWidget):
             size=self._style.dot_size,
             symbol="o",
             pxMode=True,
+        )
+        self._density_render_key = key
+
+    def _density_color_key(
+        self,
+        input_x: NDArray[np.float64],
+        input_y: NDArray[np.float64],
+        rendered_x: NDArray[np.float64],
+        rendered_y: NDArray[np.float64],
+    ) -> tuple[object, ...] | None:
+        """Return the semantic identity of a whole-population density field.
+
+        The main window supplies a processed-display identity that changes for
+        every relevant sample/population/axis/transform/revision/display-selection
+        edit.  Direct widget callers fall back to array identity.  Viewport,
+        widget size, DPI, labels, and gate geometry deliberately do not enter
+        this key because they do not define density.
+        """
+        if not len(input_x) or not len(rendered_x):
+            return None
+        x_min, x_max = float(np.min(input_x)), float(np.max(input_x))
+        y_min, y_max = float(np.min(input_y)), float(np.max(input_y))
+        if x_min >= x_max or y_min >= y_max:
+            return None
+        logical_size = (512, 512)
+        return (
+            self._density_cache_context
+            if self._density_cache_context is not None
+            else (id(input_x), id(input_y), id(rendered_x), id(rendered_y)),
+            len(input_x), len(rendered_x),
+            (x_min, x_max, y_min, y_max), logical_size,
         )
 
     def _full_range_for_axis(

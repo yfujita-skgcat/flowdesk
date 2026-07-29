@@ -49,6 +49,7 @@ def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
   )
   numeric_ms: list[float] = []
   plot_ms: list[float] = []
+  cached_replot_ms: list[float] = []
   for _ in range(repeats):
     started = time.perf_counter()
     estimate_density_colors(
@@ -62,6 +63,23 @@ def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
       widget.plot_events(x_values, y_values, density_coloring=True)
       app.processEvents()
       plot_ms.append((time.perf_counter() - started) * 1000.0)
+
+      # MainWindow supplies this semantic identity.  Measure the common
+      # gate/label-only replot separately from cold construction so it cannot
+      # be mistaken for a density-kernel improvement.
+      context = ("benchmark", "sample", "all_events", "x", "y")
+      widget.plot_events(
+        x_values, y_values,
+        density_coloring=True, density_cache_context=context,
+      )
+      app.processEvents()
+      started = time.perf_counter()
+      widget.plot_events(
+        x_values, y_values,
+        density_coloring=True, density_cache_context=context,
+      )
+      app.processEvents()
+      cached_replot_ms.append((time.perf_counter() - started) * 1000.0)
     finally:
       widget.close()
       widget.deleteLater()
@@ -78,8 +96,10 @@ def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
     "measurements_ms": {
       "density_numeric": numeric_ms,
       "plot_events_total": plot_ms,
+      "cached_density_replot": cached_replot_ms,
       "density_numeric_median": _median_ms(numeric_ms),
       "plot_events_total_median": _median_ms(plot_ms),
+      "cached_density_replot_median": _median_ms(cached_replot_ms),
     },
   }
 

@@ -662,11 +662,22 @@ core result; no worker remains at shutdown.
 
 ### Increment 3: Off-thread density arrays and semantic cache
 
-Status (2026-07-29): the semantic cache key and explicit all-event warning are
-implemented.  A first QThreadPool/NumPy density-worker attempt produced a fatal
-shutdown crash during the focused Qt tests, so it was reverted rather than
-shipping unsafe concurrency.  The remaining off-thread numeric result requires
-an owned-worker lifetime test and a GUI-thread-only final presentation step.
+Status (2026-07-29): the semantic cache key, viewport-invariant logical density
+grid, explicit all-event warning, and safe GUI-thread reuse path are implemented.
+For the same semantic processed-display identity, a gate/label-only replot retains
+the resolved density colors and existing `ScatterPlotItem`; it does not send a new
+per-event Qt payload.  Repeating an unchanged `PlotItem.setLogMode()` is also
+avoided because pyqtgraph otherwise rebuilds existing scatter data.  A dot-size or
+opacity change refreshes Qt presentation only and reuses the normalized density
+field.  In the opt-in 20,000-event/5-repeat offscreen benchmark, cold
+`plot_events` median was 216.0 ms and the semantic cached replot median was
+1.75 ms; these environment-specific display measurements are not CI thresholds
+or analysis speedup claims.
+
+A first QThreadPool/NumPy density-worker attempt produced a fatal shutdown crash
+during the focused Qt tests, so it was reverted rather than shipping unsafe
+concurrency.  The remaining off-thread numeric result requires an owned-worker
+lifetime test and a GUI-thread-only final presentation step.
 
 - Split density work into a renderer-neutral numeric result and GUI presentation.
   Numeric histogram/smoothing/normalization/color-index arrays may run in an owned worker;
@@ -680,6 +691,8 @@ an owned-worker lifetime test and a GUI-thread-only final presentation step.
   says density is viewport invariant.
 - Minimize per-event GUI payload after profiling. Any palette-index/grouped-layer
   optimization must preserve draw order, rare colors, alpha, selection, and interaction.
+  The currently implemented semantic scatter reuse is the safe first reduction; do not
+  claim that it makes a cold all-event scatter inexpensive.
 - Keep a finite default display limit for new/default configurations. If the user chooses
   all events, preserve that choice and expose a non-blocking performance status/warning
   rather than silently sampling.

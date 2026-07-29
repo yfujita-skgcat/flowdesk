@@ -439,6 +439,68 @@ def test_density_colors_do_not_change_with_view_range_or_resize() -> None:
     QApplication.processEvents()
 
 
+def test_density_replot_reuses_existing_scatter_for_same_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(81)
+  x = rng.normal(size=5000)
+  y = rng.normal(size=5000)
+  calls = 0
+  original_set_data = ScatterPlotItem.setData
+
+  def counting_set_data(self, *args, **kwargs):
+    nonlocal calls
+    if kwargs.get("x") is not None or args:
+      calls += 1
+    return original_set_data(self, *args, **kwargs)
+
+  monkeypatch.setattr(ScatterPlotItem, "setData", counting_set_data)
+  try:
+    context = ("revision-1", "sample-1", "all-events", "x", "y")
+    plot.plot_events(x, y, density_coloring=True, density_cache_context=context)
+    original_scatter = plot._scatter
+    original_colors = plot._event_colors.copy()
+    plot.plot_events(x, y, density_coloring=True, density_cache_context=context)
+    assert calls == 1
+    assert plot._scatter is original_scatter
+    assert np.array_equal(plot._event_colors, original_colors)
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
+def test_density_style_change_reuses_density_estimate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(82)
+  x = rng.normal(size=3000)
+  y = rng.normal(size=3000)
+  calls = 0
+  original_estimator = estimate_density_colors
+
+  def counting_estimator(*args, **kwargs):
+    nonlocal calls
+    calls += 1
+    return original_estimator(*args, **kwargs)
+
+  monkeypatch.setattr("flowdesk_qt.plot_widget.estimate_density_colors", counting_estimator)
+  try:
+    plot.plot_events(x, y, density_coloring=True, density_cache_context=("same",))
+    original_colors = plot._event_colors.copy()
+    plot.set_style(replace(plot.style(), dot_size=3.0, dot_opacity=0.4))
+    assert calls == 1
+    assert np.array_equal(plot._event_colors, original_colors)
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
 def test_population_colors_render_as_uniform_layers_without_per_event_brushes() -> None:
   _app()
   plot = PlotWidget()
