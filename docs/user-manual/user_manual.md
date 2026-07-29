@@ -56,7 +56,7 @@ Flowdesk では、次の三つの選択状態を区別する必要がある。
 
 `Display max points` による点数制限、色、背景、凡例、フォント、軸ラベル、オーバーレイは**表示専用**である。ゲート membership、イベント数、frequency、統計、TSV/CSV 出力は全イベントを使う。
 
-通常の active sample は plot appearance の base dot color で描画する。Samples ペインの色見本は manual overlay 用であり、別 sample の overlay を有効にした場合だけそのレイヤーへ適用される。population に明示した表示色は base dot color より優先する。単一sampleでは Plot Presentation の `Event colors` から **Density color (single sample)** を選べる。このモードは、全有効表示イベントから局所密度をGaussian smoothingした連続的な青→シアン→緑→黄→赤で示す一方、描画する点数は `Display max points` の上限を維持する。zoom、pan、plot resizeでは現在の表示範囲に合わせて密度色を更新する。イベントごとのpopulation/gating色は使わない。overlayが一つでもある場合は自動的に通常色へ戻り、設定は保存されたままステータスで理由を表示する。gate outline、membership、counts、frequency、統計は変化しない。
+通常の active sample は plot appearance の base dot color で描画する。Samples ペインの色見本は manual overlay 用であり、別 sample の overlay を有効にした場合だけそのレイヤーへ適用される。population に明示した表示色は base dot color より優先する。単一sampleでは Plot Presentation の `Event colors` から **Density color (single sample)** を選べる。このモードは、全有効表示イベントから局所密度をGaussian smoothingした連続的な青→シアン→緑→黄→赤で示す一方、描画する点数は `Display max points` の上限を維持する。高密度側は最大密度まで連続正規化するため、compactな集団も一律の赤ではなく内部の勾配を保つ。density色は選択populationの変換後分布に対して一度決まり、zoom、pan、plot resize、DPIでは変化しない。イベントごとのpopulation/gating色は使わない。overlayが一つでもある場合は自動的に通常色へ戻り、設定は保存されたままステータスで理由を表示する。gate outline、membership、counts、frequency、統計は変化しない。
 
 ### 1.2 Results の鮮度
 
@@ -952,7 +952,7 @@ GUIとheadless exportは、X/Y parameter、transform ID、viewport、tick、titl
 
 GUIから実行する`Batch Plot Export`もCLIと同じrenderer-neutral core rendererを使います。これにより、PNG/JPEG/SVG/PDFの表示範囲、点の順序と色、axis、tick、gate、title、軸ラベルは同じ`PlotScene`から出力されます。ライブ画面は引き続きQt/pyqtgraphで描画されるため、OSやフォントbackendによるアンチエイリアス差はあり得ますが、バッチ形式間で座標系や表示要素が変わることはありません。
 
-`current_view`では、出力サイズや1:1 aspectの指定があっても、GUIで現在表示している変換後のX/Y範囲を優先する。ゲートで色付けされたpopulationはcanonical previewのmembershipに従って同じ色で描画し、overlayは保存された個別色、またはGUIの既定overlay色で描画される。単一sourceのDensity color設定は、現在のlogical viewport内にある全有効イベントから推定した同じevent-order色としてPNG/SVG/PDFへ適用され、sidecarにはgrid・smoothing・normalization・algorithm versionが記録される。overlay sourceがある場合は通常色へ戻る。
+`current_view`では、出力サイズや1:1 aspectの指定があっても、GUIで現在表示している変換後のX/Y範囲を優先する。ゲートで色付けされたpopulationはcanonical previewのmembershipに従って同じ色で描画し、overlayは保存された個別色、またはGUIの既定overlay色で描画される。単一sourceのDensity color設定は、全変換後populationから決めた同じevent-order色としてPNG/SVG/PDFへ適用される。current viewは出力するイベントをclipするだけでdensityを再正規化しない。sidecarにはgrid・smoothing・normalization・algorithm versionが記録される。overlay sourceがある場合は通常色へ戻る。
 
 出力ファイル名は portable slug に変換される。sample または metadata の well (`A01` は `A1` に正規化) を優先し、未設定の場合は FCS ファイル名中の曖昧でない `A1`、`B02`、`H12` のような token だけを使用する。単一 source は `A1_<template>.png`、複数 source は表示順に `A1_B2_<template>.png` となり、well が分からない複数 source は stable sample ID を prefix にする。推定元と source ID は sidecar と batch manifest に保存される。
 

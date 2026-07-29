@@ -23,7 +23,20 @@ def test_smooth_density_is_deterministic_continuous_and_warmer_at_cluster_centre
   )
   assert np.array_equal(result.colors, repeat.colors)
   assert result.metadata.grid_shape == (200, 300)
-  assert result.metadata.algorithm_version == "smooth-density.v1"
+  assert result.metadata.algorithm_version == "smooth-density.v2"
+
+
+def test_density_normalization_does_not_clip_a_large_high_density_region() -> None:
+  rng = np.random.default_rng(7)
+  x = rng.normal(0.0, 0.08, 20_000)
+  y = rng.normal(0.0, 0.08, 20_000)
+  result = estimate_density_colors(
+    x, y, x[:5000], y[:5000],
+    bounds=(-1, 1, -1, 1), logical_size=(800, 600),
+  )
+  warm = result.normalized_density[result.normalized_density > 0.75]
+  assert len(np.unique(np.round(warm, 3))) > 20
+  assert np.count_nonzero(result.normalized_density == 1.0) < len(warm) * 0.1
 
 
 def test_density_estimator_clips_viewport_and_rejects_invalid_contract() -> None:

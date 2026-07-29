@@ -12,13 +12,13 @@ from numpy.typing import NDArray
 class DensityColorConfig:
   """Versioned numerical choices for the display-only density estimator."""
 
-  algorithm_version: str = "smooth-density.v1"
+  algorithm_version: str = "smooth-density.v2"
   cells_per_logical_pixel: float = 2.0
   minimum_cells: int = 128
   maximum_cells: int = 512
   gaussian_sigma_pixels: float = 1.25
   normalization_low_percentile: float = 1.0
-  normalization_high_percentile: float = 99.5
+  normalization_high_percentile: float = 100.0
 
   def __post_init__(self) -> None:
     if self.cells_per_logical_pixel <= 0:

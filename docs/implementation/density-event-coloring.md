@@ -47,9 +47,10 @@ and export integration in one run.
   density result.
 - With any resolved visible overlay, density mode is inactive and existing color
   precedence applies. Do not blend base density colors with overlay or gating colors.
-- The visible density field follows the current ViewBox range and plot-area aspect ratio.
-  Pan, zoom, robust/full reset, resize, axis/transform/population/sample change, or
-  display-point-limit change must not leave stale colors on screen.
+- The density field is fixed by the selected transformed population, not the ViewBox.
+  Pan, zoom, robust/full reset, resize, or DPI changes must not change an event's color.
+  Axis/transform/population/sample or display-point-limit changes create a new display
+  input and therefore a new density assignment.
 - The same resolved data bounds and estimator configuration are used by batch PNG, SVG,
   and PDF. DPI alone must not alter density values or the color distribution; it only
   changes raster sharpness.
@@ -127,7 +128,7 @@ separate validated comparison is added.
 
 ## Increment 1 — Pure core estimator and numerical tests
 
-**Status: completed.** `smooth-density.v1` provides the pure NumPy typed result,
+**Status: completed.** `smooth-density.v2` provides the pure NumPy typed result,
 aspect-aware grid, Gaussian smoothing, bilinear interpolation, robust normalization, and
 continuous palette. Increment 2 must now connect full pre-downsample input and viewport
 invalidation; it must not reimplement the estimator.
@@ -153,9 +154,9 @@ unchanged.
 ## Increment 2 — Qt preview data flow, cache, and invalidation
 
 **Status: completed.** Qt retains full transformed finite coordinates solely as density
-input, limits marker drawing through the existing deterministic sampler, and debounces
-ViewBox/resize recoloring. The one-entry immutable-array cache is keyed by input identity,
-viewport, and logical plot size and is cleared on resize/plot clear.
+input and limits marker drawing through the existing deterministic sampler. The one-entry
+immutable-array cache is keyed by input identity and fixed full-population bounds. Camera
+pan/zoom/resize never invalidates or changes density colors.
 
 Non-goals: changing gate membership, display downsampling policy, export adapters, or
 overlay behavior.
@@ -190,9 +191,10 @@ PNG/SVG/PDF adapters. Sidecars record the estimator metadata or the overlay fall
 Non-goals: changing export page geometry, DPI semantics, gate coordinates, or the three
 existing vector-scatter modes.
 
-1. Give the batch renderer the resolved export bounds and logical plot area size, then
-   call the same core estimator and configuration version as preview. Do not calculate
-   density from SVG/PDF physical DPI or from an already rasterized image.
+1. Give the batch renderer the full transformed population bounds and call the same core
+   estimator and fixed logical density grid as preview. Export viewport clipping selects
+   which already-colored events are written; it never renormalizes their density. Do not
+   calculate density from SVG/PDF physical DPI or from an already rasterized image.
 2. PNG/SVG/PDF must receive exactly the colors assigned for their visible event order.
    With density colors, `compact_vector` must not silently drop points or collapse
    different colors. Preserve draw order for translucent markers; if this prevents
@@ -231,3 +233,11 @@ git diff --check
 
 Report benchmark command/environment, median timings, cache hit/miss behavior, peak
 memory evidence, remaining GUI/backend differences, and the next uncompleted increment.
+
+## Post-completion performance and saturation correction
+
+The Qt renderer uses one `ScatterPlotItem` with per-point brushes. It must not create one
+graphics item per palette color. Density is assigned once per display input and is not
+recomputed for camera pan/zoom/resize. `smooth-density.v2` normalizes through the maximum
+positive smoothed density rather than clipping every value above the 99.5th percentile;
+this preserves visible gradients inside compact high-density populations.

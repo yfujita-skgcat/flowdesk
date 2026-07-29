@@ -222,6 +222,7 @@ def batch_plot_command(
       source_by_id = {str(item["id"]): item for item in samples}
       sources = []
       layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] = {}
+      visible_masks: dict[str, np.ndarray] = {}
       visible_event_colors: dict[str, tuple[str, ...]] = {}
       for order, source_id in enumerate(source_ids):
         source_sample = source_by_id[source_id]
@@ -233,6 +234,7 @@ def batch_plot_command(
           (normalized_x >= 0.0) & (normalized_x <= 1.0)
           & (normalized_y >= 0.0) & (normalized_y <= 1.0)
         )
+        visible_masks[source_id] = visible
         layers[source_id] = (tuple(normalized_x[visible]), tuple(normalized_y[visible]))
         colors = layer_event_colors.get(source_id)
         if colors is not None:
@@ -257,14 +259,14 @@ def batch_plot_command(
       if density_coloring:
         active_id = source_ids[0]
         full_x, full_y = prepared_layers[active_id]
-        normalized_full_x = _normalize(full_x, active_bounds[0])
-        normalized_full_y = _normalize(full_y, active_bounds[1])
+        density_bounds = (
+          float(np.min(full_x)), float(np.max(full_x)),
+          float(np.min(full_y)), float(np.max(full_y)),
+        )
+        visible = visible_masks[active_id]
         density_result = estimate_density_colors(
-          normalized_full_x, normalized_full_y,
-          np.asarray(layers[active_id][0], dtype=np.float64),
-          np.asarray(layers[active_id][1], dtype=np.float64),
-          bounds=(0.0, 1.0, 0.0, 1.0),
-          logical_size=(max(1, spec.width - 80), max(1, spec.height - 110)),
+          full_x, full_y, full_x[visible], full_y[visible],
+          bounds=density_bounds, logical_size=(512, 512),
         )
         visible_event_colors = {
           active_id: tuple(density_result.colors)

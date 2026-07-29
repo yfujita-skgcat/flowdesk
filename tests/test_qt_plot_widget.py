@@ -18,6 +18,7 @@ pytest.importorskip("pyqtgraph")
 shiboken6 = pytest.importorskip("shiboken6")
 pytestmark = pytest.mark.gui
 
+from pyqtgraph import ScatterPlotItem  # noqa: E402
 from PySide6.QtCore import QCoreApplication, QEvent, QPointF, Qt  # noqa: E402
 from PySide6.QtGui import QAction, QImage  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
@@ -349,8 +350,49 @@ def test_density_coloring_replaces_supplied_population_colors_for_display() -> N
     assert len(set(plot._event_colors.tolist()[:3])) == 1
     assert plot._event_colors.tolist()[0] != plot._event_colors.tolist()[3]
     assert plot._event_colors.tolist()[3] != "#ff00ff"
+    assert isinstance(plot._scatter, ScatterPlotItem)
+    assert plot._population_scatter_items == []
     assert np.array_equal(plot._cached_x, x)
     assert np.array_equal(plot._cached_y, y)
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
+def test_density_coloring_replaces_uniform_plot_with_colored_scatter_item() -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(42)
+  x = np.concatenate((rng.normal(0.0, 0.2, 2000), rng.normal(2.0, 0.05, 200)))
+  y = np.concatenate((rng.normal(0.0, 0.2, 2000), rng.normal(2.0, 0.05, 200)))
+  try:
+    plot.plot_events(x, y, density_coloring=True)
+    assert isinstance(plot._scatter, ScatterPlotItem)
+    assert plot._event_colors is not None
+    assert len(set(plot._event_colors.tolist())) > 32
+    assert plot._scatter.opts["brush"] is not None
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
+def test_density_colors_do_not_change_with_view_range_or_resize() -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(8)
+  x = rng.normal(size=5000)
+  y = rng.normal(size=5000)
+  try:
+    plot.plot_events(x, y, density_coloring=True)
+    original = plot._event_colors.copy()
+    cache = dict(plot._density_color_cache)
+    plot.set_manual_view_range((-0.5, 0.5), (-0.5, 0.5))
+    plot.resize(1200, 300)
+    QApplication.processEvents()
+    assert np.array_equal(plot._event_colors, original)
+    assert plot._density_color_cache == cache
   finally:
     plot.close()
     plot.deleteLater()

@@ -148,10 +148,6 @@ class PlotWidget(QWidget):
         self._status_banner: QLabel | None = None
         self._cached_marginal_x: NDArray[np.float64] | None = None
         self._cached_marginal_y: NDArray[np.float64] | None = None
-        self._density_refresh_timer = QTimer(self)
-        self._density_refresh_timer.setSingleShot(True)
-        self._density_refresh_timer.setInterval(40)
-        self._density_refresh_timer.timeout.connect(self._refresh_density_colors)
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -1421,7 +1417,10 @@ class PlotWidget(QWidget):
             or previous.dot_opacity != s.dot_opacity
         )
         if self._scatter is not None and scatter_style_changed:
-            if self._population_scatter_items:
+            if self._density_coloring_active:
+                self._density_color_cache.clear()
+                self._refresh_density_colors()
+            elif self._population_scatter_items:
                 for item, color in self._population_scatter_items:
                     item.setSymbolSize(s.dot_size)
                     item.setSymbolBrush(self._make_brush(color, s.dot_opacity))
@@ -2201,29 +2200,24 @@ class PlotWidget(QWidget):
         self._range_mode = "manual"
         self._manual_view_range = current
         self._refresh_ticks_for_current_view()
-        if self._density_coloring_active:
-            self._density_refresh_timer.start()
-
-    def resizeEvent(self, event: Any) -> None:
-        super().resizeEvent(event)
-        if self._density_coloring_active:
-            self._density_color_cache.clear()
-            self._density_refresh_timer.start()
 
     def _refresh_density_colors(self) -> None:
-        """Recolor sampled markers from full transformed data for this ViewBox."""
+        """Assign stable colors from the full transformed display population."""
         if not self._density_coloring_active or self._density_input is None:
             return
         if self._rendered_x is None or self._rendered_y is None:
             return
-        current = self.view_range()
-        if current is None:
+        input_x, input_y = self._density_input
+        if not len(input_x):
             return
-        (x_min, x_max), (y_min, y_max) = current
+        x_min, x_max = float(np.min(input_x)), float(np.max(input_x))
+        y_min, y_max = float(np.min(input_y)), float(np.max(input_y))
         if x_min >= x_max or y_min >= y_max:
             return
-        input_x, input_y = self._density_input
-        logical_size = (max(1, self._glw.width()), max(1, self._glw.height()))
+        # Density is a property of the selected transformed population, not
+        # the current camera. A fixed logical grid keeps colors invariant
+        # across pan, zoom, resize, and screen DPI changes.
+        logical_size = (512, 512)
         key = (id(input_x), id(input_y), len(input_x), (x_min, x_max, y_min, y_max), logical_size)
         colors = self._density_color_cache.get(key)
         if colors is None:
@@ -2233,17 +2227,27 @@ class PlotWidget(QWidget):
             ).colors
             self._density_color_cache = {key: colors}
         self._event_colors = colors
-        self._clear_scatter()
-        for color in np.unique(colors):
-            mask = colors == color
-            item = self._plot_uniform_scatter(
-                self._rendered_x[mask], self._rendered_y[mask], str(color),
-                self._style.dot_opacity,
-            )
-            self._population_scatter_items.append((item, str(color)))
-        self._scatter = (
-            self._population_scatter_items[0][0]
-            if self._population_scatter_items else None
+        brushes_by_color = {
+            str(color): self._make_brush(str(color), self._style.dot_opacity)
+            for color in np.unique(colors)
+        }
+        brushes = [brushes_by_color[str(color)] for color in colors]
+        if self._population_scatter_items or (
+            self._scatter is not None
+            and not isinstance(self._scatter, ScatterPlotItem)
+        ):
+            self._clear_scatter()
+        if self._scatter is None:
+            self._scatter = ScatterPlotItem()
+            self._plot_item.addItem(self._scatter)
+        self._scatter.setData(
+            x=self._rendered_x,
+            y=self._rendered_y,
+            pen=None,
+            brush=brushes,
+            size=self._style.dot_size,
+            symbol="o",
+            pxMode=True,
         )
 
     def _full_range_for_axis(
