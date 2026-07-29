@@ -92,6 +92,7 @@ class PlotWidget(QWidget):
         self._event_colors: NDArray[np.str_] | None = None
         self._density_color_cache: dict[tuple[object, ...], NDArray[np.str_]] = {}
         self._density_input: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None
+        self._density_cache_context: tuple[object, ...] | None = None
         self._density_coloring_active = False
         self._gate_items: list[Any] = []
         self._retired_plot_items: list[Any] = []
@@ -460,6 +461,7 @@ class PlotWidget(QWidget):
         marginal_y_data: NDArray[np.float64] | None = None,
         event_colors: NDArray[np.str_] | list[str] | None = None,
         density_coloring: bool = False,
+        density_cache_context: tuple[object, ...] | None = None,
     ) -> None:
         """Render a scatter plot.
 
@@ -513,6 +515,7 @@ class PlotWidget(QWidget):
             if colors_plot is not None:
                 colors_plot = colors_plot[sample_indices]
         self._density_input = (density_x, density_y) if density_coloring else None
+        self._density_cache_context = density_cache_context if density_coloring else None
         self._density_coloring_active = density_coloring
         self._displayed_event_count = len(x_plot)
         self._rendered_x = x_plot
@@ -653,6 +656,7 @@ class PlotWidget(QWidget):
         self._event_colors = None
         self._density_color_cache.clear()
         self._density_input = None
+        self._density_cache_context = None
         self._density_coloring_active = False
         self._is_histogram_mode = False
         self._update_labels()
@@ -2223,7 +2227,13 @@ class PlotWidget(QWidget):
         # the current camera. A fixed logical grid keeps colors invariant
         # across pan, zoom, resize, and screen DPI changes.
         logical_size = (512, 512)
-        key = (id(input_x), id(input_y), len(input_x), (x_min, x_max, y_min, y_max), logical_size)
+        key = (
+            self._density_cache_context
+            if self._density_cache_context is not None
+            else (id(input_x), id(input_y)),
+            len(input_x), len(self._rendered_x),
+            (x_min, x_max, y_min, y_max), logical_size,
+        )
         colors = self._density_color_cache.get(key)
         if colors is None:
             colors = estimate_density_colors(

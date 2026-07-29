@@ -1810,6 +1810,10 @@ class MainWindow(QMainWindow):
                 marginal_y_data=marginal_y,
                 event_colors=event_colors,
                 density_coloring=density_coloring,
+                density_cache_context=(
+                    self._processed_display_key(processed)
+                    if density_coloring else None
+                ),
             )
             self._render_manual_overlays(x_id, y_id)
             if self._density_coloring_requested(view) and not density_coloring:
