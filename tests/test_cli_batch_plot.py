@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from flowdesk_cli.batch_plot import _gate_overlays, batch_plot_command, write_plot_svg
+from flowdesk_core.execution_control import ExecutionOptions
 from flowdesk_core.models import ChannelSpec
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
@@ -99,8 +100,9 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
       }],
     }},
     "batch_plot_exports": [{
-      "id": "overlay-export", "name": "Overlay export", "target": "explicit",
-      "sample_ids": ["s1"], "plot_view_id": "overlay-view", "formats": ["svg"],
+      "id": "overlay-export", "name": "Overlay export", "target": "all",
+      "plot_view_id": "overlay-view", "formats": ["svg"],
+      "layout_policy": "shared_ranges",
     }],
   }
   project_path = tmp_path / "batch-overlay.flowdesk"
@@ -121,11 +123,14 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
     lambda path, *_args: (None, samples[Path(path).stem]),
   )
   output_dir = tmp_path / "exports"
-  assert batch_plot_command(str(project_path), "overlay-export", str(output_dir)) == 0
-  text = next(output_dir.glob("*.svg")).read_text(encoding="utf-8")
+  assert batch_plot_command(
+    str(project_path), "overlay-export", str(output_dir),
+    execution_options=ExecutionOptions(backend="thread", max_workers=2),
+  ) == 0
+  text = next(output_dir.glob("*s1*.svg")).read_text(encoding="utf-8")
   assert 'fill="#ff0000"' in text
   assert 'stroke="#00ff00"' in text
-  metadata = json.loads(next(output_dir.glob("*.svg.json")).read_text(encoding="utf-8"))
+  metadata = json.loads(next(output_dir.glob("*s1*.svg.json")).read_text(encoding="utf-8"))
   assert metadata["ordered_source_ids"] == ["s1", "s2"]
 
 

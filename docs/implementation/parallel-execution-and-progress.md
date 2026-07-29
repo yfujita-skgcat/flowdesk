@@ -921,8 +921,13 @@ renders one sample/view format bundle per thread after an immutable prepared-dat
 barrier. CLI users opt in with `--execution-backend thread`; GUI execution remains
 sequential. Execution provenance is written to the batch manifest, and staged output,
 sidecar, plan-order manifest, cooperative cancellation, and memory-bound resolution
-are retained. Full renderer reentrancy/parity and representative speedup gates below
-remain open before recommending this backend or enabling it by default.
+are retained. The real core PNG/SVG/PDF writer parity test and a CLI overlay plus
+`shared_ranges` thread test now cover concurrent writer use. The diagnostic benchmark
+`python tools/benchmark_batch_plot.py --samples 8 --events 5000 --max-workers 2`
+measured 1.833 s sequential versus 1.580 s thread/2 (1.16x) with identical
+18,317,448 output bytes on 2026-07-30. This uses prepared synthetic layers, not a
+full compensation/derived/gating FCS workload; repeat representative measurements
+before recommending this backend or enabling it by default.
 
 - Treat the FCS file as a dependency source, not automatically as one executor job.
 - Submit only dependency-complete immutable prepared output items; begin parity testing
@@ -937,7 +942,9 @@ remain open before recommending this backend or enabling it by default.
 Acceptance: sequential and parallel PNG/SVG/PDF scene/sidecar content is equivalent;
 failures/cancellation cannot corrupt successful or unrelated outputs; worker bounds include
 prepared-scene and format-temporary memory; the selected thread job unit demonstrates
-repeatable benefit on a documented representative batch workload.
+repeatable benefit on a documented representative batch workload. The current synthetic
+writer benchmark is diagnostic only and does not satisfy the representative FCS speedup
+gate.
 
 ### Increment 10: Optional adjacent-sample prefetch
 

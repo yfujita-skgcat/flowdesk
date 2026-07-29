@@ -13,6 +13,13 @@ from flowdesk_core.batch_plot_export import (
 )
 from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
 from flowdesk_core.models import BatchPlotExportSpec
+from flowdesk_core.plot_export import (
+  prepare_plot_export,
+  write_plot_pdf,
+  write_plot_png,
+  write_plot_svg,
+)
+from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_storage.project import load_project, save_project
 
 
@@ -201,6 +208,94 @@ def test_batch_run_thread_backend_respects_memory_bound(tmp_path) -> None:
   assert report.execution_provenance is not None
   assert report.execution_provenance["effective_max_workers"] == 1
   assert "memory_budget" in report.execution_provenance["limiting_factors"]
+
+
+def test_batch_run_thread_backend_preserves_real_writer_bytes(tmp_path) -> None:
+  spec = BatchPlotExportSpec(
+    id="writer-parity",
+    name="Writer parity",
+    formats=("png", "svg", "pdf"),
+    width=160,
+    height=120,
+    vector_scatter_mode="full_vector",
+  )
+  samples = [
+    {"id": "s1", "name": "One", "path": "/tmp/one.fcs"},
+    {"id": "s2", "name": "Two", "path": "/tmp/two.fcs"},
+    {"id": "s3", "name": "Three", "path": "/tmp/three.fcs"},
+  ]
+  prepared = {
+    sample["id"]: prepare_plot_export(
+      "main-view",
+      "scatter",
+      ({
+        "source_id": sample["id"],
+        "sample_id": sample["id"],
+        "population_id": "all_events",
+        "display_name": sample["name"],
+        "visible": True,
+      },),
+      (OverlaySourceResolution(sample["id"], "compatible"),),
+    )
+    for sample in samples
+  }
+  layers = {
+    sample["id"]: {
+      sample["id"]: ((0.1, 0.4, 0.8), (0.2, 0.6, 0.9)),
+    }
+    for sample in samples
+  }
+
+  def render(sample, path, options) -> None:
+    sample_id = sample["id"]
+    path_suffix = path.suffix.lower()
+    kwargs = {
+      "path": path,
+      "prepared": prepared[sample_id],
+      "layers": layers[sample_id],
+      "options": options,
+    }
+    if path_suffix == ".png":
+      write_plot_png(**kwargs, width=options.width, height=options.height)
+    elif path_suffix == ".svg":
+      write_plot_svg(**kwargs)
+    elif path_suffix == ".pdf":
+      write_plot_pdf(**kwargs, width=options.width, height=options.height)
+    else:
+      raise AssertionError(path_suffix)
+
+  sequential_dir = tmp_path / "sequential"
+  threaded_dir = tmp_path / "threaded"
+  sequential = run_batch_plot_export(spec, samples, sequential_dir, render)
+  threaded = run_batch_plot_export(
+    spec,
+    samples,
+    threaded_dir,
+    render,
+    estimate_render_bytes=lambda: 4096,
+    execution_control=ExecutionControl(
+      options=ExecutionOptions(backend="thread", max_workers=3),
+    ),
+  )
+
+  assert sequential.status == threaded.status == "success"
+  assert [item.sample_id for item in sequential.items] == [
+    item.sample_id for item in threaded.items
+  ]
+  for sample in samples:
+    for extension in spec.formats:
+      sequential_path = next(sequential_dir.glob(f"*_{sample['id']}_*.{extension}"))
+      threaded_path = next(threaded_dir.glob(f"*_{sample['id']}_*.{extension}"))
+      assert sequential_path.read_bytes() == threaded_path.read_bytes()
+      sequential_sidecar = json.loads(
+        sequential_path.with_suffix(sequential_path.suffix + ".json").read_text()
+      )
+      threaded_sidecar = json.loads(
+        threaded_path.with_suffix(threaded_path.suffix + ".json").read_text()
+      )
+      sequential_sidecar.pop("output", None)
+      threaded_sidecar.pop("output", None)
+      assert sequential_sidecar == threaded_sidecar
 
 
 def test_batch_run_cancellation_keeps_completed_files_and_manifest(tmp_path) -> None:
