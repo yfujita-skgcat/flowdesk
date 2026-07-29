@@ -104,7 +104,7 @@ OSごとのユーザー書込み可能なアプリケーションデータ領域
 4. Gating タブで gate type と parent population を選び、`Create Gate` を実行する。
 5. 子 gate は Gate hierarchy で親gateを選択して `Create Gate` を使う。何も選択していない場合は `All Events` の下に作成される。
 6. Results → `Add Statistic...` または `Manage Statistics...` で統計定義を作る。
-7. **Run Pipeline** を実行する。
+7. **Run Pipeline** を実行する。status barでphaseとsample数を確認でき、必要なら Analysis の **Cancel Pipeline** を使う。
 8. Results タブで event count、frequency、統計値、status を確認する。
 9. **Export Results...**、またはプロットの PNG/SVG/PDF export を行う。
 10. **Save Project**（Ctrl+S）で現在のprojectへ上書き保存する。未保存projectの場合は保存名を入力し、その名前の `.flowdesk` directory bundle として保存する。別名で保存する場合は **Save Project As...** を使う。
@@ -182,7 +182,8 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 
 |項目|ショートカット|説明|
 |---|---:|---|
-|Run Pipeline|Ctrl+R|読み込まれた全 sample を GUI-independent pipeline で再計算する。実行中は二重実行できない。|
+|Run Pipeline|Ctrl+R|読み込まれた全 sample を GUI-independent pipeline で再計算する。status barの進捗表示でphase/sample数を確認する。実行中は二重実行できない。|
+|Cancel Pipeline|—|現在のstageが終わった安全な境界でpipelineを協調的に停止する。途中Resultsは採用せず、以前のResultsがあればstaleとして残る。|
 |Derived Parameters...|—|式から derived parameter を定義、validate、preview する。|
 |Compensation...|—|compensation matrix と binding を定義・検証する。|
 |Compensation Calculations...|—|single-color control 等から matrix calculation を定義・実行し、matrix として保存する。|

@@ -1289,7 +1289,7 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
 - [x] progressのphase、completed/total単調性、callback failure、cooperative cancellation、
   Qt非依存性のcontract testを先に追加する。
 
-#### Increment 5: sequential pipeline progress/cancel（進行中）
+#### Increment 5: sequential pipeline progress/cancel（完了）
 
 - [x] project-wide planning、compensation control計算、sampleごとの
   compensation/derived/transform/gating/statistics、QC/finalizeへprogress checkpointを追加
@@ -1297,10 +1297,11 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
 - [x] cancelはstage間で協調的に確認し、実行中NumPy処理やthreadを強制終了しない。cancelした
   authoritative runはpartial result/cacheをcurrentとして返さず、GUIは以前のreportを保持して
   stale表示する。coreは`ExecutionCancelled`をraiseして途中reportを返さない。
-- [ ] CLI/Python/GUIが同じcontrol contractを使用し、uncancelled reportが変更前と完全一致する
+- [x] CLI/Python/GUIが同じcontrol contractを使用し、uncancelled reportが変更前と完全一致する
   test、cancel時のexit/statusとraw event不変testを追加する。Python APIとCLI adapterは同じ
-  controlを受け取りCLIはcancel時にexit code 130を返す。Qtのprogress surface/cancel actionと
-  previous Resultsのstale表示は次のQt lifecycle incrementで接続する。
+  controlを受け取りCLIはcancel時にexit code 130を返す。Qtはstatus barのphase/sample count
+  progressと`Cancel Pipeline` actionを同じcontrolへ接続し、cancel後もprevious Resultsを
+  staleとして残す。
 
 #### Increment 6: Batch Export phase分割と進捗GUI
 

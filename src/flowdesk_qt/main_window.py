@@ -12,6 +12,7 @@ import uuid
 from copy import deepcopy
 from dataclasses import asdict, replace
 from pathlib import Path
+from queue import Empty, SimpleQueue
 from typing import Any, Literal
 
 import numpy as np
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSplitter,
     QTabWidget,
@@ -43,6 +45,11 @@ from flowdesk_core.compensation import (
 )
 from flowdesk_core.credits import credits_text
 from flowdesk_core.execution_context import ExecutionContext
+from flowdesk_core.execution_control import (
+    ExecutionCancelled,
+    ExecutionControl,
+    ProgressEvent,
+)
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.gate_transform_migration import preview_gate_transform_migration
 from flowdesk_core.integrated_overlay import resolve_overlay_style
@@ -237,11 +244,31 @@ class _PipelineWorker(QThread):
         self.revision = revision
         self._report: Any = None
         self._error: Exception | None = None
+        self._progress_events: SimpleQueue[ProgressEvent] = SimpleQueue()
+        self._execution_control = ExecutionControl(
+            progress_sink=self._progress_events.put
+        )
+
+    def request_cancel(self) -> None:
+        """Request cooperative core cancellation without terminating the thread."""
+        self._execution_control.cancellation_token.cancel()
+
+    def drain_progress_events(self) -> tuple[ProgressEvent, ...]:
+        """Return already-emitted core progress without touching GUI state."""
+        events: list[ProgressEvent] = []
+        while True:
+            try:
+                events.append(self._progress_events.get_nowait())
+            except Empty:
+                return tuple(events)
 
     def run(self) -> None:
         try:
             runner = PipelineRunner(self._project)
-            ctx = ExecutionContext(execution_profile_id=self._profile_id)
+            ctx = ExecutionContext(
+                execution_profile_id=self._profile_id,
+                execution_control=self._execution_control,
+            )
             self._report = runner.run_samples(ctx, self._samples)
             logger.info("Pipeline completed: %s", self._report.summary)
         except Exception as exc:
@@ -366,6 +393,9 @@ class MainWindow(QMainWindow):
         self._processed_display_scheduler.display_failed.connect(
             self._on_processed_display_failed
         )
+        self._pipeline_progress_timer = QTimer(self)
+        self._pipeline_progress_timer.setInterval(25)
+        self._pipeline_progress_timer.timeout.connect(self._drain_pipeline_progress)
 
         self._compensation_status_indicator = _CompensationStatusIndicator()
         self._build_menu()
@@ -639,6 +669,12 @@ class MainWindow(QMainWindow):
         self.action_run_pipeline.triggered.connect(self._on_run_pipeline)
         analysis_menu.addAction(self.action_run_pipeline)
 
+        self.action_cancel_pipeline = QAction("&Cancel Pipeline", self)
+        self.action_cancel_pipeline.setObjectName("actionCancelPipeline")
+        self.action_cancel_pipeline.setEnabled(False)
+        self.action_cancel_pipeline.triggered.connect(self._on_cancel_pipeline)
+        analysis_menu.addAction(self.action_cancel_pipeline)
+
         analysis_menu.addSeparator()
 
         self.action_derived_parameters = QAction("Derived &Parameters...", self)
@@ -783,9 +819,8 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        action_run = QAction("Run Pipeline", self)
-        action_run.triggered.connect(self._on_run_pipeline)
-        toolbar.addAction(action_run)
+        toolbar.addAction(self.action_run_pipeline)
+        toolbar.addAction(self.action_cancel_pipeline)
 
         toolbar.addSeparator()
 
@@ -848,6 +883,11 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(splitter2)
         self.statusBar().setObjectName("mainStatusBar")
+        self._pipeline_progress = QProgressBar(self)
+        self._pipeline_progress.setObjectName("pipelineProgressBar")
+        self._pipeline_progress.setTextVisible(True)
+        self._pipeline_progress.setVisible(False)
+        self.statusBar().addPermanentWidget(self._pipeline_progress)
         self.statusBar().addPermanentWidget(self._compensation_status_indicator)
 
     def _create_center_pane(self) -> QWidget:
@@ -2497,6 +2537,7 @@ class MainWindow(QMainWindow):
 
         self._preview_scheduler.suspend()
         project = self._build_project_manifest()
+        self._set_pipeline_running(True)
         self._update_status("Running pipeline...")
         self._worker = _PipelineWorker(
             project,
@@ -2505,6 +2546,43 @@ class MainWindow(QMainWindow):
         )
         self._worker.finished.connect(self._on_pipeline_finished)
         self._worker.start()
+        self._pipeline_progress_timer.start()
+
+    def _on_cancel_pipeline(self) -> None:
+        """Request cancellation and keep the active worker owned until it exits."""
+        worker = self._worker
+        if worker is None or not worker.isRunning():
+            return
+        worker.request_cancel()
+        self.action_cancel_pipeline.setEnabled(False)
+        self._update_status("Cancelling pipeline...")
+
+    def _drain_pipeline_progress(self) -> None:
+        """Transfer queued core progress events on the GUI thread only."""
+        worker = self._worker
+        if worker is None:
+            return
+        for event in worker.drain_progress_events():
+            self._on_pipeline_progress(event)
+
+    def _on_pipeline_progress(self, event: ProgressEvent) -> None:
+        """Render a queued core progress event without performing analysis."""
+        worker = self._worker
+        if worker is None:
+            return
+        if event.operation != "pipeline":
+            return
+        self._pipeline_progress.setRange(0, event.total_units)
+        self._pipeline_progress.setValue(event.completed_units)
+        self._pipeline_progress.setFormat(
+            f"{event.completed_units}/{event.total_units}"
+        )
+        self._pipeline_progress.setVisible(True)
+        item = f" ({event.sample_id})" if event.sample_id else ""
+        self._update_status(
+            f"Pipeline: {event.phase}{item} "
+            f"{event.completed_units}/{event.total_units}"
+        )
 
     def _on_auto_recalculate_changed(self, enabled: bool) -> None:
         """Toggle automatic full-sample recalculation for stale Results."""
@@ -2744,6 +2822,12 @@ class MainWindow(QMainWindow):
         worker = self._worker
         if worker._error is not None:
             exc = worker._error
+            if isinstance(exc, ExecutionCancelled):
+                logger.info("Pipeline cancelled")
+                self._handle_pipeline_cancelled()
+                self._release_pipeline_worker(worker)
+                self._preview_scheduler.resume()
+                return
             logger.error("Pipeline execution failed: %s", exc)
             self._update_status(f"Pipeline error: {exc}")
             QMessageBox.critical(self, "Pipeline Error", str(exc))
@@ -2859,7 +2943,36 @@ class MainWindow(QMainWindow):
             pass
         if self._worker is worker:
             self._worker = None
+        self._pipeline_progress_timer.stop()
+        self._set_pipeline_running(False)
         worker.deleteLater()
+
+    def _set_pipeline_running(self, running: bool) -> None:
+        """Keep pipeline controls and the status progress widget coherent."""
+        self.action_run_pipeline.setEnabled(not running)
+        self.action_cancel_pipeline.setEnabled(running)
+        if not running:
+            self._pipeline_progress.setVisible(False)
+            self._pipeline_progress.reset()
+
+    def _handle_pipeline_cancelled(self) -> None:
+        """Mark retained authoritative values stale after a cancelled run."""
+        self._results_stale = True
+        self._results_stale_reason = "Pipeline cancelled; previous Results retained"
+        if self._current_sample_id is not None:
+            self._result_state.invalidate(
+                revision=self._preview_revision.analysis_revision,
+                active_sample_id=self._current_sample_id,
+                affected_population_ids=tuple(self._population_parent_map()),
+            )
+        self._results_workspace.set_result_state(self._result_state)
+        self._results_workspace.mark_results_stale()
+        self._population_tree.mark_results_stale()
+        self._compensation_status_indicator.mark_stale()
+        self._refresh_override_statuses()
+        if self._pending_results_export is not None:
+            self._pending_results_export = None
+        self._update_status("Pipeline cancelled; previous Results are stale")
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Do not destroy the window while its pipeline thread is running."""
@@ -2867,6 +2980,7 @@ class MainWindow(QMainWindow):
         self._processed_display_scheduler.shutdown()
         worker = self._worker
         if worker is not None and worker.isRunning():
+            worker.request_cancel()
             worker.wait()
         if worker is not None:
             self._release_pipeline_worker(worker)

@@ -674,15 +674,17 @@ JSON records environment and stage boundaries.
 
 ### Increment 5: Sequential pipeline progress and cooperative cancellation
 
-Status (2026-07-29): the core runner now emits deterministic checkpoints for
+Status (2026-07-29): complete. The core runner emits deterministic checkpoints for
 planning, compensation controls, each sample stage, QC, and finalization when
 an `ExecutionControl` is supplied.  It checks cancellation before and after
 each callback/stage boundary and raises `ExecutionCancelled` without returning
 the locally accumulated report.  The CLI adapter maps this outcome to exit code
-130.  Contract tests prove unchanged uncancelled results and raw input arrays.
-The Qt worker has not yet exposed a progress surface or Cancel action, so this
-increment remains in progress until that adapter preserves the previous Results
-state on cancellation.
+130.  The Qt worker owns the same control, transfers progress through a
+thread-safe queue polled on the GUI thread, displays phase/sample count in the
+status bar and `pipelineProgressBar`, and exposes `actionCancelPipeline`.
+Cancellation retains the previous Results report and marks it stale. Contract
+tests prove unchanged uncancelled results, raw input arrays, CLI cancellation,
+and the Qt cancellation lifecycle.
 
 - Add progress checkpoints around project-wide preparation and every sample stage.
 - Keep the existing scientific loop sequential.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import signal
+import time
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtTest import QTest
 
 from flowdesk_core.execution_context import ExecutionContext
+from flowdesk_core.execution_control import ExecutionCancelled, ProgressEvent
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import GateSpec
 from flowdesk_core.overrides import gate_version_hash
@@ -222,6 +224,59 @@ def test_pipeline_exception_releases_worker(
     assert critical == ["synthetic pipeline failure"]
     assert "Pipeline error: synthetic pipeline failure" in window.statusBar().currentMessage()
     assert window._worker is None
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_cancel_pipeline_keeps_previous_results_stale(
+  qapp,
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  fcs_path = tmp_path / "cancel.fcs"
+  write_fcs_file(
+    fcs_path,
+    np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64),
+    ["X", "Y"],
+  )
+  window = MainWindow()
+  try:
+    window._sample_browser.add_samples_from_paths([str(fcs_path)])
+    window._sample_browser.select_sample(window._sample_browser.samples()[0].id)
+    window._on_run_pipeline()
+    _wait_for_worker(window)
+    qapp.processEvents()
+    previous = window._population_tree.last_report()
+    assert previous is not None
+
+    def wait_for_cancel(_runner, context, _samples):
+      control = context.execution_control
+      assert control is not None
+      control.emit_progress(ProgressEvent(
+        "test-pipeline", "pipeline", "sample_gating", 0, 1, "sample-1"
+      ))
+      while not control.cancellation_token.is_cancelled():
+        time.sleep(0.005)
+      raise ExecutionCancelled("execution cancelled")
+
+    monkeypatch.setattr(PipelineRunner, "run_samples", wait_for_cancel)
+    window._on_run_pipeline()
+    assert window.action_cancel_pipeline.isEnabled()
+    QTest.qWait(60)
+    assert not window._pipeline_progress.isHidden()
+    assert "Pipeline: sample_gating (sample-1) 0/1" in window.statusBar().currentMessage()
+    window.action_cancel_pipeline.trigger()
+    _wait_for_worker(window)
+    qapp.processEvents()
+
+    assert window._population_tree.last_report() is previous
+    assert window._results_stale is True
+    assert "Pipeline cancelled" in window.statusBar().currentMessage()
+    assert window.action_run_pipeline.isEnabled()
+    assert not window.action_cancel_pipeline.isEnabled()
+    assert window._pipeline_progress.isHidden()
   finally:
     window.close()
     window.deleteLater()
