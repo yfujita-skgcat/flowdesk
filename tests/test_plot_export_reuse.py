@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import base64
+import shutil
+import subprocess
 
+import numpy as np
 import pytest
+from PIL import Image
 
 from flowdesk_core.models import (
   BatchPlotExportSpec,
@@ -150,7 +154,7 @@ def test_full_vector_pdf_uses_form_xobject_and_one_do_per_event(tmp_path) -> Non
   data = path.read_bytes()
   assert data.count(b"/Subtype /Form") == 1
   assert data.count(b"/M0 Do") == 2
-  assert b"/XObject << /M0 5 0 R >>" in data
+  assert b"/XObject << /M0 7 0 R >>" in data
   assert b"/Subtype /Image" not in data
 
 
@@ -264,6 +268,47 @@ def test_hybrid_pdf_uses_image_xobject_with_soft_mask_not_full_canvas(tmp_path) 
   assert b"/MediaBox [0 0 800 600]" in data
   metadata = json.loads(path.with_suffix(".pdf.json").read_text(encoding="utf-8"))
   assert metadata["vector_scatter"]["encoding"] == "png_rgba_lossless"
+
+
+def test_hybrid_pdf_matches_png_layout_at_pdf_logical_resolution(tmp_path) -> None:
+  """PDF at 72 DPI has the same logical canvas as the PNG export."""
+  if shutil.which("pdftoppm") is None:
+    pytest.skip("pdftoppm is required to rasterize PDF for this comparison")
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  presentation = PlotPresentationSpec(
+    title="PDF / PNG layout", x_axis_display_label="FITC-A",
+    y_axis_display_label="APC-A", background_color="#ffffff",
+  )
+  options = BatchPlotExportSpec(
+    id="hybrid", name="Hybrid", width=400, height=300,
+    vector_scatter_mode="hybrid_raster", hybrid_scatter_dpi=144,
+  )
+  layers = {"s1": ((0.2, 0.5, 0.8), (0.8, 0.5, 0.2))}
+  png_path = tmp_path / "plot.png"
+  pdf_path = tmp_path / "plot.pdf"
+  write_plot_png(png_path, prepared, presentation, layers, options=options)
+  write_plot_pdf(pdf_path, prepared, presentation, layers, options=options)
+  raster_prefix = tmp_path / "pdf-raster"
+  subprocess.run(
+    ["pdftoppm", "-r", "72", "-png", "-singlefile", str(pdf_path), str(raster_prefix)],
+    check=True, capture_output=True,
+  )
+  with Image.open(png_path) as png_image, Image.open(raster_prefix.with_suffix(".png")) as pdf_image:
+    assert pdf_image.size == png_image.size == (400, 300)
+    png = np.asarray(png_image.convert("RGB"), dtype=np.float64)
+    pdf = np.asarray(pdf_image.convert("RGB"), dtype=np.float64)
+  normalized_rmse = float(np.sqrt(np.mean(np.square(png - pdf))) / 255.0)
+  normalized_mean_error = float(np.mean(np.abs(png - pdf)) / 255.0)
+  # Text rasterizers use different anti-aliasing, but the logical canvas,
+  # plot rectangle, and scatter positions must remain visually aligned.
+  assert normalized_rmse < 0.15
+  assert normalized_mean_error < 0.03
 
 
 def test_png_export_is_nonblank_and_has_metadata(tmp_path) -> None:

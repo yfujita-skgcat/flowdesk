@@ -31,7 +31,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pyqtgraph import GraphicsLayoutWidget, ScatterPlotItem
 from pyqtgraph.graphicsItems.ViewBox import ViewBox  # type: ignore[attr-defined]
-from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QMarginsF, QPoint, QSize, QSizeF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -907,8 +907,15 @@ class PlotWidget(QWidget):
                 device.setSize(self.size())
             else:
                 device = QPdfWriter(str(out_path))
-                device.setResolution(96)
-                device.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+                # The vector canvas uses PDF points as logical units.
+                device.setResolution(72)
+                # Match the logical export canvas instead of scaling the plot
+                # into an A4 page.  This keeps PDF and PNG coordinates equal.
+                device.setPageSize(QPageSize(
+                    QSizeF(self.width() / 72.0, self.height() / 72.0),
+                    QPageSize.Unit.Inch,
+                ))
+                device.setPageMargins(QMarginsF(0, 0, 0, 0))
             painter = QPainter(device)
             try:
                 self.render(painter, QPoint(0, 0))

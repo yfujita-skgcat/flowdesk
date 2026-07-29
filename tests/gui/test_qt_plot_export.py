@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from flowdesk_core.models import BatchPlotExportSpec
@@ -35,6 +38,45 @@ def test_qt_batch_renderer_writes_the_shared_scene_and_image(qapp, tmp_path) -> 
   metadata = json.loads(path.with_suffix(".png.json").read_text(encoding="utf-8"))
   assert metadata["scene_hash"] == "test-scene"
   assert metadata["display_state"]["displayed_event_count"] == 2
+
+
+def test_qt_pdf_uses_the_same_logical_canvas_as_png(qapp, tmp_path) -> None:
+  if shutil.which("pdftoppm") is None:
+    pytest.skip("pdftoppm is required to rasterize PDF for this comparison")
+  png_path = tmp_path / "plot.png"
+  pdf_path = tmp_path / "plot.pdf"
+  common = {
+    "raw_layers": {"s1": (np.array([1.0, 10.0]), np.array([2.0, 20.0]))},
+    "source_ids": ("s1",),
+    "source_styles": {"s1": {"color": "#000000", "alpha": 0.6, "marker_size": 1.5}},
+    "presentation": {
+      "background_color": "#ffffff", "x_axis_display_label": "X",
+      "y_axis_display_label": "Y", "show_grid": True,
+    },
+    "x_parameter": "x", "y_parameter": "y",
+    "title_lines": ("Sample 1",), "title_colors": ("#4c78a8",),
+    "x_transform": None, "y_transform": None,
+    "x_range": (1.0, 10.0), "y_range": (2.0, 20.0), "gates": (),
+    "width": 400, "height": 300,
+    "options": BatchPlotExportSpec(
+      id="export", name="Export", width=400, height=300, include_title=True,
+      include_axis_labels=True, include_ticks=True,
+    ),
+    "export_metadata": {"scene_hash": "test-scene"},
+  }
+  render_batch_plot_qt(png_path, **common)
+  render_batch_plot_qt(pdf_path, **common)
+  raster_prefix = tmp_path / "pdf-raster"
+  subprocess.run(
+    ["pdftoppm", "-r", "72", "-png", "-singlefile", str(pdf_path), str(raster_prefix)],
+    check=True, capture_output=True,
+  )
+  with Image.open(png_path) as png_image, Image.open(raster_prefix.with_suffix(".png")) as pdf_image:
+    assert png_image.size == pdf_image.size == (400, 300)
+    png = np.asarray(png_image.convert("RGB"), dtype=np.float64)
+    pdf = np.asarray(pdf_image.convert("RGB"), dtype=np.float64)
+  normalized_rmse = float(np.sqrt(np.mean(np.square(png - pdf))) / 255.0)
+  assert normalized_rmse < 0.06
 
 
 def test_qt_batch_dpi_changes_sharpness_without_changing_layout(qapp, tmp_path) -> None:

@@ -243,8 +243,9 @@ def write_plot_svg(
   if not prepared.source_order:
     raise PlotExportError("cannot export a plot with no visible source")
   width, height = _dimensions(800, 600, options)
-  left, top, right, bottom = 60, 50, 20, 60
-  plot_width, plot_height = width - left - right, height - top - bottom
+  left, top, plot_width, plot_height = _raster_layout(
+    width, height, prepared, selected, options,
+  )
   elements = [
     f'<rect width="100%" height="100%" fill="{escape(selected.background_color)}"/>',
   ]
@@ -463,14 +464,13 @@ def write_plot_pdf(
   if any(source_id not in layers for source_id in prepared.source_order):
     raise PlotExportError("missing prepared layer data")
   background = _rgb(selected.background_color)
-  left, top, right, bottom = 60, 50, 20, 60
-  plot_width, plot_height = width - left - right, height - top - bottom
+  left, top, plot_width, plot_height = _raster_layout(
+    width, height, prepared, selected, options,
+  )
   commands = [
     f"{background[0] / 255:g} {background[1] / 255:g} {background[2] / 255:g} rg",
     f"0 0 {width} {height} re f",
   ]
-  if options is None or options.include_ticks:
-    commands.extend(_pdf_axes(left, top, plot_width, plot_height, height))
   style_by_id = {style.source_id: style for style in selected.source_styles}
   full_vector = options is None or options.vector_scatter_mode == "full_vector"
   compact_vector = options is not None and options.vector_scatter_mode == "compact_vector"
@@ -512,7 +512,8 @@ def write_plot_pdf(
                                           left, top, plot_width, plot_height) + " f")
     commands.append("Q")
   elif hybrid_raster:
-    commands.extend(("q", f"{plot_width:g} 0 0 {plot_height:g} {left:g} {height - top - plot_height:g} cm",
+    # PNG rows are top-to-bottom while PDF image coordinates are bottom-to-top.
+    commands.extend(("q", f"{plot_width:g} 0 0 {-plot_height:g} {left:g} {height - top:g} cm",
                      "/ImScatter Do", "Q"))
   elif not full_vector:
     for source_id in prepared.source_order:
@@ -532,10 +533,19 @@ def write_plot_pdf(
         size = (2.0 if style is None else style.marker_size) / 2.0
         commands.extend(("q", f"{size:g} 0 0 {size:g} {x:g} {y:g} cm", f"/M{marker_refs[source_id]} Do", "Q"))
     commands.append("Q")
+  # Place the opaque PDF image before the axes.  This also avoids Poppler
+  # losing pre-image strokes when decoding an image soft mask.
+  if options is None or options.include_ticks:
+    commands.extend(_pdf_scene_axes(
+      prepared, selected, left, top, plot_width, plot_height, height,
+    ))
   if options is None or options.include_gates:
     commands.extend(_pdf_gates(_scene_gates(prepared), left, top, plot_width, plot_height, height))
+  commands.extend(_pdf_scene_text(
+    prepared, selected, left, top, plot_width, plot_height, width, height, options,
+  ))
   stream = ("\n".join(commands) + "\n").encode("ascii")
-  form_start = 5
+  form_start = 7
   xobjects = " ".join(
     f"/M{index} {form_start + index * 2} 0 R" for index in range(len(form_specs))
   )
@@ -544,7 +554,7 @@ def write_plot_pdf(
     f"/C{index} {extgstate_start + index} 0 R"
     for index in range(len(compact_alpha_values))
   )
-  resources = "/Resources <<"
+  resources = "/Resources << /Font << /F1 5 0 R /F2 6 0 R >>"
   if xobjects:
     resources += f" /XObject << {xobjects} >>"
   if extgstates:
@@ -562,6 +572,8 @@ def write_plot_pdf(
     ).encode("ascii"),
     b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n"
     + stream + b"endstream",
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
   ]
   for color, alpha, marker_shape, _marker_size in form_specs:
     marker_stream = _pdf_marker_stream(marker_shape, color)
@@ -581,10 +593,10 @@ def write_plot_pdf(
     objects.append(f"<< /Type /ExtGState /ca {alpha:g} /CA {alpha:g} >>".encode("ascii"))
   if hybrid_info is not None:
     mask_start = image_start + 1
-    rgb_data = _pdf_scanlines(hybrid_info["rgb"], hybrid_info["width"], hybrid_info["height"], 3)
-    alpha_data = _pdf_scanlines(hybrid_info["alpha"], hybrid_info["width"], hybrid_info["height"], 1)
-    compressed_rgb = zlib.compress(rgb_data, 6)
-    compressed_alpha = zlib.compress(alpha_data, 6)
+    # PDF Flate streams are raw component rows unless a PNG predictor is
+    # declared. Do not prefix each row with PNG filter bytes here.
+    compressed_rgb = zlib.compress(hybrid_info["rgb"], 6)
+    compressed_alpha = zlib.compress(hybrid_info["alpha"], 6)
     objects.append(
       (
         f"<< /Type /XObject /Subtype /Image /Width {hybrid_info['width']} "
@@ -1069,14 +1081,114 @@ def _display_tick_label(label: str) -> str:
   return f"{mantissa} × 10{superscript}"
 
 
-def _pdf_axes(left: int, top: int, width: int, plot_height: int, height: int) -> list[str]:
-  bottom = height - top
-  commands = ["0.5 0.5 0.5 RG 1 w", f"{left} {top} m {left} {bottom} l {left + width} {bottom} l S"]
-  for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
-    x = left + fraction * width
-    y = top + fraction * plot_height
-    commands.append(f"{x:g} {bottom} m {x:g} {bottom - 5} l {left - 5} {y:g} m {left} {y:g} l S")
+def _pdf_scene_axes(
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  left: int,
+  top: int,
+  width: int,
+  plot_height: int,
+  page_height: int,
+) -> list[str]:
+  """Draw the same scene tick/grid geometry as the raster export."""
+  bottom = top + plot_height
+  pdf_bottom = page_height - bottom
+  pdf_top = page_height - top
+  foreground = _foreground_rgba(selected.background_color)
+  red, green, blue = (value / 255 for value in foreground[:3])
+  commands: list[str] = []
+  scene = _scene_mapping(prepared)
+  if selected.show_grid:
+    commands.append("0.847 0.847 0.847 RG 0.5 w")
+    for axis, horizontal in (("x_ticks", True), ("y_ticks", False)):
+      for tick in scene.get(axis, ()):
+        if not isinstance(tick, dict) or not tick.get("major", True):
+          continue
+        position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
+        if horizontal:
+          x = left + position * width
+          commands.append(f"{x:g} {pdf_bottom:g} m {x:g} {pdf_top:g} l S")
+        else:
+          y = page_height - (bottom - position * plot_height)
+          commands.append(f"{left:g} {y:g} m {left + width:g} {y:g} l S")
+  commands.append(f"{red:g} {green:g} {blue:g} RG {selected.axis_line_width:g} w")
+  commands.append(f"{left:g} {pdf_bottom:g} {width:g} {plot_height:g} re S")
+  for axis, horizontal in (("x_ticks", True), ("y_ticks", False)):
+    for tick in scene.get(axis, ()):
+      if not isinstance(tick, dict):
+        continue
+      position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
+      length = 6 if tick.get("major", True) else 3
+      if horizontal:
+        x = left + position * width
+        commands.append(f"{x:g} {pdf_bottom:g} m {x:g} {pdf_bottom - length:g} l S")
+      else:
+        y = page_height - (bottom - position * plot_height)
+        commands.append(f"{left:g} {y:g} m {left - length:g} {y:g} l S")
   return commands
+
+
+def _pdf_scene_text(
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  left: int,
+  top: int,
+  width: int,
+  plot_height: int,
+  page_width: int,
+  page_height: int,
+  options: BatchPlotExportSpec | None,
+) -> list[str]:
+  """Emit ASCII-safe PDF text for titles, major ticks, and axis labels."""
+  scene = _scene_mapping(prepared)
+  commands: list[str] = []
+  if options is None or options.include_title:
+    title_lines = _scene_lines(prepared)
+    colors = scene.get("title_colors", ())
+    for index, line in enumerate(title_lines):
+      color = str(colors[index]) if index < len(colors) else "#4c78a8"
+      red, green, blue = (value / 255 for value in _rgb(color))
+      size = selected.title_font.size
+      text = _pdf_text(line)
+      x = (page_width - len(text) * size * 0.55) / 2
+      # PDF text coordinates use the baseline; Pillow's raster renderer
+      # receives the top-left text coordinate.
+      y = page_height - 20 - size * 0.85 - index * size * 1.45
+      commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} {y:g} Td ({text}) Tj ET")
+  foreground = _foreground_rgba(selected.background_color)
+  red, green, blue = (value / 255 for value in foreground[:3])
+  if options is None or options.include_ticks:
+    for axis, horizontal in (("x_ticks", True), ("y_ticks", False)):
+      for tick in scene.get(axis, ()):
+        if not isinstance(tick, dict) or not tick.get("major", True):
+          continue
+        text = _pdf_text(str(tick.get("label", "")))
+        if not text:
+          continue
+        position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
+        size = selected.tick_font.size
+        if horizontal:
+          x = left + position * width - len(text) * size * 0.28
+          y = page_height - (top + plot_height + 9 + size)
+        else:
+          x = left - 10 - len(text) * size * 0.55
+          y = page_height - (top + plot_height - position * plot_height) - size * 0.35
+        commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} {y:g} Td ({text}) Tj ET")
+  if options is None or options.include_axis_labels:
+    size = selected.axis_label_font.size
+    x_label = _pdf_text(selected.x_axis_display_label or "")
+    if x_label:
+      x = left + width / 2 - len(x_label) * size * 0.28
+      commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} 11 Td ({x_label}) Tj ET")
+    y_label = _pdf_text(selected.y_axis_display_label or "")
+    if y_label:
+      y = page_height - (top + plot_height / 2 + len(y_label) * size * 0.28)
+      commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg 0 1 -1 0 20 {y:g} Tm ({y_label}) Tj ET")
+  return commands
+
+
+def _pdf_text(value: str) -> str:
+  return value.encode("latin-1", "replace").decode("latin-1").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def _pdf_marker_stream(shape: str, color: tuple[int, int, int]) -> bytes:
@@ -1163,14 +1275,6 @@ def _png_chunk(kind: bytes, payload: bytes) -> bytes:
   return (
     struct.pack(">I", len(payload)) + kind + payload
     + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
-  )
-
-
-def _pdf_scanlines(data: bytes, width: int, height: int, channels: int) -> bytes:
-  row_size = width * channels
-  return b"".join(
-    b"\x00" + data[row * row_size:(row + 1) * row_size]
-    for row in range(height)
   )
 
 

@@ -156,6 +156,23 @@ All modes must preserve:
 - background color;
 - deterministic display sampling.
 
+### PDF/PNG coordinate verification
+
+PDF uses points as its logical canvas unit. A PDF exported with logical
+`Width × Height` must therefore rasterize to the same `Width × Height` pixels
+at 72 DPI. Compare PDF and PNG only when they were exported from the same
+`PlotScene` and visibility options; sidecars must have the same scene hash and
+axis ranges before a pixel comparison is meaningful.
+
+For every renderer change, add a regression test that exports the same scene
+to PNG and PDF, rasterizes the PDF at 72 DPI when `pdftoppm` is available, and
+checks equal dimensions plus a bounded visual error. Allow normal font
+anti-aliasing differences, but do not allow changes to the plot rectangle,
+normalized point centers, gate geometry, or title/axis-label placement. A
+hybrid PDF image must use raw PDF component rows (or declare a matching PNG
+predictor); PNG filter bytes must never be supplied to a PDF Flate image
+without its predictor declaration.
+
 For equal styles, event order may be rearranged only when source-over
 compositing is mathematically commutative for that group. Never reorder across
 different colors, alpha values, sources, populations, or z-order groups.
