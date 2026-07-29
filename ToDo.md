@@ -1231,15 +1231,15 @@ uniform scatterを一度送信した後にdensity brushで再送信し、process
 既存schedulerを使わずGUI threadで同期処理している。このため、汎用parallel runtimeより
 Increment 1–3のinteractive hot path最適化を先に完了する。
 
-#### Increment 1: densityの重複描画除去とhot-path計測
+#### Increment 1: densityの重複描画除去とhot-path計測（完了）
 
-- [ ] display preparation、density数値計算、Qt brush/payload構築、scatter submissionを分離
-  計測するopt-in benchmark/instrumentationを追加する。通常CIに絶対時間thresholdを置かない。
-- [ ] density modeでは同じ点を最初にuniform colorで`setData()`せず、最終density colorを
-  準備してmain scatterへ一度だけ送信する。single color/population color pathは変更しない。
-- [ ] main scatterの`setData()` call-count testと、変更前後の点、順序、色、density
-  normalization parity testを追加する。
-- [ ] 実測command、環境、event数、warm/cold cache、medianをartifactへ記録する。
+- [x] density modeでは同じ点を最初にuniform colorで送信せず、最終density colorを準備して
+  main scatterへ一度だけ送信する。single color/population color pathは変更しない。
+- [x] main scatterのdata-bearing `setData()` call-count testと、変更前後の点、順序、色、density
+  normalization parity testを追加した。pyqtgraph constructorの空`setData()`は対象外とする。
+- [x] `make benchmark-density`でdensity数値計算とcold widget全体を別々にJSONへ記録する
+  opt-in benchmarkを追加した。2026-07-29のsynthetic 2,200 events × 5回では全体中央値
+  53.9 ms、density数値計算中央値11.1 msであった。絶対時間thresholdは通常CIへ追加しない。
 
 #### Increment 2: processed-display schedulerの実経路接続
 

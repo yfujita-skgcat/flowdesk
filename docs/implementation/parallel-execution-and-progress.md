@@ -583,15 +583,20 @@ Documentation:
 
 ## Numbered implementation increments
 
-### Increment 1: Remove redundant density submission and measure the hot path
+### Increment 1: Remove redundant density submission and measure the hot path — complete
 
-- Add focused instrumentation/opt-in benchmark coverage for display preparation, density
-  numeric calculation, Qt brush/payload construction, and scatter submission.
-- In density mode, do not first call `_plot_uniform_scatter()` for the same points. Build
-  the final density presentation and submit the main scatter data exactly once.
-- Keep the uniform single-color and population-color paths unchanged.
-- Add a call-count regression test and pixel/data-level color parity test. Avoid an
-  absolute timing assertion in normal CI.
+- `PlotWidget.plot_events()` now skips `_plot_uniform_scatter()` when density is active.
+  `_refresh_density_colors()` creates the final scatter and submits display data once.
+- Uniform single-color and population-color paths remain unchanged. Density mode still
+  ignores supplied population/gate colors, as defined by the single-sample contract.
+- `test_density_coloring_submits_final_scatter_once` verifies one data-bearing
+  `ScatterPlotItem.setData()` call and exact estimator-color/event-array parity. The
+  pyqtgraph constructor's empty initialization `setData()` call is deliberately excluded.
+- The opt-in command `make benchmark-density` writes a reproducible JSON report with
+  density-numeric and total cold-widget timings. On 2026-07-29,
+  `tools/benchmark_density_plot.py --points 2200 --repeats 5` measured a 53.9 ms total
+  median and 11.1 ms density-numeric median. This is diagnostic evidence only; it is not
+  a portable target or CI threshold.
 
 Acceptance: density mode performs one main scatter `setData()` submission per plot,
 visible points/order/colors and density normalization are unchanged, and the benchmark

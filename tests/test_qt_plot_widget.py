@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from flowdesk_cli.run_project import run_project_command  # noqa: E402
+from flowdesk_core.density_colors import estimate_density_colors  # noqa: E402
 from flowdesk_core.execution_context import ExecutionContext  # noqa: E402
 from flowdesk_core.execution_report import ExecutionReport  # noqa: E402
 from flowdesk_core.fcs_io import FcsFileInfo, write_fcs_file  # noqa: E402
@@ -372,6 +373,44 @@ def test_density_coloring_replaces_uniform_plot_with_colored_scatter_item() -> N
     assert plot._event_colors is not None
     assert len(set(plot._event_colors.tolist())) > 32
     assert plot._scatter.opts["brush"] is not None
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
+def test_density_coloring_submits_final_scatter_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(73)
+  x = np.concatenate((rng.normal(0.0, 0.2, 1000), rng.normal(2.0, 0.05, 100)))
+  y = np.concatenate((rng.normal(0.0, 0.2, 1000), rng.normal(2.0, 0.05, 100)))
+  expected = estimate_density_colors(
+    x,
+    y,
+    x,
+    y,
+    bounds=(float(x.min()), float(x.max()), float(y.min()), float(y.max())),
+    logical_size=(512, 512),
+  ).colors
+  calls = 0
+  original_set_data = ScatterPlotItem.setData
+
+  def counting_set_data(self, *args, **kwargs):
+    nonlocal calls
+    if kwargs.get("x") is not None or args:
+      calls += 1
+    return original_set_data(self, *args, **kwargs)
+
+  monkeypatch.setattr(ScatterPlotItem, "setData", counting_set_data)
+  try:
+    plot.plot_events(x, y, density_coloring=True)
+    assert calls == 1
+    assert np.array_equal(plot._rendered_x, x)
+    assert np.array_equal(plot._rendered_y, y)
+    assert np.array_equal(plot._event_colors, expected)
   finally:
     plot.close()
     plot.deleteLater()

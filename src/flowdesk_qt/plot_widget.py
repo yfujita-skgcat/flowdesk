@@ -522,7 +522,12 @@ class PlotWidget(QWidget):
         self._is_histogram_mode = False
         self._clear_histogram()
         self._clear_scatter()
-        if colors_plot is None:
+        # Density colors replace both the uniform and population-color presentation.
+        # Do not submit an intermediate scatter item here: _refresh_density_colors()
+        # creates the final item after the density colors have been resolved.
+        if density_coloring:
+            self._event_colors = None
+        elif colors_plot is None:
             self._scatter = self._plot_uniform_scatter(
                 x_plot, y_plot, self._style.dot_color, self._style.dot_opacity
             )

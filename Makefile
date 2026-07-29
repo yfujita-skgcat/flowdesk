@@ -23,7 +23,7 @@ QT_PLATFORM ?=
 PACKAGE_VERSION := $(shell $(PYTHON) tools/version.py --read)
 PACKAGE_TAG := v$(PACKAGE_VERSION)
 
-.PHONY: test test-core test-gui test-all gui-debug lint type-check check fmt all zip \
+.PHONY: test test-core test-gui test-all gui-debug benchmark benchmark-density lint type-check check fmt all zip \
 	package package-smoke package-check package-manifest upversion pushtag clean help
 
 gui:
@@ -31,6 +31,9 @@ gui:
 
 benchmark:
 	python tools/benchmark_vector_scatter.py
+
+benchmark-density:
+	python tools/benchmark_density_plot.py
 
 zip:
 	rm -f rep.zip
@@ -49,6 +52,7 @@ help:
 	@echo "  test-gui    - Run strict GUI tests with artifacts"
 	@echo "  test-all    - Run core and GUI tests in separate processes"
 	@echo "  gui-debug   - Launch GUI with diagnostic logging"
+	@echo "  benchmark-density - Measure density numeric and Qt rendering costs"
 	@echo "  zip         - Create a source archive from the current Git commit"
 	@echo "  lint        - Run ruff linter (src/ tests/)"
 	@echo "  type-check  - Run mypy type checker"
