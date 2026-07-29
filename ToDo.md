@@ -1342,11 +1342,11 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
   completion順で変えない。
 - [x] sequentialのままper-item/per-format progress、cooperative cancel、atomic staged output、
   `cancelled`/`not_started`を含むmanifestを実装する。coordinatorだけがmanifestを書く。
-- [ ] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
+- [x] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
   `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、
   `batchPlotProgressCurrentItem`、`batchPlotProgressCancelButton`、
   `batchPlotProgressDetails`を追加する。status barにも`completed/total`を表示する。
-- [ ] cancel、failure、project/window closeでworkerを安全に終了し、late signal、truncated final
+- [x] cancel、failure、project/window closeでworkerを安全に終了し、late signal、truncated final
   file、`QThread: Destroyed while thread is still running`がないGUI testを追加する。
 
 #### Increment 7: immutable sample resultとdeterministic merge

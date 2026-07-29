@@ -749,14 +749,18 @@ checkpoints leaves raw input and previous authoritative result unchanged.
 
 ### Increment 6: Batch export phase refactor and GUI progress
 
-Status (2026-07-30): the core and CLI execution boundary is implemented.  The CLI's
+Status (2026-07-30): complete.  The core and CLI execution boundary is implemented.  The CLI's
 former first-render side effect is now explicit `prepare_sources()` work: source loading,
 canonical display preparation, shared-range resolution, and vector preflight run once
 before an output is rendered.  The Qt-independent runner reports planning/preparation,
 per-format rendering/sidecar, and final-manifest phases; checks cancellation between
 outputs; writes a `cancelled`/`not_started` manifest; and publishes output/sidecar/manifest
-through same-directory staged atomic replacement.  The GUI worker/progress surface remains
-the next part of this increment.
+through same-directory staged atomic replacement.  The GUI starts the same headless adapter
+in an owned `_BatchPlotExportWorker`, transfers core progress through a queue polled on the
+GUI thread, and exposes `batchPlotProgressDialog`, `batchPlotProgressBar`,
+`batchPlotProgressSummary`, `batchPlotProgressCurrentItem`, `batchPlotProgressCancelButton`,
+and `batchPlotProgressDetails`.  Cancel and window close request cooperative cancellation
+and wait for the worker; focused GUI tests cover completion, Cancel, and window close.
 
 - Make source preparation and dependency planning explicit.
 - Add sequential batch progress, cancellation, cancellation manifest, and atomic staged

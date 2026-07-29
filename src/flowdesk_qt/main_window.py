@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTabWidget,
     QToolBar,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -277,6 +278,48 @@ class _PipelineWorker(QThread):
         # QThread.finished is emitted automatically when run() returns.
 
 
+class _BatchPlotExportWorker(QThread):
+    """Run the headless Batch Plot Export adapter without blocking Qt."""
+
+    def __init__(self, project_path: str, export_id: str, output_dir: str) -> None:
+        super().__init__()
+        self._project_path = project_path
+        self._export_id = export_id
+        self._output_dir = output_dir
+        self._status: int | None = None
+        self._error: Exception | None = None
+        self._progress_events: SimpleQueue[ProgressEvent] = SimpleQueue()
+        self._execution_control = ExecutionControl(
+            progress_sink=self._progress_events.put
+        )
+
+    def request_cancel(self) -> None:
+        self._execution_control.cancellation_token.cancel()
+
+    def drain_progress_events(self) -> tuple[ProgressEvent, ...]:
+        events: list[ProgressEvent] = []
+        while True:
+            try:
+                events.append(self._progress_events.get_nowait())
+            except Empty:
+                return tuple(events)
+
+    def run(self) -> None:
+        try:
+            from flowdesk_cli.batch_plot import batch_plot_command
+
+            self._status = batch_plot_command(
+                self._project_path,
+                self._export_id,
+                self._output_dir,
+                renderer_backend="headless",
+                execution_control=self._execution_control,
+            )
+        except Exception as exc:
+            self._error = exc
+            logger.error("Batch Plot Export failed: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # MainWindow
 # ---------------------------------------------------------------------------
@@ -318,6 +361,13 @@ class MainWindow(QMainWindow):
         # definition being edited must not be inferred from one another.
         self._active_sample_id: str | None = None
         self._worker: _PipelineWorker | None = None
+        self._batch_plot_worker: _BatchPlotExportWorker | None = None
+        self._batch_plot_progress_dialog: QDialog | None = None
+        self._batch_plot_progress_bar: QProgressBar | None = None
+        self._batch_plot_progress_summary: QLabel | None = None
+        self._batch_plot_progress_current_item: QLabel | None = None
+        self._batch_plot_progress_details: QLabel | None = None
+        self._batch_plot_progress_cancel: QPushButton | None = None
         self._results_stale = False
         self._results_stale_reason: str | None = None
         self._pending_results_export: tuple[
@@ -396,6 +446,9 @@ class MainWindow(QMainWindow):
         self._pipeline_progress_timer = QTimer(self)
         self._pipeline_progress_timer.setInterval(25)
         self._pipeline_progress_timer.timeout.connect(self._drain_pipeline_progress)
+        self._batch_plot_progress_timer = QTimer(self)
+        self._batch_plot_progress_timer.setInterval(25)
+        self._batch_plot_progress_timer.timeout.connect(self._drain_batch_plot_progress)
 
         self._compensation_status_indicator = _CompensationStatusIndicator()
         self._build_menu()
@@ -2984,6 +3037,12 @@ class MainWindow(QMainWindow):
             worker.wait()
         if worker is not None:
             self._release_pipeline_worker(worker)
+        batch_worker = self._batch_plot_worker
+        if batch_worker is not None and batch_worker.isRunning():
+            batch_worker.request_cancel()
+            batch_worker.wait()
+        if batch_worker is not None:
+            self._release_batch_plot_worker(batch_worker)
         self._plot_widget.release_transient_items()
         super().closeEvent(event)
 
@@ -3869,22 +3928,140 @@ class MainWindow(QMainWindow):
         if not request.run:
             self._update_status(f"Batch plot definition saved: {definition['name']}")
             return
-        output_dir = request.output_dir
-        try:
-            from flowdesk_cli.batch_plot import batch_plot_command
+        self._start_batch_plot_export(export_id, request.output_dir)
 
-            status = batch_plot_command(
-                str(self._project_path), export_id, output_dir,
-                renderer_backend="qt",
+    def _start_batch_plot_export(self, export_id: str, output_dir: str) -> None:
+        """Run the saved headless Batch Export without blocking the event loop."""
+        if self._project_path is None:
+            QMessageBox.warning(self, "Batch Plot Export", "Save the project before exporting.")
+            return
+        worker = self._batch_plot_worker
+        if worker is not None and worker.isRunning():
+            QMessageBox.information(
+                self, "Batch Plot Export", "A batch export is already in progress."
             )
-        except Exception as exc:
-            logger.error("Batch plot export failed: %s", exc)
-            QMessageBox.critical(self, "Batch Plot Export Error", str(exc))
+            return
+        self._show_batch_plot_progress_dialog()
+        self.action_batch_plot_export.setEnabled(False)
+        self._batch_plot_worker = _BatchPlotExportWorker(
+            str(self._project_path), export_id, output_dir
+        )
+        self._batch_plot_worker.finished.connect(self._on_batch_plot_export_finished)
+        self._batch_plot_worker.start()
+        self._batch_plot_progress_timer.start()
+        self._update_status("Batch plot export: preparing sources...")
+
+    def _show_batch_plot_progress_dialog(self) -> None:
+        dialog = QDialog(self)
+        dialog.setObjectName("batchPlotProgressDialog")
+        dialog.setWindowTitle("Batch Plot Export")
+        dialog.setModal(False)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel("Preparing batch export…", dialog)
+        summary.setObjectName("batchPlotProgressSummary")
+        current_item = QLabel("", dialog)
+        current_item.setObjectName("batchPlotProgressCurrentItem")
+        progress = QProgressBar(dialog)
+        progress.setObjectName("batchPlotProgressBar")
+        progress.setRange(0, 0)
+        details = QLabel("", dialog)
+        details.setObjectName("batchPlotProgressDetails")
+        details.setWordWrap(True)
+        cancel = QPushButton("Cancel", dialog)
+        cancel.setObjectName("batchPlotProgressCancelButton")
+        cancel.clicked.connect(self._on_cancel_batch_plot_export)
+        layout.addWidget(summary)
+        layout.addWidget(current_item)
+        layout.addWidget(progress)
+        layout.addWidget(details)
+        layout.addWidget(cancel)
+        dialog.show()
+        self._batch_plot_progress_dialog = dialog
+        self._batch_plot_progress_bar = progress
+        self._batch_plot_progress_summary = summary
+        self._batch_plot_progress_current_item = current_item
+        self._batch_plot_progress_details = details
+        self._batch_plot_progress_cancel = cancel
+
+    def _on_cancel_batch_plot_export(self) -> None:
+        worker = self._batch_plot_worker
+        if worker is None or not worker.isRunning():
+            return
+        worker.request_cancel()
+        if self._batch_plot_progress_cancel is not None:
+            self._batch_plot_progress_cancel.setEnabled(False)
+        self._update_status("Cancelling batch plot export...")
+
+    def _drain_batch_plot_progress(self) -> None:
+        worker = self._batch_plot_worker
+        if worker is None:
+            return
+        for event in worker.drain_progress_events():
+            if event.operation != "batch_plot_export":
+                continue
+            bar = self._batch_plot_progress_bar
+            if bar is not None:
+                if event.total_units:
+                    bar.setRange(0, event.total_units)
+                    bar.setValue(event.completed_units)
+                    bar.setFormat(f"{event.completed_units}/{event.total_units}")
+                else:
+                    bar.setRange(0, 0)
+            if self._batch_plot_progress_summary is not None:
+                self._batch_plot_progress_summary.setText(
+                    f"{event.phase}: {event.completed_units}/{event.total_units}"
+                )
+            if self._batch_plot_progress_current_item is not None:
+                self._batch_plot_progress_current_item.setText(
+                    event.output_path or event.sample_id or ""
+                )
+            if self._batch_plot_progress_details is not None:
+                self._batch_plot_progress_details.setText(event.message or event.phase)
+            self._update_status(
+                f"Batch plot export: {event.phase} "
+                f"{event.completed_units}/{event.total_units}"
+            )
+
+    def _on_batch_plot_export_finished(self) -> None:
+        worker = self._batch_plot_worker
+        if worker is None:
+            return
+        self._drain_batch_plot_progress()
+        error = worker._error
+        status = worker._status
+        self._release_batch_plot_worker(worker)
+        if error is not None:
+            QMessageBox.critical(self, "Batch Plot Export Error", str(error))
             return
         if status != 0:
-            QMessageBox.warning(self, "Batch Plot Export", "Batch export completed with failures.")
-        else:
-            self._update_status(f"Batch plot export completed: {output_dir}")
+            QMessageBox.warning(
+                self,
+                "Batch Plot Export",
+                "Batch export completed with failures or cancellation.",
+            )
+            return
+        self._update_status("Batch plot export completed")
+
+    def _release_batch_plot_worker(self, worker: _BatchPlotExportWorker) -> None:
+        try:
+            worker.finished.disconnect(self._on_batch_plot_export_finished)
+        except (RuntimeError, TypeError):
+            pass
+        if self._batch_plot_worker is worker:
+            self._batch_plot_worker = None
+        self._batch_plot_progress_timer.stop()
+        self.action_batch_plot_export.setEnabled(True)
+        dialog = self._batch_plot_progress_dialog
+        self._batch_plot_progress_dialog = None
+        self._batch_plot_progress_bar = None
+        self._batch_plot_progress_summary = None
+        self._batch_plot_progress_current_item = None
+        self._batch_plot_progress_details = None
+        self._batch_plot_progress_cancel = None
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+        worker.deleteLater()
 
     def _overlay_view_id(self) -> str:
         """Return the stable persisted view receiving source-list edits."""

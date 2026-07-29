@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QProgressBar, QPushButton
 
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.execution_control import ExecutionCancelled, ProgressEvent
@@ -73,6 +74,145 @@ def _wait_for_scatter(window: MainWindow) -> None:
       return
     QTest.qWait(5)
   assert window._plot_widget._scatter is not None
+
+
+def _wait_for_batch_worker(window: MainWindow) -> None:
+  for _ in range(200):
+    if window._batch_plot_worker is None:
+      return
+    QTest.qWait(5)
+  assert window._batch_plot_worker is None
+
+
+def test_batch_export_runs_in_worker_with_progress_surface(
+  qapp, tmp_path: Path, gui_artifact_widgets: list[object], monkeypatch,
+) -> None:
+  window = MainWindow()
+  gui_artifact_widgets.append(window)
+  progress_seen: list[object] = []
+
+  def fake_batch_command(
+    _project_path: str,
+    _export_id: str,
+    _output_dir: str,
+    *,
+    execution_control,
+    **_kwargs,
+  ) -> int:
+    execution_control.emit_progress(ProgressEvent(
+      operation_id="batch:1",
+      operation="batch_plot_export",
+      phase="rendering",
+      completed_units=1,
+      total_units=2,
+      sample_id="sample-1",
+      output_path="sample-1.png",
+    ))
+    time.sleep(0.04)
+    return 0
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.batch_plot_command", fake_batch_command)
+  try:
+    window._project_path = tmp_path / "project.flowdesk"
+    window._start_batch_plot_export("export-1", str(tmp_path / "output"))
+    dialog = window.findChild(QDialog, "batchPlotProgressDialog")
+    assert dialog is not None
+    assert dialog.findChild(QProgressBar, "batchPlotProgressBar") is not None
+    assert dialog.findChild(QLabel, "batchPlotProgressSummary") is not None
+    assert dialog.findChild(QLabel, "batchPlotProgressCurrentItem") is not None
+    assert dialog.findChild(QLabel, "batchPlotProgressDetails") is not None
+    assert dialog.findChild(QPushButton, "batchPlotProgressCancelButton") is not None
+    for _ in range(40):
+      qapp.processEvents()
+      summary = dialog.findChild(QLabel, "batchPlotProgressSummary")
+      if summary is not None and "rendering" in summary.text():
+        progress_seen.append(summary)
+        break
+      QTest.qWait(5)
+    assert progress_seen
+    _wait_for_batch_worker(window)
+    assert window.action_batch_plot_export.isEnabled()
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_batch_export_cancel_requests_core_cancellation(
+  qapp, tmp_path: Path, gui_artifact_widgets: list[object], monkeypatch,
+) -> None:
+  window = MainWindow()
+  gui_artifact_widgets.append(window)
+  cancellation_seen: list[bool] = []
+
+  def fake_batch_command(
+    _project_path: str,
+    _export_id: str,
+    _output_dir: str,
+    *,
+    execution_control,
+    **_kwargs,
+  ) -> int:
+    deadline = time.monotonic() + 2.0
+    while not execution_control.cancellation_token.is_cancelled():
+      if time.monotonic() >= deadline:
+        return 0
+      time.sleep(0.005)
+    cancellation_seen.append(True)
+    return 1
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.batch_plot_command", fake_batch_command)
+  monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: None)
+  try:
+    window._project_path = tmp_path / "project.flowdesk"
+    window._start_batch_plot_export("export-1", str(tmp_path / "output"))
+    dialog = window.findChild(QDialog, "batchPlotProgressDialog")
+    assert dialog is not None
+    cancel = dialog.findChild(QPushButton, "batchPlotProgressCancelButton")
+    assert cancel is not None
+    cancel.click()
+    _wait_for_batch_worker(window)
+    assert cancellation_seen == [True]
+    assert window.action_batch_plot_export.isEnabled()
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_window_close_cancels_batch_export_worker(
+  qapp, tmp_path: Path, gui_artifact_widgets: list[object], monkeypatch,
+) -> None:
+  window = MainWindow()
+  gui_artifact_widgets.append(window)
+  cancellation_seen: list[bool] = []
+
+  def fake_batch_command(
+    _project_path: str,
+    _export_id: str,
+    _output_dir: str,
+    *,
+    execution_control,
+    **_kwargs,
+  ) -> int:
+    while not execution_control.cancellation_token.is_cancelled():
+      time.sleep(0.005)
+    cancellation_seen.append(True)
+    return 1
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.batch_plot_command", fake_batch_command)
+  monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: None)
+  try:
+    window._project_path = tmp_path / "project.flowdesk"
+    window._start_batch_plot_export("export-1", str(tmp_path / "output"))
+    assert window._batch_plot_worker is not None
+    window.close()
+    qapp.processEvents()
+    assert cancellation_seen == [True]
+    assert window._batch_plot_worker is None
+  finally:
+    window.deleteLater()
+    qapp.processEvents()
 
 
 def test_load_gate_run_and_match_headless(
