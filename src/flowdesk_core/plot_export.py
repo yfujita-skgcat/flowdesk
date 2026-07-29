@@ -12,6 +12,7 @@ import zlib
 from dataclasses import asdict, dataclass
 from html import escape
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 from flowdesk_core.models import BatchPlotExportSpec, PlotPresentationSpec, PlotType
@@ -450,6 +451,7 @@ def write_plot_pdf(
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
   layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   width: int = 800,
   height: int = 600,
@@ -479,7 +481,7 @@ def write_plot_pdf(
   if hybrid_raster:
     hybrid_info = _hybrid_scatter_raster(
       prepared, selected, layers, plot_width=plot_width, plot_height=plot_height,
-      dpi=options.hybrid_scatter_dpi,
+      dpi=options.hybrid_scatter_dpi, event_colors=event_colors,
     )
   form_specs: list[tuple[tuple[int, int, int], float, str, float]] = []
   marker_refs: dict[str, int] = {}
@@ -1282,6 +1284,7 @@ def _hybrid_scatter_raster(
   prepared: PreparedPlotExport,
   selected: PlotPresentationSpec,
   layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+  event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   plot_width: float,
   plot_height: float,
@@ -1313,18 +1316,22 @@ def _hybrid_scatter_raster(
   for z_index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
     color_text = "#000000" if style is None or style.color is None else style.color
-    color = _rgb(color_text)
     alpha = 1.0 if style is None else style.alpha
     shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
     marker_size = 3.0 if style is None else style.marker_size
     radius = marker_size * raster_scale / 2.0
     x_values, y_values = layers[source_id]
-    for x_value, y_value in zip(x_values, y_values, strict=False):
+    colors = None if event_colors is None else event_colors.get(source_id)
+    for index, (x_value, y_value) in enumerate(zip(x_values, y_values, strict=False)):
+      point_color_text = (
+        color_text if colors is None or index >= len(colors) else colors[index]
+      )
+      point_color = _rgb(point_color_text)
       x = float(x_value) * (raster_width - 1)
       y = (1.0 - float(y_value)) * (raster_height - 1)
       point_records.append({
         "source_id": source_id, "x": float(x_value), "y": float(y_value),
-        "color": color_text, "alpha": alpha, "marker_shape": shape,
+        "color": point_color_text, "alpha": alpha, "marker_shape": shape,
         "marker_size": marker_size, "z_index": z_index,
       })
       min_x = max(0, math.floor(x - radius - 1))
@@ -1341,7 +1348,7 @@ def _hybrid_scatter_raster(
             else abs(dx) <= radius and abs(dy) <= radius
           )
           if inside:
-            blend((pixel_y * raster_width + pixel_x) * 4, color, alpha)
+            blend((pixel_y * raster_width + pixel_x) * 4, point_color, alpha)
 
   raw_rows = b"".join(
     b"\x00" + bytes(pixels[row * raster_width * 4:(row + 1) * raster_width * 4])

@@ -221,6 +221,7 @@ def batch_plot_command(
       source_by_id = {str(item["id"]): item for item in samples}
       sources = []
       layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] = {}
+      visible_event_colors: dict[str, tuple[str, ...]] = {}
       for order, source_id in enumerate(source_ids):
         source_sample = source_by_id[source_id]
         source_metadata = layer_metadata[source_id]
@@ -232,6 +233,9 @@ def batch_plot_command(
           & (normalized_y >= 0.0) & (normalized_y <= 1.0)
         )
         layers[source_id] = (tuple(normalized_x[visible]), tuple(normalized_y[visible]))
+        colors = layer_event_colors.get(source_id)
+        if colors is not None:
+          visible_event_colors[source_id] = tuple(str(color) for color in colors[visible])
         sources.append({
           "source_id": source_id, "sample_id": source_id,
           "population_id": str(view.get("population_id", "all_events")),
@@ -380,7 +384,7 @@ def batch_plot_command(
         write_plot_svg(path, prepared, layers=layers, options=spec)
       elif path.suffix.lower() == ".pdf":
         write_plot_pdf(path, prepared, layers=layers, width=spec.width, height=spec.height,
-                       options=spec)
+                       options=spec, event_colors=visible_event_colors)
       else:
         raise ValueError(f"CLI renderer does not support {path.suffix!r}")
 

@@ -18,6 +18,7 @@ from flowdesk_core.models import (
 )
 from flowdesk_core.plot_export import (
   PlotExportError,
+  _hybrid_scatter_raster,
   _display_tick_label,
   prepare_plot_export,
   resolve_export_canvas,
@@ -268,6 +269,24 @@ def test_hybrid_pdf_uses_image_xobject_with_soft_mask_not_full_canvas(tmp_path) 
   assert b"/MediaBox [0 0 800 600]" in data
   metadata = json.loads(path.with_suffix(".pdf.json").read_text(encoding="utf-8"))
   assert metadata["vector_scatter"]["encoding"] == "png_rgba_lossless"
+
+
+def test_hybrid_scatter_preserves_per_event_population_colors() -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  raster = _hybrid_scatter_raster(
+    prepared, prepared.resolved_presentation.presentation,
+    {"s1": ((0.25, 0.75), (0.25, 0.75))},
+    event_colors={"s1": ("#ff0000", "#0000ff")},
+    plot_width=96, plot_height=96, dpi=96,
+  )
+  assert bytes((255, 0, 0)) in raster["rgb"]
+  assert bytes((0, 0, 255)) in raster["rgb"]
 
 
 def test_hybrid_pdf_matches_png_layout_at_pdf_logical_resolution(tmp_path) -> None:
