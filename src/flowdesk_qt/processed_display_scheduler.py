@@ -30,13 +30,16 @@ class _DisplayRunnable(QRunnable):
     project: Mapping[str, Any],
     request: ProcessedDisplayRequest,
     executor: DisplayExecutor,
+    signals: _DisplaySignals,
   ) -> None:
     super().__init__()
     self.setAutoDelete(True)
     self.project = project
     self.request = request
     self.executor = executor
-    self.signals = _DisplaySignals()
+    # QObject lifetime/affinity belongs to the scheduler's GUI thread.  The
+    # QRunnable itself is auto-deleted by QThreadPool on a worker thread.
+    self.signals = signals
 
   def run(self) -> None:
     try:
@@ -97,7 +100,8 @@ class ProcessedDisplayScheduler(QObject):
       return
     project, request = self._pending
     self._pending = None
-    runnable = _DisplayRunnable(project, request, self._executor)
+    signals = _DisplaySignals(self)
+    runnable = _DisplayRunnable(project, request, self._executor, signals)
     runnable.signals.completed.connect(self._on_completed)
     runnable.signals.failed.connect(self._on_failed)
     self._active = runnable

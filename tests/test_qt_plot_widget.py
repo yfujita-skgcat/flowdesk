@@ -21,6 +21,7 @@ pytestmark = pytest.mark.gui
 from pyqtgraph import ScatterPlotItem  # noqa: E402
 from PySide6.QtCore import QCoreApplication, QEvent, QPointF, Qt  # noqa: E402
 from PySide6.QtGui import QAction, QImage  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
   QApplication,
   QCheckBox,
@@ -1979,7 +1980,10 @@ def test_manual_overlay_loads_checked_sample_and_uses_its_color(tmp_path: Path) 
     assert overlay.id not in window._event_data
     window._sample_browser._manual_overlay_colors[overlay.id] = "#ff0000"
     window._sample_browser._set_manual_overlay(overlay.id, True)
-    app.processEvents()
+    for _ in range(200):
+      if len(window._plot_widget._overlay_scatter_items) == 1:
+        break
+      QTest.qWait(5)
     assert overlay.id in window._event_data
     assert len(window._plot_widget._overlay_scatter_items) == 1
     brush = window._plot_widget._overlay_scatter_items[0].scatter.opts["brush"]
