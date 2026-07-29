@@ -3,6 +3,13 @@
 Spec: `S23`
 ToDo: `Performance track`
 
+Detailed implementation instructions for progress, cooperative cancellation,
+sample-level pipeline parallelism, batch-export parallelism, and interactive-display
+measurement are in
+[`parallel-execution-and-progress.md`](parallel-execution-and-progress.md). Implement its
+numbered increments in order; this guide remains the shared benchmark/cache/scientific
+review contract.
+
 ## Goal
 
 Measure load, analysis, and rendering separately; add safe cache/cancellation behavior;
@@ -61,10 +68,15 @@ affected gate descendants/statistics/reports.
 3. Establish baseline memory/time and then add documented regression thresholds.
 4. Add cache-key builder and invalidation unit tests before enabling cache reads.
 5. Enable one cached stage at a time and compare exact/accepted numeric results.
-6. Add cooperative progress/cancel between samples/stages; never terminate a numeric step
-   while it is mutating shared state.
-7. Add sample-level parallelism only after deterministic ordering and memory budgets.
-8. Optimize rendering independently using downsampling/density; preserve full-data counts.
+6. Complete `parallel-execution-and-progress.md` Increments 1–3 first: remove redundant
+   density submission, activate asynchronous processed-display scheduling, and add
+   off-thread renderer-neutral density arrays with semantic caching.
+7. Complete `parallel-execution-and-progress.md` Increments 4–6 for common runtime
+   controls, sequential progress/cancel, and Batch Export progress.
+8. Complete `parallel-execution-and-progress.md` Increments 7–9 for immutable per-sample
+   results, deterministic merge, bounded sample-level and export parallelism.
+9. Review Increments 10–11 only after remeasurement; preserve full-data counts and do not
+   add prefetch, event chunks, or processes without measured benefit.
 
 ## Required tests
 

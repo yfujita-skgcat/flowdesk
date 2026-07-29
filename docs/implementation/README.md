@@ -93,6 +93,7 @@ release order below.
 | D6 | `extension-api.md` | A7 |
 | D7 | `preferences-and-accessibility.md` | B8 |
 | all releases | `performance-and-review.md` | continuous |
+| Interactive/performance parallel/progress | `parallel-execution-and-progress.md` | S23; hot path first |
 
 ## Release E: packaging and distribution
 

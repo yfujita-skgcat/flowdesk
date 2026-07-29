@@ -1,0 +1,803 @@
+# Parallel Execution and Progress Reporting
+
+Source issue: [`docs/bug.md`](../bug.md)
+Spec: `S23`
+ToDo: `Performance track / Parallel execution and progress`
+
+## Goal
+
+Reduce interactive sample-switch/render latency first, then reduce elapsed time for
+multi-sample analysis and batch plot export while keeping the GUI responsive and
+preserving exact scientific and export behavior. Provide observable, cancelable progress
+for long-running `Run Pipeline` and Batch Plot Export operations.
+
+This guide deliberately separates three different problems:
+
+1. **Interactive current-sample display** needs low latency and latest-request-wins
+   scheduling. The scheduler class exists, but the current cache-miss path bypasses it and
+   performs display preparation synchronously. Density coloring also performs redundant
+   scatter submission. These are the highest-priority optimizations.
+2. **Run Pipeline** has a serial project-wide preparation phase followed by mostly
+   independent per-sample work. This is the primary analysis parallelism boundary.
+3. **Batch Plot Export** has deterministic planning and shared-source dependencies, then
+   independent output items. It needs progress and cancellation before parallel rendering.
+
+Implement only one numbered increment per LLM run. Complete the interactive hot-path
+Increments 1–3 before the general progress/parallelism increments unless a new profile
+demonstrates a different dominant cost. Do not combine the density hot path, progress
+contract, pipeline refactor, Qt UI, and parallel execution in one change.
+
+## Required reading
+
+Read completely, in this order:
+
+1. `AGENTS.md`
+2. `docs/specs.md`, section `S23`
+3. `ToDo.md`, `Performance track`
+4. `docs/implementation/llm-task-protocol.md`
+5. `docs/implementation/performance-and-review.md`
+6. this guide
+7. `docs/implementation/pipeline-runner.md`
+8. `docs/implementation/interactive-current-sample-preview.md`
+9. `docs/implementation/sample-sheet-results-and-batch-plot-export.md`, Increment 2
+10. `.codex/skills/performance-benchmark/SKILL.md`
+11. `.codex/skills/scientific-review/SKILL.md`
+12. `.codex/skills/qt-plot-widget/SKILL.md` before a Qt increment
+
+## Inspect first
+
+Read every selected file completely before production edits.
+
+Core and CLI:
+
+- `src/flowdesk_core/execution_context.py`
+- `src/flowdesk_core/execution_report.py`
+- `src/flowdesk_core/pipeline_runner.py`
+- `src/flowdesk_core/batch_plot_export.py`
+- `src/flowdesk_core/processed_display.py`
+- `src/flowdesk_cli/run_project.py`
+- `src/flowdesk_cli/batch_plot.py`
+
+Qt:
+
+- `src/flowdesk_qt/preview_scheduler.py`
+- `src/flowdesk_qt/processed_display_scheduler.py`
+- `src/flowdesk_qt/main_window.py`, especially `_PipelineWorker`,
+  `_on_run_pipeline()`, `_on_pipeline_finished()`, and `_on_batch_plot_export()`
+- `src/flowdesk_qt/batch_plot_export_dialog.py`
+- main-window status-bar and shutdown handling
+
+Tests and benchmarks:
+
+- `tests/test_pipeline_runner.py`
+- `tests/test_project_headless_execution.py`
+- `tests/test_interactive_preview.py`
+- `tests/test_batch_plot_export.py`
+- `tests/test_cli_batch_plot.py`
+- `tests/gui/test_batch_plot_export_dialog.py`
+- `tests/gui/test_gui_workflow.py`
+- `tests/test_qt_plot_widget.py` only where worker shutdown is already tested
+- existing files under `benchmarks/` and `src/flowdesk_core/vector_scatter_benchmark.py`
+
+## Current implementation facts
+
+- `ProcessedDisplayScheduler` and `PreviewScheduler` define a one-worker `QThreadPool`,
+  immutable request snapshots, debounce/coalescing, and latest-wins result acceptance.
+  However, `MainWindow._queue_processed_display()` currently calls
+  `PipelineRunner.prepare_display_sample()` synchronously and then calls `_replot()`.
+  No call to `ProcessedDisplayScheduler.schedule()` exists in the active main-window
+  path. Do not describe current sample switching as already off the GUI thread.
+- In density mode, `PlotWidget.plot_events()` first submits a uniform-color scatter item,
+  then `_refresh_density_colors()` calculates density colors, builds per-event brushes,
+  and calls `ScatterPlotItem.setData()` a second time. Density estimation, brush
+  construction, and pyqtgraph item mutation all currently occur on the GUI thread.
+- The density cache key uses Python array identity. Main-window population/filter
+  selection can create new arrays for semantically identical data, so repeated displays
+  can miss the cache even when sample, population, axes, transforms, revision, and event
+  selection are unchanged.
+- `Display max points = 0` sends every selected display event to Qt. This is a supported
+  explicit setting, but it disables the display sampling safety valve and can make
+  density brush creation and pyqtgraph transfer dominate latency. It must never change
+  authoritative counts, gates, statistics, or the full-data density field.
+- `MainWindow._PipelineWorker` runs `PipelineRunner.run_samples()` in one background
+  `QThread`. The GUI remains responsive, but samples are processed serially and there is
+  no structured progress/cancellation contract.
+- `PipelineRunner._run_full_pipeline()` performs project-wide compensation-calculation
+  preparation before its per-sample loop. A calculated compensation matrix may depend on
+  multiple control samples and must not be independently recomputed in concurrent workers.
+- `run_batch_plot_export()` iterates planned items serially and has no progress or
+  cancellation input.
+- `flowdesk_cli.batch_plot.batch_plot_command()` currently prepares every sample layer
+  inside the first render callback. Consequently, “one item completed” is not a faithful
+  description of early work and item-level parallelism cannot be added safely until
+  preparation is made explicit.
+- `shared_ranges` requires a barrier after all required source ranges are known. Overlay
+  outputs may share source samples, so output items are not independent during source
+  preparation even when their final files are independent.
+
+## Non-goals
+
+- Do not change compensation, derived-parameter, transform, gate, statistic, density, or
+  export formulas to obtain speed.
+- Do not use display-downsampled events for gate membership, counts, frequencies,
+  statistics, QC, or authoritative export.
+- Do not split one event array into arbitrary Python thread chunks in the first
+  implementation.
+- Do not run Qt widgets, `QPainter`, pyqtgraph items, dialogs, or `QPixmap` in a worker
+  process or non-GUI thread.
+- Do not add concurrent mutation of a shared `ExecutionReport`, list accumulator, project
+  dictionary, cache entry, manifest, or output file.
+- Do not forcefully terminate `QThread`, Python threads, processes, NumPy calls, or file
+  writes.
+- Do not make a 10M-event generated dataset or large FCS file part of the repository.
+- Do not add an absolute wall-clock assertion to normal CI.
+- Do not change the default worker count to “all CPUs” without a measured memory budget.
+- Do not silently replace a user's explicit `Display max points = 0` with a finite value.
+- Do not mutate a pyqtgraph item, Qt widget, `QBrush`, or other Qt-owned presentation
+  object from a worker thread.
+
+## Measured interactive hot-path baseline (2026-07-29)
+
+The following offscreen measurements used the repository's four example FCS files and
+the current implementation. They are diagnostic baselines, not CI thresholds:
+
+| File | Events | Density numeric kernel | Uniform plot | Density plot total |
+|---|---:|---:|---:|---:|
+| `data/1_A1.fcs` | 31,552 | 115.3 ms | 192.4 ms | 328.2 ms |
+| `data/5_A2.fcs` | 23,570 | 77.5 ms | 189.2 ms | 325.3 ms |
+| `data/9_A3.fcs` | 40,051 | 129.6 ms | 189.7 ms | 329.7 ms |
+| `data/13_A4.fcs` | 23,583 | 77.2 ms | 190.5 ms | 327.8 ms |
+
+A minimal project without the complete real project gate/statistic graph measured:
+
+| File | FCS load | Minimal display preparation |
+|---|---:|---:|
+| `data/1_A1.fcs` | 7.5 ms | 3.8 ms |
+| `data/5_A2.fcs` | 4.6 ms | 1.4 ms |
+| `data/9_A3.fcs` | 3.9 ms | 2.7 ms |
+| `data/13_A4.fcs` | 5.0 ms | 0.5 ms |
+
+Interpretation:
+
+- for these files, visible density latency is dominated by density estimation plus Qt
+  scatter construction/transfer, not the minimal canonical display preparation;
+- the density path currently pays for an unnecessary uniform scatter submission before
+  the final density submission;
+- the minimal preparation measurement does not prove that a real project with
+  compensation, derived parameters, gates, and statistics is equally cheap, so retain
+  stage timing around the canonical request;
+- record commands, environment, event counts, warm/cold-cache state, and medians in any
+  follow-up benchmark artifact. Do not treat the values above as portable performance
+  promises.
+
+## Interactive optimization order
+
+Use this order unless new profiling evidence contradicts it:
+
+1. remove the redundant uniform `setData()` in density mode and establish a focused
+   render-call/per-stage benchmark;
+2. route processed-display cache misses through the existing scheduler with latest-wins,
+   revision validation, error handling, and clean shutdown;
+3. calculate renderer-neutral density arrays outside the GUI thread, use a semantic
+   density cache, and minimize the final GUI-thread Qt payload;
+4. profile per-event brush construction/transfer and optimize its representation only
+   after result/color parity is locked down;
+5. retain a finite default display maximum for new/default configurations and clearly
+   report the performance implication when a user explicitly selects all events;
+6. consider event-chunk parallelism only if a remaining pure kernel dominates after the
+   preceding changes.
+
+Density computation may use fixed-bin chunk accumulation only after its mathematical
+contract is defined. Chunks may accumulate integer histograms independently, but the
+histograms must be summed before one global smoothing and one global normalization step.
+Query-point color lookup can then be partitioned because each lookup is independent.
+Chunk-local normalization, smoothing, or colormap scaling is prohibited because it
+changes colors at chunk boundaries and breaks whole-population comparability.
+
+## Why event-chunk parallelism is not the first step
+
+The proposal in `docs/bug.md` to divide one dot population into `n` groups is suitable
+only for a pure, independently mergeable kernel. The current display request may include:
+
+- compensation matrix application;
+- derived-parameter dependency order and failure policy;
+- transforms;
+- hierarchical/Boolean/automatic gate evaluation;
+- full-population statistics;
+- display sampling;
+- density normalization based on the complete selected population.
+
+Several of these operations require global reductions, parent membership, fitted
+parameters, or deterministic selection across the complete population. NumPy already
+executes many pointwise kernels in compiled code and may release the GIL. Python chunking
+can therefore increase copies, temporary arrays, scheduler overhead, and BLAS
+oversubscription without reducing latency.
+
+Keep one interactive sample as one scheduler job. First measure stage timings and remove
+redundant recomputation through the existing processed-display cache. Only propose a
+chunked kernel later when all of the following are demonstrated:
+
+1. profiling identifies one pure pointwise kernel as the dominant cost;
+2. chunk boundaries cannot change invalid-value policy, gate boundary inclusion,
+   density normalization, display sampling, or result order;
+3. merging is mathematically specified and tested against the unchunked result;
+4. peak memory, not only elapsed time, improves or remains within budget;
+5. the same optimization is in core and is usable headlessly.
+
+Interactive improvement may later include bounded, low-priority prefetch of the next
+sample only after the active request finishes. Prefetch must be cancelable, must not delay
+the active request, and must obey the same cache and memory budget.
+
+## Common runtime control contract
+
+Add Qt-independent runtime types in a focused core module such as
+`flowdesk_core.execution_control`. Names may be adjusted to existing conventions, but
+the following concepts are required.
+
+```text
+ExecutionOptions
+  backend: sequential | thread
+  max_workers: positive integer
+  memory_budget_bytes: positive integer or None
+
+CancellationToken
+  is_cancelled() -> bool
+  raise_if_cancelled() -> None
+
+ProgressEvent
+  operation_id
+  operation: pipeline | batch_plot_export | display_prefetch
+  phase
+  completed_units
+  total_units
+  sample_id (optional)
+  output_path (optional)
+  message
+
+ExecutionControl
+  options
+  cancellation token
+  progress sink/callback
+```
+
+These are runtime controls, not scientific project definitions. Do not serialize a
+callback, thread event, process handle, or Qt object into `.flowdesk`. Record only the
+resolved backend, effective worker count, memory budget, software version, and relevant
+benchmark/provenance fields in the final report/manifest.
+
+Contract details:
+
+- `completed_units` is monotonic and never exceeds `total_units`.
+- The planner determines `total_units` before execution whenever possible.
+- A progress sink receives immutable events on the coordinator/runner thread. Worker
+  threads return structured results to the coordinator; they do not call Qt.
+- Progress callback failures are adapter/programming errors and must not be converted
+  into successful scientific execution.
+- Cancellation is cooperative. Check before starting a sample/item and between canonical
+  stages or output formats. Do not interrupt a numeric kernel or file replacement halfway.
+- Existing calls without `ExecutionControl` retain sequential behavior and API
+  compatibility.
+- A cancelled authoritative pipeline does not return an adoptable partial
+  `ExecutionReport`. Raise a typed cancellation outcome or return a report contract that
+  contains no authoritative partial results. The GUI keeps the previous authoritative
+  report and marks it stale.
+- A cancelled batch export may retain already completed output files. Its manifest must
+  list `success`, `failed`, `cancelled`, and `not_started` items explicitly and use overall
+  status `cancelled` or `partial_cancelled`; it must never report success.
+
+Recommended pipeline phases:
+
+```text
+planning
+compensation_controls
+sample_compensation
+sample_derived
+sample_transform
+sample_gating
+sample_statistics
+qc
+finalizing
+```
+
+Recommended batch phases:
+
+```text
+planning
+loading_sources
+preparing_sources
+resolving_shared_ranges
+rendering
+writing_sidecars
+finalizing_manifest
+```
+
+Do not promise a percentage for work that has not been assigned measurable units. The GUI
+may show an indeterminate progress bar during project-wide planning and switch to a
+determinate sample/item count afterward.
+
+## Pipeline sample-level parallelism design
+
+### Required refactor
+
+Refactor the body of the current per-sample loop into a GUI-independent function/method
+that accepts only immutable/read-only inputs and returns one complete result object, for
+example:
+
+```text
+SampleExecutionResult
+  sample_id
+  project_order
+  input_file
+  population_results
+  population_membership
+  statistic_results
+  diagnostics
+  messages
+  auto/magnetic/tethered fit records
+  status
+```
+
+The worker must not append to the runner's shared lists. The coordinator alone merges
+completed results.
+
+Run these operations serially before worker submission:
+
+- execution-profile and selected-sample resolution;
+- Group/strategy/statistic assignment;
+- derived-parameter planning;
+- compensation-control calculation and creation of shared calculated matrices;
+- validation of stable IDs and immutable execution snapshot;
+- conservative per-sample memory estimate.
+
+Submit only the independent per-sample canonical stage sequence after shared calculated
+matrices are complete. After workers finish, merge every tuple, diagnostic, message, and
+fit record in deterministic project sample order, not future-completion order. Run
+cross-sample/group QC after the merge.
+
+### Thread backend first
+
+Implement `sequential` and bounded `thread` backends first:
+
+- threads can share immutable NumPy input arrays without pickling/copying them;
+- many NumPy kernels release the GIL;
+- the existing GUI already executes the coordinator outside the GUI thread;
+- the same backend remains available to CLI and Python API without Qt.
+
+Do not assume threads are faster. Benchmark representative pipelines. Record outer worker
+count and relevant BLAS/OpenMP thread settings to detect oversubscription.
+
+### Process backend decision gate
+
+Do not add `ProcessPoolExecutor` in the same increment as thread parallelism. Add it only
+if profiling shows material GIL-bound work and the following design is completed:
+
+- use a top-level picklable worker entry point compatible with Windows `spawn`;
+- do not pickle multi-million-event arrays per task as the normal path;
+- prefer file-backed/path-based worker input or documented shared-memory ownership;
+- reconstruct a read-only project snapshot inside each process;
+- bound aggregate resident memory and temporary arrays;
+- propagate structured exceptions/diagnostics without traceback-only UI;
+- shut down cleanly in PyInstaller packages on Linux, macOS, and Windows;
+- prove output identity with sequential/thread execution.
+
+If these criteria are not met, document the benchmark and retain the thread backend.
+
+### Memory budget and worker count
+
+The effective worker count is not simply `os.cpu_count()`. Resolve it conservatively from:
+
+```text
+requested max_workers
+selected sample count
+available logical CPUs
+memory budget
+estimated in-flight bytes per sample
+numeric-library inner thread count
+```
+
+Add a tested estimator based on source event bytes plus documented stage multipliers for
+compensated, derived, transformed, membership, and temporary arrays. Calibrate the
+multiplier with benchmark measurements. If a single sample exceeds the budget, either run
+one sample with an explicit warning or fail according to a documented runtime policy.
+Never start extra workers and rely on swapping.
+
+## Batch export dependency and parallelism design
+
+### Make preparation explicit
+
+Remove the hidden “prepare every sample on first render callback” behavior from
+`flowdesk_cli.batch_plot.batch_plot_command()`. Split execution into explicit phases:
+
+1. build deterministic `BatchPlotExportItem` plans;
+2. build a dependency map from each output item to base and overlay source sample IDs;
+3. load/prepare each unique source at most once per compatible cache key;
+4. resolve `shared_ranges` only after all required ranges are available;
+5. build one immutable renderer-neutral scene/input per output item;
+6. render each output path;
+7. write sidecars and one final manifest.
+
+The source cache key includes sample fingerprint/path identity, population, axes,
+transforms, analysis revision, display sampling, density mode/version, and every source
+style/range input that changes prepared data. Do not share mutable renderer objects.
+
+Overlay correctness:
+
+- an overlay output depends on all of its source samples;
+- source preparation may be shared, but each output keeps its own ordered source list,
+  colors, clipping, title, and gate geometry;
+- failure of a required overlay source produces the existing structured item failure;
+- parallel completion order must not change source order, filenames, title order, colors,
+  sidecar data, or manifest order.
+
+`shared_ranges` is a barrier: prepare all required sources, reduce ranges in deterministic
+sample order, then render. `current_view` may render once its complete dependency set is
+ready.
+
+### Progress before parallel rendering
+
+First add sequential progress/cancellation to the explicit phases. Only then allow bounded
+parallel output rendering.
+
+- Plan all unique paths and collisions before starting workers.
+- Each worker owns distinct temporary output and sidecar paths.
+- Publish a completed file with an atomic same-filesystem replace.
+- Only the coordinator writes the batch manifest.
+- `collision_policy=replace` applies to planned target paths only and must not delete
+  unrelated files.
+- On cancellation, finish or safely discard the currently staged file, cancel pending
+  futures, wait for active tasks, write the cancellation manifest, and return.
+
+The core/headless renderer may run in workers only after a concurrency test proves it has
+no shared mutable global state. Qt/pyqtgraph screenshot or painter backends remain on the
+GUI thread and are not candidates for parallel workers. Prefer the existing
+renderer-neutral core scene and PNG/JPEG/SVG/PDF writers.
+
+## Qt progress and cancellation UI
+
+The GUI adapter runs the synchronous core pipeline or batch runner in an owned worker and
+converts core progress events to queued Qt signals. It must never calculate scientific
+values or render worker output itself.
+
+For Batch Plot Export, add a modeless or modal progress surface after the definition
+dialog is accepted. Minimum controls:
+
+- progress bar;
+- `completed / total` text;
+- current phase and sample title/ID;
+- current output format/path in elided text or details;
+- Cancel button;
+- expandable failure/diagnostic details;
+- final success/partial/cancelled/failed state.
+
+Use stable object names:
+
+```text
+batchPlotProgressDialog
+batchPlotProgressBar
+batchPlotProgressSummary
+batchPlotProgressCurrentItem
+batchPlotProgressCancelButton
+batchPlotProgressDetails
+```
+
+Also update the main status surface with short messages such as
+`Batch export: 3/12 (A3, PNG)`. Do not show a completion message until the manifest has
+been finalized.
+
+For `Run Pipeline`, expose at least phase, sample count, and cancel. A cancelled run keeps
+the previous Results report, marks it stale, resumes the preview scheduler, and never
+labels partial values current.
+
+Worker lifecycle:
+
+- disable duplicate Run/Export actions while the same operation is active;
+- clicking Cancel requests cooperative cancellation and changes text to `Cancelling…`;
+- project/window close requests cancellation and waits for owned workers without
+  force-termination;
+- late signals after project replacement/window close are ignored;
+- no `QThread: Destroyed while thread is still running` warning is acceptable;
+- tests wait on signals/event-loop state, not fixed sleep.
+
+## Benchmark and decision protocol
+
+Add an opt-in benchmark harness using deterministic synthetic profiles:
+
+| Profile | Events per sample | Suggested samples | Purpose |
+|---|---:|---:|---|
+| small | 100,000 | 8 | scheduler overhead and GUI responsiveness |
+| medium | 1,000,000 | 8 | realistic sample-level speedup/memory |
+| large | 10,000,000 | 2–4 | memory-budget and cancellation behavior |
+
+Record:
+
+- random seed, sample/channel count, population proportions and expected counts;
+- OS, Python, NumPy, Qt, CPU model/logical CPUs;
+- worker backend/count and BLAS/OpenMP thread settings;
+- per-stage and total wall time;
+- peak RSS and estimated in-flight memory;
+- serial and parallel result hashes/counts;
+- code revision.
+
+Benchmark display preparation, authoritative analysis, source preparation, and rendering
+separately. Do not claim analysis speedup from a rendering benchmark.
+
+Do not enable parallelism by default until repeated same-machine measurements show a
+useful median speedup on the target workload and no unacceptable memory increase. A
+suggested review gate is at least 1.25× median multi-sample speedup with peak RSS within
+the configured budget, but this is a release decision, not a normal CI assertion. If the
+gate is not met, keep sequential as the default and retain progress/cancellation.
+
+## Target files
+
+The exact split may follow existing module conventions, but ownership must remain:
+
+Core:
+
+- new `src/flowdesk_core/execution_control.py` (or equivalently focused module) for
+  Qt-independent runtime options, progress, cancellation, and effective-worker policy;
+- `src/flowdesk_core/execution_context.py` for compatible runtime-control attachment only;
+- `src/flowdesk_core/execution_report.py` for resolved execution provenance, without
+  serializing callbacks/tokens;
+- `src/flowdesk_core/pipeline_runner.py` for project-wide planning, pure per-sample
+  execution, deterministic coordination, and cross-sample finalization;
+- `src/flowdesk_core/batch_plot_export.py` for explicit batch plans, progress/cancel,
+  atomic output publication, item statuses, and final manifest coordination.
+
+CLI:
+
+- `src/flowdesk_cli/run_project.py` for runtime options, progress text, cancellation exit
+  semantics, and no second runner;
+- `src/flowdesk_cli/batch_plot.py` for explicit source preparation/scene tasks and the
+  common batch runner adapter;
+- `src/flowdesk_cli/main.py` only when public CLI flags are introduced.
+
+Qt:
+
+- `src/flowdesk_qt/main_window.py` for action lifecycle and applying completed reports;
+- `src/flowdesk_qt/plot_widget.py` for the single-submit density path and GUI-thread-only
+  pyqtgraph mutation;
+- `src/flowdesk_qt/processed_display_scheduler.py` in the interactive scheduling
+  increment, preserving latest-wins/revision/shutdown behavior;
+- a focused new worker/controller module rather than expanding scientific logic in
+  `main_window.py`;
+- a focused progress widget/dialog module for stable object names and terminal states;
+- `src/flowdesk_qt/preview_scheduler.py` only if shared lifecycle code is extracted
+  without changing latest-wins behavior.
+
+Tests and benchmark artifacts:
+
+- `tests/test_execution_control.py` (new);
+- `tests/test_pipeline_runner.py`;
+- `tests/test_project_headless_execution.py`;
+- `tests/test_batch_plot_export.py`;
+- `tests/test_cli.py` and `tests/test_cli_batch_plot.py`;
+- focused GUI tests under `tests/gui/`, preferably a new progress/lifecycle file;
+- deterministic generator and opt-in runner under `benchmarks/` or `tests/support/`;
+- benchmark JSON output under ignored `artifacts/`, never committed generated event data.
+
+Documentation:
+
+- this guide and `ToDo.md` as increments are completed;
+- `docs/user-manual/user_manual.md` in the same increment as any user-visible control;
+- CLI help/README only when public runtime flags become available.
+
+## Numbered implementation increments
+
+### Increment 1: Remove redundant density submission and measure the hot path
+
+- Add focused instrumentation/opt-in benchmark coverage for display preparation, density
+  numeric calculation, Qt brush/payload construction, and scatter submission.
+- In density mode, do not first call `_plot_uniform_scatter()` for the same points. Build
+  the final density presentation and submit the main scatter data exactly once.
+- Keep the uniform single-color and population-color paths unchanged.
+- Add a call-count regression test and pixel/data-level color parity test. Avoid an
+  absolute timing assertion in normal CI.
+
+Acceptance: density mode performs one main scatter `setData()` submission per plot,
+visible points/order/colors and density normalization are unchanged, and the benchmark
+separates numeric from Qt-transfer cost.
+
+### Increment 2: Activate asynchronous processed-display scheduling
+
+- Replace the synchronous cache-miss body of `_queue_processed_display()` with the
+  existing `ProcessedDisplayScheduler` request path.
+- Preserve immutable request snapshots, latest-request-wins, analysis/project revision
+  validation, debounce/coalescing, error reporting, and clean application shutdown.
+- Apply returned cache/result state only on the GUI thread and trigger at most one
+  relevant replot. A late result must not replace the current sample.
+- Add GUI tests for rapid A→B→C selection, project replacement, failure, and close while a
+  request is active.
+
+Acceptance: an intentionally delayed display preparation does not block event-loop
+interaction; only C is displayed; scientific preview/count state equals the synchronous
+core result; no worker remains at shutdown.
+
+### Increment 3: Off-thread density arrays and semantic cache
+
+- Split density work into a renderer-neutral numeric result and GUI presentation.
+  Numeric histogram/smoothing/normalization/color-index arrays may run in an owned worker;
+  `QBrush`, pyqtgraph items, and widget mutation remain on the GUI thread.
+- Replace object-identity cache keys with a semantic immutable key including analysis and
+  display revision, sample/population identity, axes, transforms/ranges as required by
+  the algorithm, selected-event/display-sample identity, density algorithm/version and
+  parameters.
+- Use latest-wins generation checks so stale pan/zoom/sample results are discarded. Reuse
+  a whole-population density field across pan/zoom when the scientific display contract
+  says density is viewport invariant.
+- Minimize per-event GUI payload after profiling. Any palette-index/grouped-layer
+  optimization must preserve draw order, rare colors, alpha, selection, and interaction.
+- Keep a finite default display limit for new/default configurations. If the user chooses
+  all events, preserve that choice and expose a non-blocking performance status/warning
+  rather than silently sampling.
+
+Acceptance: pan/zoom and repeated semantic requests reuse valid work; density colors do
+not change merely because the viewport changes; cache invalidates for every relevant
+upstream/display change; GUI remains responsive; cached/uncached colors are identical.
+
+### Increment 4: Benchmark baseline and progress/cancel core types
+
+- Add deterministic multi-sample generator and opt-in benchmark report.
+- Add Qt-independent `ExecutionOptions`, `ExecutionControl`, `ProgressEvent`,
+  `CancellationToken`, and typed cancellation outcome.
+- Preserve existing sequential calls when no control is supplied.
+- Add contract tests for monotonic progress, callback failure, cancellation, and no Qt
+  imports.
+
+Acceptance: no pipeline/export algorithm changes; baseline focused tests pass; benchmark
+JSON records environment and stage boundaries.
+
+### Increment 5: Sequential pipeline progress and cooperative cancellation
+
+- Add progress checkpoints around project-wide preparation and every sample stage.
+- Keep the existing scientific loop sequential.
+- Ensure cancellation produces no adoptable partial authoritative report/cache.
+- Update CLI exit/status behavior and tests.
+
+Acceptance: uncancelled report equals the previous report; cancelling at controlled
+checkpoints leaves raw input and previous authoritative result unchanged.
+
+### Increment 6: Batch export phase refactor and GUI progress
+
+- Make source preparation and dependency planning explicit.
+- Add sequential batch progress, cancellation, cancellation manifest, and atomic staged
+  outputs.
+- Move GUI invocation off the GUI thread and add the progress surface/object names.
+- Keep renderer results identical before introducing parallel rendering.
+
+Acceptance: every completed sample advances progress; Cancel is responsive between
+items/formats; GUI remains responsive; sequential output hashes/scene metadata remain
+equal; worker teardown is clean.
+
+### Increment 7: Pure per-sample pipeline result and deterministic merge
+
+- Extract one immutable per-sample execution function/result.
+- Keep the coordinator sequential initially.
+- Move cross-sample calculations before/after the worker boundary as specified.
+- Add adversarial completion-order tests using a fake executor.
+
+Acceptance: merged report tuple ordering, messages, diagnostics, fits, counts, masks, and
+statistics equal the original serial implementation.
+
+### Increment 8: Bounded thread sample-level pipeline parallelism
+
+- Add explicit sequential/thread executor selection.
+- Add effective-worker and memory-budget resolution.
+- Cancel pending work cooperatively and wait for active tasks.
+- Record resolved execution provenance.
+
+Acceptance: worker counts 1, 2, and N return identical ordered reports; failures and
+cancellation are deterministic; measured benchmark and peak memory are reported.
+
+### Increment 9: Bounded batch rendering parallelism
+
+- Verify core renderer reentrancy before enabling workers.
+- Parallelize independent prepared output items with unique staged paths.
+- Preserve dependency barriers, item/manifest order, strictness and collision policies.
+- Add shared-overlay-source and `shared_ranges` tests.
+
+Acceptance: sequential and parallel PNG/SVG/PDF scene/sidecar content is equivalent;
+failures/cancellation cannot corrupt successful or unrelated outputs.
+
+### Increment 10: Optional adjacent-sample prefetch
+
+- Re-measure cache hit/miss, sample-switch latency, stage time, and peak memory after
+  Increments 1–3.
+- Add one bounded lower-priority adjacent-sample prefetch only if the new measurements
+  show a material benefit not already achieved by active-request scheduling/cache.
+- Active requests always supersede/cancel pending prefetch; memory-budget pressure
+  disables it.
+
+Acceptance: current sample is never delayed by prefetch; cached/uncached display arrays
+and scientific preview results are identical.
+
+### Increment 11: Event-chunk/process backend decision
+
+- Review the post-Increment-3 density profile and post-Increment-8 thread/GIL profile.
+- Implement fixed-bin density accumulation chunks only with global sum, smoothing, and
+  normalization parity; do not introduce general arbitrary event chunking.
+- Implement a Windows-spawn-safe, memory-bounded process path only if the process decision
+  gate is met.
+- Otherwise record the benchmark conclusion and close the increment without production
+  chunk/process code.
+
+Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
+implemented path passes scientific/color parity, memory, cancellation, cleanup, and
+Linux/macOS/Windows package tests.
+
+## Required tests
+
+Core:
+
+- sequential execution without controls retains current API behavior;
+- progress phases and completed/total values are monotonic and deterministic;
+- serial and parallel reports have identical project/profile/status, ordered population
+  results, membership masks, statistics, diagnostics, input files, messages, and fit
+  records;
+- raw `SampleData.events` remains byte-for-byte unchanged;
+- display sampling never changes authoritative output;
+- compensation-control calculations run once before sample workers;
+- cancellation cannot publish partial authoritative results or cache entries;
+- memory budget limits active workers.
+
+Batch:
+
+- explicit source preparation occurs once per unique cache key;
+- overlay source dependencies and source order are preserved;
+- `shared_ranges` waits for all required sources;
+- progress accounts for planned failures, formats, completed items, and final manifest;
+- serial/parallel filenames, item order, statuses, scene data, sidecars, and manifest are
+  deterministic;
+- cancellation and renderer failure leave no truncated final file;
+- pre-existing unrelated files are unchanged.
+
+GUI:
+
+- density mode submits the main scatter data once and preserves point/color parity;
+- processed-display cache misses do not block event-loop interaction;
+- rapid sample selection is latest-wins and stale density/display results are discarded;
+- semantic density-cache hits preserve colors across viewport-only changes, while every
+  relevant analysis/display input invalidates the cache;
+- Qt/pyqtgraph objects are created and mutated only on the GUI thread;
+- Run Pipeline and Batch Export do not block event-loop interaction;
+- progress labels/bar update via queued signals;
+- Cancel requests cancellation once and reaches a terminal state;
+- previous authoritative Results remain visible/stale after pipeline cancellation;
+- close/project replacement leaves no running thread or late widget call;
+- stable object names are present and state is not color-only.
+
+## Verification
+
+Run after each increment's focused tests:
+
+```bash
+.direnv/python-3.12.13/bin/python -X faulthandler -m pytest -q \
+  tests/test_pipeline_runner.py tests/test_project_headless_execution.py \
+  tests/test_interactive_preview.py tests/test_batch_plot_export.py \
+  tests/test_cli_batch_plot.py
+./tools/run-gui-tests.sh -q
+.direnv/python-3.12.13/bin/ruff check src tests
+.direnv/python-3.12.13/bin/mypy \
+  src/flowdesk_core src/flowdesk_storage src/flowdesk_cli
+git diff --check
+```
+
+Run 1M/10M benchmarks separately and record the command/result artifact. Do not make the
+10M profile part of the default test suite.
+
+## Final acceptance criteria
+
+- GUI sample switching remains latest-wins and responsive, with measured cache/latency
+  evidence, one main density scatter submission, viewport-stable density colors, and no
+  unsafe event-chunk implementation.
+- Run Pipeline reports observable progress, can be cooperatively cancelled, and can use
+  bounded sample-level parallelism without changing any scientific result or ordering.
+- Batch Plot Export reports per-item progress, can be cancelled, and can use bounded
+  parallel rendering without changing plots, overlays, gates, labels, filenames,
+  sidecars, or manifest order.
+- GUI, CLI, and Python API use the same Qt-independent execution controls and runner.
+- Memory use is bounded and reported; no unbounded queue, worker, cache, or event-array
+  copy is introduced.
+- All worker/thread/process lifecycles shut down cleanly on success, failure,
+  cancellation, project replacement, and application exit.
+- User manual is updated in the increment that exposes progress, cancellation, or
+  performance settings to users.

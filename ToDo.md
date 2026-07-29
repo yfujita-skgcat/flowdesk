@@ -84,6 +84,7 @@ git status --short
 | D6 | `docs/implementation/extension-api.md` |
 | D7 | `docs/implementation/preferences-and-accessibility.md` |
 | Performance | `docs/implementation/performance-and-review.md` |
+| Performance parallel/progress | `docs/implementation/parallel-execution-and-progress.md` |
 
 ## Release A: Scientific foundation
 
@@ -1214,9 +1215,176 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 - [ ] load、compensation、derived、transform、gating、statistics、renderを別々に計測する。
 - [ ] cache keyへinput fingerprintと全上流definition hashを含める。
 - [ ] matrix/derived/transform/gate/statistics変更時のcache invalidation testを追加する。
-- [ ] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。
+- [ ] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。実装は下記の
+  `Parallel execution and progress`を上から一incrementずつ行う。
 - [ ] scatter downsampling変更でscientific count/statisticsが変わらないことをtestする。
 - [ ] rare-event visibilityの限界をGUIへ表示する。
+
+### Parallel execution and progress [docs/bug.md / S23]
+
+`docs/implementation/parallel-execution-and-progress.md`を全文読み、
+`llm-task-protocol.md`に従って一度のLLM実行で一incrementだけ実装する。GUI sample
+切替、authoritative `Run Pipeline`、Batch Plot Exportを同じ「並列化」で一括変更しない。
+2026-07-29の実測では、example FCSのdensity plot全体が約325–329 ms、そのうちdensity
+数値計算が約77–130 ms、uniform plotでも約189–192 msであった。現在はdensity modeで
+uniform scatterを一度送信した後にdensity brushで再送信し、processed-display cache missも
+既存schedulerを使わずGUI threadで同期処理している。このため、汎用parallel runtimeより
+Increment 1–3のinteractive hot path最適化を先に完了する。
+
+#### Increment 1: densityの重複描画除去とhot-path計測
+
+- [ ] display preparation、density数値計算、Qt brush/payload構築、scatter submissionを分離
+  計測するopt-in benchmark/instrumentationを追加する。通常CIに絶対時間thresholdを置かない。
+- [ ] density modeでは同じ点を最初にuniform colorで`setData()`せず、最終density colorを
+  準備してmain scatterへ一度だけ送信する。single color/population color pathは変更しない。
+- [ ] main scatterの`setData()` call-count testと、変更前後の点、順序、色、density
+  normalization parity testを追加する。
+- [ ] 実測command、環境、event数、warm/cold cache、medianをartifactへ記録する。
+
+#### Increment 2: processed-display schedulerの実経路接続
+
+- [ ] `MainWindow._queue_processed_display()`の同期
+  `PipelineRunner.prepare_display_sample()`呼出しを既存`ProcessedDisplayScheduler`経路へ
+  置換する。scheduler classが存在するだけで非同期化済みと判断しない。
+- [ ] immutable request、one-worker、debounce/coalescing、latest-wins、analysis/project
+  revision check、error reporting、shutdown contractを維持する。
+- [ ] worker結果/cacheをGUI threadでのみ適用し、late resultがcurrent sampleを上書きせず、
+  relevantなreplotを一度だけ行う。
+- [ ] 遅延workerでA→B→Cを高速選択、project replacement、failure、window closeをtestし、
+  Cだけが表示されthreadが残らないことを確認する。
+
+#### Increment 3: density数値処理のoff-thread化とsemantic cache
+
+- [ ] densityをrenderer-neutralなhistogram/smoothing/global normalization/color-index結果と
+  GUI presentationへ分離する。数値arrayだけをowned workerで計算し、`QBrush`、pyqtgraph
+  item、widget mutationはGUI threadに限定する。
+- [ ] `id(array)`依存cache keyを廃止し、analysis/display revision、sample/population、axes、
+  transforms/range、selected/display event identity、density algorithm/version/parametersを
+  含むsemantic immutable keyへ変更する。
+- [ ] whole-population densityがviewport非依存というcontractの範囲ではpan/zoomでdensity
+  fieldを再利用し、generation checkでstale resultを破棄する。viewport変更だけで同じeventの
+  density colorを変えない。
+- [ ] profiling後にper-event Qt payloadを最小化する。palette index/grouped layerを使う場合も
+  draw order、rare color、alpha、selection、interactionを維持する。
+- [ ] 新規/default設定ではfinite display maximumを維持する。明示的な`0 (all events)`は
+  勝手にsamplingせず、large event+density時のperformance status/warningを表示する。
+- [ ] cached/uncachedのcolor一致、全関連設定のcache invalidation、rapid pan/zoom/sample
+  switch、shutdownをtestする。
+
+#### Increment 4: benchmark baselineと共通runtime control
+
+- [ ] 10万events × 8 samples、100万events × 8 samples、1000万events × 2–4 samplesの
+  deterministic synthetic profileを追加し、seed、channel数、expected population count、
+  OS/Python/NumPy/Qt/CPU、worker数、peak RSSをJSONへ記録する。生成event array/FCSはcommit
+  しない。
+- [ ] display preparation、pipeline stage、batch source preparation、rendererを別々に計測し、
+  rendering時間をanalysis speedupとして報告しない。
+- [ ] Qt非依存の`ExecutionOptions`、`ExecutionControl`、`ProgressEvent`、
+  `CancellationToken`、typed cancellation outcomeを定義する。control未指定時は既存の
+  sequential APIと結果を維持する。
+- [ ] progressのphase、completed/total単調性、callback failure、cooperative cancellation、
+  Qt非依存性のcontract testを先に追加する。
+
+#### Increment 5: sequential pipeline progress/cancel
+
+- [ ] project-wide planning、compensation control計算、sampleごとの
+  compensation/derived/transform/gating/statistics、QC/finalizeへprogress checkpointを追加
+  する。このincrementではsample loopを並列化しない。
+- [ ] cancelはstage間で協調的に確認し、実行中NumPy処理やthreadを強制終了しない。cancelした
+  authoritative runはpartial result/cacheをcurrentとして返さず、GUIは以前のreportを保持して
+  stale表示する。
+- [ ] CLI/Python/GUIが同じcontrol contractを使用し、uncancelled reportが変更前と完全一致する
+  test、cancel時のexit/statusとraw event不変testを追加する。
+
+#### Increment 6: Batch Export phase分割と進捗GUI
+
+- [ ] `batch_plot_command()`の「最初のrender callbackで全sampleを準備する」処理を、
+  planning、unique source loading/preparation、shared range、scene build、render、
+  sidecar、manifestへ明示的に分割する。
+- [ ] overlayのbase/source依存graphを作り、同じsourceを同じcache keyで一度だけ準備する。
+  `shared_ranges`は全required source準備後のbarrierとし、source/order/color/gate/labelを
+  completion順で変えない。
+- [ ] sequentialのままper-item/per-format progress、cooperative cancel、atomic staged output、
+  `cancelled`/`not_started`を含むmanifestを実装する。coordinatorだけがmanifestを書く。
+- [ ] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
+  `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、
+  `batchPlotProgressCurrentItem`、`batchPlotProgressCancelButton`、
+  `batchPlotProgressDetails`を追加する。status barにも`completed/total`を表示する。
+- [ ] cancel、failure、project/window closeでworkerを安全に終了し、late signal、truncated final
+  file、`QThread: Destroyed while thread is still running`がないGUI testを追加する。
+
+#### Increment 7: immutable sample resultとdeterministic merge
+
+- [ ] `_run_full_pipeline()`のsample loop本体を、immutable inputから完全な
+  `SampleExecutionResult`を返すQt非依存関数へ抽出する。workerから共有list/report/cacheへ
+  append/mutationしない。
+- [ ] derived plan、Group/strategy/statistic assignment、calculated compensation matrixをworker
+  開始前に一度だけ解決し、cross-sample QCは全sample merge後に実行する。
+- [ ] coordinatorがproject sample順でpopulation results、membership mask、statistics、
+  diagnostics、messages、input files、auto/magnetic/tethered fitをmergeする。future完了順を
+  report順へ使用しない。
+- [ ] fake executorで完了順を逆転させても従来sequential reportと完全一致するtestを追加する。
+  このincrementも実worker並列化は行わない。
+
+#### Increment 8: bounded thread sample-level parallelism
+
+- [ ] `sequential`/`thread` backendとpositive `max_workers`をruntime optionとして追加する。
+  project scientific definitionへcallback/thread objectを保存しない。
+- [ ] input events bytes、compensated/derived/transformed temporary、membershipを含む保守的な
+  sample memory estimatorを追加し、requested workers、sample数、CPU、memory budget、numeric
+  library inner threadsからeffective worker数を決める。全CPUを無条件に使わない。
+- [ ] pending futureのcancel、active taskの協調終了、sample failure policy、deterministic merge、
+  resolved backend/worker/memory provenanceを実装する。
+- [ ] workers=1/2/Nでcount、frequency、membership mask、statistics、diagnostics、report order、
+  raw eventsがsequentialと一致するtestを追加する。通常CIに絶対時間thresholdを置かない。
+
+#### Increment 9: bounded Batch Export parallel rendering
+
+- [ ] headless core rendererのreentrancyと共有mutable global stateがないことをtestしてから、
+  prepared output itemをbounded executorへ渡す。Qt/pyqtgraph/QPainter/QPixmapをworkerで
+  操作しない。
+- [ ] workerごとに一意なtemporary output/sidecarを所有させ、成功時だけsame-filesystem atomic
+  replaceする。collision policy対象外の既存fileを削除しない。
+- [ ] overlay shared source、`shared_ranges` barrier、複数format、strict/partial failure、
+  cancellationでもmanifestのitem順、filename、scene、source order、statusをplan順に保つ。
+- [ ] sequential/parallel PNG/SVG/PDFでscene/sidecar、gate位置、軸label、dot order/colorが一致
+  し、failure/cancelが成功済み・無関係fileを破損しないtestを追加する。
+
+#### Increment 10: optional adjacent-sample prefetch
+
+- [ ] Increment 1–3後にcache hit/miss、sample切替latency、stage別時間、peak memoryを再計測する。
+- [ ] 計測上なお有効な場合だけ、active request完了後に隣接sampleを一件だけlow-priority
+  prefetchする。active requestはpending prefetchを必ずsupersedeし、memory budget超過時は
+  prefetchしない。
+- [ ] cache有無/prefetch有無でdisplay array、preview membership/count/statisticsが一致し、
+  current sampleの処理開始をprefetchが遅延させないtestを追加する。
+
+#### Increment 11: event chunk/process backendの採否
+
+- [ ] Increment 3後のdensity profileとIncrement 8後のthread/GIL profileをreviewし、
+  event chunkまたはprocess backendが必要か記録する。CPU coreがあるという理由だけで追加
+  しない。
+- [ ] densityをchunk化する場合は固定binのinteger histogramをchunkごとに加算し、全chunkを
+  sumした後にglobal smoothingとglobal normalizationを各一回だけ行う。chunk-localな
+  smoothing/normalization/colormap scalingは禁止する。
+- [ ] 実装する場合はWindows `spawn`対応のtop-level worker、file-backedまたは明示shared-memory
+  input、aggregate memory budget、structured error/cancel、PyInstaller Linux/macOS/Windows
+  cleanupを先に設計・testする。巨大event arrayをtaskごとにpickleする実装は禁止する。
+- [ ] 上記条件を満たさない、または有意なspeedupがない場合はsequential/threadを維持し、
+  benchmark結論と制限を文書化してincrementを完了する。
+
+#### 完了条件
+
+- [ ] GUI sample切替はlatest-winsかつresponsiveで、density main scatterを一度だけ送信し、
+  viewport変更だけでdensity colorを変えず、unsafeなevent chunk並列化を使わない。
+- [ ] Run Pipelineは進捗・cancel・memory-bounded sample並列化を提供し、scientific resultと
+  deterministic orderがsequentialと一致する。
+- [ ] Batch Plot Exportはsample/item進捗・cancel・bounded並列化を提供し、overlay、gate、軸、
+  label、dot、sidecar、manifestがsequentialと一致する。
+- [ ] GUI/CLI/Python APIは同じQt非依存control/runnerを使用し、success/failure/cancel/close後に
+  thread/processを残さない。
+- [ ] user-visibleなprogress/cancel/performance設定を公開するincrementで
+  `docs/user-manual/user_manual.md`を同時更新する。
 
 ## Release E: OS配布とリリース自動化 [P1]
 
