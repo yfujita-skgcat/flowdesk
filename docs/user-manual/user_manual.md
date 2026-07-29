@@ -952,7 +952,7 @@ GUIとheadless exportは、X/Y parameter、transform ID、viewport、tick、titl
 
 GUIから実行する`Batch Plot Export`もCLIと同じrenderer-neutral core rendererを使います。これにより、PNG/JPEG/SVG/PDFの表示範囲、点の順序と色、axis、tick、gate、title、軸ラベルは同じ`PlotScene`から出力されます。ライブ画面は引き続きQt/pyqtgraphで描画されるため、OSやフォントbackendによるアンチエイリアス差はあり得ますが、バッチ形式間で座標系や表示要素が変わることはありません。
 
-`current_view`では、出力サイズや1:1 aspectの指定があっても、GUIで現在表示している変換後のX/Y範囲を優先する。ゲートで色付けされたpopulationはcanonical previewのmembershipに従って同じ色で描画し、overlayは保存された個別色、またはGUIの既定overlay色で描画される。単一sourceのDensity color設定はPNG/SVG/PDFにも適用される。overlay sourceがある場合は通常色へ戻る。
+`current_view`では、出力サイズや1:1 aspectの指定があっても、GUIで現在表示している変換後のX/Y範囲を優先する。ゲートで色付けされたpopulationはcanonical previewのmembershipに従って同じ色で描画し、overlayは保存された個別色、またはGUIの既定overlay色で描画される。単一sourceのDensity color設定は、現在のlogical viewport内にある全有効イベントから推定した同じevent-order色としてPNG/SVG/PDFへ適用され、sidecarにはgrid・smoothing・normalization・algorithm versionが記録される。overlay sourceがある場合は通常色へ戻る。
 
 出力ファイル名は portable slug に変換される。sample または metadata の well (`A01` は `A1` に正規化) を優先し、未設定の場合は FCS ファイル名中の曖昧でない `A1`、`B02`、`H12` のような token だけを使用する。単一 source は `A1_<template>.png`、複数 source は表示順に `A1_B2_<template>.png` となり、well が分からない複数 source は stable sample ID を prefix にする。推定元と source ID は sidecar と batch manifest に保存される。
 

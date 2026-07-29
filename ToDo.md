@@ -688,7 +688,7 @@ increment一つだけを実装する。
 - [x] Increment 2: Qt previewでfull density inputとdisplay marker downsamplingを分離し、
   range/resize/transform/population/sample/revisionに対するdebounced cache invalidationを
   実装する。overlay中はdensityを無効にし、gating色へ戻す。20k/100k/1Mの測定を記録する。
-- [ ] Increment 3: batch PNG/SVG/PDFを同じcore estimator・logical viewport・event orderへ
+- [x] Increment 3: batch PNG/SVG/PDFを同じcore estimator・logical viewport・event orderへ
   接続し、DPIがdensity値を変えないこと、vector modeで点や色を落とさないこと、sidecar
   provenance、GUI/export parity、user manualを完了する。
 

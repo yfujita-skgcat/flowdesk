@@ -183,6 +183,10 @@ at most the configured display-marker limit while density input remains full pop
 
 ## Increment 3 — Headless export parity, vector behavior, and documentation
 
+**Status: completed.** Batch export estimates density from the full normalized source,
+clips to the logical export viewport, and passes the resulting event-order colors to all
+PNG/SVG/PDF adapters. Sidecars record the estimator metadata or the overlay fallback.
+
 Non-goals: changing export page geometry, DPI semantics, gate coordinates, or the three
 existing vector-scatter modes.
 

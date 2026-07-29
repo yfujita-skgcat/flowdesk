@@ -14,7 +14,7 @@ from flowdesk_core.batch_plot_export import (
   batch_plot_export_spec_from_mapping,
   run_batch_plot_export,
 )
-from flowdesk_core.density_colors import density_event_colors
+from flowdesk_core.density_colors import estimate_density_colors
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
@@ -256,11 +256,18 @@ def batch_plot_command(
       density_coloring = presentation.get("colormap") == "density" and len(source_ids) == 1
       if density_coloring:
         active_id = source_ids[0]
+        full_x, full_y = prepared_layers[active_id]
+        normalized_full_x = _normalize(full_x, active_bounds[0])
+        normalized_full_y = _normalize(full_y, active_bounds[1])
+        density_result = estimate_density_colors(
+          normalized_full_x, normalized_full_y,
+          np.asarray(layers[active_id][0], dtype=np.float64),
+          np.asarray(layers[active_id][1], dtype=np.float64),
+          bounds=(0.0, 1.0, 0.0, 1.0),
+          logical_size=(max(1, spec.width - 80), max(1, spec.height - 110)),
+        )
         visible_event_colors = {
-          active_id: tuple(density_event_colors(
-            np.asarray(layers[active_id][0], dtype=np.float64),
-            np.asarray(layers[active_id][1], dtype=np.float64),
-          ))
+          active_id: tuple(density_result.colors)
         }
       presentation["x_axis_display_label"] = str(
         display_scene.get("x_axis_label") or metadata["x_label"]
@@ -348,6 +355,17 @@ def batch_plot_command(
         scene=scene,
       )
       prepared.metadata["vector_scatter_preflight"] = dict(preflight_holder.get("value", {}))
+      if density_coloring:
+        prepared.metadata["density_coloring"] = {
+          "active": True,
+          "algorithm_version": density_result.metadata.algorithm_version,
+          "grid_shape": density_result.metadata.grid_shape,
+          "sigma_cells": density_result.metadata.sigma_cells,
+          "normalization_log_density": density_result.metadata.normalization_log_density,
+          "valid_input_count": density_result.metadata.valid_input_count,
+        }
+      elif presentation.get("colormap") == "density":
+        prepared.metadata["density_coloring"] = {"active": False, "reason": "overlay"}
       # Batch formats must share the renderer-neutral scene adapter. The live
       # Qt widget remains the interactive preview, while one core renderer
       # keeps PNG/JPEG/SVG/PDF coordinates, ticks, gates, and event order equal.
