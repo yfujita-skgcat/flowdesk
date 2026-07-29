@@ -228,6 +228,46 @@ Interactive improvement may later include bounded, low-priority prefetch of the 
 sample only after the active request finishes. Prefetch must be cancelable, must not delay
 the active request, and must obey the same cache and memory budget.
 
+## Decision record: active-sample display and optimization order (2026-07-29)
+
+Selecting a sample in the main window is an interactive request for that active sample;
+it is not a request to first process the other samples in the project.  The selected
+sample's display may use already-derived project definitions and caches, but it must not
+wait for a project-wide `Run Pipeline` merely to populate the plot.  Its latency is
+therefore governed by the active request's display preparation, density calculation,
+per-event presentation payload, and Qt/pyqtgraph drawing.
+
+This distinction determines the execution boundaries:
+
+| Operation | First optimization boundary | Not an initial optimization |
+|---|---|---|
+| Main-window sample switch | One active sample, latest-wins scheduler, semantic cache, renderer-neutral density data, reduced Qt payload | Running unrelated samples; arbitrary event chunks |
+| Authoritative Run Pipeline | Independent complete sample results after shared planning, then deterministic coordinator merge | Parallel mutation of the report/project/cache |
+| Batch Plot Export | Explicit source-dependency preparation, then independent prepared output items | Concurrent access to shared source/range state or final paths |
+
+Accordingly, the implementation priority is:
+
+1. Finish the remaining interactive hot-path work in Increment 3: reuse a
+   whole-population, viewport-independent density field; complete semantic-cache
+   invalidation coverage; measure and reduce per-event Qt payload; and test rapid
+   pan/zoom/sample switch and shutdown.  If an owned worker array cannot be transferred
+   safely with a reproducible lifecycle test, retain the safe scheduler/cache path and
+   do not introduce an unsafe background NumPy implementation.
+2. Complete Increment 6 sequential Batch Plot Export phase separation, progress,
+   cooperative cancellation, and atomic staging.  This creates measurable source/render
+   stages and a deterministic baseline before export workers exist.
+3. Complete Increment 7's immutable `SampleExecutionResult` and coordinator merge, then
+   Increment 8's bounded sample-level pipeline workers with memory budgeting and exact
+   sequential-parallel parity tests.
+4. Consider Increment 9 batch-render workers, Increment 10 prefetch, and Increment 11
+   fixed-bin density histogram chunks only after the preceding measurements demonstrate
+   material benefit.
+
+"More CPU cores" is not sufficient evidence to reorder these steps.  Every optimization
+must retain raw-event immutability and must prove that counts, frequencies, memberships,
+statistics, display sampling behavior, scene/source order, and cancellation semantics are
+unchanged at its stated boundary.
+
 ## Common runtime control contract
 
 Add Qt-independent runtime types in a focused core module such as

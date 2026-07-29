@@ -1225,11 +1225,33 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 `docs/implementation/parallel-execution-and-progress.md`を全文読み、
 `llm-task-protocol.md`に従って一度のLLM実行で一incrementだけ実装する。GUI sample
 切替、authoritative `Run Pipeline`、Batch Plot Exportを同じ「並列化」で一括変更しない。
+2026-07-29の設計判断として、メインウィンドウで一つのsampleを選択して表示する処理は、
+そのactive sampleだけを処理する。他sampleのpipeline処理を待って表示する設計ではない。
+従って、この経路の優先事項はsample間並列化ではなく、latest-wins scheduler、既存cache、
+density数値処理、Qt描画payloadの削減である。`Run Pipeline`のsample単位並列化は、全sampleを
+対象とするauthoritative batch実行だけに適用する。1 sample内の任意event分割は、全population
+normalization、parent/Boolean/automatic gate、deterministic sampling、invalid-value policy、結果順序を
+変えない純粋kernelであることをprofileと数学的merge testで示すまで実装しない。
 2026-07-29の実測では、example FCSのdensity plot全体が約325–329 ms、そのうちdensity
 数値計算が約77–130 ms、uniform plotでも約189–192 msであった。現在はdensity modeで
 uniform scatterを一度送信した後にdensity brushで再送信し、processed-display cache missも
 既存schedulerを使わずGUI threadで同期処理している。このため、汎用parallel runtimeより
 Increment 1–3のinteractive hot path最適化を先に完了する。
+
+実装の優先順位は次の通りとする。新たな「全CPUを使う」一般並列化は、計測で優位性を示すまで
+追加しない。
+
+1. 未完のIncrement 3を、viewport非依存density fieldの再利用、semantic cache完全性、
+   per-event Qt payload削減、cache/rapid-interaction/shutdown回帰testとして完了させる。
+   worker-owned NumPy arrayをQtへ安全に受け渡せることを再現性あるtestで確認できない場合、
+   off-thread density kernelは保留し、同一threadでの再計算除去を優先する。
+2. Increment 6でBatch Plot Exportのsource preparationを明示分離し、進捗、cancel、atomic
+   staged outputを追加する。これは後続の並列renderと安全な比較の前提であり、まず逐次結果を
+   固定する。
+3. Increment 7–8でimmutableなper-sample resultとdeterministic mergeを完成後に、bounded
+   sample-level pipeline parallelismを追加する。GUIのactive-sample表示には流用しない。
+4. Increment 9以降はrenderer reentrancy、memory budget、sequential/parallel parityを確認してから
+   batch rendering parallelism、prefetch、限定的なdensity histogram chunkingを検討する。
 
 #### Increment 1: densityの重複描画除去とhot-path計測（完了）
 

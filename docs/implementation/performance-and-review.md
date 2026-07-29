@@ -37,6 +37,21 @@ statistics, table/layout resolution, and rendering. Record Python/NumPy/Qt versi
 platform, CPU, memory metric, event/channel counts, seed, and code revision where available.
 Rendering FPS/time is not an analysis benchmark.
 
+## Active-sample versus project-wide work
+
+The interactive main-window plot is a request for the selected sample only.  It does not
+perform work for every project sample before rendering.  Treat its main costs as display
+preparation, density aggregation/lookup, Qt payload construction, and pyqtgraph drawing;
+measure these separately before proposing general concurrency.
+
+Sample-level parallelism belongs to an authoritative project-wide pipeline after shared
+definitions have been planned and before a single deterministic coordinator merges complete
+per-sample results.  It is not a mechanism for speeding up a one-sample interactive plot.
+Likewise, arbitrary event-chunk parallelism is prohibited until a pure kernel, an exact
+merge rule, unchanged global normalization/gate semantics, and a bounded-memory benefit are
+demonstrated.  The detailed decision record and implementation order are authoritative in
+[`parallel-execution-and-progress.md`](parallel-execution-and-progress.md).
+
 ## Cache contract
 
 A cache key includes input fingerprint, pipeline/software version, execution profile, and
