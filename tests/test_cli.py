@@ -10,6 +10,7 @@ import numpy as np
 
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
+from flowdesk_core.execution_control import ExecutionControl
 from flowdesk_core.models import ChannelSpec
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
@@ -72,6 +73,17 @@ def test_run_project_success(tmp_path: Path) -> None:
 def test_run_project_not_found() -> None:
   exit_code = run_project_command("/nonexistent/path.to/flowdesk")
   assert exit_code == 1
+
+
+def test_run_project_reports_cooperative_cancellation(
+  tmp_path: Path, capsys
+) -> None:
+  project = _create_minimal_project(tmp_path)
+  control = ExecutionControl()
+  control.cancellation_token.cancel()
+
+  assert run_project_command(str(project), execution_control=control) == 130
+  assert "Cancelled: execution cancelled" in capsys.readouterr().err
 
 
 def test_run_project_with_output(tmp_path: Path) -> None:

@@ -46,6 +46,7 @@ from flowdesk_core.derived_parameters import (
 )
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.execution_context import ExecutionContext
+from flowdesk_core.execution_control import ExecutionControl, ProgressEvent
 from flowdesk_core.execution_report import ExecutionDiagnostic, ExecutionReport
 from flowdesk_core.gating_strategy import (
   GatingStrategyError,
@@ -168,6 +169,7 @@ def run_project_pipeline(
   event_data: dict[str, NDArray[np.float64]] | None = None,
   channel_names: list[str] | None = None,
   samples: Sequence[SampleData] | None = None,
+  execution_control: ExecutionControl | None = None,
 ) -> ExecutionReport:
   """Run a project pipeline and return an execution report.
 
@@ -188,6 +190,7 @@ def run_project_pipeline(
   context = ExecutionContext(
     output_dir=None if output_dir is None else Path(output_dir),
     execution_profile_id=execution_profile_id,
+    execution_control=execution_control,
   )
   runner = PipelineRunner(project)
   if samples is not None:
@@ -280,7 +283,15 @@ class PipelineRunner:
     messages = [f"execution_profile={context.execution_profile_id}"]
 
     # ---------- Placeholder mode (backward compat) ----------
-    return self._run_placeholder(profile, context, messages)
+    operation_id = self._begin_pipeline_operation(context)
+    self._pipeline_checkpoint(
+      context, operation_id, "planning", completed_units=0, total_units=1
+    )
+    report = self._run_placeholder(profile, context, messages)
+    self._pipeline_checkpoint(
+      context, operation_id, "finalizing", completed_units=1, total_units=1
+    )
+    return report
 
   def run_samples(
     self,
@@ -591,6 +602,12 @@ class PipelineRunner:
     # Resolve which samples to process.
     sample_selector = profile.get("sample_selector", "all")
     selected_samples = self._resolve_samples(samples, sample_selector)
+    operation_id = self._begin_pipeline_operation(context)
+    total_samples = len(selected_samples)
+    self._pipeline_checkpoint(
+      context, operation_id, "planning", completed_units=0,
+      total_units=total_samples,
+    )
     sample_assignments = self._resolve_group_assignments(
       selected_samples, gating_strategy_id
     )
@@ -632,6 +649,11 @@ class PipelineRunner:
         "statistics=disabled ids=" + ",".join(disabled_statistic_ids)
       )
 
+    self._pipeline_checkpoint(
+      context, operation_id, "compensation_controls", completed_units=0,
+      total_units=total_samples,
+    )
+
     # --- Pre-step: Execute compensation calculations ---
     # Control samples and populations are explicit in the persisted calculation
     # spec. They are gated from raw events before a calculated matrix is applied.
@@ -668,11 +690,16 @@ class PipelineRunner:
         messages.append(f"compensation_calculation=failed: {exc}")
         raise
 
-    for sample_meta in selected_samples:
+    for sample_index, sample_meta in enumerate(selected_samples):
       sid = str(sample_meta.get("id", "unknown"))
       sample = sample_data.get(sid)
       if sample is None:
         messages.append(f"warning: no event data for sample {sid!r}, skipping")
+        self._pipeline_checkpoint(
+          context, operation_id, "sample_skipped",
+          completed_units=sample_index + 1, total_units=total_samples,
+          sample_id=sid, message="no event data",
+        )
         continue
       analysis_data = _AnalysisData(sample.events, sample.channels)
 
@@ -681,6 +708,10 @@ class PipelineRunner:
       input_files.append(input_info)
 
       # --- Step 1: Compensation ---
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_compensation",
+        completed_units=sample_index, total_units=total_samples, sample_id=sid,
+      )
       compensation = self._step_compensation(
         analysis_data,
         sample_id=sid,
@@ -693,6 +724,10 @@ class PipelineRunner:
       messages.append(f"sample={sid} compensation=done")
 
       # --- Step 2: Derived parameters ---
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_derived",
+        completed_units=sample_index, total_units=total_samples, sample_id=sid,
+      )
       try:
         enriched, derived_diagnostics = self._step_derived_parameters(
           compensated, analysis_data, sid, derived_plan
@@ -707,15 +742,28 @@ class PipelineRunner:
         messages.append(
           f"sample={sid} derived_params=failed policy={exc.policy.value}"
         )
+        self._pipeline_checkpoint(
+          context, operation_id, "sample_skipped",
+          completed_units=sample_index + 1, total_units=total_samples,
+          sample_id=sid, message="derived parameter failure",
+        )
         continue
       diagnostics.extend(derived_diagnostics)
       messages.append(f"sample={sid} derived_params=done")
 
       # --- Step 3: Transforms ---
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_transform",
+        completed_units=sample_index, total_units=total_samples, sample_id=sid,
+      )
       transformed = self._step_transforms(enriched)
       messages.append(f"sample={sid} transforms=done")
 
       # --- Step 4: Gating ---
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_gating",
+        completed_units=sample_index, total_units=total_samples, sample_id=sid,
+      )
       sample_gating_strategy_id = sample_strategy_ids.get(sid, gating_strategy_id)
       if sample_gating_strategy_id is not None:
         try:
@@ -779,6 +827,10 @@ class PipelineRunner:
       all_population_membership.extend(pop_membership)
 
       # --- Step 5: Statistics ---
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_statistics",
+        completed_units=sample_index, total_units=total_samples, sample_id=sid,
+      )
       statistic_data_by_stage = {
         "raw": analysis_data,
         "compensated": _AnalysisData(enriched.events, enriched.channels),
@@ -799,6 +851,11 @@ class PipelineRunner:
       messages.append(
         f"sample={sid} statistics=done n={len(stat_results)}"
       )
+      self._pipeline_checkpoint(
+        context, operation_id, "sample_complete",
+        completed_units=sample_index + 1, total_units=total_samples,
+        sample_id=sid,
+      )
 
     population_tuple = tuple(all_population_results)
     membership_tuple = tuple(all_population_membership)
@@ -810,12 +867,20 @@ class PipelineRunner:
     else:
       status = "success" if population_tuple else "no_data_processed"
 
+    self._pipeline_checkpoint(
+      context, operation_id, "qc", completed_units=total_samples,
+      total_units=total_samples,
+    )
     diagnostics.extend(self._group_override_qc_diagnostics(
       selected_samples=selected_samples,
       sample_data=sample_data,
       population_results=population_tuple,
     ))
 
+    self._pipeline_checkpoint(
+      context, operation_id, "finalizing", completed_units=total_samples,
+      total_units=total_samples,
+    )
     return ExecutionReport(
       project_id=str(self._project.get("project_id", "unknown")),
       execution_profile_id=context.execution_profile_id,
@@ -831,6 +896,40 @@ class PipelineRunner:
       magnetic_gate_fits=tuple(all_magnetic_gate_fits),
       tethered_gate_fits=tuple(all_tethered_gate_fits),
     )
+
+  @staticmethod
+  def _begin_pipeline_operation(context: ExecutionContext) -> str | None:
+    """Create an optional runtime operation identity without persisting it."""
+    if context.execution_control is None:
+      return None
+    return context.execution_control.begin_operation("pipeline")
+
+  @staticmethod
+  def _pipeline_checkpoint(
+    context: ExecutionContext,
+    operation_id: str | None,
+    phase: str,
+    *,
+    completed_units: int,
+    total_units: int,
+    sample_id: str | None = None,
+    message: str | None = None,
+  ) -> None:
+    """Emit progress and honor cancellation only at safe stage boundaries."""
+    control = context.execution_control
+    if control is None:
+      return
+    control.cancellation_token.raise_if_cancelled()
+    control.emit_progress(ProgressEvent(
+      operation_id=operation_id or control.begin_operation("pipeline"),
+      operation="pipeline",
+      phase=phase,
+      completed_units=completed_units,
+      total_units=total_units,
+      sample_id=sample_id,
+      message=message,
+    ))
+    control.cancellation_token.raise_if_cancelled()
 
   def _group_override_qc_diagnostics(
     self,

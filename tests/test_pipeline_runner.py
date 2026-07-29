@@ -7,6 +7,7 @@ import pytest
 
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.execution_context import ExecutionContext
+from flowdesk_core.execution_control import ExecutionCancelled, ExecutionControl
 from flowdesk_core.models import ChannelSpec, GateSpec, GatingStrategySpec
 from flowdesk_core.overrides import gate_version_hash
 from flowdesk_core.pipeline_runner import (
@@ -101,6 +102,83 @@ def test_project_object_can_call_pipeline_runner() -> None:
 
   assert report.execution_profile_id == "default"
   assert report.population_results[0].event_count == 10
+
+
+def test_pipeline_emits_ordered_stage_progress_without_changing_results() -> None:
+  project = _make_project(samples=[{"id": "s1"}, {"id": "s2"}])
+  channels = (ChannelSpec(id="signal", name="Signal"),)
+  samples = (
+    SampleData("s1", np.array([[1.0], [2.0]]), channels),
+    SampleData("s2", np.array([[3.0], [4.0], [5.0]]), channels),
+  )
+  events = []
+  control = ExecutionControl(progress_sink=events.append)
+
+  controlled = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_control=control), samples
+  )
+  baseline = PipelineRunner(project).run_samples(ExecutionContext(), samples)
+
+  assert controlled.status == baseline.status
+  assert controlled.population_results == baseline.population_results
+  assert controlled.statistic_results == baseline.statistic_results
+  assert controlled.messages == baseline.messages
+  assert controlled.diagnostics == baseline.diagnostics
+  for actual, expected in zip(
+    controlled.population_membership,
+    baseline.population_membership,
+    strict=True,
+  ):
+    assert actual.sample_id == expected.sample_id
+    assert actual.population_id == expected.population_id
+    np.testing.assert_array_equal(actual.mask, expected.mask)
+  assert [event.phase for event in events] == [
+    "planning",
+    "compensation_controls",
+    "sample_compensation",
+    "sample_derived",
+    "sample_transform",
+    "sample_gating",
+    "sample_statistics",
+    "sample_complete",
+    "sample_compensation",
+    "sample_derived",
+    "sample_transform",
+    "sample_gating",
+    "sample_statistics",
+    "sample_complete",
+    "qc",
+    "finalizing",
+  ]
+  assert [event.completed_units for event in events] == sorted(
+    event.completed_units for event in events
+  )
+  assert {event.total_units for event in events} == {2}
+  assert events[-1].completed_units == 2
+
+
+def test_pipeline_cancellation_discards_partial_report_and_keeps_raw_events() -> None:
+  project = _make_project(samples=[{"id": "s1"}, {"id": "s2"}])
+  channels = (ChannelSpec(id="signal", name="Signal"),)
+  samples = (
+    SampleData("s1", np.array([[1.0], [2.0]]), channels),
+    SampleData("s2", np.array([[3.0], [4.0]]), channels),
+  )
+  raw = tuple(sample.events.copy() for sample in samples)
+  control = ExecutionControl()
+
+  def cancel_after_first_gating(event) -> None:
+    if event.phase == "sample_gating" and event.sample_id == "s1":
+      control.cancellation_token.cancel()
+
+  control.progress_sink = cancel_after_first_gating
+  with pytest.raises(ExecutionCancelled):
+    PipelineRunner(project).run_samples(
+      ExecutionContext(execution_control=control), samples
+    )
+
+  for sample, before in zip(samples, raw, strict=True):
+    np.testing.assert_array_equal(sample.events, before)
 
 
 # ---------------------------------------------------------------------------

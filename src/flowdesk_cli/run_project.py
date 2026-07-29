@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from flowdesk_core.errors import FlowdeskError
+from flowdesk_core.execution_control import ExecutionCancelled, ExecutionControl
 from flowdesk_core.export import (
   ExportError,
   write_results_long,
@@ -27,6 +28,7 @@ def run_project_command(
   layout: str = "wide",
   include_internal_ids: bool = False,
   include_qc: bool = False,
+  execution_control: ExecutionControl | None = None,
 ) -> int:
   """CLI adapter for headless project execution.
 
@@ -75,7 +77,11 @@ def run_project_command(
       output_dir=None,
       execution_profile_id=execution_profile_id,
       samples=typed_samples,
+      execution_control=execution_control,
     )
+  except ExecutionCancelled as exc:
+    print(f"Cancelled: {exc}", file=sys.stderr)
+    return 130
   except PipelineError as exc:
     print("Error: pipeline execution failed:", file=sys.stderr)
     print(f"  {exc}", file=sys.stderr)

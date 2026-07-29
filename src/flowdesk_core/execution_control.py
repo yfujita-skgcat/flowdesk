@@ -11,11 +11,13 @@ from dataclasses import dataclass, field
 from threading import Event
 from typing import Literal
 
+from flowdesk_core.errors import FlowdeskError
+
 ExecutionBackend = Literal["sequential", "thread"]
 ProgressSink = Callable[["ProgressEvent"], None]
 
 
-class ExecutionCancelled(Exception):
+class ExecutionCancelled(FlowdeskError):
   """Raised at a cooperative cancellation checkpoint.
 
   Callers must not publish an incomplete authoritative result after receiving
@@ -100,6 +102,14 @@ class ExecutionControl:
   _total_by_operation: dict[str, int] = field(
     default_factory=dict, init=False, repr=False
   )
+  _operation_sequence: int = field(default=0, init=False, repr=False)
+
+  def begin_operation(self, operation: str) -> str:
+    """Return a fresh coordinator-owned identifier for one runtime operation."""
+    if not operation:
+      raise ValueError("operation must not be empty")
+    self._operation_sequence += 1
+    return f"{operation}:{self._operation_sequence}"
 
   def emit_progress(self, event: ProgressEvent) -> None:
     """Validate and deliver an ordered event on the coordinator thread.
