@@ -1457,15 +1457,26 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 
 #### Increment 9: bounded Batch Export parallel rendering
 
+- [ ] 「1 FCS = 1 worker」とは定義しない。FCSはsource/dependencyの単位であり、overlay出力は
+  複数FCSへ依存し、1 FCSから複数view/formatが生成され得る。全source準備、overlay dependency、
+  `shared_ranges`を解決した後のimmutable `prepared output item`をexecutorの最小仕事単位とする。
+- [ ] overlayなし、共通軸範囲なし、必要sourceが1 sampleだけの出力について、source準備完了後は
+  sample間で独立にrender可能であることを明示し、この単純ケースからparallel parity testを追加する。
+  同一sceneからPNG/SVG/PDFを作る場合は、formatごとの完全独立jobとsample/view単位bundleの両方を
+  benchmarkし、prepared arrayの再利用、peak memory、cancel granularityを比較して仕事単位を決める。
 - [ ] headless core rendererのreentrancyと共有mutable global stateがないことをtestしてから、
   prepared output itemをbounded executorへ渡す。Qt/pyqtgraph/QPainter/QPixmapをworkerで
   操作しない。
+- [ ] rendererがGILを保持するか、native処理で解放するかをprofileし、thread worker数1/2/Nで
+  wall time、peak RSS、open file数を測定する。threadで再現可能なspeedupがなければ既定並列化を
+  有効にせず、process backendはIncrement 11のmemory/copy/Windows spawn評価へ送る。
 - [ ] workerごとに一意なtemporary output/sidecarを所有させ、成功時だけsame-filesystem atomic
   replaceする。collision policy対象外の既存fileを削除しない。
 - [ ] overlay shared source、`shared_ranges` barrier、複数format、strict/partial failure、
   cancellationでもmanifestのitem順、filename、scene、source order、statusをplan順に保つ。
 - [ ] sequential/parallel PNG/SVG/PDFでscene/sidecar、gate位置、軸label、dot order/colorが一致
-  し、failure/cancelが成功済み・無関係fileを破損しないtestを追加する。
+  し、failure/cancelが成功済み・無関係fileを破損しないtestを追加する。worker数はsample数だけで
+  なく、estimated prepared-scene bytes、format temporary bytes、rendererの安全上限でboundする。
 
 #### Increment 10: optional adjacent-sample prefetch
 

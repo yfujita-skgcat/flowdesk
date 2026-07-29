@@ -473,6 +473,40 @@ Never start extra workers and rely on swapping.
 
 ## Batch export dependency and parallelism design
 
+### Why the worker unit is not simply one FCS file
+
+An FCS file is a source/dependency unit, not necessarily an executable render job. A
+naive “one FCS per thread” implementation is correct only for the narrow case where an
+output has one prepared sample source, no overlay dependency, no unresolved shared range,
+and no mutable renderer state. Batch definitions can violate that assumption:
+
+- one overlay output depends on multiple FCS sources in a fixed source order;
+- `shared_ranges` requires a deterministic reduction across all participating sources;
+- one FCS source can produce several views and PNG/JPEG/SVG/PDF outputs;
+- several outputs may reuse the same transformed/downsampled/density arrays;
+- manifest order, collision policy, cancellation, and partial failure are properties of
+  the planned output set rather than of an individual FCS file.
+
+Therefore use two distinct boundaries:
+
+1. **Source preparation boundary**: load each required FCS source once per compatible
+   cache key, calculate immutable renderer-neutral prepared data, and resolve every
+   cross-source dependency and shared range.
+2. **Render execution boundary**: submit only a dependency-complete immutable prepared
+   output item to the bounded executor. A worker must not discover or mutate another
+   sample's source, range, cache entry, output path, or manifest state.
+
+For the simple non-overlay case, preparation of one sample followed by rendering is
+independent from other samples and is the first required parallel test case. Do not let
+this fast path bypass the same planning, staging, ordering, and cancellation contracts
+used by the general path.
+
+The implementation may benchmark grouping all formats for one sample/view into one job
+against submitting each format separately. Grouping can reuse prepared arrays and reduce
+peak concurrent memory, while per-format jobs provide finer cancellation and load
+balancing. Select the unit from measured wall time and peak RSS; do not duplicate prepared
+event arrays merely to increase the number of jobs.
+
 ### Make preparation explicit
 
 Remove the hidden “prepare every sample on first render callback” behavior from
@@ -521,6 +555,14 @@ The core/headless renderer may run in workers only after a concurrency test prov
 no shared mutable global state. Qt/pyqtgraph screenshot or painter backends remain on the
 GUI thread and are not candidates for parallel workers. Prefer the existing
 renderer-neutral core scene and PNG/JPEG/SVG/PDF writers.
+
+Bound render workers by logical CPUs, measured renderer scaling, estimated immutable
+prepared-scene bytes, per-format temporary bytes, and the configured memory budget. Do
+not assume that source independence implies renderer thread safety. Profile whether the
+writer releases the GIL; if thread workers do not provide a repeatable speedup, keep
+sequential rendering as the default. A process backend requires the separate Increment 11
+decision because copying/pickling prepared arrays, Windows spawn behavior, cancellation,
+and aggregate memory can outweigh its GIL benefit.
 
 ## Qt progress and cancellation UI
 
@@ -873,13 +915,20 @@ cancellation are deterministic; measured benchmark and peak memory are reported.
 
 ### Increment 9: Bounded batch rendering parallelism
 
+- Treat the FCS file as a dependency source, not automatically as one executor job.
+- Submit only dependency-complete immutable prepared output items; begin parity testing
+  with non-overlay, one-source outputs.
+- Benchmark per-format jobs against one sample/view format bundle for reuse, cancellation
+  granularity, wall time, and peak RSS.
 - Verify core renderer reentrancy before enabling workers.
 - Parallelize independent prepared output items with unique staged paths.
 - Preserve dependency barriers, item/manifest order, strictness and collision policies.
 - Add shared-overlay-source and `shared_ranges` tests.
 
 Acceptance: sequential and parallel PNG/SVG/PDF scene/sidecar content is equivalent;
-failures/cancellation cannot corrupt successful or unrelated outputs.
+failures/cancellation cannot corrupt successful or unrelated outputs; worker bounds include
+prepared-scene and format-temporary memory; the selected thread job unit demonstrates
+repeatable benefit on a documented representative batch workload.
 
 ### Increment 10: Optional adjacent-sample prefetch
 
