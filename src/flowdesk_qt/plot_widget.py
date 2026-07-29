@@ -46,7 +46,7 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 
-from flowdesk_core.density_colors import density_event_colors
+from flowdesk_core.density_colors import estimate_density_colors
 from flowdesk_core.models import GateSpec, TransformSpec
 from flowdesk_core.plot_presentation import resolve_presentation_layers
 from flowdesk_core.transforms import (
@@ -90,6 +90,9 @@ class PlotWidget(QWidget):
         self._scatter: ScatterPlotItem | None = None
         self._population_scatter_items: list[tuple[Any, str]] = []
         self._event_colors: NDArray[np.str_] | None = None
+        self._density_color_cache: dict[tuple[object, ...], NDArray[np.str_]] = {}
+        self._density_input: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None
+        self._density_coloring_active = False
         self._gate_items: list[Any] = []
         self._retired_plot_items: list[Any] = []
         self._gate_item_callbacks: dict[int, Any] = {}
@@ -145,6 +148,10 @@ class PlotWidget(QWidget):
         self._status_banner: QLabel | None = None
         self._cached_marginal_x: NDArray[np.float64] | None = None
         self._cached_marginal_y: NDArray[np.float64] | None = None
+        self._density_refresh_timer = QTimer(self)
+        self._density_refresh_timer.setSingleShot(True)
+        self._density_refresh_timer.setInterval(40)
+        self._density_refresh_timer.timeout.connect(self._refresh_density_colors)
         self._build_ui()
 
     # -- public API ----------------------------------------------------------
@@ -496,6 +503,8 @@ class PlotWidget(QWidget):
         self._excluded_event_count = int(len(x_plot) - np.count_nonzero(valid))
         x_plot = x_plot[valid]
         y_plot = y_plot[valid]
+        density_x = x_plot
+        density_y = y_plot
         if colors_plot is not None:
             colors_plot = colors_plot[valid]
         sample_indices = self._display_sample_indices(
@@ -507,8 +516,8 @@ class PlotWidget(QWidget):
             y_plot = y_plot[sample_indices]
             if colors_plot is not None:
                 colors_plot = colors_plot[sample_indices]
-        if density_coloring:
-            colors_plot = density_event_colors(x_plot, y_plot)
+        self._density_input = (density_x, density_y) if density_coloring else None
+        self._density_coloring_active = density_coloring
         self._displayed_event_count = len(x_plot)
         self._rendered_x = x_plot
         self._rendered_y = y_plot
@@ -544,6 +553,8 @@ class PlotWidget(QWidget):
         else:
             self._auto_range()
         self._refresh_ticks_for_current_view()
+        if density_coloring:
+            self._refresh_density_colors()
 
         # Update marginal histograms if enabled.
         self._update_marginal_histograms()
@@ -639,6 +650,9 @@ class PlotWidget(QWidget):
         self._displayed_event_count = 0
         self._display_sampling_active = False
         self._event_colors = None
+        self._density_color_cache.clear()
+        self._density_input = None
+        self._density_coloring_active = False
         self._is_histogram_mode = False
         self._update_labels()
 
@@ -2187,6 +2201,50 @@ class PlotWidget(QWidget):
         self._range_mode = "manual"
         self._manual_view_range = current
         self._refresh_ticks_for_current_view()
+        if self._density_coloring_active:
+            self._density_refresh_timer.start()
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        if self._density_coloring_active:
+            self._density_color_cache.clear()
+            self._density_refresh_timer.start()
+
+    def _refresh_density_colors(self) -> None:
+        """Recolor sampled markers from full transformed data for this ViewBox."""
+        if not self._density_coloring_active or self._density_input is None:
+            return
+        if self._rendered_x is None or self._rendered_y is None:
+            return
+        current = self.view_range()
+        if current is None:
+            return
+        (x_min, x_max), (y_min, y_max) = current
+        if x_min >= x_max or y_min >= y_max:
+            return
+        input_x, input_y = self._density_input
+        logical_size = (max(1, self._glw.width()), max(1, self._glw.height()))
+        key = (id(input_x), id(input_y), len(input_x), (x_min, x_max, y_min, y_max), logical_size)
+        colors = self._density_color_cache.get(key)
+        if colors is None:
+            colors = estimate_density_colors(
+                input_x, input_y, self._rendered_x, self._rendered_y,
+                bounds=(x_min, x_max, y_min, y_max), logical_size=logical_size,
+            ).colors
+            self._density_color_cache = {key: colors}
+        self._event_colors = colors
+        self._clear_scatter()
+        for color in np.unique(colors):
+            mask = colors == color
+            item = self._plot_uniform_scatter(
+                self._rendered_x[mask], self._rendered_y[mask], str(color),
+                self._style.dot_opacity,
+            )
+            self._population_scatter_items.append((item, str(color)))
+        self._scatter = (
+            self._population_scatter_items[0][0]
+            if self._population_scatter_items else None
+        )
 
     def _full_range_for_axis(
         self,

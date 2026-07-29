@@ -152,6 +152,11 @@ unchanged.
 
 ## Increment 2 — Qt preview data flow, cache, and invalidation
 
+**Status: completed.** Qt retains full transformed finite coordinates solely as density
+input, limits marker drawing through the existing deterministic sampler, and debounces
+ViewBox/resize recoloring. The one-entry immutable-array cache is keyed by input identity,
+viewport, and logical plot size and is cleared on resize/plot clear.
+
 Non-goals: changing gate membership, display downsampling policy, export adapters, or
 overlay behavior.
 

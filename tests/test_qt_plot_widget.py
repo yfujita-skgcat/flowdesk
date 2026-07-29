@@ -346,7 +346,8 @@ def test_density_coloring_replaces_supplied_population_colors_for_display() -> N
       x, y, event_colors=np.array(["#ff00ff"] * 4), density_coloring=True,
     )
     assert plot._event_colors is not None
-    assert plot._event_colors.tolist()[:3] == ["#ed1c24"] * 3
+    assert len(set(plot._event_colors.tolist()[:3])) == 1
+    assert plot._event_colors.tolist()[0] != plot._event_colors.tolist()[3]
     assert plot._event_colors.tolist()[3] != "#ff00ff"
     assert np.array_equal(plot._cached_x, x)
     assert np.array_equal(plot._cached_y, y)

@@ -56,7 +56,7 @@ Flowdesk では、次の三つの選択状態を区別する必要がある。
 
 `Display max points` による点数制限、色、背景、凡例、フォント、軸ラベル、オーバーレイは**表示専用**である。ゲート membership、イベント数、frequency、統計、TSV/CSV 出力は全イベントを使う。
 
-通常の active sample は plot appearance の base dot color で描画する。Samples ペインの色見本は manual overlay 用であり、別 sample の overlay を有効にした場合だけそのレイヤーへ適用される。population に明示した表示色は base dot color より優先する。単一sampleでは Plot Presentation の `Event colors` から **Density color (single sample)** を選べる。このモードは局所密度をGaussian smoothingした連続的な青→シアン→緑→黄→赤で示し、イベントごとのpopulation/gating色は使わない。overlayが一つでもある場合は自動的に通常色へ戻り、設定は保存されたままステータスで理由を表示する。gate outline、membership、counts、frequency、統計は変化しない。
+通常の active sample は plot appearance の base dot color で描画する。Samples ペインの色見本は manual overlay 用であり、別 sample の overlay を有効にした場合だけそのレイヤーへ適用される。population に明示した表示色は base dot color より優先する。単一sampleでは Plot Presentation の `Event colors` から **Density color (single sample)** を選べる。このモードは、全有効表示イベントから局所密度をGaussian smoothingした連続的な青→シアン→緑→黄→赤で示す一方、描画する点数は `Display max points` の上限を維持する。zoom、pan、plot resizeでは現在の表示範囲に合わせて密度色を更新する。イベントごとのpopulation/gating色は使わない。overlayが一つでもある場合は自動的に通常色へ戻り、設定は保存されたままステータスで理由を表示する。gate outline、membership、counts、frequency、統計は変化しない。
 
 ### 1.2 Results の鮮度
 
