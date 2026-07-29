@@ -79,19 +79,19 @@ Tests and benchmarks:
 - `tests/test_qt_plot_widget.py` only where worker shutdown is already tested
 - existing files under `benchmarks/` and `src/flowdesk_core/vector_scatter_benchmark.py`
 
-## Current implementation facts
+## Baseline implementation facts before Increments 1–3 (historical)
 
-- `ProcessedDisplayScheduler` and `PreviewScheduler` define a one-worker `QThreadPool`,
+- Before Increment 2, `ProcessedDisplayScheduler` and `PreviewScheduler` defined a one-worker `QThreadPool`,
   immutable request snapshots, debounce/coalescing, and latest-wins result acceptance.
   However, `MainWindow._queue_processed_display()` currently calls
   `PipelineRunner.prepare_display_sample()` synchronously and then calls `_replot()`.
   No call to `ProcessedDisplayScheduler.schedule()` exists in the active main-window
   path. Do not describe current sample switching as already off the GUI thread.
-- In density mode, `PlotWidget.plot_events()` first submits a uniform-color scatter item,
+- Before Increment 1, density mode in `PlotWidget.plot_events()` first submitted a uniform-color scatter item,
   then `_refresh_density_colors()` calculates density colors, builds per-event brushes,
   and calls `ScatterPlotItem.setData()` a second time. Density estimation, brush
   construction, and pyqtgraph item mutation all currently occur on the GUI thread.
-- The density cache key uses Python array identity. Main-window population/filter
+- Before Increment 3, the density cache key used Python array identity. Main-window population/filter
   selection can create new arrays for semantically identical data, so repeated displays
   can miss the cache even when sample, population, axes, transforms, revision, and event
   selection are unchanged.
@@ -227,6 +227,36 @@ chunked kernel later when all of the following are demonstrated:
 Interactive improvement may later include bounded, low-priority prefetch of the next
 sample only after the active request finishes. Prefetch must be cancelable, must not delay
 the active request, and must obey the same cache and memory budget.
+
+## Decision record: why active-sample display is not sample-parallel (2026-07-30)
+
+The main-window plot request processes the selected sample only.  It does **not** run,
+wait for, or merge the other project samples before displaying that plot.  Sample-level
+threads therefore reduce elapsed time for authoritative multi-sample `Run Pipeline`, but
+do not directly reduce the latency of selecting one sample in the main window.
+
+For a selected sample, the likely visible-cost stages are processed-display preparation,
+density histogram/smoothing/global normalization, per-event colour/brush creation,
+payload transfer to pyqtgraph, and GUI-thread drawing.  The fact that a colour is finally
+assigned to each point does not make the density algorithm an arbitrary independent
+event operation: its result depends on a density field computed from the complete selected
+display population.  Qt and pyqtgraph presentation objects also have GUI-thread affinity.
+
+Apply the following decision table before proposing concurrency:
+
+| Candidate | Initial decision | Required proof before implementation |
+|---|---|---|
+| Reuse an unchanged semantic display/density result | Implement first | Cold and warm paths have identical events, colours, point order, labels, gates, and interaction state. |
+| Remove repeated Qt payload transfer or reduce its representation | Implement after profiling | Rare colours, alpha, draw order, selection, and hit testing remain equivalent. |
+| Renderer-neutral density calculation in one owned worker | Deferred until lifecycle coverage exists | Worker owns only NumPy arrays; GUI thread creates `QBrush`/pyqtgraph objects; stale generation is discarded; close/shutdown is safe. |
+| Fixed-bin density histogram chunks | Deferred | Sum integer chunk histograms first, then perform exactly one global smoothing, normalization, and colour mapping; result equals unchunked across chunk sizes/workers and stays within the memory budget. |
+| Arbitrary Python-thread event chunks for display or analysis | Do not implement initially | A profile identifies a dominant pure kernel and mathematical merge, invalid-value, sampling, parent/Boolean/automatic-gate, ordering, raw-immutability, memory, and headless parity tests all pass. |
+
+NumPy may already release the GIL for suitable kernels, but extra Python scheduling,
+temporary arrays, memory bandwidth pressure, and native-library inner threads can still
+make a threaded version slower.  Measure numerical computation, Qt payload transfer, and
+paint time separately.  Never claim a GUI rendering improvement from an authoritative
+pipeline benchmark, or vice versa.
 
 ## Decision record: active-sample display and optimization order (2026-07-29)
 

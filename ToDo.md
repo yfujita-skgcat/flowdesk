@@ -1232,6 +1232,15 @@ density数値処理、Qt描画payloadの削減である。`Run Pipeline`のsampl
 対象とするauthoritative batch実行だけに適用する。1 sample内の任意event分割は、全population
 normalization、parent/Boolean/automatic gate、deterministic sampling、invalid-value policy、結果順序を
 変えない純粋kernelであることをprofileと数学的merge testで示すまで実装しない。
+2026-07-30の追加判断として、single-sample表示で待たせているのは他sampleの解析ではなく、
+選択sampleのprocessed-display準備、density推定/normalization、per-event color/brushの生成、
+pyqtgraphへのpayload転送と描画である。個々のeventの色付けが見かけ上独立でも、densityは
+表示population全体から得るglobal histogram、smoothing、normalizationに依存し、Qt item更新は
+GUI threadに限定される。そのため、まずsemantic cacheのhit率、viewport非依存density fieldの
+再利用、重複`setData()`とper-event Qt payloadの削減を測定して改善する。NumPyの純粋数値kernelを
+off-thread化または固定bin histogramとしてchunk化する案は、global reductionを一度だけ行い、
+unchunkedと色・順序・normalizationが一致し、memoryとshutdownが安全であることをtestで示せた
+場合に限る。Python eventごとのthread分割や、Qt/pyqtgraph objectをworkerから更新する実装は行わない。
 2026-07-29の実測では、example FCSのdensity plot全体が約325–329 ms、そのうちdensity
 数値計算が約77–130 ms、uniform plotでも約189–192 msであった。現在はdensity modeで
 uniform scatterを一度送信した後にdensity brushで再送信し、processed-display cache missも
@@ -1252,6 +1261,17 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
    sample-level pipeline parallelismを追加する。GUIのactive-sample表示には流用しない。
 4. Increment 9以降はrenderer reentrancy、memory budget、sequential/parallel parityを確認してから
    batch rendering parallelism、prefetch、限定的なdensity histogram chunkingを検討する。
+
+single-sample表示の改善候補は、次の優先順で判定する。これはauthoritative pipelineのsample間
+thread backend（Increment 8）とは別の計画である。
+
+| 優先度 | 対象 | 実装境界 | 必須の同一性/安全性確認 |
+|---|---|---|---|
+| 高 | 同一display identityの再表示 | GUI thread cacheと既存scatterの再利用 | 色・点順序・gate/labelの表示がcold pathと一致すること |
+| 高 | densityのglobal数値field | renderer-neutral NumPy array、latest-wins workerは将来候補 | viewport変更で色が変化せず、global normalizationがunchunkedと一致すること |
+| 高 | per-event Qt payload | GUI threadの最小payload表現 | rare event、alpha、draw order、selection、interactionを維持すること |
+| 保留 | density histogramのchunk化 | coreの固定bin整数histogramを合算後、一回だけsmoothing/normalization | chunk境界・worker数で色indexが完全一致し、peak memoryとshutdownを計測すること |
+| 対象外 | 任意eventのPython thread分割 | なし | parent/Boolean/automatic gate、sampling、invalid値、結果順序を変えない証明がないため実装しない |
 
 #### Increment 1: densityの重複描画除去とhot-path計測（完了）
 
