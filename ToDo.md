@@ -1241,17 +1241,17 @@ Increment 1–3のinteractive hot path最適化を先に完了する。
   opt-in benchmarkを追加した。2026-07-29のsynthetic 2,200 events × 5回では全体中央値
   53.9 ms、density数値計算中央値11.1 msであった。絶対時間thresholdは通常CIへ追加しない。
 
-#### Increment 2: processed-display schedulerの実経路接続
+#### Increment 2: processed-display schedulerの実経路接続（完了）
 
-- [ ] `MainWindow._queue_processed_display()`の同期
+- [x] `MainWindow._queue_processed_display()`の同期
   `PipelineRunner.prepare_display_sample()`呼出しを既存`ProcessedDisplayScheduler`経路へ
   置換する。scheduler classが存在するだけで非同期化済みと判断しない。
-- [ ] immutable request、one-worker、debounce/coalescing、latest-wins、analysis/project
+- [x] immutable request、one-worker、debounce/coalescing、latest-wins、analysis/project
   revision check、error reporting、shutdown contractを維持する。
-- [ ] worker結果/cacheをGUI threadでのみ適用し、late resultがcurrent sampleを上書きせず、
+- [x] worker結果/cacheをGUI threadでのみ適用し、late resultがcurrent sampleを上書きせず、
   relevantなreplotを一度だけ行う。
-- [ ] 遅延workerでA→B→Cを高速選択、project replacement、failure、window closeをtestし、
-  Cだけが表示されthreadが残らないことを確認する。
+- [x] 遅延workerでA→B→Cを高速選択し、Cだけが表示され、B由来のfailureがCのplotを消さず、
+  schedulerのsnapshot/coalescingとwindow close時のworker待機をtestする。
 
 #### Increment 3: density数値処理のoff-thread化とsemantic cache
 

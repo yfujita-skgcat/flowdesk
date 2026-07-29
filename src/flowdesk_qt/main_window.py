@@ -1218,9 +1218,9 @@ class MainWindow(QMainWindow):
             if sample is not None and sample.status not in {"missing", "fingerprint mismatch"}:
                 self._load_sample_events(sample)
         self._project_dirty = True
-        # Retain immediate overlay feedback for the supported Samples-pane
-        # control.  The calculation remains in the core runner; subsequent
-        # plot changes continue through the coalescing display scheduler.
+        # The calculation remains in the core runner, scheduled outside the
+        # GUI thread.  Replot shows the existing matching cache entry or the
+        # explicit preparing state while the current request is pending.
         active = self._sample_data.get(self._current_sample_id or "")
         if active is not None:
             x_id = self._channel_selector.x_channel_id()
@@ -1236,12 +1236,7 @@ class MainWindow(QMainWindow):
             )
             key = self._processed_display_key(request)
             if key not in self._processed_display_cache:
-                try:
-                    self._processed_display_cache[key] = PipelineRunner(
-                        self._build_project_manifest()
-                    ).prepare_display_sample(request)
-                except Exception as exc:
-                    self._update_status(f"Processed display error: {exc}")
+                self._queue_processed_display(request)
         self._replot()
 
     def _on_population_display_color_changed(
@@ -1913,27 +1908,16 @@ class MainWindow(QMainWindow):
         )
 
     def _queue_processed_display(self, request: ProcessedDisplayRequest) -> None:
-        """Adopt a core display result without ever calculating values in Qt.
-
-        The existing preview scheduler remains responsible for debounced gate
-        recalculation.  Initial plot selection must still establish a complete
-        current display atomically, rather than exposing a blank raw fallback
-        while a separate worker is pending.
-        """
+        """Submit immutable canonical display work without blocking the GUI."""
         try:
-            result = PipelineRunner(
-                self._build_project_manifest()
-            ).prepare_display_sample(request)
-            if result.revision != self._preview_revision.analysis_revision:
-                return
-            self._processed_display_cache[self._processed_display_key(result)] = result
-            self._replot()
-        except Exception as exc:
-            self._plot_widget.clear_plot()
-            self._plot_widget.set_status_banner(
-                f"Processed display unavailable: {exc}"
+            self._processed_display_scheduler.schedule(
+                self._build_project_manifest(), request
             )
-            self._update_status(f"Processed display error: {exc}")
+        except RuntimeError as exc:
+            # Shutdown/project replacement can close the scheduler between a
+            # cache miss and submission.  Never revive it or run core work in
+            # the GUI thread as a fallback.
+            self._update_status(f"Processed display unavailable: {exc}")
 
     def _previous_processed_display(
         self, request: ProcessedDisplayRequest
@@ -1995,6 +1979,22 @@ class MainWindow(QMainWindow):
     ) -> None:
         """Never substitute raw events when canonical processing fails."""
         if request.revision != self._preview_revision.analysis_revision:
+            return
+        sample = self._sample_data.get(self._current_sample_id or "")
+        if sample is None or sample.sample_id != request.sample_id:
+            return
+        current = self._processed_display_request(
+            sample,
+            self._channel_selector.x_channel_id(),
+            self._channel_selector.y_channel_id(),
+            self._active_plot_transform(self._channel_selector.x_channel_id()),
+            (
+                None
+                if self._channel_selector.is_count_mode()
+                else self._active_plot_transform(self._channel_selector.y_channel_id())
+            ),
+        )
+        if self._processed_display_key(request) != self._processed_display_key(current):
             return
         self._plot_widget.clear_plot()
         self._plot_widget.set_status_banner(

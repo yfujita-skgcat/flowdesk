@@ -16,9 +16,11 @@ from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import ChannelSpec, GateSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.preview import PreviewRequest
+from flowdesk_core.processed_display import ProcessedDisplayRequest
 from flowdesk_core.sample import SampleData
 from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.preview_scheduler import PreviewScheduler
+from flowdesk_qt.processed_display_scheduler import ProcessedDisplayScheduler
 
 pytestmark = pytest.mark.gui
 
@@ -30,6 +32,20 @@ def _request(revision: int) -> PreviewRequest:
     channels=(ChannelSpec(id="x", name="X"),),
   )
   return PreviewRequest(revision=revision, sample=sample)
+
+
+def _display_request(revision: int, sample_id: str = "s1") -> ProcessedDisplayRequest:
+  sample = SampleData(
+    sample_id=sample_id,
+    events=np.array([[1.0]], dtype=np.float64),
+    channels=(ChannelSpec(id="x", name="X"),),
+  )
+  return ProcessedDisplayRequest(
+    revision=revision,
+    sample=sample,
+    population_id="all_events",
+    x_parameter_id="x",
+  )
 
 
 def _wait_until(qapp, predicate) -> None:
@@ -150,6 +166,103 @@ def test_scheduler_shutdown_waits_for_running_job_and_ignores_late_signal(qapp) 
   finally:
     release.set()
     scheduler.deleteLater()
+
+
+def test_processed_display_scheduler_coalesces_pending_latest_request(qapp) -> None:
+  first_started = threading.Event()
+  release_first = threading.Event()
+  calls: list[tuple[int, str]] = []
+  received: list[tuple[int, str]] = []
+
+  def execute(project, request):
+    calls.append((request.revision, request.sample_id))
+    assert project["nested"]["value"] == request.revision
+    if request.revision == 1:
+      first_started.set()
+      assert release_first.wait(2.0)
+    return request
+
+  scheduler = ProcessedDisplayScheduler(debounce_ms=0, executor=execute)
+  scheduler.display_ready.connect(
+    lambda result: received.append((result.revision, result.sample_id))
+  )
+  first_project = {"nested": {"value": 1}}
+  try:
+    scheduler.schedule(first_project, _display_request(1, "a"))
+    _wait_until(qapp, first_started.is_set)
+    second_project = {"nested": {"value": 2}}
+    scheduler.schedule(second_project, _display_request(2, "b"))
+    scheduler.schedule({"nested": {"value": 3}}, _display_request(3, "c"))
+    first_project["nested"]["value"] = 99
+    second_project["nested"]["value"] = 99
+    release_first.set()
+    _wait_until(qapp, lambda: received == [(1, "a"), (3, "c")])
+    assert calls == [(1, "a"), (3, "c")]
+  finally:
+    release_first.set()
+    scheduler.shutdown()
+    scheduler.deleteLater()
+
+
+def test_main_window_processed_display_uses_latest_selected_sample(
+  qapp, monkeypatch, tmp_path,
+) -> None:
+  paths = []
+  for index in range(3):
+    path = tmp_path / f"display-{index}.fcs"
+    write_fcs_file(
+      path,
+      np.array([[float(index), 1.0], [float(index + 1), 2.0]]),
+      ["X", "Y"],
+    )
+    paths.append(path)
+  window = MainWindow()
+  started = threading.Event()
+  release = threading.Event()
+  original_prepare = PipelineRunner.prepare_display_sample
+  calls: list[str] = []
+
+  def delayed_prepare(project, request):
+    calls.append(request.sample_id)
+    if request.sample_id == samples[1].id:
+      started.set()
+      assert release.wait(2.0)
+    return original_prepare(PipelineRunner(project), request)
+
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(path) for path in paths]) == 3
+    samples = window._sample_browser.samples()
+    assert window._sample_browser.select_sample(samples[0].id)
+    _wait_until(qapp, lambda: bool(window._processed_display_cache))
+    window._processed_display_scheduler._executor = delayed_prepare
+    assert window._sample_browser.select_sample(samples[1].id)
+    _wait_until(qapp, started.is_set)
+    assert window._sample_browser.select_sample(samples[2].id)
+    qapp.processEvents()
+    assert window._current_sample_id == samples[2].id
+    release.set()
+    _wait_until(qapp, lambda: any(
+      result.sample_id == samples[2].id
+      for result in window._processed_display_cache.values()
+    ))
+    assert calls[-2:] == [samples[1].id, samples[2].id]
+    assert window._plot_widget._rendered_x is not None
+    np.testing.assert_allclose(window._plot_widget._rendered_x, [2.0, 3.0])
+    stale_request = window._processed_display_request(
+      window._sample_data[samples[1].id],
+      window._channel_selector.x_channel_id(),
+      window._channel_selector.y_channel_id(),
+      window._active_plot_transform(window._channel_selector.x_channel_id()),
+      window._active_plot_transform(window._channel_selector.y_channel_id()),
+    )
+    window._on_processed_display_failed(stale_request, RuntimeError("stale failure"))
+    assert window._plot_widget._rendered_x is not None
+    np.testing.assert_allclose(window._plot_widget._rendered_x, [2.0, 3.0])
+  finally:
+    release.set()
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
 
 
 def test_main_window_integrates_current_sample_preview_into_results_workspace(

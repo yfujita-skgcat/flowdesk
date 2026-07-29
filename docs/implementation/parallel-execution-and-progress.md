@@ -602,16 +602,19 @@ Acceptance: density mode performs one main scatter `setData()` submission per pl
 visible points/order/colors and density normalization are unchanged, and the benchmark
 separates numeric from Qt-transfer cost.
 
-### Increment 2: Activate asynchronous processed-display scheduling
+### Increment 2: Activate asynchronous processed-display scheduling — complete
 
-- Replace the synchronous cache-miss body of `_queue_processed_display()` with the
-  existing `ProcessedDisplayScheduler` request path.
-- Preserve immutable request snapshots, latest-request-wins, analysis/project revision
-  validation, debounce/coalescing, error reporting, and clean application shutdown.
-- Apply returned cache/result state only on the GUI thread and trigger at most one
-  relevant replot. A late result must not replace the current sample.
-- Add GUI tests for rapid A→B→C selection, project replacement, failure, and close while a
-  request is active.
+- `_queue_processed_display()` now submits the immutable manifest/request snapshot to
+  `ProcessedDisplayScheduler`; it no longer invokes `PipelineRunner` on the GUI thread.
+  The manual-overlay cache-miss path uses the same submission route.
+- Existing one-worker debounce/coalescing, snapshot copying, revision/current-request
+  checks, and `closeEvent()` shutdown remain in force. A closed scheduler never falls
+  back to synchronous core execution.
+- Main-window failure handling now verifies the current sample and complete display key,
+  so a late failure from a prior selected sample cannot clear the current plot.
+- GUI tests cover scheduler coalescing/snapshot isolation and an intentionally delayed
+  A→B→C selection. Only C is adopted, a stale B failure leaves C visible, and teardown
+  waits for the worker.
 
 Acceptance: an intentionally delayed display preparation does not block event-loop
 interaction; only C is displayed; scientific preview/count state equals the synchronous

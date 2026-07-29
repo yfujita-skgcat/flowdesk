@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtTest import QTest
 
 from flowdesk_cli.run_project import run_project_command
 from flowdesk_core.execution_context import ExecutionContext
@@ -44,6 +45,30 @@ def _wait_for_worker(window: MainWindow) -> None:
         # C++ object already deleted by _release_pipeline_worker;
         # worker is no longer running either way.
         pass
+
+
+def _wait_for_scatter(window: MainWindow) -> None:
+    for _ in range(200):
+        if window._plot_widget._scatter is not None:
+            return
+        QTest.qWait(5)
+    assert window._plot_widget._scatter is not None
+
+
+def _wait_for_histogram(window: MainWindow) -> None:
+    for _ in range(200):
+        if window._plot_widget._is_histogram_mode:
+            return
+        QTest.qWait(5)
+    assert window._plot_widget._is_histogram_mode
+
+
+def _wait_for_marginals(window: MainWindow) -> None:
+    for _ in range(200):
+        if window._plot_widget._marginal_x_plot is not None:
+            return
+        QTest.qWait(5)
+    assert window._plot_widget._marginal_x_plot is not None
 
 
 # ---------------------------------------------------------------------------
@@ -95,13 +120,12 @@ def test_population_filter_reduces_scatter_points(
         assert gui_counts == {"all_events": 4, "pos": 3}
 
         # all_events shows 4 points
-        assert window._plot_widget._scatter is not None
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == 4
 
         # Select the gated population before changing only the display scale.
         window._on_population_selected("pos", sample.id)
-        qapp.processEvents()
-        assert window._plot_widget._scatter is not None
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == 3
 
         # Selecting a formal Log10 transform must not recalculate the existing
@@ -111,7 +135,7 @@ def test_population_filter_reduces_scatter_points(
         assert not window._results_stale
         assert window._plot_widget._x_transform_spec is not None
         assert window._plot_widget._x_transform_spec.transform_type == "log"
-        assert window._plot_widget._scatter is not None
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == 3
     finally:
         window.close()
@@ -236,9 +260,7 @@ def test_population_filter_persists_across_channel_switch(
         # Select gate population
         table = window._population_tree._table
         table.selectRow(1)
-        qapp.processEvents()
-
-        assert window._plot_widget._scatter is not None
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == 3
 
         # Selecting the gate definition is independent from the displayed
@@ -254,6 +276,7 @@ def test_population_filter_persists_across_channel_switch(
         assert window.display_population_id == "all_events"
         window._on_show_population(gate)
         assert window.display_population_id == "pos"
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == 3
 
         # Returning to All Events changes the display only; it must not move
@@ -261,6 +284,13 @@ def test_population_filter_persists_across_channel_switch(
         window._on_population_selected("all_events", sample.id)
         assert window.display_population_id == "all_events"
         assert window.selected_gate_id == "pos"
+        for _ in range(200):
+            if (
+                window._plot_widget._scatter is not None
+                and len(window._plot_widget._scatter.xData) == 4
+            ):
+                break
+            QTest.qWait(5)
         assert len(window._plot_widget._scatter.xData) == 4
 
         window._on_population_selected("pos", sample.id)
@@ -268,11 +298,11 @@ def test_population_filter_persists_across_channel_switch(
 
         # Switch X/Y to different channels, membership still 3
         window._channel_selector.set_selected_channels("X", "Z")
-        qapp.processEvents()
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == 3
 
         window._channel_selector.set_selected_channels("Z", "Y")
-        qapp.processEvents()
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == 3
     finally:
         window.close()
@@ -351,8 +381,7 @@ def test_gate_edit_invalidates_population_filter(
         # Select gate population (3 points)
         table = window._population_tree._table
         table.selectRow(1)
-        qapp.processEvents()
-        assert window._plot_widget._scatter is not None
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == 3
 
         # Add a new gate -> retain the displayed population while recalculating.
@@ -380,10 +409,18 @@ def test_gate_edit_invalidates_population_filter(
         assert len(window._plot_widget._scatter.xData) == 3
 
         # The newly defined gate has no previous membership; selecting it must
-        # not fabricate the old ``pos`` mask.
+        # not fabricate the old ``pos`` mask.  The asynchronous canonical
+        # request may instead complete with the new gate's one-event result.
         window._on_population_selected("neg", sample.id)
         assert window._selected_population_id == "neg"
-        assert len(window._plot_widget._scatter.xData) == 4
+        for _ in range(200):
+            if (
+                window._plot_widget._scatter is not None
+                    and len(window._plot_widget._scatter.xData) == 1
+            ):
+                break
+            QTest.qWait(5)
+        assert len(window._plot_widget._scatter.xData) == 1
     finally:
         window.close()
         window.deleteLater()
@@ -684,9 +721,7 @@ def test_gui_population_count_matches_headless(
         # Select gate population in GUI
         table = window._population_tree._table
         table.selectRow(1)
-        qapp.processEvents()
-
-        assert window._plot_widget._scatter is not None
+        _wait_for_scatter(window)
         gui_count = len(window._plot_widget._scatter.xData)
         assert gui_count == headless_count
     finally:
@@ -860,14 +895,12 @@ def test_real_fcs_multi_sample_membership_switch(
         # Select gate population on sample 1
         table = window._population_tree._table
         table.selectRow(1)
-        qapp.processEvents()
-
-        assert window._plot_widget._scatter is not None
+        _wait_for_scatter(window)
         assert len(window._plot_widget._scatter.xData) == count1
 
         # Switch to sample 2 — membership for sample 2 should be used
         assert window._sample_browser.select_sample(sample2.id)
-        qapp.processEvents()
+        _wait_for_scatter(window)
 
         assert len(window._plot_widget._scatter.xData) == count2
     finally:
@@ -902,7 +935,10 @@ def test_count_mode_shows_histogram_not_scatter(
         assert window._sample_browser.add_samples_from_paths([str(fcs_path)]) == 1
         sample = window._sample_browser.samples()[0]
         assert window._sample_browser.select_sample(sample.id)
-        qapp.processEvents()
+        for _ in range(200):
+            if window._plot_widget._scatter is not None:
+                break
+            QTest.qWait(5)
 
         # Initially in scatter mode
         assert window._plot_widget._scatter is not None
@@ -910,7 +946,7 @@ def test_count_mode_shows_histogram_not_scatter(
 
         # Switch Y to Count -> histogram mode
         window._channel_selector.set_selected_channels("FSC", COUNT_CHANNEL)
-        qapp.processEvents()
+        _wait_for_histogram(window)
 
         assert window._channel_selector.is_count_mode()
         assert window._plot_widget._is_histogram_mode is True
@@ -950,7 +986,7 @@ def test_histogram_bin_count_sum_matches_population(
 
         # Switch to histogram mode
         window._channel_selector.set_selected_channels("FSC", COUNT_CHANNEL)
-        qapp.processEvents()
+        _wait_for_histogram(window)
 
         assert window._plot_widget._is_histogram_mode
         hist_item = window._plot_widget._histogram_item
@@ -991,13 +1027,13 @@ def test_switching_back_from_count_restores_scatter(
 
         # Go to histogram mode
         window._channel_selector.set_selected_channels("FSC", COUNT_CHANNEL)
-        qapp.processEvents()
+        _wait_for_histogram(window)
         assert window._plot_widget._is_histogram_mode is True
         assert window._plot_widget._scatter is None
 
         # Switch back to normal scatter
         window._channel_selector.set_selected_channels("FSC", "SSC")
-        qapp.processEvents()
+        _wait_for_scatter(window)
 
         assert window._plot_widget._is_histogram_mode is False
         assert window._plot_widget._scatter is not None
@@ -1084,7 +1120,7 @@ def test_count_mode_with_population_filter(
 
         # Switch to histogram mode
         window._channel_selector.set_selected_channels("X", COUNT_CHANNEL)
-        qapp.processEvents()
+        _wait_for_histogram(window)
 
         # all_events histogram: 4 events
         hist_item = window._plot_widget._histogram_item
@@ -1095,7 +1131,7 @@ def test_count_mode_with_population_filter(
         # Select gate population -> histogram shows only 3 events
         table = window._population_tree._table
         table.selectRow(1)
-        qapp.processEvents()
+        _wait_for_histogram(window)
 
         hist_item = window._plot_widget._histogram_item
         assert hist_item is not None
@@ -1143,7 +1179,7 @@ def test_marginal_histograms_toggle(
         window._plot_widget.set_marginal_enabled(True)
         window._plot_toolbar.set_marginal_enabled(True)
         window._replot()
-        qapp.processEvents()
+        _wait_for_marginals(window)
 
         assert window._plot_widget.is_marginal_enabled() is True
         assert window._plot_toolbar.is_marginal_enabled() is True
@@ -1205,7 +1241,7 @@ def test_marginal_histograms_respect_population_filter(
         # Enable marginal histograms
         window._plot_widget.set_marginal_enabled(True)
         window._replot()
-        qapp.processEvents()
+        _wait_for_marginals(window)
 
         # all_events: marginal histograms should have 4 events
         assert window._plot_widget._marginal_x_plot is not None
@@ -1214,7 +1250,7 @@ def test_marginal_histograms_respect_population_filter(
         # Select gate population -> marginal histograms show 3 events
         table = window._population_tree._table
         table.selectRow(1)
-        qapp.processEvents()
+        _wait_for_marginals(window)
 
         # Scatter shows 3 events
         assert len(window._plot_widget._scatter.xData) == 3

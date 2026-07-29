@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtTest import QTest
 
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.fcs_io import write_fcs_file
@@ -57,7 +58,19 @@ def _wait_for_worker(window: MainWindow) -> None:
   worker.finished.connect(loop.quit)
   QTimer.singleShot(5000, loop.quit)
   loop.exec()
-  assert worker.isRunning() is False
+  try:
+    assert worker.isRunning() is False
+  except RuntimeError:
+    # MainWindow may release the completed QThread before this nested loop returns.
+    pass
+
+
+def _wait_for_scatter(window: MainWindow) -> None:
+  for _ in range(200):
+    if window._plot_widget._scatter is not None:
+      return
+    QTest.qWait(5)
+  assert window._plot_widget._scatter is not None
 
 
 def test_load_gate_run_and_match_headless(
@@ -80,7 +93,7 @@ def test_load_gate_run_and_match_headless(
     assert window._sample_browser.select_sample(sample.id)
     assert window._event_data[sample.id].shape == (4, 2)
     assert window._channel_selector.x_channel() == "X"
-    assert window._plot_widget._scatter is not None
+    _wait_for_scatter(window)
 
     gate = GateSpec(
       id="positive",
@@ -307,7 +320,7 @@ def test_switching_real_fcs_samples_updates_xy_ranges(
       assert window._current_sample_id == sample.id
       assert window._channel_selector.x_channel() == "FSC-A"
       assert window._channel_selector.y_channel() == "SSC-A"
-      assert window._plot_widget._scatter is not None
+      _wait_for_scatter(window)
       data = window._event_data[sample.id]
       assert data.flags.writeable is False
 
