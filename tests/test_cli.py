@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
+import flowdesk_cli.main as cli_main
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
-from flowdesk_core.execution_control import ExecutionControl
+from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
+from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import ChannelSpec
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
@@ -84,6 +88,76 @@ def test_run_project_reports_cooperative_cancellation(
 
   assert run_project_command(str(project), execution_control=control) == 130
   assert "Cancelled: execution cancelled" in capsys.readouterr().err
+
+
+def test_run_project_passes_runtime_execution_options_to_core(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+  capsys: pytest.CaptureFixture[str],
+) -> None:
+  project = _create_minimal_project(tmp_path)
+  received: list[ExecutionControl | None] = []
+
+  def fake_pipeline(*_args, execution_control=None, **_kwargs) -> ExecutionReport:
+    received.append(execution_control)
+    return ExecutionReport(
+      project_id="test_proj",
+      execution_profile_id="default",
+      pipeline_version="0.1",
+      status="success",
+      execution_provenance={
+        "backend": "thread", "effective_max_workers": 2,
+        "requested_max_workers": 4,
+      },
+    )
+
+  monkeypatch.setattr("flowdesk_cli.run_project.run_project_pipeline", fake_pipeline)
+  assert run_project_command(
+    str(project),
+    execution_options=ExecutionOptions(
+      backend="thread", max_workers=4, memory_budget_bytes=32 * 1024 * 1024,
+    ),
+  ) == 0
+
+  assert received[0] is not None
+  assert received[0].options == ExecutionOptions(
+    backend="thread", max_workers=4, memory_budget_bytes=32 * 1024 * 1024,
+  )
+  assert "Execution: backend=thread workers=2/4" in capsys.readouterr().out
+
+
+def test_run_cli_parses_explicit_thread_runtime_options(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  received: dict[str, object] = {}
+
+  def fake_run(project: str, **kwargs: object) -> int:
+    received["project"] = project
+    received.update(kwargs)
+    return 0
+
+  monkeypatch.setattr(cli_main, "run_project_command", fake_run)
+  monkeypatch.setattr(sys, "argv", [
+    "flowdesk", "run", "example.flowdesk", "--execution-backend", "thread",
+    "--max-workers", "3", "--memory-budget-mib", "128",
+  ])
+
+  assert cli_main.main() == 0
+  assert received["project"] == "example.flowdesk"
+  assert received["execution_options"] == ExecutionOptions(
+    backend="thread", max_workers=3, memory_budget_bytes=128 * 1024 * 1024,
+  )
+
+
+def test_run_cli_rejects_nonpositive_worker_limit(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setattr(sys, "argv", [
+    "flowdesk", "run", "example.flowdesk", "--max-workers", "0",
+  ])
+
+  with pytest.raises(SystemExit):
+    cli_main.main()
 
 
 def test_run_project_with_output(tmp_path: Path) -> None:

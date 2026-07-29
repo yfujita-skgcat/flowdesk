@@ -9,6 +9,18 @@ from flowdesk_cli.batch_plot import batch_plot_command
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
 from flowdesk_core.credits import credits_text
+from flowdesk_core.execution_control import ExecutionOptions
+
+
+def _positive_integer(value: str) -> int:
+  """Parse a positive integer for an explicit runtime resource limit."""
+  try:
+    parsed = int(value)
+  except ValueError as exc:
+    raise argparse.ArgumentTypeError("must be an integer") from exc
+  if parsed < 1:
+    raise argparse.ArgumentTypeError("must be positive")
+  return parsed
 
 
 def main() -> int:
@@ -65,6 +77,24 @@ def main() -> int:
     default="default",
     help="Execution profile id to use (default: default).",
   )
+  run_parser.add_argument(
+    "--execution-backend",
+    choices=("sequential", "thread"),
+    default="sequential",
+    help="Runtime executor backend (default: sequential).",
+  )
+  run_parser.add_argument(
+    "--max-workers",
+    type=_positive_integer,
+    default=1,
+    help="Maximum concurrent samples for --execution-backend thread (default: 1).",
+  )
+  run_parser.add_argument(
+    "--memory-budget-mib",
+    type=_positive_integer,
+    default=None,
+    help="Maximum estimated in-flight sample memory in MiB.",
+  )
 
   # ------------------------------------------------------------------
   # inspect sub-command
@@ -120,8 +150,21 @@ def main() -> int:
 
   if args.command == "run":
     return run_project_command(
-      args.project, args.output, args.statistics_output, args.execution_profile,
-      args.layout, args.include_internal_ids, args.include_qc,
+      args.project,
+      output=args.output,
+      statistics_output=args.statistics_output,
+      execution_profile_id=args.execution_profile,
+      layout=args.layout,
+      include_internal_ids=args.include_internal_ids,
+      include_qc=args.include_qc,
+      execution_options=ExecutionOptions(
+        backend=args.execution_backend,
+        max_workers=args.max_workers,
+        memory_budget_bytes=(
+          None if args.memory_budget_mib is None
+          else args.memory_budget_mib * 1024 * 1024
+        ),
+      ),
     )
   if args.command == "inspect":
     return inspect_fcs_command(args.fcs_file)

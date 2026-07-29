@@ -7,7 +7,11 @@ import sys
 from pathlib import Path
 
 from flowdesk_core.errors import FlowdeskError
-from flowdesk_core.execution_control import ExecutionCancelled, ExecutionControl
+from flowdesk_core.execution_control import (
+  ExecutionCancelled,
+  ExecutionControl,
+  ExecutionOptions,
+)
 from flowdesk_core.export import (
   ExportError,
   write_results_long,
@@ -29,6 +33,7 @@ def run_project_command(
   include_internal_ids: bool = False,
   include_qc: bool = False,
   execution_control: ExecutionControl | None = None,
+  execution_options: ExecutionOptions | None = None,
 ) -> int:
   """CLI adapter for headless project execution.
 
@@ -37,6 +42,8 @@ def run_project_command(
     output: Path for the TSV export file. If omitted, results are not
         written to disk.
     execution_profile_id: Id of the execution profile to run.
+    execution_options: Optional runtime-only bounded execution policy. It is
+        ignored when an explicit ``execution_control`` is supplied.
 
   Returns:
     Exit code: 0 on success, 1 on error.
@@ -64,6 +71,8 @@ def run_project_command(
   # Run pipeline
   # ------------------------------------------------------------------
   try:
+    if execution_control is None and execution_options is not None:
+      execution_control = ExecutionControl(options=execution_options)
     typed_samples = None
     samples = resolve_sample_paths(project, Path(project_path))
     if samples:
@@ -94,6 +103,13 @@ def run_project_command(
   # Print summary
   # ------------------------------------------------------------------
   print(report.summary)
+  if report.execution_provenance:
+    print(
+      "Execution: "
+      f"backend={report.execution_provenance['backend']} "
+      f"workers={report.execution_provenance['effective_max_workers']}/"
+      f"{report.execution_provenance['requested_max_workers']}"
+    )
 
   if report.messages:
     for msg in report.messages:

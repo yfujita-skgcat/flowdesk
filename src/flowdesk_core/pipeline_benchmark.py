@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - Windows does not provide resource.
 
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
+from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import ChannelSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.sample import SampleData
@@ -120,10 +121,8 @@ def _peak_rss_kib() -> int | None:
   return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 
 
-def pipeline_scientific_report_hash(report: object) -> str:
+def pipeline_scientific_report_hash(report: ExecutionReport) -> str:
   """Hash report scientific content without runtime executor provenance."""
-  if not hasattr(report, "execution_provenance"):
-    raise TypeError("report must provide execution_provenance")
   scientific_report = replace(report, execution_provenance={})
   return hashlib.sha256(repr(scientific_report).encode("utf-8")).hexdigest()
 

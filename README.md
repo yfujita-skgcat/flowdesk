@@ -196,6 +196,10 @@ After installing the package (`pip install -e .`), the `flowdesk` command is ava
 # Run a saved project and export results
 flowdesk run path/to/project.flowdesk --output results.tsv
 
+# Opt in to bounded sample-level threads for a multi-sample project
+flowdesk run path/to/project.flowdesk --execution-backend thread \
+  --max-workers 2 --memory-budget-mib 4096
+
 # Inspect FCS file metadata
 flowdesk inspect path/to/sample.fcs
 

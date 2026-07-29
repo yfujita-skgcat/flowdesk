@@ -847,6 +847,15 @@ workload does not demonstrate a speedup, so the default remains sequential.
 Repeat the benchmark with representative compensation, derived-parameter, and
 gating workloads before exposing or recommending a thread setting to users.
 
+The headless CLI exposes the runtime-only opt-in as `flowdesk run
+--execution-backend thread --max-workers N [--memory-budget-mib M]`.  These flags create
+an `ExecutionOptions` value for that invocation; they do not alter or serialize the
+project.  The CLI prints the report's resolved backend and effective/requested worker
+count after a full pipeline run.  No GUI preference is added in this increment: interactive
+sample display remains a separate one-sample scheduler/cache problem, and GUI `Run
+Pipeline` remains conservative until representative benchmark evidence justifies exposing
+the option there.
+
 - Add explicit sequential/thread executor selection without project serialization.
 - Estimate canonical per-sample array and membership memory before submission.
 - Bound and record effective workers; retain coordinator-owned cancellation/progress.

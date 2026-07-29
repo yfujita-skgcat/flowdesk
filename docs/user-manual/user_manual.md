@@ -116,11 +116,27 @@ OSごとのユーザー書込み可能なアプリケーションデータ領域
 ```bash
 flowdesk run project.flowdesk --output results.tsv
 flowdesk run project.flowdesk --output results.tsv --layout long --include-qc
+flowdesk run project.flowdesk --execution-backend thread --max-workers 2 \
+  --memory-budget-mib 4096
 ```
 
 `--include-internal-ids` はstable sample/population IDとhierarchy metadataを追加する。
 `--statistics-output` は互換用のdeprecated statistic-only exportであり、新規用途では
 統合された `--output` を使用する。
+
+複数sampleのheadless `Run Pipeline`だけは、明示的に`--execution-backend thread`を指定すると
+sample単位で並列実行できる。既定は再現性とmemory使用量を予測しやすい`sequential`であり、GUIの
+sample切替や単一sample内のeventを並列化する設定ではない。`--max-workers`は同時に処理するsampleの
+上限、`--memory-budget-mib`はcompensated/derived/transformed配列とgate membershipを含む保守的な
+in-flight memory見積りの上限である。CPU数、対象sample数、BLAS/OpenMP/NumExprの内部thread設定も
+考慮されるため、実際に使われるworker数は要求値より少ない場合がある。完了時の`Execution:`行で
+解決済みbackendと`workers=effective/requested`を確認できる。
+
+thread backendは、代表的な複数sample workloadで逐次実行より有利であることを確認した場合だけ使う。
+小さな処理ではthreadの管理費用により遅くなることがある。`--memory-budget-mib`を省略すると明示的な
+memory budgetは使わないが、sample数とCPU数による上限は常に適用される。これらはruntime optionであり、
+`.flowdesk` projectへ保存されず、scientific definition、event count、frequency、gate membership、
+statisticsを変更しない。
 
 ---
 

@@ -1398,7 +1398,9 @@ thread backend（Increment 8）とは別の計画である。
   2026-07-30のopt-in small benchmark（100,000 events × 8、fallback root population）では
   sequential中央値3.37 ms、thread/2 workers中央値4.65 ms、scientific report hash一致だった。
   この軽量workloadでspeedupは得られなかったため、thread backendは明示指定時のみとし、defaultを
-  sequentialから変更しない。代表的なcompensation/derived/gating workloadで再計測する。
+  sequentialから変更しない。headless CLIは`--execution-backend thread`、`--max-workers`、
+  `--memory-budget-mib`でこのruntime optionを明示指定でき、resolved worker数を表示する。
+  代表的なcompensation/derived/gating workloadで再計測する。
 
 #### Increment 9: bounded Batch Export parallel rendering
 

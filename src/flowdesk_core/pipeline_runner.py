@@ -884,7 +884,7 @@ class PipelineRunner:
     operation_id: str | None,
     gating_strategy_id: str | None,
     sample_strategy_ids: Mapping[str, str | None],
-    sample_assignments: Mapping[str, tuple[str | None, Sequence[str]]],
+    sample_assignments: Mapping[str, tuple[str | None, tuple[str, ...]]],
     derived_plan: DerivedParameterPlan,
     extra_matrices: Mapping[str, Mapping[str, Any]],
     resolution: ExecutionResolution,
@@ -908,7 +908,7 @@ class PipelineRunner:
         "gating_strategy_id": sample_strategy_ids.get(sid, gating_strategy_id),
         "statistic_ids": sample_assignments.get(sid, (None, ()))[1],
         "derived_plan": derived_plan,
-        "extra_matrices": extra_matrices,
+        "extra_matrices": dict(extra_matrices),
       }
 
     if resolution.backend == "sequential" or resolution.effective_max_workers == 1:
@@ -1022,9 +1022,9 @@ class PipelineRunner:
     operation_id: str | None,
     total_samples: int,
     gating_strategy_id: str | None,
-    statistic_ids: Sequence[str],
+    statistic_ids: tuple[str, ...],
     derived_plan: DerivedParameterPlan,
-    extra_matrices: Mapping[str, Mapping[str, Any]],
+    extra_matrices: dict[str, Mapping[str, Any]],
   ) -> SampleExecutionResult:
     """Execute canonical independent stages for one sample without shared mutation."""
     sid = str(sample_meta.get("id", "unknown"))
@@ -1043,7 +1043,7 @@ class PipelineRunner:
       )
 
     analysis_data = _AnalysisData(sample.events, sample.channels)
-    input_info = self._record_input_file(sample_meta, analysis_data.events)
+    input_info = self._record_input_file(dict(sample_meta), analysis_data.events)
     messages = [f"sample={sid} compensation=done"]
     diagnostics: list[ExecutionDiagnostic] = []
 
