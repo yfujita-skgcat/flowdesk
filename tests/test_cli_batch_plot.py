@@ -7,6 +7,7 @@ import numpy as np
 
 from flowdesk_cli import batch_plot as batch_plot_module
 from flowdesk_cli.batch_plot import (
+  _build_overlay_dependency_graph,
   _gate_overlays,
   _shared_layer_bounds,
   batch_plot_command,
@@ -17,6 +18,21 @@ from flowdesk_core.models import ChannelSpec
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import save_project
+
+
+def test_overlay_dependency_graph_is_deterministic_and_deduplicated() -> None:
+  graph = _build_overlay_dependency_graph(
+    ("s1", "s2"),
+    (
+      {"sample_id": "s3", "source_id": "late", "order": 2},
+      {"sample_id": "s2", "source_id": "early", "order": 1},
+      {"sample_id": "s3", "source_id": "duplicate", "order": 3},
+      {"sample_id": "hidden", "source_id": "hidden", "order": 0,
+       "visible": False},
+    ),
+    ("s3", "s4", "s2"),
+  )
+  assert graph == {"s1": ("s2", "s3", "s4"), "s2": ("s2", "s3", "s4")}
 
 
 def test_shared_layer_bounds_reduces_extrema_without_array_concatenation() -> None:

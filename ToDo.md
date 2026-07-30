@@ -1372,9 +1372,9 @@ thread backend（Increment 8）とは別の計画である。
 - [x] `batch_plot_command()`の「最初のrender callbackで全sampleを準備する」処理を、
   planning、unique source loading/preparation、shared range、scene build、render、
   sidecar、manifestへ明示的に分割する。
-- [ ] overlayのbase/source依存graphを作り、同じsourceを同じcache keyで一度だけ準備する。
+- [x] overlayのbase/source依存graphを事前に構築し、同じsourceを一度だけ準備する。
   `shared_ranges`は全required source準備後のbarrierとし、source/order/color/gate/labelを
-  completion順で変えない。
+  completion順で変えない。render時に依存graphを再構築せず、targetごとのsource順を再利用する。
 - [x] sequentialのままper-item/per-format progress、cooperative cancel、atomic staged output、
   `cancelled`/`not_started`を含むmanifestを実装する。coordinatorだけがmanifestを書く。
 - [x] `shared_ranges`の全source範囲はイベント配列を連結せず、sourceごとのmin/maxをcoordinatorで

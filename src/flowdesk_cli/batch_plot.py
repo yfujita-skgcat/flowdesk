@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from threading import Lock
 from typing import Any, Literal, cast
@@ -103,21 +103,11 @@ def batch_plot_command(
       target_sample_ids = tuple(spec.sample_ids)
     else:
       target_sample_ids = group_members.get(spec.group_id or "", ())
-    advanced_overlay_ids = tuple(
-      str(source.get("sample_id"))
-      for source in sorted(
-        view.get("overlay_sources", ()),
-        key=lambda item: (int(item.get("order", 0)), str(item.get("source_id", ""))),
-      )
-      if source.get("visible", True) and source.get("sample_id")
+    overlay_ids_by_sample = _build_overlay_dependency_graph(
+      tuple(sample_by_id),
+      view.get("overlay_sources", ()),
+      view.get("manual_overlay_sample_ids", ()),
     )
-    overlay_ids_by_sample = {
-      sample_id: tuple(dict.fromkeys((
-        *advanced_overlay_ids,
-        *(str(value) for value in view.get("manual_overlay_sample_ids", ())),
-      )))
-      for sample_id in sample_by_id
-    }
     required_source_ids = {
       sample_id
       for sample_id in target_sample_ids
@@ -288,20 +278,7 @@ def batch_plot_command(
           )
         )
       )
-      advanced_overlay_ids = [
-        str(source.get("sample_id"))
-        for source in sorted(
-          view.get("overlay_sources", ()),
-          key=lambda item: (
-            int(item.get("order", 0)), str(item.get("source_id", ""))
-          ),
-        )
-        if source.get("visible", True) and source.get("sample_id")
-      ]
-      overlay_candidates = [
-        *advanced_overlay_ids,
-        *(str(value) for value in view.get("manual_overlay_sample_ids", ())),
-      ]
+      overlay_candidates = list(overlay_ids_by_sample.get(sample_id, ()))
       overlay_ids = tuple(
         value for index, value in enumerate(overlay_candidates)
         if value in prepared_layers and value != sample_id
@@ -545,6 +522,44 @@ def _write_render_payload(
     )
   else:
     raise ValueError(f"CLI renderer does not support {path.suffix!r}")
+
+
+def _build_overlay_dependency_graph(
+  sample_ids: Sequence[str],
+  overlay_sources: object,
+  manual_overlay_sample_ids: object,
+) -> dict[str, tuple[str, ...]]:
+  """Build the deterministic base-sample to overlay-source dependency graph.
+
+  The graph is display-only planning state.  It is resolved once before source
+  preparation so every target reuses the same source order and each unique FCS
+  is prepared at most once.  Invalid entries are ignored here and remain
+  subject to the existing unknown-source validation in ``plan_batch_plot_export``.
+  """
+  advanced: list[tuple[int, str, str]] = []
+  if isinstance(overlay_sources, Sequence) and not isinstance(
+    overlay_sources, (str, bytes)
+  ):
+    for source in overlay_sources:
+      if not isinstance(source, Mapping):
+        continue
+      source_id = source.get("sample_id")
+      if not source.get("visible", True) or not source_id:
+        continue
+      try:
+        order = int(source.get("order", 0))
+      except (TypeError, ValueError):
+        order = 0
+      advanced.append((order, str(source.get("source_id", "")), str(source_id)))
+  advanced_ids = tuple(item[2] for item in sorted(advanced, key=lambda item: item[:2]))
+  manual_ids = (
+    tuple(str(value) for value in manual_overlay_sample_ids)
+    if isinstance(manual_overlay_sample_ids, Sequence)
+    and not isinstance(manual_overlay_sample_ids, (str, bytes))
+    else ()
+  )
+  ordered_sources = tuple(dict.fromkeys((*advanced_ids, *manual_ids)))
+  return {str(sample_id): ordered_sources for sample_id in sample_ids}
 
 
 def _normalize(

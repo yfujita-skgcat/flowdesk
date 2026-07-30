@@ -1009,6 +1009,13 @@ min/max values instead of concatenating all event arrays into another temporary 
 This preserves the exact range contract while lowering peak preparation memory for
 large overlays. It does not change density input, event order, or rendered coordinates.
 
+The CLI now builds an explicit base-sample to overlay-source dependency graph once
+before source preparation. Visible advanced and manual overlay sources are ordered,
+deduplicated, and reused by every target render; render callbacks no longer rebuild
+that dependency list. Unknown source validation remains in the planning layer, and
+the graph is display-only state: it does not alter population membership or source
+colors. A regression test covers order, duplicate removal, and hidden-source exclusion.
+
 When the same source appears in multiple target scenes under `shared_ranges`, the CLI
 also reuses its normalized coordinates, visibility mask, and event-color order keyed by
 `(source_id, shared_bounds)`. `current_view` deliberately bypasses this cache because
