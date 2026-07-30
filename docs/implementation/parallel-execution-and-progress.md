@@ -105,12 +105,12 @@ Tests and benchmarks:
 - `PipelineRunner._run_full_pipeline()` performs project-wide compensation-calculation
   preparation before its per-sample loop. A calculated compensation matrix may depend on
   multiple control samples and must not be independently recomputed in concurrent workers.
-- `run_batch_plot_export()` iterates planned items serially and has no progress or
-  cancellation input.
-- `flowdesk_cli.batch_plot.batch_plot_command()` currently prepares every sample layer
-  inside the first render callback. Consequently, “one item completed” is not a faithful
-  description of early work and item-level parallelism cannot be added safely until
-  preparation is made explicit.
+- `run_batch_plot_export()` now accepts adapter-neutral progress/cancellation controls
+  and an explicit preparation provenance record; the default remains sequential.
+- `flowdesk_cli.batch_plot.batch_plot_command()` resolves source scope before reading
+  FCS files and can prepare required source layers with bounded threads only when the
+  CLI explicitly selects the thread backend. Completion results are merged in source
+  order before shared-range reduction.
 - `shared_ranges` requires a barrier after all required source ranges are known. Overlay
   outputs may share source samples, so output items are not independent during source
   preparation even when their final files are independent.
@@ -512,9 +512,11 @@ Therefore use two distinct boundaries:
    sample's source, range, cache entry, output path, or manifest state.
 
 For the simple non-overlay case, preparation of one sample followed by rendering is
-independent from other samples and is the first required parallel test case. Do not let
-this fast path bypass the same planning, staging, ordering, and cancellation contracts
-used by the general path.
+independent from other samples and is the first required parallel test case. The CLI
+may now run this source-preparation phase with the same explicitly requested bounded
+thread backend; preparation results are merged in source order before any shared-range
+reduction. Do not let this fast path bypass the same planning, ordering, memory-bound,
+and cancellation contracts used by the general path.
 
 The implementation may benchmark grouping all formats for one sample/view into one job
 against submitting each format separately. Grouping can reuse prepared arrays and reduce
@@ -995,11 +997,13 @@ cancellation are deterministic; measured benchmark and peak memory are reported.
 
 ### Increment 9: Bounded batch rendering parallelism
 
-Status (2026-07-30): initial bounded executor is implemented. The runtime keeps
-source preparation and shared-range/overlay resolution serial, then optionally
-renders one sample/view format bundle per thread after an immutable prepared-data
-barrier. CLI users opt in with `--execution-backend thread`; GUI execution remains
-sequential. Execution provenance is written to the batch manifest, and staged output,
+Status (2026-07-30): bounded executors are implemented. The runtime resolves target
+and overlay dependencies in the coordinator, optionally prepares independent required
+sources with bounded threads, merges them in source order, then resolves shared ranges
+and optionally renders one sample/view format bundle per thread after an immutable
+prepared-data barrier. Both thread phases require `--execution-backend thread`; the
+default and GUI execution remain sequential. Preparation and render worker resolutions
+are written to the batch manifest, and staged output,
 sidecar, plan-order manifest, cooperative cancellation, and memory-bound resolution
 are retained. The real core PNG/SVG/PDF writer parity test and a CLI overlay plus
 `shared_ranges` thread test now cover concurrent writer use. The diagnostic benchmark
@@ -1016,6 +1020,12 @@ and required overlay sources; unrelated samples are not loaded or transformed. A
 uses the maximum event count of one planned output item rather than summing unrelated
 batch items. This source-scope optimization is covered by a group/overlay test and
 must preserve the existing unknown-source validation.
+
+The real `data/analysis.flowdesk` workload was rerun after enabling source-preparation
+threads: sequential took 22.03 s / 289,888 KB peak RSS, while thread/2 took 24.90 s /
+489,036 KB. Preparation itself took about 0.04 s and rendering 24.56 s in the threaded
+run; all eight PNG/PDF SHA-256 values matched. This validates parity and bounded
+execution provenance, but does not support enabling threads by default.
 
 The `shared_ranges` reduction now computes global extrema from each prepared source's
 min/max values instead of concatenating all event arrays into another temporary array.

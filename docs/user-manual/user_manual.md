@@ -966,14 +966,15 @@ output directoryはprojectには保存されず、アプリケーション設定
 `Run Export` はGUIを停止させずに実行されます。表示される `Batch Plot Export` progress windowには、準備・render・sidecar・manifestの段階と完了数が表示されます。`Cancel` は次の安全な出力境界で協調的に停止します。既に完了した画像とsidecarは保持され、未開始項目はmanifestで `not_started`、停止を受けた項目は `cancelled` と記録されます。cancel中でも、画像・sidecar・manifestが途中の内容で公開されることはありません。
 
 CLIで実行する場合は、`flowdesk batch-plot <project> --export-id <id> --output-dir <dir>` に
-`--execution-backend thread --max-workers N` を追加すると、source準備完了後の独立したsample/view
-出力をbounded threadで並列レンダリングできます。既定値は`sequential`です。`--memory-budget-mib M`
+`--execution-backend thread --max-workers N` を追加すると、target/overlayに必要なFCSの読み込み・display
+準備と、source準備完了後の独立したsample/view出力をbounded threadで並列化できます。既定値は`sequential`です。`--memory-budget-mib M`
 を指定すると、準備済み配列の保守的な推定量に基づいて同時worker数を抑制します。overlay、共通軸範囲、
 collision、manifest順は並列化しても変わりません。GUIのBatch Exportは現時点では逐次renderを使用し、
 batch manifestの`execution`には、実行単位（`prepared_output_item`）、計画数、投入数、完了数、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、
 科学的な結果やproject定義を変更する設定ではありません。FCSごとに無制限にworkerを作るのではなく、
-共有source準備とoverlay/shared range解決後のprepared itemだけをboundedに処理します。
+共有source準備とoverlay/shared range解決後のprepared itemだけをboundedに処理します。source preparationの
+結果はsource順にmergeしてから共通範囲を計算するため、完了順で出力内容は変わりません。
 同じ`execution`にはplanning、source preparation、render、totalの経過時間も記録されます。これは
 ボトルネック調査用で、解析結果の計算時間や科学的結果を変更するものではありません。
 `shared_ranges`の範囲計算はsourceごとの極値だけをreduceするため、複数の大きなFCSを一つの一時配列へ

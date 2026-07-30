@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -299,6 +300,70 @@ def test_batch_plot_prepares_only_target_and_overlay_sources(
   ) == 0
   assert loaded_ids == ["s1", "s2"]
   assert prepare_calls == ["view"]
+
+
+def test_batch_plot_thread_backend_prepares_sources_concurrently(
+  tmp_path: Path, monkeypatch,
+) -> None:
+  project = {
+    "project_id": "batch-prepare-thread",
+    "project_version": CURRENT_PROJECT_VERSION,
+    "pipeline_version": "0.1",
+    "execution_profiles": [{"id": "default", "name": "Default"}],
+    "samples": [
+      {"id": "s1", "path": "s1.fcs", "name": "A", "channels": []},
+      {"id": "s2", "path": "s2.fcs", "name": "B", "channels": []},
+    ],
+    "plot_views": [{
+      "id": "view", "plot_type": "scatter", "population_id": "all_events",
+      "x_parameter": "x", "y_parameter": "y",
+      "rendering_downsample": {"max_points": 0},
+    }],
+    "batch_plot_exports": [{
+      "id": "prepare-thread", "name": "Prepare thread", "target": "all",
+      "plot_view_id": "view", "formats": ["svg"],
+    }],
+  }
+  project_path = tmp_path / "prepare-thread.flowdesk"
+  save_project(project_path, project)
+  sample_data = {
+    sample_id: SampleData(
+      sample_id,
+      np.array([[1.0, 1.0], [2.0, 2.0]], dtype=np.float64),
+      (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y")),
+    )
+    for sample_id in ("s1", "s2")
+  }
+  entered = threading.Barrier(2)
+  both_prepared = threading.Event()
+
+  monkeypatch.setattr(
+    "flowdesk_cli.batch_plot.resolve_sample_paths",
+    lambda *_args: [
+      {"id": sample_id, "path": f"{sample_id}.fcs", "name": sample_id}
+      for sample_id in ("s1", "s2")
+    ],
+  )
+
+  def read_sample(path, *_args):
+    try:
+      entered.wait(2.0)
+    except threading.BrokenBarrierError as exc:
+      raise AssertionError("source preparation did not overlap") from exc
+    both_prepared.set()
+    return None, sample_data[Path(path).stem]
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.read_fcs_sample", read_sample)
+  output_dir = tmp_path / "exports"
+  assert batch_plot_command(
+    str(project_path), "prepare-thread", str(output_dir),
+    execution_options=ExecutionOptions(backend="thread", max_workers=2),
+  ) == 0
+  assert both_prepared.is_set()
+  assert len(tuple(output_dir.glob("*.svg"))) == 2
+  manifest = json.loads(next(output_dir.glob("*.batch.json")).read_text(encoding="utf-8"))
+  assert manifest["execution"]["preparation"]["backend"] == "thread"
+  assert manifest["execution"]["preparation"]["effective_max_workers"] == 2
 
 
 def test_batch_plot_clips_gate_edges_at_the_viewport_boundary() -> None:

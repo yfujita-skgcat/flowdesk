@@ -1470,9 +1470,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [ ] **代表 workloadの性能ゲート**: compensation、derived parameters、複数gate、statisticsを
   含む実データ相当のprofileを追加し、sequential/threadのwall time、peak RSS、CPU oversubscriptionを
   測定する。speedupが再現しない場合はthread backendを実験機能のまま維持する。
-- [x] **Batch Plot Exportの限定的並列化**: source準備、overlay依存、`shared_ranges` barrierを
-  coordinatorで解決した後、immutableなprepared output itemをCLIの明示指定時だけbounded thread
-  executorへ渡す実装を追加した。GUI実行と既定値は逐次のままとし、rendererのQt object操作はworkerで
+- [x] **Batch Plot Exportの限定的並列化**: overlay依存、`shared_ranges` barrierをcoordinatorで
+  解決し、必要sourceのFCS読込・display準備とimmutableなprepared output itemをCLIの明示指定時だけ
+  bounded thread executorへ渡す実装を追加した。GUI実行と既定値は逐次のままとし、rendererのQt object操作はworkerで
   行わない。temporary/atomic replace、cancel、plan順manifest、PNG/SVG/PDF parityを確認済み。
   ただし、代表的なcompensation/derived/gating workload、Windows/PyInstaller、rendererの詳細な
   reentrancy/GIL profileは未完了であり、既定並列化へ変更しない。
@@ -1519,9 +1519,10 @@ Qt/pyqtgraph object、共有mutable cacheもworker間で同時に触れてはな
 
 #### Increment 9: bounded Batch Export parallel rendering
 
-実装状況（2026-07-30）: 初期bounded executorを実装した。source準備とoverlay/shared range解決は
-逐次のまま、準備済みsample/viewのformat bundleをCLIの明示指定時だけthreadでrenderする。GUIは
-逐次renderを継続し、manifestにはresolved execution provenanceを記録する。実PNG/SVG/PDF writer
+実装状況（2026-07-30）: bounded executorを実装した。overlay/shared range解決はcoordinatorで行い、
+必要sourceのFCS読込・display準備と準備済みsample/viewのformat bundleをCLIの明示指定時だけthreadで
+実行できる。GUIと既定値は逐次のままとし、manifestにはpreparation/renderのexecution provenanceを記録する。
+実PNG/SVG/PDF writer
 parityとoverlay/shared_rangesのthreadテストを追加した。8 samples × 5,000 eventsのsynthetic
 prepared layerではsequential 1.833 s、thread/2 1.580 s、出力bytes一致（18,317,448）だったが、
 実FCSのcompensation/derived/gating workloadでは未測定であり、Windows/PyInstaller確認も残るため、
@@ -1537,18 +1538,27 @@ VectorRenderCache追加後の再測定ではsequential 21.96 s / 最大RSS 284,3
 thread/2 23.09 s / 最大RSS 497,968 KBとなり、8出力のハッシュは引き続き完全一致した。
 ベクター準備の重複は除去できたが、threadの既定化を支持する速度向上は確認できない。
 
+source preparation並列化後に同じ実FCSを再測定したところ、sequentialは22.03 s / 最大RSS 289,888 KB、
+thread/2は24.90 s / 最大RSS 489,036 KBだった。source preparation phaseはthreadで約0.04 s、render phaseは
+24.56 sで、8出力のPNG/PDF SHA-256は完全一致した。現行workloadでは準備並列化による総時間短縮は確認できず、
+thread backendを既定化しない判断を維持する。
+
 設計判断: 「1 FCS = 1 thread」は一般則にしない。FCSは入力sourceであり、実行単位ではない。overlayは
 複数FCSに依存し、`shared_ranges`は複数sourceの決定的reduceを必要とし、同一FCSから複数view・複数formatが
 生成される。また、source配列やdensity結果を複数出力で再利用できるため、FCSをそのまま各threadへ渡すと
 重複読込・重複変換・メモリ増加・出力順序の非決定性を招く。したがって、(1)必要sourceだけを一度prepareし、
-(2)依存関係と共有範囲を解決し、(3)source順・色・title・gateを含むimmutable prepared output itemを作り、
-(4)そのitemをbounded executorでrenderする。overlayなし・一source・共有範囲なしだけが単純な独立ケースであり、
+(2)依存関係を解決し、(3)必要sourceをbounded workerでprepareしてsource順へmergeし、(4)共有範囲をreduceし、
+(5)source順・色・title・gateを含むimmutable prepared output itemを作り、(6)そのitemをbounded executorでrenderする。
+overlayなし・一source・共有範囲なしだけが単純な独立ケースであり、
 それ以外はdependency barrier後に並列化する。この判断は`docs/implementation/parallel-execution-and-progress.md`
 の「Why the worker unit is not simply one FCS file」と一致させる。
 
 - [x] 「1 FCS = 1 worker」とは定義しない。FCSはsource/dependencyの単位であり、overlay出力は
   複数FCSへ依存し、1 FCSから複数view/formatが生成され得る。全source準備、overlay dependency、
   `shared_ranges`を解決した後のimmutable `prepared output item`をexecutorの最小仕事単位とする。
+- [x] 明示的thread backendでは、target/overlay依存sourceのFCS読込・display準備もbounded workerで
+  実行する。完了順によらずsource順にmergeしてからshared rangeをreduceし、worker数・推定source
+  working set・制限要因をmanifestへ記録する。既定逐次、GUI逐次、Qt object操作なしを維持する。
 - [x] overlayなし、共通軸範囲なし、必要sourceが1 sampleだけの出力について、source準備完了後は
   sample間で独立にrender可能であることを確認し、sequential/threadのPNG/SVG/PDF byte parity testを追加した。
   同一sceneからPNG/SVG/PDFを作る場合は、formatごとの完全独立jobとsample/view単位bundleの両方を

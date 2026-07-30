@@ -157,6 +157,7 @@ def run_batch_plot_export(
   annotations: Sequence[Any] = (),
   overlay_sample_ids: Mapping[str, Sequence[str]] | None = None,
   preflight: dict[str, Any] | None = None,
+  preparation_provenance: Mapping[str, Any] | None = None,
   prepare: Callable[[], None] | None = None,
   estimate_render_bytes: Callable[[], int] | None = None,
   execution_control: ExecutionControl | None = None,
@@ -404,6 +405,8 @@ def run_batch_plot_export(
       "total": time.perf_counter() - operation_started,
     },
   })
+  if preparation_provenance is not None:
+    execution_provenance["preparation"] = dict(preparation_provenance)
   manifest = output_root / f"{_safe_slug(spec.id)}.batch.json"
   progress("finalizing_manifest")
   _write_json_atomically(manifest, {

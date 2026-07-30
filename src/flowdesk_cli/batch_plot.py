@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
 from typing import Any, Literal, cast
@@ -17,7 +19,11 @@ from flowdesk_core.batch_plot_export import (
   run_batch_plot_export,
 )
 from flowdesk_core.density_colors import estimate_density_colors
-from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
+from flowdesk_core.execution_control import (
+  ExecutionControl,
+  ExecutionOptions,
+  resolve_execution_workers,
+)
 from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
@@ -126,6 +132,7 @@ def batch_plot_command(
     layer_event_colors: dict[str, np.ndarray] = {}
     shared_bounds: tuple[float, float, float, float] | None = None
     preflight_holder: dict[str, Any] = {}
+    preparation_provenance_holder: dict[str, Any] = {}
     display_scene = dict(view.get("display_scene", {}))
     prepared_render_cache: dict[
       str,
@@ -243,11 +250,80 @@ def batch_plot_command(
 
     def prepare_sources() -> None:
       nonlocal shared_bounds
-      for candidate in samples:
+      candidates = tuple(
+        candidate for candidate in samples
+        if str(candidate["id"]) in required_source_ids
+      )
+
+      def prepare_one(candidate: Mapping[str, Any]) -> tuple[
+        str, np.ndarray, np.ndarray, dict[str, Any]
+      ]:
         candidate_id = str(candidate["id"])
-        if candidate_id not in required_source_ids:
-          continue
+        if execution_control is not None:
+          execution_control.cancellation_token.raise_if_cancelled()
         x_values, y_values, metadata = extract_layer(candidate)
+        if execution_control is not None:
+          execution_control.cancellation_token.raise_if_cancelled()
+        return candidate_id, x_values, y_values, metadata
+
+      def estimate_source_bytes(candidate: Mapping[str, Any]) -> int:
+        """Bound source-preparation workers using a conservative file estimate."""
+        try:
+          file_bytes = os.path.getsize(str(candidate["path"]))
+        except (KeyError, OSError, TypeError, ValueError):
+          file_bytes = 0
+        # FCS decoding, transformed display arrays, and processed masks can
+        # coexist during preparation.  This factor is deliberately conservative
+        # and is only used for an explicit runtime memory budget.
+        return max(1, file_bytes * 6)
+
+      options = (
+        execution_control.options
+        if execution_control is not None else ExecutionOptions()
+      )
+      preparation_resolution = resolve_execution_workers(
+        options,
+        selected_sample_count=len(candidates),
+        estimated_sample_bytes=max(
+          (estimate_source_bytes(candidate) for candidate in candidates),
+          default=0,
+        ),
+      )
+      preparation_provenance_holder.update({
+        "backend": preparation_resolution.backend,
+        "requested_max_workers": preparation_resolution.requested_max_workers,
+        "effective_max_workers": preparation_resolution.effective_max_workers,
+        "selected_source_count": preparation_resolution.selected_sample_count,
+        "estimated_source_bytes": preparation_resolution.estimated_sample_bytes,
+        "limiting_factors": list(preparation_resolution.limiting_factors),
+      })
+      prepared_results: list[tuple[str, np.ndarray, np.ndarray, dict[str, Any]]] = []
+      if (
+        preparation_resolution.backend == "thread"
+        and preparation_resolution.effective_max_workers > 1
+      ):
+        with ThreadPoolExecutor(
+          max_workers=preparation_resolution.effective_max_workers,
+          thread_name_prefix="flowdesk-batch-prepare",
+        ) as executor:
+          futures = {
+            executor.submit(prepare_one, candidate): index
+            for index, candidate in enumerate(candidates)
+          }
+          completed: dict[int, tuple[str, np.ndarray, np.ndarray, dict[str, Any]]] = {}
+          try:
+            for future in as_completed(futures):
+              completed[futures[future]] = future.result()
+          except BaseException:
+            for future in futures:
+              future.cancel()
+            raise
+        prepared_results = [completed[index] for index in range(len(candidates))]
+      else:
+        prepared_results = [prepare_one(candidate) for candidate in candidates]
+
+      # Merge in project/source order regardless of worker completion order.
+      for candidate_id, x_values, y_values, metadata in prepared_results:
         prepared_layers[candidate_id] = (x_values, y_values)
         layer_metadata[candidate_id] = metadata
         if metadata.get("event_colors") is not None:
@@ -578,6 +654,7 @@ def batch_plot_command(
     batch_report = run_batch_plot_export(
       spec, samples, output_dir, render, annotations=annotations,
       preflight=preflight_holder,
+      preparation_provenance=preparation_provenance_holder,
       prepare=prepare_sources,
       estimate_render_bytes=estimate_render_bytes,
       execution_control=execution_control,
