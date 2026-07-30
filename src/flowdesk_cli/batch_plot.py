@@ -130,6 +130,9 @@ def batch_plot_command(
       tuple[str, tuple[tuple[float, float], tuple[float, float]]],
       tuple[tuple[tuple[float, ...], tuple[float, ...]], np.ndarray, tuple[str, ...] | None],
     ] = {}
+    gate_overlay_cache: dict[
+      tuple[object, ...], tuple[dict[str, Any], ...]
+    ] = {}
     render_cache_lock = Lock()
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -409,6 +412,21 @@ def batch_plot_command(
         if "marker_size" not in manual_fields:
           style["marker_size"] = 1.5
       presentation["source_styles"] = list(source_styles.values())
+      gate_color = str(presentation.get("gate_outline_color") or "#e00000")
+      gate_cache_key = (
+        x_id, y_id, active_bounds, view.get("x_transform_id"),
+        view.get("y_transform_id"), gate_color,
+      )
+      with render_cache_lock:
+        gate_overlays = gate_overlay_cache.get(gate_cache_key)
+      if gate_overlays is None:
+        gate_overlays = _gate_overlays(
+          project, x_id, y_id, active_bounds,
+          view.get("x_transform_id"), view.get("y_transform_id"),
+          default_color=gate_color,
+        )
+        with render_cache_lock:
+          gate_overlay_cache[gate_cache_key] = gate_overlays
       scene = {
         "x_ticks": _normalized_ticks(
           active_bounds[0], view.get("x_transform_id"), transform_by_id,
@@ -436,11 +454,7 @@ def batch_plot_command(
         tuple(sources), tuple(OverlaySourceResolution(source_id, "compatible")
                               for source_id in source_ids),
         view_presentation=presentation,
-        gate_overlays=_gate_overlays(
-          project, x_id, y_id, active_bounds,
-          view.get("x_transform_id"), view.get("y_transform_id"),
-          default_color=str(presentation.get("gate_outline_color") or "#e00000"),
-        ),
+        gate_overlays=gate_overlays,
         scene=scene,
       )
       prepared.metadata["vector_scatter_preflight"] = dict(preflight_holder.get("value", {}))

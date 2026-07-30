@@ -154,13 +154,21 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   )
   normalize_calls = 0
   original_normalize = batch_plot_module._normalize
+  gate_overlay_calls = 0
+  original_gate_overlays = batch_plot_module._gate_overlays
 
   def count_normalize(values, bounds=None):
     nonlocal normalize_calls
     normalize_calls += 1
     return original_normalize(values, bounds)
 
+  def count_gate_overlays(*args, **kwargs):
+    nonlocal gate_overlay_calls
+    gate_overlay_calls += 1
+    return original_gate_overlays(*args, **kwargs)
+
   monkeypatch.setattr(batch_plot_module, "_normalize", count_normalize)
+  monkeypatch.setattr(batch_plot_module, "_gate_overlays", count_gate_overlays)
   output_dir = tmp_path / "exports"
   assert batch_plot_command(
     str(project_path), "overlay-export", str(output_dir),
@@ -172,6 +180,7 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   # Both target scenes use the same shared range.  Each source is normalized
   # once (X/Y), then reused when it appears as the other target's overlay.
   assert normalize_calls == 4
+  assert gate_overlay_calls == 1
   metadata = json.loads(next(output_dir.glob("*s1*.svg.json")).read_text(encoding="utf-8"))
   assert metadata["ordered_source_ids"] == ["s1", "s2"]
 
@@ -189,6 +198,7 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
     execution_options=ExecutionOptions(backend="thread", max_workers=2),
   ) == 0
   assert normalize_calls == 4
+  assert gate_overlay_calls == 2
 
 
 def test_batch_plot_prepares_only_target_and_overlay_sources(

@@ -1382,7 +1382,8 @@ thread backend（Increment 8）とは別の計画である。
   reduceする。共有範囲の値を変えずに、準備段階の一時メモリを削減した。
 - [x] 同じsourceが複数targetのbase/overlayとして使われる場合、sourceと実際のboundsをキーに
   normalized座標、表示mask、event color順を一度だけ作成して再利用する。`shared_ranges`と
-  `current_view`の双方で、boundsが異なるtargetは別entryとして保持する。
+  `current_view`の双方で、boundsが異なるtargetは別entryとして保持する。ゲートgeometryも
+  軸、transform、bounds、outline色をキーにtarget間で一度だけ構築する。
 - [x] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
   `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、
   `batchPlotProgressCurrentItem`、`batchPlotProgressCancelButton`、

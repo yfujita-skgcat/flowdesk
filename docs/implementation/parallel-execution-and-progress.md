@@ -1031,6 +1031,12 @@ view ranges receive separate entries, while identical ranges reuse the immutable
 The cache is renderer-neutral and is released with the batch operation; it does not share
 mutable Qt objects or alter source order.
 
+Gate geometry is cached in the same coordinator-owned lifetime using
+`(x_parameter, y_parameter, actual_bounds, x_transform, y_transform, outline_color)`.
+Targets with identical geometry reuse the immutable overlay tuple; different ranges or
+styles produce separate entries. This removes repeated polygon clipping and transform
+work without sharing mutable Qt objects or changing gate order.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become
