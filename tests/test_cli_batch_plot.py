@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from flowdesk_cli import batch_plot as batch_plot_module
 from flowdesk_cli.batch_plot import (
@@ -113,6 +114,11 @@ def test_shared_layer_bounds_reduces_extrema_without_array_concatenation() -> No
   assert _shared_layer_bounds(layers) == (-3.0, 4.0, 0.5, 8.0)
   ranges = {source_id: _layer_bounds(*values) for source_id, values in layers.items()}
   assert _shared_layer_bounds_from_ranges(ranges) == (-3.0, 4.0, 0.5, 8.0)
+
+
+def test_layer_bounds_rejects_empty_prepared_source() -> None:
+  with pytest.raises(ValueError, match="finite events"):
+    _layer_bounds(np.array([], dtype=np.float64), np.array([], dtype=np.float64))
 
 
 def test_batch_plot_uses_canonical_derived_display_data(
