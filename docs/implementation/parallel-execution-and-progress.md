@@ -774,6 +774,15 @@ An offscreen diagnostic run with 5,000 events measured about 12.6 ms for the GUI
 submission path and about 103 ms until the worker result was painted (Linux,
 NumPy 2.5.1); these values are workload/environment evidence, not CI thresholds.
 
+The bounded-grid Gaussian smoothing pass was also optimized without changing the
+estimator contract: the previous Python callback per row/column was replaced with a
+`sliding_window_view`/`tensordot` contraction.  Edge padding, kernel construction,
+axis order, normalization, and returned event order remain unchanged; comparison with
+the former convolution loop differed by at most approximately `4e-16` in the smoothed
+field.  A 20,000-event, five-repeat diagnostic on Linux/NumPy 2.5.1 measured a
+71.9 ms median for the numeric density phase.  This is a local diagnostic, not a CI
+performance threshold or an analytical speedup claim.
+
 - Split density work into a renderer-neutral numeric result and GUI presentation.
   Numeric histogram/smoothing/normalization/color-index arrays may run in an owned worker;
   `QBrush`, pyqtgraph items, and widget mutation remain on the GUI thread.

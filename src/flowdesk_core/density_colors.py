@@ -191,10 +191,16 @@ def _gaussian_smooth(
     padding = [(0, 0), (0, 0)]
     padding[axis] = (radius, radius)
     padded = np.pad(result, padding, mode="edge")
-    result = np.apply_along_axis(
-      lambda row, current_kernel=kernel: np.convolve(row, current_kernel, mode="valid"),
-      axis, padded,
+    # ``apply_along_axis`` invokes a Python callback for every grid row/column.
+    # The density grid is bounded but this callback still dominates repeated
+    # interactive requests on some Python/NumPy builds.  A sliding view keeps
+    # the same edge-padded, valid convolution while reducing the whole pass to
+    # one vectorized contraction.  The final axis is the kernel window for both
+    # axis choices in NumPy's ``sliding_window_view`` API.
+    windows = np.lib.stride_tricks.sliding_window_view(
+      padded, kernel.size, axis=axis,
     )
+    result = np.tensordot(windows, kernel, axes=([-1], [0]))
   return result
 
 

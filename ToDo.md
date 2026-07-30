@@ -1323,6 +1323,10 @@ thread backend（Increment 8）とは別の計画である。
   2026-07-30の20,000 events ×3回では、X/Yを再送信しないsize update中央値73.2 ms、
   opacity update中央値148.6 ms、cold `plot_events`中央値234.8 msだった。opacityはeventごとの
   brush更新を伴うため、これをdensity数値kernelのspeedupと解釈しない。
+- [x] density gridのseparable Gaussian smoothingを`np.apply_along_axis`のPython callbackから
+  `sliding_window_view` + `tensordot`のベクトル化passへ置換した。edge padding、kernel、軸順序の
+  数値契約を維持し、旧実装との差は浮動小数点丸め（最大約4e-16）以内である。20,000 eventsの
+  density numeric中央値は今回の環境で71.9 ms（5回）だった。これは環境依存の診断値でありCI thresholdではない。
 - [ ] cached/uncachedのcolor一致、全関連設定のcache invalidation、rapid pan/zoom/sample
   switch、shutdownをtestする。
 
