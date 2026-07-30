@@ -156,6 +156,8 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   original_normalize = batch_plot_module._normalize
   gate_overlay_calls = 0
   original_gate_overlays = batch_plot_module._gate_overlays
+  tick_calls = 0
+  original_normalized_ticks = batch_plot_module._normalized_ticks
 
   def count_normalize(values, bounds=None):
     nonlocal normalize_calls
@@ -167,8 +169,14 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
     gate_overlay_calls += 1
     return original_gate_overlays(*args, **kwargs)
 
+  def count_normalized_ticks(*args, **kwargs):
+    nonlocal tick_calls
+    tick_calls += 1
+    return original_normalized_ticks(*args, **kwargs)
+
   monkeypatch.setattr(batch_plot_module, "_normalize", count_normalize)
   monkeypatch.setattr(batch_plot_module, "_gate_overlays", count_gate_overlays)
+  monkeypatch.setattr(batch_plot_module, "_normalized_ticks", count_normalized_ticks)
   output_dir = tmp_path / "exports"
   assert batch_plot_command(
     str(project_path), "overlay-export", str(output_dir),
@@ -181,6 +189,7 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   # once (X/Y), then reused when it appears as the other target's overlay.
   assert normalize_calls == 4
   assert gate_overlay_calls == 1
+  assert tick_calls == 2
   metadata = json.loads(next(output_dir.glob("*s1*.svg.json")).read_text(encoding="utf-8"))
   assert metadata["ordered_source_ids"] == ["s1", "s2"]
 
@@ -199,6 +208,7 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   ) == 0
   assert normalize_calls == 4
   assert gate_overlay_calls == 2
+  assert tick_calls == 4
 
 
 def test_batch_plot_prepares_only_target_and_overlay_sources(

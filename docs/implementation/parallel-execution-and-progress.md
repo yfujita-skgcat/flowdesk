@@ -1042,6 +1042,11 @@ Targets with identical geometry reuse the immutable overlay tuple; different ran
 styles produce separate entries. This removes repeated polygon clipping and transform
 work without sharing mutable Qt objects or changing gate order.
 
+The same coordinator lifetime now caches normalized axis ticks by axis, bounds, transform,
+and tick policy. `current_view` targets with different ranges receive independent tick
+tuples, while identical ranges avoid repeated transform tick generation. The cached scene
+values are renderer-neutral and are released with the export operation.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become

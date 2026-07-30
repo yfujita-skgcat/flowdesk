@@ -133,6 +133,7 @@ def batch_plot_command(
     gate_overlay_cache: dict[
       tuple[object, ...], tuple[dict[str, Any], ...]
     ] = {}
+    tick_cache: dict[tuple[object, ...], tuple[dict[str, object], ...]] = {}
     render_cache_lock = Lock()
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -427,15 +428,34 @@ def batch_plot_command(
         )
         with render_cache_lock:
           gate_overlay_cache[gate_cache_key] = gate_overlays
-      scene = {
-        "x_ticks": _normalized_ticks(
+      x_tick_key = (
+        "x", active_bounds[0], view.get("x_transform_id"),
+        str(display_scene.get("x_tick_policy", "auto")),
+      )
+      y_tick_key = (
+        "y", active_bounds[1], view.get("y_transform_id"),
+        str(display_scene.get("y_tick_policy", "auto")),
+      )
+      with render_cache_lock:
+        x_ticks = tick_cache.get(x_tick_key)
+        y_ticks = tick_cache.get(y_tick_key)
+      if x_ticks is None:
+        x_ticks = tuple(_normalized_ticks(
           active_bounds[0], view.get("x_transform_id"), transform_by_id,
           str(display_scene.get("x_tick_policy", "auto")),
-        ),
-        "y_ticks": _normalized_ticks(
+        ))
+        with render_cache_lock:
+          tick_cache[x_tick_key] = x_ticks
+      if y_ticks is None:
+        y_ticks = tuple(_normalized_ticks(
           active_bounds[1], view.get("y_transform_id"), transform_by_id,
           str(display_scene.get("y_tick_policy", "auto")),
-        ),
+        ))
+        with render_cache_lock:
+          tick_cache[y_tick_key] = y_ticks
+      scene = {
+        "x_ticks": x_ticks,
+        "y_ticks": y_ticks,
         "title_colors": [
           str(
             manual_colors.get(source_id)
