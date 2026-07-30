@@ -15,6 +15,8 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from flowdesk_core.models import BatchPlotExportSpec, PlotPresentationSpec, PlotType
 from flowdesk_core.plot_presentation import (
   OverlaySourceResolution,
@@ -1496,6 +1498,9 @@ def _hybrid_scatter_raster(
   raster_width = max(1, round(plot_width * raster_scale))
   raster_height = max(1, round(plot_height * raster_scale))
   pixels = bytearray(raster_width * raster_height * 4)
+  rgba = np.frombuffer(pixels, dtype=np.uint8).reshape(
+    (raster_height, raster_width, 4)
+  )
   style_by_id = {style.source_id: style for style in selected.source_styles}
   point_records: list[dict[str, Any]] = []
   rgb_cache: dict[str, tuple[int, int, int]] = {}
@@ -1512,6 +1517,30 @@ def _hybrid_scatter_raster(
       value = (channel * src_a + pixels[index + offset] * dst_a * (1.0 - src_a)) / out_a
       pixels[index + offset] = max(0, min(255, round(value)))
     pixels[index + 3] = max(0, min(255, round(out_a * 255)))
+
+  def blend_opaque_row(
+    pixel_y: int,
+    min_x: int,
+    max_x: int,
+    center_x: float,
+    center_y: float,
+    radius: float,
+    shape: str,
+    color: tuple[int, int, int],
+  ) -> None:
+    """Apply an opaque marker row with the same pixel-center predicate."""
+    x_positions = np.arange(min_x, max_x + 1, dtype=np.float64)
+    dx = x_positions + 0.5 - center_x
+    dy = pixel_y + 0.5 - center_y
+    inside = (
+      dx * dx + dy * dy <= radius * radius
+      if shape == "circle"
+      else (np.abs(dx) <= radius) & (abs(dy) <= radius)
+    )
+    positions = np.flatnonzero(inside)
+    if len(positions):
+      rgba[pixel_y, min_x + positions, :3] = color
+      rgba[pixel_y, min_x + positions, 3] = 255
 
   for z_index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
@@ -1541,17 +1570,23 @@ def _hybrid_scatter_raster(
       max_x = min(raster_width - 1, math.ceil(x + radius + 1))
       min_y = max(0, math.floor(y - radius - 1))
       max_y = min(raster_height - 1, math.ceil(y + radius + 1))
-      for pixel_y in range(min_y, max_y + 1):
-        for pixel_x in range(min_x, max_x + 1):
-          dx = pixel_x + 0.5 - x
-          dy = pixel_y + 0.5 - y
-          inside = (
-            dx * dx + dy * dy <= radius * radius
-            if shape == "circle"
-            else abs(dx) <= radius and abs(dy) <= radius
+      if alpha >= 1.0:
+        for pixel_y in range(min_y, max_y + 1):
+          blend_opaque_row(
+            pixel_y, min_x, max_x, x, y, radius, shape, point_color,
           )
-          if inside:
-            blend((pixel_y * raster_width + pixel_x) * 4, point_color, alpha)
+      else:
+        for pixel_y in range(min_y, max_y + 1):
+          for pixel_x in range(min_x, max_x + 1):
+            dx = pixel_x + 0.5 - x
+            dy = pixel_y + 0.5 - y
+            inside = (
+              dx * dx + dy * dy <= radius * radius
+              if shape == "circle"
+              else abs(dx) <= radius and abs(dy) <= radius
+            )
+            if inside:
+              blend((pixel_y * raster_width + pixel_x) * 4, point_color, alpha)
 
   raw_rows = b"".join(
     b"\x00" + bytes(pixels[row * raster_width * 4:(row + 1) * raster_width * 4])

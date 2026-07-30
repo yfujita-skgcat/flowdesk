@@ -783,6 +783,8 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
   rasterとのRMSE、tile seam、rare-event visibility、memory limitをtestする。
   透明RGBA PNG scatter layerを共通生成し、SVGはembedded PNG、PDFはsoft-mask付きImage
   XObjectとしてplot rectangleへ配置する実装と、画像・DPI・provenanceのtestを追加した。
+  alpha=1.0のマーカーだけは同じpixel-center predicateによるopaque row-maskを使い、
+  alpha<1.0のsource-over合成とdensity/overlay色は従来の順序依存経路を維持する。
 - [x] Increment 16: Batch Plot Export GUIへ3 mode selector、hybrid時だけ有効なscatter DPI、
   point/node/path/pixel/memory preflightを追加し、CLI/headlessと同じ保存済みplanを実行する。
   resource limit時はmodeを自動変更せずstructured failure/warningを返す。sidecar/manifest、

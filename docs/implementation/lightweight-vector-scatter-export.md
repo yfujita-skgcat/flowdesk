@@ -559,6 +559,13 @@ Tasks:
    budget.
 6. Record pixel dimensions, DPI, encoding, and raster bounds.
 
+When a marker's resolved alpha is exactly 1.0, the compositor may use an
+opaque row-mask fast path: it must use the same pixel-center footprint
+predicate and write pixels in the original event/source order. This is
+mathematically identical to source-over for opaque paint. Any alpha below
+1.0 must continue through the ordered source-over path; do not use the
+fast path for translucent density or overlay colors.
+
 Acceptance:
 
 - Hybrid tests in section 8 pass.

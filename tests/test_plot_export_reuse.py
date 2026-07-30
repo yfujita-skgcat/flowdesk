@@ -313,6 +313,47 @@ def test_hybrid_scatter_preserves_per_event_population_colors() -> None:
   assert bytes((0, 0, 255)) in raster["rgb"]
 
 
+def test_hybrid_opaque_fast_path_matches_pixel_center_coverage() -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view",
+    "scatter",
+    source,
+    (OverlaySourceResolution("s1", "compatible"),),
+    view_presentation={
+      "source_styles": [{
+        "source_id": "s1", "color": "#ff0000", "alpha": 1.0,
+        "marker_size": 3.0,
+      }],
+    },
+  )
+  width = height = 24
+  raster = _hybrid_scatter_raster(
+    prepared, prepared.resolved_presentation.presentation,
+    {"s1": ((0.5,), (0.5,))},
+    plot_width=width, plot_height=height, dpi=96,
+  )
+  expected = bytearray(width * height * 4)
+  radius = 3.0 / 2.0
+  center = (0.5 * (width - 1), 0.5 * (height - 1))
+  for pixel_y in range(height):
+    for pixel_x in range(width):
+      dx = pixel_x + 0.5 - center[0]
+      dy = pixel_y + 0.5 - center[1]
+      if dx * dx + dy * dy <= radius * radius:
+        index = (pixel_y * width + pixel_x) * 4
+        expected[index:index + 4] = bytes((255, 0, 0, 255))
+  assert raster["rgb"] == bytes(
+    value for index, value in enumerate(expected) if index % 4 != 3
+  )
+  assert raster["alpha"] == bytes(
+    expected[index] for index in range(3, len(expected), 4)
+  )
+
+
 def test_hybrid_pdf_matches_png_layout_at_pdf_logical_resolution(tmp_path) -> None:
   """PDF at 72 DPI has the same logical canvas as the PNG export."""
   if shutil.which("pdftoppm") is None:
