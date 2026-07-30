@@ -1307,8 +1307,9 @@ thread backend（Increment 8）とは別の計画である。
 - [ ] whole-population densityがviewport非依存というcontractの範囲ではpan/zoomでdensity
   fieldを再利用し、generation checkでstale resultを破棄する。viewport変更だけで同じeventの
   density colorを変えない。
-- [ ] profiling後にper-event Qt payloadを最小化する。palette index/grouped layerを使う場合も
-  draw order、rare color、alpha、selection、interactionを維持する。
+- [x] profiling後にper-event Qt payloadの再生成を最小化する。同一density色配列とalphaでは
+  `QBrush`リストを再利用し、dot size/opacity変更でもdraw order、rare color、alpha、selection、
+  interactionを維持する。palette groupingによるdraw order変更はまだ採用しない。
 - [x] 新規/default設定ではfinite display maximumを維持する。明示的な`0 (all events)`は
   勝手にsamplingせず、large event+density時のperformance status/warningを表示する。
 - [x] 同一semantic processed-display identityのdensity再描画では、解決済みのcolorsと既存

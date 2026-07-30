@@ -618,6 +618,30 @@ def test_density_style_changes_do_not_resubmit_event_coordinates(
     QApplication.processEvents()
 
 
+def test_density_brush_payload_reuses_same_colors_and_opacity() -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(84)
+  x = rng.normal(size=1200)
+  y = rng.normal(size=1200)
+  try:
+    plot.plot_events(x, y, density_coloring=True, density_cache_context=("brush",))
+    first_payload = plot._density_brushes()
+    assert plot._density_brushes() is first_payload
+    plot.set_style(replace(plot.style(), dot_size=3.0))
+    assert plot._density_brushes() is first_payload
+    plot.set_style(replace(plot.style(), dot_opacity=0.4))
+    assert plot._density_brushes() is not first_payload
+    assert all(
+      brush.color().alphaF() == pytest.approx(0.4)
+      for brush in plot._density_brushes()
+    )
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
 def test_population_colors_render_as_uniform_layers_without_per_event_brushes() -> None:
   _app()
   plot = PlotWidget()

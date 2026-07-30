@@ -768,6 +768,14 @@ the opacity update, compared with 234.8 ms cold `plot_events`. Opacity still req
 one brush per event, so this is presentation-payload evidence, not density-kernel
 speedup evidence.
 
+The opacity path now retains the last per-event `QBrush` list keyed by the exact
+resolved colour array identity and opacity. Repeated style/label updates therefore
+reuse the existing Qt payload; changing opacity creates a fresh list, while changing
+only dot size reuses it. Palette grouping is intentionally not used because it could
+change draw order and overlap semantics. A 20,000-event/three-repeat diagnostic after
+this change measured 134.2 ms median for opacity update on Linux/NumPy 2.5.1; this is
+an environment-specific presentation measurement, not a CI threshold.
+
 Main-window density requests now use an owned one-worker `DensityColorScheduler`.
 The worker receives read-only NumPy views (copying only writable inputs) and returns only the
 renderer-neutral colour result.  `PlotWidget` applies brushes and creates or

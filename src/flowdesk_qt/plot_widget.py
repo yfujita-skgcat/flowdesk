@@ -97,6 +97,13 @@ class PlotWidget(QWidget):
         self._population_scatter_items: list[tuple[Any, str]] = []
         self._event_colors: NDArray[np.str_] | None = None
         self._density_color_cache: dict[tuple[object, ...], NDArray[np.str_]] = {}
+        # QBrush objects are presentation-only.  Reuse the last per-event
+        # brush payload when the semantic colors and opacity are unchanged;
+        # rebuilding thousands of Python/Qt wrappers otherwise dominates
+        # style-only density updates.
+        self._density_brush_cache: tuple[
+            NDArray[np.str_], float, list[QBrush]
+        ] | None = None
         # The data-bearing scatter item is expensive to rebuild for density
         # presentation because pyqtgraph receives one resolved style per event.
         # Keep its semantic identity separately from the numeric color cache so
@@ -693,6 +700,7 @@ class PlotWidget(QWidget):
         self._display_sampling_active = False
         self._event_colors = None
         self._density_color_cache.clear()
+        self._density_brush_cache = None
         self._density_render_key = None
         self._density_input = None
         self._density_cache_context = None
@@ -2430,11 +2438,21 @@ class PlotWidget(QWidget):
         resolved_colors = self._event_colors if colors is None else colors
         if resolved_colors is None:
             return []
+        opacity = float(self._style.dot_opacity)
+        cached = self._density_brush_cache
+        if (
+            cached is not None
+            and cached[0] is resolved_colors
+            and cached[1] == opacity
+        ):
+            return cached[2]
         brushes_by_color = {
-            str(color): self._make_brush(str(color), self._style.dot_opacity)
+            str(color): self._make_brush(str(color), opacity)
             for color in np.unique(resolved_colors)
         }
-        return [brushes_by_color[str(color)] for color in resolved_colors]
+        brushes = [brushes_by_color[str(color)] for color in resolved_colors]
+        self._density_brush_cache = (resolved_colors, opacity, brushes)
+        return brushes
 
     def _density_color_key(
         self,
