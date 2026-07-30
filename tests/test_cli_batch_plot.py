@@ -416,6 +416,8 @@ def test_batch_plot_thread_backend_prepares_sources_concurrently(
   manifest = json.loads(next(output_dir.glob("*.batch.json")).read_text(encoding="utf-8"))
   assert manifest["execution"]["preparation"]["backend"] == "thread"
   assert manifest["execution"]["preparation"]["effective_max_workers"] == 2
+  assert manifest["execution"]["preparation"]["submitted_sources"] == 2
+  assert manifest["execution"]["preparation"]["peak_in_flight_sources"] <= 2
 
 
 def test_batch_plot_clips_gate_edges_at_the_viewport_boundary() -> None:

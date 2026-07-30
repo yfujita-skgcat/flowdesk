@@ -6,7 +6,7 @@ import json
 import os
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from threading import Lock
 from typing import Any, Literal, cast
@@ -300,29 +300,56 @@ def batch_plot_command(
         "limiting_factors": list(preparation_resolution.limiting_factors),
       })
       prepared_results: list[tuple[str, np.ndarray, np.ndarray, dict[str, Any]]] = []
+      submitted_preparations = 0
+      peak_preparation_in_flight = 0
       if (
         preparation_resolution.backend == "thread"
         and preparation_resolution.effective_max_workers > 1
       ):
-        with ThreadPoolExecutor(
+        executor = ThreadPoolExecutor(
           max_workers=preparation_resolution.effective_max_workers,
           thread_name_prefix="flowdesk-batch-prepare",
-        ) as executor:
-          futures = {
-            executor.submit(prepare_one, candidate): index
-            for index, candidate in enumerate(candidates)
-          }
-          completed: dict[int, tuple[str, np.ndarray, np.ndarray, dict[str, Any]]] = {}
-          try:
-            for future in as_completed(futures):
-              completed[futures[future]] = future.result()
-          except BaseException:
-            for future in futures:
-              future.cancel()
-            raise
+        )
+        pending: dict[Any, int] = {}
+        completed: dict[int, tuple[str, np.ndarray, np.ndarray, dict[str, Any]]] = {}
+        next_candidate = 0
+        try:
+          while pending or next_candidate < len(candidates):
+            while (
+              next_candidate < len(candidates)
+              and len(pending) < preparation_resolution.effective_max_workers
+            ):
+              if execution_control is not None:
+                execution_control.cancellation_token.raise_if_cancelled()
+              pending[executor.submit(
+                prepare_one, candidates[next_candidate]
+              )] = next_candidate
+              next_candidate += 1
+              submitted_preparations += 1
+              peak_preparation_in_flight = max(
+                peak_preparation_in_flight, len(pending)
+              )
+            if not pending:
+              break
+            done, _ = wait(tuple(pending), return_when=FIRST_COMPLETED)
+            for future in sorted(done, key=lambda value: pending[value]):
+              candidate_index = pending.pop(future)
+              completed[candidate_index] = future.result()
+        except BaseException:
+          for future in pending:
+            future.cancel()
+          raise
+        finally:
+          executor.shutdown(wait=True, cancel_futures=True)
         prepared_results = [completed[index] for index in range(len(candidates))]
       else:
         prepared_results = [prepare_one(candidate) for candidate in candidates]
+        submitted_preparations = len(candidates)
+        peak_preparation_in_flight = 1 if candidates else 0
+      preparation_provenance_holder.update({
+        "submitted_sources": submitted_preparations,
+        "peak_in_flight_sources": peak_preparation_in_flight,
+      })
 
       # Merge in project/source order regardless of worker completion order.
       for candidate_id, x_values, y_values, metadata in prepared_results:

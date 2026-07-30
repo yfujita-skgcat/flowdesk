@@ -1581,6 +1581,10 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [x] source preparationで作成していた未使用の`raw_x`/`raw_y`コピーとmetadataを削除した。以後の
   scene、gate、tick、writerはtransform後のprepared layerだけを参照するため、PNG/SVG/PDFのbytesと
   event orderは変わらない。実FCS sequentialは21.97 s / 286,408 KBで、既知の全SHA-256と一致した。
+- [x] thread source preparationのfuture投入をeffective worker数までにbounded化し、完了したsourceを
+  source順へmergeする。大量sourceで未実行candidateをfutureへ一括queueせず、cancel/failure時の
+  pending futureも協調的に解放する。manifestへsubmitted/peak in-flight source数を記録し、source
+  orderと出力parityを維持する。
 - [x] 同一sample/viewのSVG/PDFでは、compact scatter batchとhybrid scatter rasterを一度だけ構築し、
   format間でimmutableなvector render cacheを再利用する。単一色のfull-vectorでも同じ正規化座標
   planをformat間で再利用し、event colorがある場合は描画順を変えないためcache groupingを行わない。

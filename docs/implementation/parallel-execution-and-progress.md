@@ -1021,6 +1021,15 @@ uses the maximum event count of one planned output item rather than summing unre
 batch items. This source-scope optimization is covered by a group/overlay test and
 must preserve the existing unknown-source validation.
 
+When source preparation uses the opt-in thread backend, the coordinator submits at most
+the resolved worker count at a time and replenishes the pending set as futures complete.
+Completion results are still merged by candidate/source order, not completion order.
+Cancellation or a preparation failure cancels unstarted futures and waits for active
+workers at the executor shutdown boundary; it never leaves an unbounded queue of FCS
+preparation jobs holding candidate state. The preparation provenance records submitted
+source count and observed peak in-flight sources, and regression tests require the latter
+to stay at or below the resolved worker limit.
+
 The real `data/analysis.flowdesk` workload was rerun after enabling source-preparation
 threads: sequential took 22.03 s / 289,888 KB peak RSS, while thread/2 took 24.90 s /
 489,036 KB. Preparation itself took about 0.04 s and rendering 24.56 s in the threaded
