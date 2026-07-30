@@ -136,6 +136,10 @@ def batch_plot_command(
     display_scene = dict(view.get("display_scene", {}))
     prepared_render_cache: dict[str, tuple[Any, dict[str, Any], dict[str, Any]]] = {}
     rendered_format_counts: dict[str, int] = {}
+    normalized_layer_cache: dict[
+      tuple[str, tuple[tuple[float, float], tuple[float, float]]],
+      tuple[tuple[tuple[float, ...], tuple[float, ...]], np.ndarray, tuple[str, ...] | None],
+    ] = {}
     render_cache_lock = Lock()
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -313,17 +317,32 @@ def batch_plot_command(
         source_sample = source_by_id[source_id]
         source_metadata = layer_metadata[source_id]
         source_x, source_y = prepared_layers[source_id]
-        normalized_x = _normalize(source_x, active_bounds[0])
-        normalized_y = _normalize(source_y, active_bounds[1])
-        visible = (
-          (normalized_x >= 0.0) & (normalized_x <= 1.0)
-          & (normalized_y >= 0.0) & (normalized_y <= 1.0)
-        )
+        normalized_key = (source_id, active_bounds)
+        normalized_payload = None
+        if spec.layout_policy == "shared_ranges":
+          with render_cache_lock:
+            normalized_payload = normalized_layer_cache.get(normalized_key)
+        if normalized_payload is None:
+          normalized_x = _normalize(source_x, active_bounds[0])
+          normalized_y = _normalize(source_y, active_bounds[1])
+          visible = (
+            (normalized_x >= 0.0) & (normalized_x <= 1.0)
+            & (normalized_y >= 0.0) & (normalized_y <= 1.0)
+          )
+          colors = layer_event_colors.get(source_id)
+          normalized_payload = (
+            (tuple(normalized_x[visible]), tuple(normalized_y[visible])),
+            visible,
+            None if colors is None else tuple(str(color) for color in colors[visible]),
+          )
+          if spec.layout_policy == "shared_ranges":
+            with render_cache_lock:
+              normalized_layer_cache[normalized_key] = normalized_payload
+        normalized_points, visible, normalized_colors = normalized_payload
         visible_masks[source_id] = visible
-        layers[source_id] = (tuple(normalized_x[visible]), tuple(normalized_y[visible]))
-        colors = layer_event_colors.get(source_id)
-        if colors is not None:
-          visible_event_colors[source_id] = tuple(str(color) for color in colors[visible])
+        layers[source_id] = normalized_points
+        if normalized_colors is not None:
+          visible_event_colors[source_id] = normalized_colors
         sources.append({
           "source_id": source_id, "sample_id": source_id,
           "population_id": str(view.get("population_id", "all_events")),

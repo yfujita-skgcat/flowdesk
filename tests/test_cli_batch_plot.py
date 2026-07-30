@@ -136,6 +136,15 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
     "flowdesk_cli.batch_plot.read_fcs_sample",
     lambda path, *_args: (None, samples[Path(path).stem]),
   )
+  normalize_calls = 0
+  original_normalize = batch_plot_module._normalize
+
+  def count_normalize(values, bounds=None):
+    nonlocal normalize_calls
+    normalize_calls += 1
+    return original_normalize(values, bounds)
+
+  monkeypatch.setattr(batch_plot_module, "_normalize", count_normalize)
   output_dir = tmp_path / "exports"
   assert batch_plot_command(
     str(project_path), "overlay-export", str(output_dir),
@@ -144,6 +153,9 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   text = next(output_dir.glob("*s1*.svg")).read_text(encoding="utf-8")
   assert 'fill="#ff0000"' in text
   assert 'stroke="#00ff00"' in text
+  # Both target scenes use the same shared range.  Each source is normalized
+  # once (X/Y), then reused when it appears as the other target's overlay.
+  assert normalize_calls == 4
   metadata = json.loads(next(output_dir.glob("*s1*.svg.json")).read_text(encoding="utf-8"))
   assert metadata["ordered_source_ids"] == ["s1", "s2"]
 

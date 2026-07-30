@@ -1001,6 +1001,12 @@ min/max values instead of concatenating all event arrays into another temporary 
 This preserves the exact range contract while lowering peak preparation memory for
 large overlays. It does not change density input, event order, or rendered coordinates.
 
+When the same source appears in multiple target scenes under `shared_ranges`, the CLI
+also reuses its normalized coordinates, visibility mask, and event-color order keyed by
+`(source_id, shared_bounds)`. `current_view` deliberately bypasses this cache because
+each target can have a different viewport. The cache is renderer-neutral and is released
+with the batch operation; it does not share mutable Qt objects or alter source order.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become

@@ -974,6 +974,7 @@ batch manifestの`execution`には、実行単位（`prepared_output_item`）、
 共有source準備とoverlay/shared range解決後のprepared itemだけをboundedに処理します。
 `shared_ranges`の範囲計算はsourceごとの極値だけをreduceするため、複数の大きなFCSを一つの一時配列へ
 連結しません。
+同じsourceを複数のtargetでoverlay表示する場合も、共通範囲での正規化座標と表示maskを再利用します。
 Qt/pyqtgraphの描画オブジェクトをworkerへ移しません。thread backendで速度向上が再現しない環境では、
 `sequential`を使用してください。
 
