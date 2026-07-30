@@ -1054,10 +1054,12 @@ This is a planning/render overhead optimization only; source order and style pre
 remain the persisted first-match order.
 
 The normalized-layer cache is an LRU bounded to `min(256, 4 * required_source_count)`
-entries (with a minimum of one). This prevents many distinct `current_view` bounds from
-retaining unbounded tuple copies of event coordinates. Eviction affects only renderer
-cache data; a later miss recomputes the same normalized coordinates from immutable
-prepared layers and cannot affect scientific results or output ordering.
+entries (with a minimum of one) and an estimated 128 MiB payload budget. A single
+payload above the byte budget is not cached. This prevents many distinct `current_view`
+bounds or one huge source from retaining unbounded tuple copies of event coordinates.
+Eviction affects only renderer cache data; a later miss recomputes the same normalized
+coordinates from immutable prepared layers and cannot affect scientific results or output
+ordering. The byte estimate is a conservative diagnostic guard, not an OS RSS guarantee.
 
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for

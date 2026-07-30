@@ -147,6 +147,11 @@ def batch_plot_command(
     normalized_cache_max_entries = max(
       1, min(256, max(1, len(required_source_ids)) * 4)
     )
+    normalized_cache_max_bytes = 128 * 1024 * 1024
+    normalized_cache_bytes = 0
+    normalized_cache_sizes: dict[
+      tuple[str, tuple[tuple[float, float], tuple[float, float]]], int
+    ] = {}
     gate_overlay_cache: dict[
       tuple[object, ...], tuple[dict[str, Any], ...]
     ] = {}
@@ -269,6 +274,7 @@ def batch_plot_command(
     def render(
       sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
     ) -> None:
+      nonlocal normalized_cache_bytes
       sample_id = str(sample["id"])
       with render_cache_lock:
         cached_payload = prepared_render_cache.get(sample_id)
@@ -340,8 +346,19 @@ def batch_plot_command(
           with render_cache_lock:
             normalized_layer_cache[normalized_key] = normalized_payload
             normalized_layer_cache.move_to_end(normalized_key)
-            while len(normalized_layer_cache) > normalized_cache_max_entries:
-              normalized_layer_cache.popitem(last=False)
+            payload_bytes = _estimate_normalized_layer_bytes(normalized_payload)
+            if payload_bytes > normalized_cache_max_bytes:
+              normalized_layer_cache.pop(normalized_key, None)
+            else:
+              previous_bytes = normalized_cache_sizes.pop(normalized_key, 0)
+              normalized_cache_sizes[normalized_key] = payload_bytes
+              normalized_cache_bytes += payload_bytes - previous_bytes
+              while (
+                len(normalized_layer_cache) > normalized_cache_max_entries
+                or normalized_cache_bytes > normalized_cache_max_bytes
+              ):
+                evicted_key, _ = normalized_layer_cache.popitem(last=False)
+                normalized_cache_bytes -= normalized_cache_sizes.pop(evicted_key, 0)
         normalized_points, visible, normalized_colors = normalized_payload
         visible_masks[source_id] = visible
         layers[source_id] = normalized_points
@@ -626,6 +643,20 @@ def _normalize(
   if high == low:
     return np.full(values.shape, 0.5, dtype=np.float64)
   return (values - low) / (high - low)
+
+
+def _estimate_normalized_layer_bytes(
+  payload: tuple[
+    tuple[tuple[float, ...], tuple[float, ...]],
+    np.ndarray,
+    tuple[str, ...] | None,
+  ],
+) -> int:
+  """Conservatively estimate the retained renderer-layer payload size."""
+  points, visible, colors = payload
+  point_bytes = (len(points[0]) + len(points[1])) * 24
+  color_bytes = 0 if colors is None else len(colors) * 16
+  return int(point_bytes + visible.nbytes + color_bytes)
 
 
 def _shared_layer_bounds(
