@@ -1533,6 +1533,8 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
   有効にせず、process backendはIncrement 11のmemory/copy/Windows spawn評価へ送る。
 - [x] workerごとに一意なtemporary output/sidecarを所有させ、成功時だけsame-filesystem atomic
   replaceする。collision policy対象外の既存fileを削除しない。thread cancellationの回帰testも追加した。
+- [x] batch manifestのexecution provenanceへjob unit、planned/submitted/completed item数、実際の
+  `peak_in_flight_items`を記録し、bounded executorが指定上限を超えない回帰testを追加した。
 - [x] overlay shared source、`shared_ranges` barrier、複数format、strict/partial failure、
   cancellationでもmanifestのitem順、filename、scene、source order、statusをplan順に保つ。
 - [x] sequential/parallel PNG/SVG/PDFでscene/sidecar、gate位置、軸label、dot order/colorが一致

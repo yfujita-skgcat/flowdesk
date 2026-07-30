@@ -1007,6 +1007,12 @@ the headless renderer without Qt objects; matching bytes and sidecars are the
 reentrancy evidence currently available.  A full representative compensation/
 derived/gating profile and Windows/PyInstaller run remain deployment gates.
 
+The batch manifest now records the actual execution unit (`prepared_output_item`),
+planned/submitted/completed item counts, and `peak_in_flight_items`.  These values are
+runtime telemetry, not scientific settings; they make the bounded-worker and cancellation
+behavior auditable without inferring concurrency from wall time alone.  Regression tests
+assert that the observed peak never exceeds the resolved worker limit.
+
 - Treat the FCS file as a dependency source, not automatically as one executor job.
 - Submit only dependency-complete immutable prepared output items; begin parity testing
   with non-overlay, one-source outputs.

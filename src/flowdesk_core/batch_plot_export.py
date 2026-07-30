@@ -240,6 +240,8 @@ def run_batch_plot_export(
   )
   execution_provenance = resolution.to_mapping()
   results: dict[int, _BatchRenderResult] = {}
+  submitted_jobs = 0
+  peak_in_flight_jobs = 0
 
   def render_item(item_index: int, item: BatchPlotExportItem) -> _BatchRenderResult:
     sample = sample_by_id[item.sample_id]
@@ -312,6 +314,8 @@ def run_batch_plot_export(
             item_index, item = renderable[next_job]
             pending[executor.submit(render_item, item_index, item)] = (item_index, item)
             next_job += 1
+            submitted_jobs += 1
+            peak_in_flight_jobs = max(peak_in_flight_jobs, len(pending))
           if not pending:
             break
           done, _ = wait(tuple(pending), return_when="FIRST_COMPLETED")
@@ -336,6 +340,8 @@ def run_batch_plot_export(
         executor.shutdown(wait=True, cancel_futures=True)
     elif not cancelled:
       for item_index, item in renderable:
+        submitted_jobs += 1
+        peak_in_flight_jobs = max(peak_in_flight_jobs, 1)
         result = render_item(item_index, item)
         record_result(result)
         if cancelled:
@@ -373,6 +379,13 @@ def run_batch_plot_export(
     status = "partial_success"
   else:
     status = "success"
+  execution_provenance.update({
+    "job_unit": "prepared_output_item",
+    "planned_items": len(renderable),
+    "submitted_items": submitted_jobs,
+    "completed_items": len(results),
+    "peak_in_flight_items": peak_in_flight_jobs,
+  })
   manifest = output_root / f"{_safe_slug(spec.id)}.batch.json"
   progress("finalizing_manifest")
   _write_json_atomically(manifest, {

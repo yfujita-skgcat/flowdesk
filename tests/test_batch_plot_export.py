@@ -182,8 +182,14 @@ def test_batch_run_thread_backend_keeps_plan_order_and_manifest(tmp_path) -> Non
   assert [item.status for item in report.items] == ["success", "success"]
   assert report.execution_provenance is not None
   assert report.execution_provenance["backend"] == "thread"
+  assert report.execution_provenance["job_unit"] == "prepared_output_item"
+  assert report.execution_provenance["planned_items"] == 2
+  assert report.execution_provenance["submitted_items"] == 2
+  assert report.execution_provenance["completed_items"] == 2
+  assert report.execution_provenance["peak_in_flight_items"] <= 2
   manifest = json.loads((tmp_path / "threaded.batch.json").read_text(encoding="utf-8"))
   assert manifest["execution"]["backend"] == "thread"
+  assert manifest["execution"]["peak_in_flight_items"] <= 2
   assert not list(tmp_path.glob(".*.flowdesk-*"))
 
 
@@ -208,6 +214,7 @@ def test_batch_run_thread_backend_respects_memory_bound(tmp_path) -> None:
   assert report.execution_provenance is not None
   assert report.execution_provenance["effective_max_workers"] == 1
   assert "memory_budget" in report.execution_provenance["limiting_factors"]
+  assert report.execution_provenance["peak_in_flight_items"] == 1
 
 
 def test_batch_run_thread_backend_preserves_real_writer_bytes(tmp_path) -> None:
@@ -349,6 +356,8 @@ def test_batch_run_thread_cancellation_keeps_atomic_outputs_and_order(tmp_path) 
   assert not list(tmp_path.glob(".*.flowdesk-*"))
   manifest = json.loads((tmp_path / "thread-cancel.batch.json").read_text(encoding="utf-8"))
   assert [item["sample_id"] for item in manifest["items"]] == ["s1", "s2"]
+  assert manifest["execution"]["submitted_items"] <= 2
+  assert manifest["execution"]["peak_in_flight_items"] <= 2
 
 
 def test_batch_run_discards_failed_staged_output(tmp_path) -> None:
