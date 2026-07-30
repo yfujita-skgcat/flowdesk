@@ -1569,6 +1569,10 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [x] format失敗・途中cancelでもitem-scopedのprepared scene、normalized layer、event color、hybrid
   rasterを即時解放する。成功bundleのformat間再利用は維持し、coordinator終了時には残存cacheを全解放して
   長いbatchで失敗itemがメモリを蓄積しない。
+- [x] normalized layer cacheの座標をPython tupleからread-only NumPy配列へ変更し、cache内のfloat
+  object数とmemory estimateを削減した。writerはsequenceとして同じ座標を読むため、PNG/SVG/PDFの
+  event order・座標・byte parityを維持する。実FCS sequential再測定は21.82 s / 286,008 KBで、既存の
+  21.96 s / 284,388 KB測定と同程度のため、速度向上を既定化の根拠にはしない。
 - [x] 同一sample/viewのSVG/PDFでは、compact scatter batchとhybrid scatter rasterを一度だけ構築し、
   format間でimmutableなvector render cacheを再利用する。full-vectorの通常経路は不要なcache構築を
   行わず、event order/color、point plan、sidecar metadata、出力bytesを変更しない回帰testを追加した。

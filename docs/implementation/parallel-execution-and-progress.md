@@ -1046,6 +1046,15 @@ before a later format callback, the coordinator clears all remaining bundles aft
 workers have joined. This bounds transient cache retention without changing output order
 or format parity.
 
+The normalized coordinate cache stores read-only NumPy arrays rather than expanding
+each coordinate into Python float tuples. This reduces object overhead while retaining
+the same sequence contract for every writer; vector adapters still build their own
+immutable point plan when required. The retained-byte estimator uses NumPy `nbytes` and
+continues to include visibility masks and event colors. A real four-sample PNG/PDF run
+produced the same eight SHA-256 values; 21.82 s / 286,008 KB peak RSS was comparable to
+the prior 21.96 s / 284,388 KB baseline, so the change is a memory-pressure reduction,
+not evidence for enabling more workers.
+
 When the same source appears in multiple target scenes, the CLI reuses its normalized
 coordinates, visibility mask, and event-color order keyed by `(source_id, actual_bounds)`.
 This applies to both `shared_ranges` and `current_view`: targets with different persisted

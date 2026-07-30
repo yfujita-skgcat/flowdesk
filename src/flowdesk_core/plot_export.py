@@ -9,7 +9,7 @@ import math
 import re
 import struct
 import zlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from html import escape
 from pathlib import Path
@@ -39,6 +39,7 @@ class PlotExportError(ValueError):
 
 
 REFERENCE_DPI = 96
+LayerValues = tuple[Sequence[float], Sequence[float]]
 
 
 @dataclass(frozen=True)
@@ -252,7 +253,7 @@ def write_plot_svg(
   path: str | Path,
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
-  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  layers: Mapping[str, LayerValues] | None = None,
   event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   options: BatchPlotExportSpec | None = None,
@@ -404,7 +405,7 @@ def write_plot_png(
   path: str | Path,
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
-  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  layers: Mapping[str, LayerValues] | None = None,
   event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   width: int = 800,
@@ -486,7 +487,7 @@ def write_plot_pdf(
   path: str | Path,
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
-  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  layers: Mapping[str, LayerValues] | None = None,
   event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   width: int = 800,
@@ -726,7 +727,7 @@ def write_plot_jpg(
   path: str | Path,
   prepared: PreparedPlotExport,
   presentation: PlotPresentationSpec | None = None,
-  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] | None = None,
+  layers: Mapping[str, LayerValues] | None = None,
   event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   width: int = 800,
@@ -844,7 +845,7 @@ def _svg_marker_path(shape: str, radius: float, x: float, y: float) -> str:
 def _vector_layers(
   prepared: PreparedPlotExport,
   selected: PlotPresentationSpec,
-  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+  layers: Mapping[str, LayerValues],
 ) -> tuple[VectorScatterLayer, ...]:
   style_by_id = {style.source_id: style for style in selected.source_styles}
   result: list[VectorScatterLayer] = []
@@ -957,7 +958,7 @@ def _raster_layout(
 def prepare_vector_render_cache(
   prepared: PreparedPlotExport,
   selected: PlotPresentationSpec,
-  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+  layers: Mapping[str, LayerValues],
   *,
   options: BatchPlotExportSpec | None = None,
   event_colors: Mapping[str, tuple[str, ...]] | None = None,
@@ -1484,7 +1485,7 @@ def _png_chunk(kind: bytes, payload: bytes) -> bytes:
 def _hybrid_scatter_raster(
   prepared: PreparedPlotExport,
   selected: PlotPresentationSpec,
-  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+  layers: Mapping[str, LayerValues],
   event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   plot_width: float,

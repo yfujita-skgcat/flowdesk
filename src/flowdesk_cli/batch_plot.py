@@ -28,6 +28,7 @@ from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import (
+  LayerValues,
   PreparedPlotExport,
   VectorRenderCache,
   prepare_plot_export,
@@ -42,6 +43,8 @@ from flowdesk_core.processed_display import ProcessedDisplayRequest
 from flowdesk_core.transforms import apply_transform, generate_transform_ticks
 from flowdesk_core.vector_scatter import preflight_vector_scatter_export
 from flowdesk_storage.project import load_project, resolve_sample_paths
+
+NormalizedPayload = tuple[LayerValues, np.ndarray, tuple[str, ...] | None]
 
 
 def batch_plot_command(
@@ -165,7 +168,7 @@ def batch_plot_command(
     )
     normalized_layer_cache: OrderedDict[
       tuple[str, tuple[tuple[float, float], tuple[float, float]]],
-      tuple[tuple[tuple[float, ...], tuple[float, ...]], np.ndarray, tuple[str, ...] | None],
+      NormalizedPayload,
     ] = OrderedDict()
     normalized_cache_max_entries = max(
       1, min(256, max(1, len(required_source_ids)) * 4)
@@ -428,7 +431,7 @@ def batch_plot_command(
       )
       source_ids = (sample_id, *overlay_ids)
       sources = []
-      layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] = {}
+      layers: dict[str, LayerValues] = {}
       visible_masks: dict[str, np.ndarray] = {}
       visible_event_colors: dict[str, tuple[str, ...]] = {}
       for order, source_id in enumerate(source_ids):
@@ -436,7 +439,7 @@ def batch_plot_command(
         source_metadata = layer_metadata[source_id]
         source_x, source_y = prepared_layers[source_id]
         normalized_key = (source_id, active_bounds)
-        normalized_payload = None
+        normalized_payload: NormalizedPayload | None = None
         # The cache key contains the actual bounds, so it is safe for both
         # shared ranges and current-view exports.  Different persisted view
         # ranges naturally produce different entries; identical ranges across
@@ -452,12 +455,17 @@ def batch_plot_command(
             (normalized_x >= 0.0) & (normalized_x <= 1.0)
             & (normalized_y >= 0.0) & (normalized_y <= 1.0)
           )
+          visible.setflags(write=False)
+          normalized_x_visible = np.asarray(normalized_x[visible], dtype=np.float64)
+          normalized_y_visible = np.asarray(normalized_y[visible], dtype=np.float64)
+          normalized_x_visible.setflags(write=False)
+          normalized_y_visible.setflags(write=False)
           colors = layer_event_colors.get(source_id)
-          normalized_payload = (
-            (tuple(normalized_x[visible]), tuple(normalized_y[visible])),
+          normalized_payload = cast(NormalizedPayload, (
+            (normalized_x_visible, normalized_y_visible),
             visible,
             None if colors is None else tuple(str(color) for color in colors[visible]),
-          )
+          ))
           with render_cache_lock:
             normalized_layer_cache[normalized_key] = normalized_payload
             normalized_layer_cache.move_to_end(normalized_key)
@@ -474,6 +482,7 @@ def batch_plot_command(
               ):
                 evicted_key, _ = normalized_layer_cache.popitem(last=False)
                 normalized_cache_bytes -= normalized_cache_sizes.pop(evicted_key, 0)
+        assert normalized_payload is not None
         normalized_points, visible, normalized_colors = normalized_payload
         visible_masks[source_id] = visible
         layers[source_id] = normalized_points
@@ -706,7 +715,7 @@ def batch_plot_command(
 def _write_render_payload(
   path: Path,
   prepared: PreparedPlotExport,
-  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+  layers: dict[str, LayerValues],
   event_colors: dict[str, tuple[str, ...]],
   spec: BatchPlotExportSpec,
   *,
@@ -755,7 +764,7 @@ def _estimate_batch_render_bytes(
   *,
   source_ids: Sequence[str],
   prepared_layers: Mapping[str, tuple[np.ndarray, np.ndarray]],
-  event_colors: Mapping[str, tuple[str, ...]],
+  event_colors: Mapping[str, Any],
 ) -> int:
   """Estimate one prepared output item's temporary renderer memory.
 
@@ -771,8 +780,8 @@ def _estimate_batch_render_bytes(
     x_values, y_values = prepared_layers[source_id]
     count = min(len(x_values), len(y_values))
     event_count += count
-    # Prepared NumPy arrays, normalized tuple coordinates, and visibility
-    # masks are retained at different points of the format-bundle lifetime.
+    # Prepared NumPy arrays, normalized coordinate arrays, and visibility masks
+    # are retained at different points of the format-bundle lifetime.
     estimate += int(x_values.nbytes + y_values.nbytes) * 4
     estimate += count * 49
     colors = event_colors.get(source_id)
@@ -845,15 +854,14 @@ def _normalize(
 
 
 def _estimate_normalized_layer_bytes(
-  payload: tuple[
-    tuple[tuple[float, ...], tuple[float, ...]],
-    np.ndarray,
-    tuple[str, ...] | None,
-  ],
+  payload: NormalizedPayload,
 ) -> int:
   """Conservatively estimate the retained renderer-layer payload size."""
   points, visible, colors = payload
-  point_bytes = (len(points[0]) + len(points[1])) * 24
+  point_bytes = sum(
+    int(getattr(values, "nbytes", len(values) * 8))
+    for values in points
+  )
   color_bytes = 0 if colors is None else len(colors) * 16
   return int(point_bytes + visible.nbytes + color_bytes)
 

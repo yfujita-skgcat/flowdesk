@@ -443,7 +443,9 @@ def test_batch_plot_applies_persisted_transform_once(
   ) == 0
   layer = captured["layers"]["s1"]
   assert len(layer[0]) == 3
-  assert layer[0] == (0.0, 0.5, 1.0)
+  assert isinstance(layer[0], np.ndarray)
+  assert not layer[0].flags.writeable
+  np.testing.assert_allclose(layer[0], (0.0, 0.5, 1.0))
   sidecar = json.loads(
     next((tmp_path / "exports").glob("*.svg.json")).read_text(encoding="utf-8")
   )
@@ -494,7 +496,8 @@ def test_batch_plot_current_view_uses_persisted_labels_and_range(
 
   monkeypatch.setattr("flowdesk_cli.batch_plot.write_plot_svg", capture)
   assert batch_plot_command(str(project_path), "export", str(tmp_path / "exports")) == 0
-  assert captured["layers"]["s1"] == ((0.25, 0.5), (0.25, 0.5))
+  np.testing.assert_allclose(captured["layers"]["s1"][0], (0.25, 0.5))
+  np.testing.assert_allclose(captured["layers"]["s1"][1], (0.25, 0.5))
   sidecar = json.loads(
     next((tmp_path / "exports").glob("*.svg.json")).read_text(encoding="utf-8")
   )
