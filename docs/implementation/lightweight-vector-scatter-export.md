@@ -565,6 +565,9 @@ predicate and write pixels in the original event/source order. This is
 mathematically identical to source-over for opaque paint. Any alpha below
 1.0 must continue through the ordered source-over path; do not use the
 fast path for translucent density or overlay colors.
+The real-FCS PNG/PDF parity check must still produce identical scene and
+writer hashes for the default translucent path; the opaque branch is covered
+by a direct pixel-coverage fixture.
 
 Acceptance:
 
