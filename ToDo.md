@@ -1471,9 +1471,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   ただし、代表的なcompensation/derived/gating workload、Windows/PyInstaller、rendererの詳細な
   reentrancy/GIL profileは未完了であり、既定並列化へ変更しない。
 - [ ] **Batch Plot Export並列化の残りの検証**: rendererのreentrancy、共有mutable state、Qt backend、
-  overlayのshared range barrier、workerごとのpeak RSS/open file数、代表FCS workload、Windows/
-  PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、GUIへ自動適用したり
-  しない。
+  overlayのshared range barrier、Windows/PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、
+  GUIへ自動適用したりしない。代表FCSでの出力parityとpeak RSSの測定は実施済みだが、
+  現行データはcompensation/derivedを含む大規模workloadではない。
 - [x] **density numeric workerの限定的導入**: MainWindowのdensity表示だけをlatest-winsの一worker
   schedulerへ移し、read-only NumPy view（writable入力だけcopy）とsemantic keyでrenderer-neutralな色配列を計算する。
   QBrush、ScatterPlotItem、brush適用はGUI threadだけで行い、stale結果を破棄する。同期exportはpending
@@ -1503,9 +1503,11 @@ Qt/pyqtgraph object、共有mutable cacheもworker間で同時に触れてはな
   CLIで明示指定された場合だけbounded thread executorへ渡す。
 - [x] 同一sampleのPNG/SVG/PDFはprepared sceneとcolour mappingを再利用し、FCS読込・変換を
   formatごとに繰り返さない。output pathのstaged/atomic replaceとmanifest順序はcoordinatorが管理する。
-- [ ] representative FCSで、逐次/並列の科学的結果・writer parity、peak RSS、open file数、
-  renderer reentrancy、Windows/PyInstaller shutdownを検証する。speedupが再現せず、または
-  memory増加が許容できない場合は逐次を既定値として維持する。
+- [x] representative FCSで、逐次/並列の科学的結果・writer parityとpeak RSSを測定した。
+  data/analysis.flowdesk（4 samples、PNG/PDF、DPI 300）で逐次は22.10 s/284,840 KB、thread/2は
+  23.06 s/476,864 KBで、8出力のバイトとSHA-256は完全一致した。threadは約0.96倍と遅く、RSSは約1.67倍
+  増加したため、逐次を既定値として維持する。Windows/PyInstaller、renderer reentrancy、
+  compensation/derived/gatingを含む代表workloadは未検証である。
 - [ ] GUIのactive sample切替へこのbatch workerを流用しない。GUIは選択sampleだけをlatest-winsで
   処理し、Qt/pyqtgraph mutationはGUI threadに限定する。
 
@@ -1579,7 +1581,8 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
 - [x] cache有無/prefetch有無でdisplay array、preview membership/count/statisticsが一致し、
   current sampleのplotをprefetch完了時に再描画しないGUI testを追加した。
 - [ ] 実FCSでprefetch有無のsample切替latency、peak memory、キャンセル/closeを計測し、効果が
-  再現しない環境では自動prefetchを無効化する判断を記録する。
+  再現しない環境では自動prefetchを無効化する判断を記録する。現在のdata/ FCSはすべて4 MiB未満のため、
+  prefetch実パスの測定は未実施である。
 
 #### Increment 11: event chunk/process backendの採否
 

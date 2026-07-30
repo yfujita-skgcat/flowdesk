@@ -1154,6 +1154,13 @@ and scientific preview results are identical.
   peak RSS was about 1.42× the sequential run in the larger profile. Output bytes and
   manifest status remained identical. This is evidence against enabling more workers
   by default, not a claim about every renderer or workload.
+- A real-FCS check was also run against data/analysis.flowdesk (4 samples, PNG/PDF,
+  DPI 300). Sequential completed in 22.10 s with 284,840 KB peak RSS; thread/2 took
+  23.06 s with 476,864 KB peak RSS (0.96× speed and 1.67× RSS relative to sequential).
+  All eight output files had identical bytes and SHA-256 hashes. The check covered
+  writer parity and the current project’s overlay/gate path, but not a large
+  compensation/derived-parameter workload, renderer reentrancy on every platform,
+  or Windows/PyInstaller shutdown.
 - A process backend is deferred: Windows `spawn`, event-array transfer/shared-memory,
   memory budgeting, structured cancellation, and PyInstaller cleanup would add a large
   lifecycle surface without measured benefit. The existing CLI opt-in bounded thread
