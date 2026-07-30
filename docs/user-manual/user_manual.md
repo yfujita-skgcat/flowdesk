@@ -972,6 +972,8 @@ batch manifestの`execution`には、実行単位（`prepared_output_item`）、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、
 科学的な結果やproject定義を変更する設定ではありません。FCSごとに無制限にworkerを作るのではなく、
 共有source準備とoverlay/shared range解決後のprepared itemだけをboundedに処理します。
+`shared_ranges`の範囲計算はsourceごとの極値だけをreduceするため、複数の大きなFCSを一つの一時配列へ
+連結しません。
 Qt/pyqtgraphの描画オブジェクトをworkerへ移しません。thread backendで速度向上が再現しない環境では、
 `sequential`を使用してください。
 

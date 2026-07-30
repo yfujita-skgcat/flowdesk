@@ -217,12 +217,7 @@ def batch_plot_command(
         if metadata.get("event_colors") is not None:
           layer_event_colors[candidate_id] = metadata["event_colors"]
       if spec.layout_policy == "shared_ranges":
-        all_x = np.concatenate([value[0] for value in prepared_layers.values()])
-        all_y = np.concatenate([value[1] for value in prepared_layers.values()])
-        shared_bounds = (
-          float(np.min(all_x)), float(np.max(all_x)),
-          float(np.min(all_y)), float(np.max(all_y)),
-        )
+        shared_bounds = _shared_layer_bounds(prepared_layers)
       max_rendered_event_count = max(
         (
           sum(
@@ -543,6 +538,28 @@ def _normalize(
   if high == low:
     return np.full(values.shape, 0.5, dtype=np.float64)
   return (values - low) / (high - low)
+
+
+def _shared_layer_bounds(
+  layers: Mapping[str, tuple[np.ndarray, np.ndarray]],
+) -> tuple[float, float, float, float]:
+  """Reduce per-source bounds without concatenating event arrays.
+
+  Shared-range export needs only extrema.  Concatenating all source arrays
+  creates a temporary copy proportional to the complete batch, which can
+  unnecessarily multiply peak memory before rendering starts.
+  """
+  if not layers:
+    raise ValueError("shared ranges require at least one prepared source")
+  nonempty = tuple(value for value in layers.values() if value[0].size and value[1].size)
+  if not nonempty:
+    raise ValueError("shared ranges require finite events")
+  return (
+    min(float(np.min(x_values)) for x_values, _ in nonempty),
+    max(float(np.max(x_values)) for x_values, _ in nonempty),
+    min(float(np.min(y_values)) for _, y_values in nonempty),
+    max(float(np.max(y_values)) for _, y_values in nonempty),
+  )
 
 
 def _population_event_colors(

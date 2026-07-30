@@ -1371,6 +1371,8 @@ thread backend（Increment 8）とは別の計画である。
   completion順で変えない。
 - [x] sequentialのままper-item/per-format progress、cooperative cancel、atomic staged output、
   `cancelled`/`not_started`を含むmanifestを実装する。coordinatorだけがmanifestを書く。
+- [x] `shared_ranges`の全source範囲はイベント配列を連結せず、sourceごとのmin/maxをcoordinatorで
+  reduceする。共有範囲の値を変えずに、準備段階の一時メモリを削減した。
 - [x] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
   `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、
   `batchPlotProgressCurrentItem`、`batchPlotProgressCancelButton`、

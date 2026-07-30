@@ -6,12 +6,25 @@ from pathlib import Path
 import numpy as np
 
 from flowdesk_cli import batch_plot as batch_plot_module
-from flowdesk_cli.batch_plot import _gate_overlays, batch_plot_command, write_plot_svg
+from flowdesk_cli.batch_plot import (
+  _gate_overlays,
+  _shared_layer_bounds,
+  batch_plot_command,
+  write_plot_svg,
+)
 from flowdesk_core.execution_control import ExecutionOptions
 from flowdesk_core.models import ChannelSpec
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import save_project
+
+
+def test_shared_layer_bounds_reduces_extrema_without_array_concatenation() -> None:
+  layers = {
+    "s1": (np.array([1.0, 2.0]), np.array([5.0, 6.0])),
+    "s2": (np.array([-3.0, 4.0]), np.array([0.5, 8.0])),
+  }
+  assert _shared_layer_bounds(layers) == (-3.0, 4.0, 0.5, 8.0)
 
 
 def test_batch_plot_uses_canonical_derived_display_data(

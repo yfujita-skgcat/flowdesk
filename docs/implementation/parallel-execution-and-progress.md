@@ -989,6 +989,11 @@ uses the maximum event count of one planned output item rather than summing unre
 batch items. This source-scope optimization is covered by a group/overlay test and
 must preserve the existing unknown-source validation.
 
+The `shared_ranges` reduction now computes global extrema from each prepared source's
+min/max values instead of concatenating all event arrays into another temporary array.
+This preserves the exact range contract while lowering peak preparation memory for
+large overlays. It does not change density input, event order, or rendered coordinates.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become
