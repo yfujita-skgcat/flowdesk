@@ -962,7 +962,8 @@ failure aggregation. Workers receive only immutable prepared data and return iso
 format bytes/metadata. A format bundle reuses its prepared scene and colour mapping so
 PNG, SVG, and PDF do not reload or transform the same FCS independently.
 
-This backend remains CLI opt-in and GUI export remains sequential until representative
+This backend remains opt-in in both CLI and GUI. GUI uses it only when the dialog
+explicitly selects `Bounded threads`; the default remains sequential until representative
 compensation/derived/gating FCS measurements demonstrate acceptable wall time, peak RSS,
 open-file count, writer reentrancy, and Windows/PyInstaller shutdown behavior. The
 backend must never be reused for active-sample GUI switching: that request concerns one
@@ -1010,7 +1011,10 @@ and overlay dependencies in the coordinator, optionally prepares independent req
 sources with bounded threads, merges them in source order, then resolves shared ranges
 and optionally renders one sample/view format bundle per thread after an immutable
 prepared-data barrier. Both thread phases require `--execution-backend thread`; the
-default and GUI execution remain sequential. Preparation and render worker resolutions
+default execution remains sequential. The GUI Batch Plot Export dialog exposes the
+same backend, max-worker, and optional memory-budget controls as runtime-only request
+fields; its default remains sequential and these values are never persisted in the
+scientific export definition. Preparation and render worker resolutions
 are written to the batch manifest, and staged output,
 sidecar, plan-order manifest, cooperative cancellation, and memory-bound resolution
 are retained. The real core PNG/SVG/PDF writer parity test and a CLI overlay plus

@@ -36,6 +36,9 @@ class BatchPlotExportRequest:
   output_dir: str
   run: bool
   delete_definition_id: str | None = None
+  execution_backend: str = "sequential"
+  max_workers: int = 1
+  memory_budget_mib: int | None = None
 
 
 class BatchPlotExportDialog(QDialog):
@@ -155,6 +158,14 @@ class BatchPlotExportDialog(QDialog):
     self._layout_policy.setObjectName("batchPlotLayoutPolicyCombo")
     self._layout_policy.addItem("Current view", "current_view")
     self._layout_policy.addItem("Shared ranges", "shared_ranges")
+    self._execution_backend = QComboBox()
+    self._execution_backend.setObjectName("batchPlotExecutionBackendCombo")
+    self._execution_backend.addItem("Sequential (recommended)", "sequential")
+    self._execution_backend.addItem("Bounded threads (opt-in)", "thread")
+    self._max_workers = self._spin("batchPlotMaxWorkersSpinBox", 1, 64, 2)
+    self._memory_budget_mib = self._spin(
+      "batchPlotMemoryBudgetMiBSpinBox", 0, 1_048_576, 0
+    )
 
     self._visibility: dict[str, QCheckBox] = {}
     for key, label, checked in (
@@ -202,6 +213,9 @@ class BatchPlotExportDialog(QDialog):
     form.addRow("Effective output", self._resolution_preview)
     form.addRow("Aspect", self._aspect)
     form.addRow("Layout", self._layout_policy)
+    form.addRow("Execution backend", self._execution_backend)
+    form.addRow("Max workers", self._max_workers)
+    form.addRow("Memory budget (MiB, 0 = automatic)", self._memory_budget_mib)
     form.addRow("Visibility", self._visibility["include_title"])
     for key in (
       "include_axis_labels", "include_ticks", "include_gates", "include_legend",
@@ -390,11 +404,16 @@ class BatchPlotExportDialog(QDialog):
       if vector and not raster_selected:
         scatter = (
           f"scatter: {options['vector_scatter_mode']}"
-          + (f" @ {options['hybrid_scatter_dpi']} DPI" if options["vector_scatter_mode"] == "hybrid_raster" else "")
+          + (
+            f" @ {options['hybrid_scatter_dpi']} DPI"
+            if options["vector_scatter_mode"] == "hybrid_raster" else ""
+          )
         )
         self._resolution_preview.setText(f"DPI not applicable to vector geometry; {scatter}")
       elif vector:
-        self._resolution_preview.setText(f"Raster: {raster}; vector: {options['vector_scatter_mode']}")
+        self._resolution_preview.setText(
+          f"Raster: {raster}; vector: {options['vector_scatter_mode']}"
+        )
       else:
         self._resolution_preview.setText(raster)
       if preflight.raster_width is not None:
@@ -452,6 +471,9 @@ class BatchPlotExportDialog(QDialog):
       settings.sync()
     return BatchPlotExportRequest(
       self.definition_mapping(), output_dir, self._run, self._delete_definition_id,
+      str(self._execution_backend.currentData() or "sequential"),
+      self._max_workers.value(),
+      (self._memory_budget_mib.value() or None),
     )
 
   def definition_mapping(self) -> dict[str, Any]:

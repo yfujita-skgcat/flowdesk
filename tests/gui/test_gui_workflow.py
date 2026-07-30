@@ -11,7 +11,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QProgressBar, QPushButton
 
 from flowdesk_core.execution_context import ExecutionContext
-from flowdesk_core.execution_control import ExecutionCancelled, ProgressEvent
+from flowdesk_core.execution_control import ExecutionCancelled, ExecutionOptions, ProgressEvent
 from flowdesk_core.fcs_io import write_fcs_file
 from flowdesk_core.models import GateSpec
 from flowdesk_core.overrides import gate_version_hash
@@ -136,6 +136,20 @@ def test_batch_export_runs_in_worker_with_progress_surface(
     window.close()
     window.deleteLater()
     qapp.processEvents()
+
+
+def test_batch_plot_worker_receives_runtime_execution_options(qapp) -> None:
+  from flowdesk_qt.main_window import _BatchPlotExportWorker
+
+  options = ExecutionOptions(
+    backend="thread", max_workers=3, memory_budget_bytes=128 * 1024 * 1024,
+  )
+  worker = _BatchPlotExportWorker("project.flowdesk", "export", "output", options)
+  try:
+    assert worker._execution_control.options == options
+  finally:
+    worker.request_cancel()
+    worker.deleteLater()
 
 
 def test_batch_export_cancel_requests_core_cancellation(

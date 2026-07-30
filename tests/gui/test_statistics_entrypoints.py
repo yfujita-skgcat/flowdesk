@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog, QToolButton
 
 from flowdesk_core.execution_report import ExecutionReport
@@ -585,10 +586,16 @@ def test_gui_batch_plot_action_delegates_to_cli_core_runner(qapp, monkeypatch, t
   )
   monkeypatch.setattr(
     "flowdesk_cli.batch_plot.batch_plot_command",
-    lambda project, export_id, output: calls.append((project, export_id, output)) or 0,
+    lambda project, export_id, output, **_kwargs: calls.append(
+      (project, export_id, output)
+    ) or 0,
   )
   try:
     window._on_batch_plot_export()
+    for _ in range(200):
+      if calls:
+        break
+      QTest.qWait(5)
     assert calls == [(str(window._project_path), "export", str(tmp_path / "plots"))]
   finally:
     window.close()

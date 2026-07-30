@@ -1485,7 +1485,7 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   project definitionやBatch Exportの既定設定へ保存しない。
 - [x] **Batch Plot Exportの限定的並列化**: overlay依存、`shared_ranges` barrierをcoordinatorで
   解決し、必要sourceのFCS読込・display準備とimmutableなprepared output itemをCLIの明示指定時だけ
-  bounded thread executorへ渡す実装を追加した。GUI実行と既定値は逐次のままとし、rendererのQt object操作はworkerで
+  bounded thread executorへ渡す実装を追加した。GUI実行と既定値は逐次のままとし、GUIは明示opt-in時だけ使用し、rendererのQt object操作はworkerで
   行わない。temporary/atomic replace、cancel、plan順manifest、PNG/SVG/PDF parityを確認済み。
   ただし、代表的なcompensation/derived/gating workload、Windows/PyInstaller、rendererの詳細な
   reentrancy/GIL profileは未完了であり、既定並列化へ変更しない。
@@ -1529,12 +1529,16 @@ Qt/pyqtgraph object、共有mutable cacheもworker間で同時に触れてはな
   compensation/derived/gatingを含む代表workloadは未検証である。
 - [ ] GUIのactive sample切替へこのbatch workerを流用しない。GUIは選択sampleだけをlatest-winsで
   処理し、Qt/pyqtgraph mutationはGUI threadに限定する。
+- [x] GUI Batch Exportダイアログへruntime-onlyの`Sequential`/`Bounded threads`、`Max workers`、
+  `Memory budget`を追加する。thread backendは明示選択時だけ有効で、worker数・memory budgetは
+  projectのBatch Plot Export定義へ保存しない。既定sequential、Qt object操作なし、manifest provenanceと
+  sequential/thread parityを維持する。
 
 #### Increment 9: bounded Batch Export parallel rendering
 
 実装状況（2026-07-30）: bounded executorを実装した。overlay/shared range解決はcoordinatorで行い、
-必要sourceのFCS読込・display準備と準備済みsample/viewのformat bundleをCLIの明示指定時だけthreadで
-実行できる。GUIと既定値は逐次のままとし、manifestにはpreparation/renderのexecution provenanceを記録する。
+必要sourceのFCS読込・display準備と準備済みsample/viewのformat bundleを明示指定時だけthreadで
+実行できる。GUIと既定値は逐次のままとし、GUIはダイアログで明示opt-inした場合だけ使用し、manifestにはpreparation/renderのexecution provenanceを記録する。
 実PNG/SVG/PDF writer
 parityとoverlay/shared_rangesのthreadテストを追加した。8 samples × 5,000 eventsのsynthetic
 prepared layerではsequential 1.833 s、thread/2 1.580 s、出力bytes一致（18,317,448）だったが、
@@ -1571,7 +1575,7 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
   `shared_ranges`を解決した後のimmutable `prepared output item`をexecutorの最小仕事単位とする。
 - [x] 明示的thread backendでは、target/overlay依存sourceのFCS読込・display準備もbounded workerで
   実行する。完了順によらずsource順にmergeしてからshared rangeをreduceし、worker数・推定source
-  working set・制限要因をmanifestへ記録する。既定逐次、GUI逐次、Qt object操作なしを維持する。
+  working set・制限要因をmanifestへ記録する。既定逐次、GUIは明示opt-in、Qt object操作なしを維持する。
 - [x] overlayなし、共通軸範囲なし、必要sourceが1 sampleだけの出力について、source準備完了後は
   sample間で独立にrender可能であることを確認し、sequential/threadのPNG/SVG/PDF byte parity testを追加した。
   同一sceneからPNG/SVG/PDFを作る場合は、formatごとの完全独立jobとsample/view単位bundleの両方を

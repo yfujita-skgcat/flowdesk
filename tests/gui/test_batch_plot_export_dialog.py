@@ -32,6 +32,30 @@ def test_batch_plot_dialog_creates_new_definition_with_explicit_samples(qapp, tm
     assert request.definition["hybrid_scatter_dpi"] == 600
     assert dialog._scatter_mode.currentData() == "hybrid_raster"
     assert request.output_dir == str(tmp_path)
+    assert request.execution_backend == "sequential"
+    assert request.max_workers == 2
+    assert request.memory_budget_mib is None
+    assert "execution_backend" not in request.definition
+  finally:
+    dialog.deleteLater()
+
+
+def test_batch_plot_dialog_keeps_thread_settings_runtime_only(qapp, tmp_path) -> None:
+  dialog = BatchPlotExportDialog([], [], [], [], "main-view")
+  try:
+    dialog._execution_backend.setCurrentIndex(
+      dialog._execution_backend.findData("thread")
+    )
+    dialog._max_workers.setValue(3)
+    dialog._memory_budget_mib.setValue(128)
+    dialog._output.setText(str(tmp_path))
+    dialog._accept_run()
+    request = dialog.request()
+    assert request.execution_backend == "thread"
+    assert request.max_workers == 3
+    assert request.memory_budget_mib == 128
+    assert "max_workers" not in request.definition
+    assert "memory_budget_mib" not in request.definition
   finally:
     dialog.deleteLater()
 

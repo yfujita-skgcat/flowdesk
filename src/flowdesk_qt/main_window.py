@@ -50,6 +50,7 @@ from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.execution_control import (
     ExecutionCancelled,
     ExecutionControl,
+    ExecutionOptions,
     ProgressEvent,
 )
 from flowdesk_core.fcs_io import read_fcs_sample
@@ -283,7 +284,13 @@ class _PipelineWorker(QThread):
 class _BatchPlotExportWorker(QThread):
     """Run the headless Batch Plot Export adapter without blocking Qt."""
 
-    def __init__(self, project_path: str, export_id: str, output_dir: str) -> None:
+    def __init__(
+        self,
+        project_path: str,
+        export_id: str,
+        output_dir: str,
+        execution_options: ExecutionOptions | None = None,
+    ) -> None:
         super().__init__()
         self._project_path = project_path
         self._export_id = export_id
@@ -292,6 +299,7 @@ class _BatchPlotExportWorker(QThread):
         self._error: Exception | None = None
         self._progress_events: SimpleQueue[ProgressEvent] = SimpleQueue()
         self._execution_control = ExecutionControl(
+            options=execution_options or ExecutionOptions(),
             progress_sink=self._progress_events.put
         )
 
@@ -4124,9 +4132,26 @@ class MainWindow(QMainWindow):
         if not request.run:
             self._update_status(f"Batch plot definition saved: {definition['name']}")
             return
-        self._start_batch_plot_export(export_id, request.output_dir)
+        self._start_batch_plot_export(
+            export_id,
+            request.output_dir,
+            execution_options=ExecutionOptions(
+                backend=("thread" if request.execution_backend == "thread" else "sequential"),
+                max_workers=request.max_workers,
+                memory_budget_bytes=(
+                    None if request.memory_budget_mib is None
+                    else request.memory_budget_mib * 1024 * 1024
+                ),
+            ),
+        )
 
-    def _start_batch_plot_export(self, export_id: str, output_dir: str) -> None:
+    def _start_batch_plot_export(
+        self,
+        export_id: str,
+        output_dir: str,
+        *,
+        execution_options: ExecutionOptions | None = None,
+    ) -> None:
         """Run the saved headless Batch Export without blocking the event loop."""
         if self._project_path is None:
             QMessageBox.warning(self, "Batch Plot Export", "Save the project before exporting.")
@@ -4140,7 +4165,7 @@ class MainWindow(QMainWindow):
         self._show_batch_plot_progress_dialog()
         self.action_batch_plot_export.setEnabled(False)
         self._batch_plot_worker = _BatchPlotExportWorker(
-            str(self._project_path), export_id, output_dir
+            str(self._project_path), export_id, output_dir, execution_options
         )
         self._batch_plot_worker.finished.connect(self._on_batch_plot_export_finished)
         self._batch_plot_worker.start()

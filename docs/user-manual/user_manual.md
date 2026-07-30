@@ -965,11 +965,14 @@ output directoryはprojectには保存されず、アプリケーション設定
 
 `Run Export` はGUIを停止させずに実行されます。表示される `Batch Plot Export` progress windowには、準備・render・sidecar・manifestの段階と完了数が表示されます。source準備中は、準備済みsourceのIDと `prepared source n/total` も表示されます。この段階の表示は出力ファイルの完了数とは別であり、sourceの完了順は出力順や科学的結果を変更しません。`Cancel` は次の安全な出力境界で協調的に停止します。既に完了した画像とsidecarは保持され、未開始項目はmanifestで `not_started`、停止を受けた項目は `cancelled` と記録されます。cancel中でも、画像・sidecar・manifestが途中の内容で公開されることはありません。
 
+ダイアログの `Execution backend` は既定で `Sequential (recommended)` です。`Bounded threads (opt-in)` を選ぶと、保存済み定義には影響しないruntime-only設定として、サンプル単位のbounded thread renderingを使用します。`Max workers` は同時sample/view item数、`Memory budget` は準備済み配列とwriter一時領域の保守的な推定上限です。thread backendは速度向上が保証されず、メモリ使用量が増えることがあるため、代表データでparityとpeak RSSを確認した場合だけ使用してください。GUIでもQt/pyqtgraphオブジェクトはworker threadで操作しません。
+
 CLIで実行する場合は、`flowdesk batch-plot <project> --export-id <id> --output-dir <dir>` に
 `--execution-backend thread --max-workers N` を追加すると、target/overlayに必要なFCSの読み込み・display
 準備と、source準備完了後の独立したsample/view出力をbounded threadで並列化できます。既定値は`sequential`です。`--memory-budget-mib M`
 を指定すると、準備済み配列の保守的な推定量に基づいて同時worker数を抑制します。overlay、共通軸範囲、
-collision、manifest順は並列化しても変わりません。GUIのBatch Exportは現時点では逐次renderを使用し、
+collision、manifest順は並列化しても変わりません。GUIのBatch Exportも既定は逐次renderですが、
+ダイアログで`Bounded threads (opt-in)`を選んだ場合だけ同じruntime設定を使用し、
 batch manifestの`execution`には、実行単位（`prepared_output_item`）、計画数、投入数、完了数、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、
 科学的な結果やproject定義を変更する設定ではありません。FCSごとに無制限にworkerを作るのではなく、
