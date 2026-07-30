@@ -49,3 +49,35 @@ def test_sample_load_scheduler_keeps_latest_pending_request(qapp, monkeypatch) -
     release_first.set()
     scheduler.shutdown()
     scheduler.deleteLater()
+
+
+def test_sample_load_scheduler_reloads_same_id_when_path_changes(qapp, monkeypatch) -> None:
+  first_started = threading.Event()
+  release_first = threading.Event()
+  loaded: list[tuple[str, str]] = []
+
+  def read_sample(path, sample_id):
+    if path == "old.fcs":
+      first_started.set()
+      assert release_first.wait(2.0)
+    return None, SampleData(
+      sample_id,
+      [[1.0]],
+      (ChannelSpec(id="x", name=path),),
+    )
+
+  monkeypatch.setattr("flowdesk_qt.sample_load_scheduler.read_fcs_sample", read_sample)
+  scheduler = SampleLoadScheduler()
+  scheduler.sample_loaded.connect(
+    lambda sample_id, sample: loaded.append((sample_id, sample.channels[0].name))
+  )
+  try:
+    scheduler.schedule("same", "old.fcs")
+    _wait_until(qapp, first_started.is_set)
+    scheduler.schedule("same", "new.fcs")
+    release_first.set()
+    _wait_until(qapp, lambda: loaded == [("same", "new.fcs")])
+  finally:
+    release_first.set()
+    scheduler.shutdown()
+    scheduler.deleteLater()

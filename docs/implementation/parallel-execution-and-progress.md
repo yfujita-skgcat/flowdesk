@@ -1163,7 +1163,11 @@ gate.
   (>=4 MiB) through `SampleLoadScheduler`. A new active selection cancels pending
   prefetch and the loaded prefetch is retained as exactly one non-active raw sample;
   it is reused immediately if selected later. Prefetch completion never calls `replot`
-  for the active sample, and scheduler/window shutdown waits for the worker.
+  for the active sample, and scheduler/window shutdown waits for the worker. Requests
+  are identified by `(sample_id, path)`, not only by sample ID: reconnecting a sample
+  while its previous path is still being read queues the new path, suppresses the
+  obsolete completion/failure signal, and adopts only the current file. This prevents
+  stale raw events from crossing a reconnect boundary.
 - The implementation deliberately does not claim a speedup yet. Representative real-FCS
   latency, peak-memory, cancel, and close measurements remain required; if they show no
   material benefit or unacceptable memory growth, automatic prefetch must be disabled.

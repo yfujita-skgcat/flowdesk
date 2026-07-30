@@ -1595,6 +1595,9 @@ thread/2 23.09 s / 最大RSS 497,968 KBとなり、8出力のハッシュは引�
   prefetchする。active requestはpending prefetchをsupersedeし、prefetch raw sampleは一件だけ保持する。
 - [x] cache有無/prefetch有無でdisplay array、preview membership/count/statisticsが一致し、
   current sampleのplotをprefetch完了時に再描画しないGUI testを追加した。
+- [x] schedulerの再接続競合を修正した。同じsample IDでもFCS pathが変わった場合は新しい
+  `(sample_id, path)` requestをpendingへ保持し、古いpathの完了/失敗通知を破棄してから新pathを
+  読み込む。これによりreconnect中に古いraw eventがGUIへ混入しない。
 - [ ] 実FCSでprefetch有無のsample切替latency、peak memory、キャンセル/closeを計測し、効果が
   再現しない環境では自動prefetchを無効化する判断を記録する。現在のdata/ FCSはすべて4 MiB未満のため、
   prefetch実パスの測定は未実施である。
