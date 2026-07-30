@@ -1320,6 +1320,9 @@ thread backend（Increment 8）とは別の計画である。
 - [x] MainWindowのprocessed-display cacheを4件・推定256 MiBのLRUへ制限し、sample削除・再接続・
   project置換時に対象配列とmembership maskを破棄する。evictionは表示cacheだけに作用し、
   authoritative reportや科学計算結果は変更しない。cache上限とsample切替回帰testを追加した。
+- [x] 4 MiB以上のFCSをactive sampleとして選択した場合、raw FCS読込をone-worker latest-wins
+  schedulerへ移した。loaded/failed signalのGUI-thread適用、stale selection破棄、close時waitを実装し、
+  小さいfixtureは既存の同期経路を維持する。schedulerのcoalescing/shutdown testを追加した。
 - [x] `benchmark-density`へwarm semantic density replotを追加した。2026-07-29の20,000 events
   ×5回のoffscreen環境ではcold `plot_events`中央値216.0 msに対して、cached replot中央値は
   1.75 msだった。これは同一環境の表示測定であり、CI thresholdや解析speedupではない。

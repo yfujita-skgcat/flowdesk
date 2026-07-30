@@ -296,6 +296,28 @@ def test_main_window_bounds_processed_display_cache(qapp, tmp_path) -> None:
     qapp.processEvents()
 
 
+def test_main_window_uses_background_sample_load_for_large_input(
+  qapp, tmp_path, monkeypatch,
+) -> None:
+  fcs_path = tmp_path / "large.fcs"
+  events = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+  write_fcs_file(fcs_path, events, ["X", "Y"])
+  window = MainWindow()
+  monkeypatch.setattr(window, "_should_load_sample_async", lambda _sample: True)
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(fcs_path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    assert window._sample_browser.select_sample(sample.id)
+    assert sample.id not in window._sample_data
+    _wait_until(qapp, lambda: sample.id in window._sample_data)
+    _wait_until(qapp, lambda: window._plot_widget._rendered_x is not None)
+    np.testing.assert_allclose(window._plot_widget._rendered_x, events[:, 0])
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 def test_main_window_integrates_current_sample_preview_into_results_workspace(
   qapp,
   tmp_path,

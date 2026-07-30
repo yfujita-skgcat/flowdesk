@@ -274,6 +274,14 @@ project replacement. Eviction only causes a later cache miss and re-execution of
 same immutable `ProcessedDisplayRequest`; it never changes authoritative counts,
 membership, statistics, or raw events.
 
+Raw FCS acquisition is also separated from the GUI event loop for files at least 4 MiB:
+`SampleLoadScheduler` owns one `QThreadPool` worker, keeps only the newest pending sample,
+and emits immutable `SampleData`/error results back to the GUI thread. A result is adopted
+only if its sample still exists; a stale selection is cached but never replotted. Shutdown
+waits for the worker. Small files retain the synchronous path to avoid scheduler overhead
+for trivial fixtures. This is input acquisition only; compensation, derived parameters,
+transforms, gates, and statistics still run through the canonical Qt-independent runner.
+
 This distinction determines the execution boundaries:
 
 | Operation | First optimization boundary | Not an initial optimization |

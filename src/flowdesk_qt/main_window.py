@@ -120,6 +120,7 @@ from flowdesk_qt.results_export_dialog import ResultsExportOptions
 from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
 from flowdesk_qt.sample_browser import SampleBrowser, _SampleInfo
+from flowdesk_qt.sample_load_scheduler import SampleLoadScheduler
 from flowdesk_qt.workspace_tree import WorkspaceTree
 from flowdesk_storage.analysis_settings import (
     load_analysis_settings,
@@ -337,6 +338,7 @@ def _project_bundle_path(value: str | Path) -> Path:
 
 
 class MainWindow(QMainWindow):
+    _ASYNC_SAMPLE_LOAD_BYTES = 4 * 1024 * 1024
     _PROCESSED_DISPLAY_CACHE_MAX_ENTRIES = 4
     _PROCESSED_DISPLAY_CACHE_MAX_BYTES = 256 * 1024 * 1024
 
@@ -450,6 +452,9 @@ class MainWindow(QMainWindow):
         self._processed_display_scheduler.display_failed.connect(
             self._on_processed_display_failed
         )
+        self._sample_load_scheduler = SampleLoadScheduler(self)
+        self._sample_load_scheduler.sample_loaded.connect(self._on_sample_load_ready)
+        self._sample_load_scheduler.sample_failed.connect(self._on_sample_load_failed)
         self._pipeline_progress_timer = QTimer(self)
         self._pipeline_progress_timer.setInterval(25)
         self._pipeline_progress_timer.timeout.connect(self._drain_pipeline_progress)
@@ -1287,6 +1292,11 @@ class MainWindow(QMainWindow):
             self._plot_widget.clear_plot()
             return
         if sample.id not in self._sample_data:
+            if self._should_load_sample_async(sample):
+                self._queue_sample_load(sample)
+                self._plot_widget.clear_plot()
+                self._update_status(f"Loading {sample.name}…")
+                return
             self._load_sample_events(sample)
 
         # Replot with current channel selection
@@ -1372,6 +1382,48 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.error("Failed to load events for %s: %s", sample.id, exc)
             self._update_status(f"Error loading {sample.name}: {exc}")
+
+    def _should_load_sample_async(self, sample: _SampleInfo) -> bool:
+        """Use the worker only for inputs large enough to block interaction."""
+        try:
+            return os.path.getsize(sample.path) >= self._ASYNC_SAMPLE_LOAD_BYTES
+        except OSError:
+            return False
+
+    def _queue_sample_load(self, sample: _SampleInfo) -> None:
+        """Queue a large FCS read without running I/O on the GUI thread."""
+        try:
+            self._sample_load_scheduler.schedule(sample.id, sample.path)
+        except RuntimeError as exc:
+            self._update_status(f"Sample loading unavailable: {exc}")
+
+    def _on_sample_load_ready(self, sample_id: str, sample_data: object) -> None:
+        """Adopt a worker result on the GUI thread only if the sample remains loaded."""
+        sample = next(
+            (item for item in self._sample_browser.samples() if item.id == sample_id),
+            None,
+        )
+        if sample is None:
+            return
+        if not isinstance(sample_data, SampleData):
+            self._on_sample_load_failed(sample_id, TypeError("invalid FCS sample result"))
+            return
+        self._sample_data[sample_id] = sample_data
+        self._event_data[sample_id] = sample_data.events
+        if self._current_sample_id == sample_id:
+            self._on_sample_selected(sample)
+
+    def _on_sample_load_failed(self, sample_id: str, error: object) -> None:
+        """Report only a current-sample load failure; stale failures are ignored."""
+        if self._current_sample_id != sample_id:
+            return
+        sample = next(
+            (item for item in self._sample_browser.samples() if item.id == sample_id),
+            None,
+        )
+        name = sample.name if sample is not None else sample_id
+        self._plot_widget.clear_plot()
+        self._update_status(f"Error loading {name}: {error}")
 
     def _on_sample_reconnected(self, sample: _SampleInfo) -> None:
         """Invalidate prior raw view and reload an explicitly accepted reconnect."""
@@ -3088,6 +3140,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Do not destroy the window while its pipeline thread is running."""
         self._preview_scheduler.shutdown()
+        self._sample_load_scheduler.shutdown()
         self._processed_display_scheduler.shutdown()
         self._plot_widget.shutdown_density_scheduler()
         worker = self._worker
@@ -3378,6 +3431,7 @@ class MainWindow(QMainWindow):
         self._sample_browser.clear_samples()
         self._event_data.clear()
         self._sample_data.clear()
+        self._sample_load_scheduler.cancel_pending()
         self._clear_processed_display_cache()
         self._processed_display_scheduler.cancel_pending()
         self._current_sample_id = None
