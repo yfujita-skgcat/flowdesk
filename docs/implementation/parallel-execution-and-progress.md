@@ -1072,6 +1072,14 @@ thread callbacks and is released after the bundle's last format, so it does not 
 a batch-wide event-array cache. A regression test verifies that a two-format item calls
 scene preparation once and that the real writers remain byte-identical.
 
+For SVG/PDF vector modes, the same bundle additionally reuses an immutable
+VectorRenderCache. It contains the normalized vector layer plan, compact compound
+paths when applicable, and the hybrid scatter PNG bytes when hybrid_raster is selected.
+The cache is built lazily only for compact/hybrid output, so the full-vector path does
+not pay a new preparation cost. Writers still receive the same ordered layer input and
+produce the same bytes; this optimization only removes repeated format-adapter work.
+The cache is sample-scoped and is released with the existing format-bundle cache.
+
 An actual local FCS comparison on 2026-07-30 used `data/analysis.flowdesk` (4 samples,
 `max_points=0`, PNG/PDF, DPI 300, hybrid raster): sequential took 22.63 s with a
 270,084 KB maximum RSS, while thread/2 took 21.43 s with a 483,888 KB maximum RSS.
@@ -1084,6 +1092,11 @@ After the format-bundle payload cache was added, the same comparison measured 22
 sequential and 21.21 s thread/2, with maximum RSS 269,668 KB and 483,876 KB respectively.
 The eight output hashes still matched. The small timing difference is not a stable
 speedup claim, while the memory multiplier remains material.
+
+The subsequent VectorRenderCache change was checked again on the same project:
+sequential 21.96 s / 284,388 KB and thread/2 23.09 s / 497,968 KB. The eight PNG/PDF
+hashes remained identical. This confirms correctness and removes repeated vector
+preparation, but does not justify enabling thread rendering by default.
 
 The bounded executor now also has regression coverage for threaded cancellation: each
 worker owns a unique staged output/sidecar, successful staged files are atomically

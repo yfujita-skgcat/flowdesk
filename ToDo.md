@@ -1527,6 +1527,10 @@ prepared layerではsequential 1.833 s、thread/2 1.580 s、出力bytes一致（
 compensation/derived parameterを含む代表workloadとWindows/PyInstaller確認は未完了であり、threadは
 明示指定時だけ許可し、既定値へ変更しない。
 
+VectorRenderCache追加後の再測定ではsequential 21.96 s / 最大RSS 284,388 KB、
+thread/2 23.09 s / 最大RSS 497,968 KBとなり、8出力のハッシュは引き続き完全一致した。
+ベクター準備の重複は除去できたが、threadの既定化を支持する速度向上は確認できない。
+
 設計判断: 「1 FCS = 1 thread」は一般則にしない。FCSは入力sourceであり、実行単位ではない。overlayは
 複数FCSに依存し、`shared_ranges`は複数sourceの決定的reduceを必要とし、同一FCSから複数view・複数formatが
 生成される。また、source配列やdensity結果を複数出力で再利用できるため、FCSをそのまま各threadへ渡すと
@@ -1546,6 +1550,9 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
 - [x] 同一sample/viewのformat bundleでは、prepared scene、normalized layer、event colorをformat間で
   再利用し、最後のformat後に短命cacheを解放する。2 formatでscene preparationが一度だけになるtestと
   実writerのbyte parityを追加した。実FCS再測定後もthreadのspeedupは安定せず、既定値は逐次とする。
+- [x] 同一sample/viewのSVG/PDFでは、compact scatter batchとhybrid scatter rasterを一度だけ構築し、
+  format間でimmutableなvector render cacheを再利用する。full-vectorの通常経路は不要なcache構築を
+  行わず、event order/color、point plan、sidecar metadata、出力bytesを変更しない回帰testを追加した。
 - [x] batch targetがexplicit/groupの場合は、target sampleとoverlay依存sourceだけをprepareする。
   `shared_ranges`は必要source全体をreduceし、vector preflightは各output itemの最大event数で判定する。
   無関係sampleのFCS load、transform、density準備を行わず、unknown overlay sourceのvalidationは維持する。

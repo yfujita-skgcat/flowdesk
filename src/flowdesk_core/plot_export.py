@@ -25,7 +25,11 @@ from flowdesk_core.plot_presentation import (
   validate_presentation,
 )
 from flowdesk_core.plot_scene import PlotScene
-from flowdesk_core.vector_scatter import VectorScatterLayer, compact_scatter_batches
+from flowdesk_core.vector_scatter import (
+  CompactScatterBatch,
+  VectorScatterLayer,
+  compact_scatter_batches,
+)
 
 
 class PlotExportError(ValueError):
@@ -96,6 +100,21 @@ class PreparedPlotExport:
   resolved_presentation: ResolvedPresentation
   gate_overlays: tuple[dict[str, Any], ...] = ()
   scene: PlotScene = PlotScene()
+
+
+@dataclass(frozen=True)
+class VectorRenderCache:
+  """Immutable vector/hybrid scatter payload shared by format writers.
+
+  SVG and PDF use the same normalized layer points and compact batches. The
+  optional hybrid raster bytes are also shared so a multi-format export does
+  not rasterize the same scatter twice. This cache is presentation-only and
+  never participates in analytical results.
+  """
+
+  layers: tuple[VectorScatterLayer, ...]
+  compact_batches: tuple[CompactScatterBatch, ...] = ()
+  hybrid_info: Mapping[str, Any] | None = None
 
 
 def _diagnostic_mapping(value: PresentationDiagnostic) -> dict[str, Any]:
@@ -235,6 +254,7 @@ def write_plot_svg(
   event_colors: Mapping[str, tuple[str, ...]] | None = None,
   *,
   options: BatchPlotExportSpec | None = None,
+  render_cache: VectorRenderCache | None = None,
 ) -> None:
   """Write a small deterministic SVG using the prepared source order."""
   selected = presentation or prepared.resolved_presentation.presentation
@@ -285,12 +305,14 @@ def write_plot_svg(
     and not event_colors
   )
   hybrid_raster = options is not None and options.vector_scatter_mode == "hybrid_raster"
+  vector_cache = render_cache
+  if vector_cache is None and (compact_vector or hybrid_raster):
+    vector_cache = prepare_vector_render_cache(
+      prepared, selected, layers, options=options, event_colors=event_colors,
+    )
   hybrid_info: dict[str, Any] | None = None
   if hybrid_raster:
-    hybrid_info = _hybrid_scatter_raster(
-      prepared, selected, layers, plot_width=plot_width, plot_height=plot_height,
-      dpi=options.hybrid_scatter_dpi, event_colors=event_colors,
-    )
+    hybrid_info = dict((vector_cache.hybrid_info if vector_cache else None) or {})
     elements.append(
       f'<image x="{left:g}" y="{top:g}" width="{plot_width:g}" height="{plot_height:g}" '
       f'preserveAspectRatio="none" data-scatter-dpi="{hybrid_info["dpi"]}" '
@@ -317,11 +339,7 @@ def write_plot_svg(
     elements.append('<g clip-path="url(#plot-clip)">')
   compact_batches = ()
   if compact_vector:
-    compact_batches = compact_scatter_batches(
-      _vector_layers(prepared, selected, layers),
-      plot_width=plot_width,
-      plot_height=plot_height,
-    )
+    compact_batches = vector_cache.compact_batches if vector_cache else ()
   for index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
     color = "#000000" if style is None or style.color is None else style.color
@@ -472,6 +490,7 @@ def write_plot_pdf(
   width: int = 800,
   height: int = 600,
   options: BatchPlotExportSpec | None = None,
+  render_cache: VectorRenderCache | None = None,
 ) -> None:
   """Write a minimal vector PDF using the same prepared layers and styles."""
   if width < 1 or height < 1 or not prepared.source_order:
@@ -493,12 +512,14 @@ def write_plot_pdf(
   full_vector = options is None or options.vector_scatter_mode == "full_vector"
   compact_vector = options is not None and options.vector_scatter_mode == "compact_vector"
   hybrid_raster = options is not None and options.vector_scatter_mode == "hybrid_raster"
+  vector_cache = render_cache
+  if vector_cache is None and (compact_vector or hybrid_raster):
+    vector_cache = prepare_vector_render_cache(
+      prepared, selected, layers, options=options, event_colors=event_colors,
+    )
   hybrid_info: dict[str, Any] | None = None
   if hybrid_raster:
-    hybrid_info = _hybrid_scatter_raster(
-      prepared, selected, layers, plot_width=plot_width, plot_height=plot_height,
-      dpi=options.hybrid_scatter_dpi, event_colors=event_colors,
-    )
+    hybrid_info = dict((vector_cache.hybrid_info if vector_cache else None) or {})
   form_specs: list[tuple[tuple[int, int, int], float, str, float]] = []
   marker_refs: dict[tuple[str, str], int] = {}
   if full_vector:
@@ -519,11 +540,11 @@ def write_plot_pdf(
     commands.append("q")
     commands.append(f"{left:g} {height - top - plot_height:g} {plot_width:g} {plot_height:g} re W n")
   preserve_event_colors = compact_vector and bool(event_colors)
-  compact_batches = compact_scatter_batches(
-    _vector_layers(prepared, selected, layers),
-    plot_width=plot_width,
-    plot_height=plot_height,
-  ) if compact_vector and not preserve_event_colors else ()
+  compact_batches = (
+    vector_cache.compact_batches if vector_cache is not None
+    and compact_vector and not preserve_event_colors
+    else ()
+  )
   compact_alpha_values = (
     tuple(dict.fromkeys(
       1.0 if style_by_id.get(source_id) is None else style_by_id[source_id].alpha
@@ -929,6 +950,45 @@ def _raster_layout(
   return (
     round(left), round(title_height), round(plot_width), round(plot_height)
   )
+
+
+def prepare_vector_render_cache(
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+  *,
+  options: BatchPlotExportSpec | None = None,
+  event_colors: Mapping[str, tuple[str, ...]] | None = None,
+) -> VectorRenderCache:
+  """Prepare the immutable scatter payload shared by SVG and PDF writers.
+
+  The logical canvas and plot rectangle are resolved from the same arguments
+  used by each writer. The returned object may safely be reused for every
+  format of one prepared sample/view. It does not cache analytical arrays or
+  alter event order, colors, or visibility.
+  """
+  width, height = _dimensions(800, 600, options)
+  _left, _top, plot_width, plot_height = _raster_layout(
+    width, height, prepared, selected, options,
+  )
+  vector_layers = _vector_layers(prepared, selected, layers)
+  compact_batches: tuple[CompactScatterBatch, ...] = ()
+  if (
+    options is not None
+    and options.vector_scatter_mode == "compact_vector"
+    and not event_colors
+  ):
+    compact_batches = compact_scatter_batches(
+      vector_layers, plot_width=plot_width, plot_height=plot_height,
+    )
+  hybrid_info: Mapping[str, Any] | None = None
+  if options is not None and options.vector_scatter_mode == "hybrid_raster":
+    hybrid_info = _hybrid_scatter_raster(
+      prepared, selected, layers, plot_width=plot_width,
+      plot_height=plot_height, dpi=options.hybrid_scatter_dpi,
+      event_colors=event_colors,
+    )
+  return VectorRenderCache(vector_layers, compact_batches, hybrid_info)
 
 
 def _scene_lines(prepared: PreparedPlotExport) -> list[str]:

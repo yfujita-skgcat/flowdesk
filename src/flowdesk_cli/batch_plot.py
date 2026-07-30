@@ -23,7 +23,9 @@ from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, Tr
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import (
   PreparedPlotExport,
+  VectorRenderCache,
   prepare_plot_export,
+  prepare_vector_render_cache,
   write_plot_jpg,
   write_plot_pdf,
   write_plot_png,
@@ -125,7 +127,15 @@ def batch_plot_command(
     shared_bounds: tuple[float, float, float, float] | None = None
     preflight_holder: dict[str, Any] = {}
     display_scene = dict(view.get("display_scene", {}))
-    prepared_render_cache: dict[str, tuple[Any, dict[str, Any], dict[str, Any]]] = {}
+    prepared_render_cache: dict[
+      str,
+      tuple[
+        Any,
+        dict[str, Any],
+        dict[str, Any],
+        dict[str, VectorRenderCache],
+      ],
+    ] = {}
     rendered_format_counts: dict[str, int] = {}
     presentation_template = dict(view.get("presentation", {}))
     persisted_source_styles: dict[str, dict[str, Any]] = {
@@ -285,9 +295,12 @@ def batch_plot_command(
       with render_cache_lock:
         cached_payload = prepared_render_cache.get(sample_id)
       if cached_payload is not None:
-        cached_prepared, cached_layers, cached_event_colors = cached_payload
+        (
+          cached_prepared, cached_layers, cached_event_colors, cached_writer_cache,
+        ) = cached_payload
         _write_render_payload(
-          path, cached_prepared, cached_layers, cached_event_colors, spec
+          path, cached_prepared, cached_layers, cached_event_colors, spec,
+          vector_cache=cached_writer_cache,
         )
         with render_cache_lock:
           rendered_format_counts[sample_id] = rendered_format_counts.get(sample_id, 0) + 1
@@ -530,15 +543,19 @@ def batch_plot_command(
         }
       elif presentation.get("colormap") == "density":
         prepared.metadata["density_coloring"] = {"active": False, "reason": "overlay"}
+      writer_cache: dict[str, VectorRenderCache] = {}
       with render_cache_lock:
         prepared_render_cache[sample_id] = (
-          prepared, layers, visible_event_colors,
+          prepared, layers, visible_event_colors, writer_cache,
         )
         rendered_format_counts[sample_id] = 1
       # Batch formats must share the renderer-neutral scene adapter. The live
       # Qt widget remains the interactive preview, while one core renderer
       # keeps PNG/JPEG/SVG/PDF coordinates, ticks, gates, and event order equal.
-      _write_render_payload(path, prepared, layers, visible_event_colors, spec)
+      _write_render_payload(
+        path, prepared, layers, visible_event_colors, spec,
+        vector_cache=writer_cache,
+      )
       if len(spec.formats) <= 1:
         with render_cache_lock:
           prepared_render_cache.pop(sample_id, None)
@@ -576,8 +593,23 @@ def _write_render_payload(
   layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
   event_colors: dict[str, tuple[str, ...]],
   spec: BatchPlotExportSpec,
+  *,
+  vector_cache: dict[str, VectorRenderCache] | None = None,
 ) -> None:
   """Write one format from an item-scoped immutable prepared payload."""
+  cache: VectorRenderCache | None = None
+  if (
+    path.suffix.lower() in {".svg", ".pdf"}
+    and vector_cache is not None
+    and spec.vector_scatter_mode in {"compact_vector", "hybrid_raster"}
+  ):
+    cache = vector_cache.get("scatter")
+    if cache is None:
+      selected = prepared.resolved_presentation.presentation
+      cache = prepare_vector_render_cache(
+        prepared, selected, layers, options=spec, event_colors=event_colors,
+      )
+      vector_cache["scatter"] = cache
   if path.suffix.lower() == ".png":
     write_plot_png(
       path, prepared, layers=layers, width=spec.width, height=spec.height,
@@ -591,11 +623,12 @@ def _write_render_payload(
   elif path.suffix.lower() == ".svg":
     write_plot_svg(
       path, prepared, layers=layers, options=spec, event_colors=event_colors,
+      render_cache=cache,
     )
   elif path.suffix.lower() == ".pdf":
     write_plot_pdf(
       path, prepared, layers=layers, width=spec.width, height=spec.height,
-      options=spec, event_colors=event_colors,
+      options=spec, event_colors=event_colors, render_cache=cache,
     )
   else:
     raise ValueError(f"CLI renderer does not support {path.suffix!r}")

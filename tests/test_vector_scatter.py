@@ -1,7 +1,14 @@
 import pytest
 
 from flowdesk_core.models import BatchPlotExportSpec
-from flowdesk_core.plot_export import resolve_export_canvas
+from flowdesk_core.plot_export import (
+  prepare_plot_export,
+  prepare_vector_render_cache,
+  resolve_export_canvas,
+  write_plot_pdf,
+  write_plot_svg,
+)
+from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.vector_scatter import (
   COMPACT_VECTOR_CHUNK_POINTS,
   VectorScatterLayer,
@@ -94,6 +101,59 @@ def test_preflight_reports_hybrid_raster_dimensions_and_never_changes_mode():
   assert report.mode == "hybrid_raster"
   assert report.raster_width == 4500
   assert report.raster_height == 3062
+
+
+def test_hybrid_scatter_cache_is_reused_across_svg_and_pdf(tmp_path, monkeypatch):
+  import flowdesk_core.plot_export as plot_export
+
+  prepared = prepare_plot_export(
+    "view",
+    "scatter",
+    ({
+      "source_id": "s1",
+      "sample_id": "s1",
+      "population_id": "all_events",
+      "display_name": "Sample",
+      "visible": True,
+    },),
+    (OverlaySourceResolution("s1", "compatible"),),
+  )
+  layers = {"s1": ((0.1, 0.5, 0.9), (0.2, 0.6, 0.8))}
+  spec = BatchPlotExportSpec(
+    id="hybrid-cache",
+    name="Hybrid cache",
+    formats=("svg", "pdf"),
+    width=160,
+    height=120,
+    vector_scatter_mode="hybrid_raster",
+    hybrid_scatter_dpi=120,
+  )
+  calls = 0
+  original = plot_export._hybrid_scatter_raster
+
+  def counted(*args, **kwargs):
+    nonlocal calls
+    calls += 1
+    return original(*args, **kwargs)
+
+  monkeypatch.setattr(plot_export, "_hybrid_scatter_raster", counted)
+  cache = prepare_vector_render_cache(
+    prepared,
+    prepared.resolved_presentation.presentation,
+    layers,
+    options=spec,
+  )
+  write_plot_svg(
+    tmp_path / "plot.svg", prepared, layers=layers, options=spec,
+    render_cache=cache,
+  )
+  write_plot_pdf(
+    tmp_path / "plot.pdf", prepared, layers=layers, options=spec,
+    width=spec.width, height=spec.height, render_cache=cache,
+  )
+  assert calls == 1
+  assert (tmp_path / "plot.svg").stat().st_size > 0
+  assert (tmp_path / "plot.pdf").stat().st_size > 0
 
 
 def test_preflight_returns_structured_failure_without_auto_fallback():
