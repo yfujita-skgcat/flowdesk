@@ -175,6 +175,21 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   metadata = json.loads(next(output_dir.glob("*s1*.svg.json")).read_text(encoding="utf-8"))
   assert metadata["ordered_source_ids"] == ["s1", "s2"]
 
+  # current_view uses the same cache when every target has the same persisted
+  # bounds.  This must not depend on the layout policy name.
+  project["plot_views"][0]["display_scene"] = {
+    "view_range": [[0.0, 5.0], [0.0, 5.0]],
+  }
+  project["batch_plot_exports"][0]["layout_policy"] = "current_view"
+  save_project(project_path, project)
+  normalize_calls = 0
+  current_output = tmp_path / "exports-current"
+  assert batch_plot_command(
+    str(project_path), "overlay-export", str(current_output),
+    execution_options=ExecutionOptions(backend="thread", max_workers=2),
+  ) == 0
+  assert normalize_calls == 4
+
 
 def test_batch_plot_prepares_only_target_and_overlay_sources(
   tmp_path: Path, monkeypatch

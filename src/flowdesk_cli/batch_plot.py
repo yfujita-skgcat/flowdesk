@@ -296,9 +296,12 @@ def batch_plot_command(
         source_x, source_y = prepared_layers[source_id]
         normalized_key = (source_id, active_bounds)
         normalized_payload = None
-        if spec.layout_policy == "shared_ranges":
-          with render_cache_lock:
-            normalized_payload = normalized_layer_cache.get(normalized_key)
+        # The cache key contains the actual bounds, so it is safe for both
+        # shared ranges and current-view exports.  Different persisted view
+        # ranges naturally produce different entries; identical ranges across
+        # targets reuse the immutable normalized layer.
+        with render_cache_lock:
+          normalized_payload = normalized_layer_cache.get(normalized_key)
         if normalized_payload is None:
           normalized_x = _normalize(source_x, active_bounds[0])
           normalized_y = _normalize(source_y, active_bounds[1])
@@ -312,9 +315,8 @@ def batch_plot_command(
             visible,
             None if colors is None else tuple(str(color) for color in colors[visible]),
           )
-          if spec.layout_policy == "shared_ranges":
-            with render_cache_lock:
-              normalized_layer_cache[normalized_key] = normalized_payload
+          with render_cache_lock:
+            normalized_layer_cache[normalized_key] = normalized_payload
         normalized_points, visible, normalized_colors = normalized_payload
         visible_masks[source_id] = visible
         layers[source_id] = normalized_points

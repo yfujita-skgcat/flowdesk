@@ -1380,9 +1380,9 @@ thread backend（Increment 8）とは別の計画である。
   `cancelled`/`not_started`を含むmanifestを実装する。coordinatorだけがmanifestを書く。
 - [x] `shared_ranges`の全source範囲はイベント配列を連結せず、sourceごとのmin/maxをcoordinatorで
   reduceする。共有範囲の値を変えずに、準備段階の一時メモリを削減した。
-- [x] `shared_ranges`で同じsourceが複数targetのbase/overlayとして使われる場合、sourceと共通範囲を
-  キーにnormalized座標、表示mask、event color順を一度だけ作成して再利用する。`current_view`は
-  targetごとに範囲が異なるため、このcacheを使わない。
+- [x] 同じsourceが複数targetのbase/overlayとして使われる場合、sourceと実際のboundsをキーに
+  normalized座標、表示mask、event color順を一度だけ作成して再利用する。`shared_ranges`と
+  `current_view`の双方で、boundsが異なるtargetは別entryとして保持する。
 - [x] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
   `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、
   `batchPlotProgressCurrentItem`、`batchPlotProgressCancelButton`、

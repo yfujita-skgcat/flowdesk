@@ -1024,11 +1024,12 @@ that dependency list. Unknown source validation remains in the planning layer, a
 the graph is display-only state: it does not alter population membership or source
 colors. A regression test covers order, duplicate removal, and hidden-source exclusion.
 
-When the same source appears in multiple target scenes under `shared_ranges`, the CLI
-also reuses its normalized coordinates, visibility mask, and event-color order keyed by
-`(source_id, shared_bounds)`. `current_view` deliberately bypasses this cache because
-each target can have a different viewport. The cache is renderer-neutral and is released
-with the batch operation; it does not share mutable Qt objects or alter source order.
+When the same source appears in multiple target scenes, the CLI reuses its normalized
+coordinates, visibility mask, and event-color order keyed by `(source_id, actual_bounds)`.
+This applies to both `shared_ranges` and `current_view`: targets with different persisted
+view ranges receive separate entries, while identical ranges reuse the immutable layer.
+The cache is renderer-neutral and is released with the batch operation; it does not share
+mutable Qt objects or alter source order.
 
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
