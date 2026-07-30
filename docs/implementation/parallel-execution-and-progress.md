@@ -1021,7 +1021,8 @@ measured 1.833 s sequential versus 1.580 s thread/2 (1.16x) with identical
 full compensation/derived/gating FCS workload; repeat representative measurements
 before recommending this backend or enabling it by default.
 
-The benchmark also accepts `--project <bundle> --export-id <id>`. It runs the saved
+The benchmark also accepts `--project <bundle> --export-id <id>` and the optional
+`--memory-budget-mib M`. It runs the saved
 Batch Plot Export definition in separate child processes for sequential and thread
 backends, reads each manifest's phase/provenance, hashes every published
 PNG/JPEG/SVG/PDF, and reports child-process peak RSS and open-file count. The

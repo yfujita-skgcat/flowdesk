@@ -1480,6 +1480,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   JSONへ記録する。実FCSの8出力はbyte parityを確認できるが、thread/2は2026-07-31に約1.06倍の速度と
   約1.74倍のRSSだったため、既定sequentialとCLI opt-in threadを維持する。これは代表writer/gate
   workloadの測定入口であり、compensation/derivedを含む大規模profileとWindows/PyInstaller検証は未完了。
+- [x] 同じbenchmarkへ`--memory-budget-mib`を追加し、synthetic/project両モードでresolved worker数、
+  memory limiting factor、出力parityを比較できるようにする。memory budgetはruntime診断だけであり、
+  project definitionやBatch Exportの既定設定へ保存しない。
 - [x] **Batch Plot Exportの限定的並列化**: overlay依存、`shared_ranges` barrierをcoordinatorで
   解決し、必要sourceのFCS読込・display準備とimmutableなprepared output itemをCLIの明示指定時だけ
   bounded thread executorへ渡す実装を追加した。GUI実行と既定値は逐次のままとし、rendererのQt object操作はworkerで

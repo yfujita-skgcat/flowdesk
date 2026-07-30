@@ -18,10 +18,11 @@ def test_project_benchmark_compares_hashes_and_isolates_backends(tmp_path, monke
   project = tmp_path / "project.flowdesk"
   project.write_text("placeholder", encoding="utf-8")
 
-  def fake_run(project_path, export_id, output_dir, backend, max_workers):
+  def fake_run(project_path, export_id, output_dir, backend, max_workers, memory_budget_mib):
     assert project_path == project
     assert export_id == "export"
     assert max_workers == 2
+    assert memory_budget_mib == 128
     return {
       "backend": backend,
       "elapsed_seconds": 2.0 if backend == "sequential" else 1.0,
@@ -37,9 +38,10 @@ def test_project_benchmark_compares_hashes_and_isolates_backends(tmp_path, monke
 
   monkeypatch.setattr(module, "_run_project_backend", fake_run)
   result = module.run_project_batch_plot_benchmark(
-    project=project, export_id="export", max_workers=2,
+    project=project, export_id="export", max_workers=2, memory_budget_mib=128,
   )
 
   assert result["output_names_match"] is True
   assert result["output_hashes_match"] is True
   assert result["thread_speedup"] == 2.0
+  assert result["memory_budget_mib"] == 128

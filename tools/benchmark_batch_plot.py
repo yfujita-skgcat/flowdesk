@@ -105,6 +105,7 @@ def _run_project_backend(
   output_dir: Path,
   backend: ExecutionBackend,
   max_workers: int,
+  memory_budget_mib: int | None,
 ) -> _ProjectRunResult:
   """Run one project export in a child process for isolated RSS accounting."""
   child_code = """
@@ -138,6 +139,8 @@ raise SystemExit(status)
     "--export-id", export_id, "--output-dir", str(output_dir),
     "--execution-backend", backend, "--max-workers", str(max_workers),
   ]
+  if memory_budget_mib is not None:
+    command.extend(["--memory-budget-mib", str(memory_budget_mib)])
   output_dir.mkdir(parents=True, exist_ok=True)
   started = time.perf_counter()
   completed = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -174,6 +177,7 @@ raise SystemExit(status)
 
 def run_project_batch_plot_benchmark(
   *, project: Path | str, export_id: str, max_workers: int = 2,
+  memory_budget_mib: int | None = None,
 ) -> dict[str, object]:
   """Compare sequential/thread rendering for a real saved project.
 
@@ -182,6 +186,8 @@ def run_project_batch_plot_benchmark(
   """
   if max_workers < 1:
     raise ValueError("max_workers must be positive")
+  if memory_budget_mib is not None and memory_budget_mib < 1:
+    raise ValueError("memory_budget_mib must be positive when set")
   project_path = Path(project)
   if not project_path.exists():
     raise FileNotFoundError(project_path)
@@ -191,6 +197,7 @@ def run_project_batch_plot_benchmark(
     for backend in ("sequential", "thread"):
       runs[backend] = _run_project_backend(
         project_path, export_id, root_path / backend, backend, max_workers,
+        memory_budget_mib,
       )
   sequential = runs["sequential"]
   threaded = runs["thread"]
@@ -200,6 +207,7 @@ def run_project_batch_plot_benchmark(
     "project": str(project_path),
     "export_id": export_id,
     "max_workers": max_workers,
+    "memory_budget_mib": memory_budget_mib,
     "sequential": sequential,
     "thread": threaded,
     "output_names_match": set(sequential_hashes) == set(threaded_hashes),
@@ -217,10 +225,13 @@ def run_batch_plot_benchmark(
   event_count: int = 5_000,
   max_workers: int = 2,
   seed: int = 1729,
+  memory_budget_mib: int | None = None,
 ) -> dict[str, object]:
   """Return timing and output-size diagnostics for serial and thread backends."""
   if sample_count < 1 or event_count < 1 or max_workers < 1:
     raise ValueError("sample_count, event_count, and max_workers must be positive")
+  if memory_budget_mib is not None and memory_budget_mib < 1:
+    raise ValueError("memory_budget_mib must be positive when set")
   rng = np.random.default_rng(seed)
   samples = [
     {"id": f"s{index + 1}", "name": f"Sample {index + 1}", "path": f"s{index + 1}.fcs"}
@@ -285,6 +296,9 @@ def run_batch_plot_benchmark(
       output_dir = Path(directory)
       control = ExecutionControl(options=ExecutionOptions(
         backend=backend, max_workers=max_workers,
+        memory_budget_bytes=(
+          None if memory_budget_mib is None else memory_budget_mib * 1024 * 1024
+        ),
       ))
       started = time.perf_counter()
       report = run_batch_plot_export(
@@ -321,6 +335,7 @@ def run_batch_plot_benchmark(
     "sample_count": sample_count,
     "event_count": event_count,
     "max_workers": max_workers,
+    "memory_budget_mib": memory_budget_mib,
     "seed": seed,
     "sequential": serial,
     "thread": threaded,
@@ -336,6 +351,10 @@ def main() -> int:
   parser.add_argument("--samples", type=int, default=8)
   parser.add_argument("--events", type=int, default=5_000)
   parser.add_argument("--max-workers", type=int, default=2)
+  parser.add_argument(
+    "--memory-budget-mib", type=int,
+    help="Limit estimated in-flight batch render memory in project mode.",
+  )
   parser.add_argument("--seed", type=int, default=1729)
   parser.add_argument(
     "--project", type=Path,
@@ -352,6 +371,7 @@ def main() -> int:
       parser.error("--export-id is required with --project")
     result = run_project_batch_plot_benchmark(
       project=args.project, export_id=args.export_id, max_workers=args.max_workers,
+      memory_budget_mib=args.memory_budget_mib,
     )
   else:
     result = run_batch_plot_benchmark(
@@ -359,6 +379,7 @@ def main() -> int:
       event_count=args.events,
       max_workers=args.max_workers,
       seed=args.seed,
+      memory_budget_mib=args.memory_budget_mib,
     )
   rendered = json.dumps(result, indent=2, ensure_ascii=False) + "\n"
   if args.output is not None:
