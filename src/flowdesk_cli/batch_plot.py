@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from threading import Lock
@@ -139,10 +140,13 @@ def batch_plot_command(
       if isinstance(view.get("manual_overlay_colors", {}), Mapping)
       else {}
     )
-    normalized_layer_cache: dict[
+    normalized_layer_cache: OrderedDict[
       tuple[str, tuple[tuple[float, float], tuple[float, float]]],
       tuple[tuple[tuple[float, ...], tuple[float, ...]], np.ndarray, tuple[str, ...] | None],
-    ] = {}
+    ] = OrderedDict()
+    normalized_cache_max_entries = max(
+      1, min(256, max(1, len(required_source_ids)) * 4)
+    )
     gate_overlay_cache: dict[
       tuple[object, ...], tuple[dict[str, Any], ...]
     ] = {}
@@ -318,6 +322,8 @@ def batch_plot_command(
         # targets reuse the immutable normalized layer.
         with render_cache_lock:
           normalized_payload = normalized_layer_cache.get(normalized_key)
+          if normalized_payload is not None:
+            normalized_layer_cache.move_to_end(normalized_key)
         if normalized_payload is None:
           normalized_x = _normalize(source_x, active_bounds[0])
           normalized_y = _normalize(source_y, active_bounds[1])
@@ -333,6 +339,9 @@ def batch_plot_command(
           )
           with render_cache_lock:
             normalized_layer_cache[normalized_key] = normalized_payload
+            normalized_layer_cache.move_to_end(normalized_key)
+            while len(normalized_layer_cache) > normalized_cache_max_entries:
+              normalized_layer_cache.popitem(last=False)
         normalized_points, visible, normalized_colors = normalized_payload
         visible_masks[source_id] = visible
         layers[source_id] = normalized_points
