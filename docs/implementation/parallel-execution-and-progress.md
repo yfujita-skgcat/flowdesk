@@ -1046,6 +1046,11 @@ runtime telemetry, not scientific settings; they make the bounded-worker and can
 behavior auditable without inferring concurrency from wall time alone.  Regression tests
 assert that the observed peak never exceeds the resolved worker limit.
 
+It also records `execution.phase_wall_seconds` for `planning`, `preparation`, `render`,
+and `total`. These are coordinator wall-clock measurements: `render` is the elapsed
+interval containing all bounded workers, not the sum of worker CPU times. They are
+diagnostic provenance only and must not be used to claim analytical pipeline speedup.
+
 - Treat the FCS file as a dependency source, not automatically as one executor job.
 - Submit only dependency-complete immutable prepared output items; begin parity testing
   with non-overlay, one-source outputs.

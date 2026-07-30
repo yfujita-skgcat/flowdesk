@@ -1550,6 +1550,9 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
   replaceする。collision policy対象外の既存fileを削除しない。thread cancellationの回帰testも追加した。
 - [x] batch manifestのexecution provenanceへjob unit、planned/submitted/completed item数、実際の
   `peak_in_flight_items`を記録し、bounded executorが指定上限を超えない回帰testを追加した。
+- [x] batch manifestのexecution provenanceへplanning、source preparation、render、totalのwall-clock
+  phase timingsを追加した。解析準備とrendererの時間を分離して測定し、並列化の効果を誤って
+  authoritative analysis speedupとして報告しない。
 - [x] overlay shared source、`shared_ranges` barrier、複数format、strict/partial failure、
   cancellationでもmanifestのitem順、filename、scene、source order、statusをplan順に保つ。
 - [x] sequential/parallel PNG/SVG/PDFでscene/sidecar、gate位置、軸label、dot order/colorが一致

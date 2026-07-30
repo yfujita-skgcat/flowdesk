@@ -187,9 +187,13 @@ def test_batch_run_thread_backend_keeps_plan_order_and_manifest(tmp_path) -> Non
   assert report.execution_provenance["submitted_items"] == 2
   assert report.execution_provenance["completed_items"] == 2
   assert report.execution_provenance["peak_in_flight_items"] <= 2
+  phase_wall_seconds = report.execution_provenance["phase_wall_seconds"]
+  assert set(phase_wall_seconds) == {"planning", "preparation", "render", "total"}
+  assert phase_wall_seconds["total"] >= phase_wall_seconds["render"]
   manifest = json.loads((tmp_path / "threaded.batch.json").read_text(encoding="utf-8"))
   assert manifest["execution"]["backend"] == "thread"
   assert manifest["execution"]["peak_in_flight_items"] <= 2
+  assert manifest["execution"]["phase_wall_seconds"] == phase_wall_seconds
   assert not list(tmp_path.glob(".*.flowdesk-*"))
 
 

@@ -972,6 +972,8 @@ batch manifestの`execution`には、実行単位（`prepared_output_item`）、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、
 科学的な結果やproject定義を変更する設定ではありません。FCSごとに無制限にworkerを作るのではなく、
 共有source準備とoverlay/shared range解決後のprepared itemだけをboundedに処理します。
+同じ`execution`にはplanning、source preparation、render、totalの経過時間も記録されます。これは
+ボトルネック調査用で、解析結果の計算時間や科学的結果を変更するものではありません。
 `shared_ranges`の範囲計算はsourceごとの極値だけをreduceするため、複数の大きなFCSを一つの一時配列へ
 連結しません。
 同じsourceを複数のtargetでoverlay表示する場合も、共通範囲での正規化座標と表示maskを再利用します。

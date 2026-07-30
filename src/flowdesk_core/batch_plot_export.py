@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import CancelledError, ThreadPoolExecutor, wait
@@ -169,10 +170,13 @@ def run_batch_plot_export(
   cancellation remains deterministic. Final files and sidecars are published
   only through same-directory atomic replacement.
   """
+  operation_started = time.perf_counter()
+  planning_started = operation_started
   items = plan_batch_plot_export(
     spec, samples, output_dir, group_members=group_members, annotations=annotations,
     overlay_sample_ids=overlay_sample_ids,
   )
+  planning_seconds = time.perf_counter() - planning_started
   output_root = Path(output_dir)
   output_root.mkdir(parents=True, exist_ok=True)
   sample_by_id = {str(sample.get("id")): sample for sample in samples}
@@ -206,6 +210,8 @@ def run_batch_plot_export(
   progress("planning")
   preparation_error: str | None = None
   cancelled = False
+  preparation_seconds = 0.0
+  preparation_started = time.perf_counter()
   try:
     if execution_control is not None:
       execution_control.cancellation_token.raise_if_cancelled()
@@ -218,6 +224,8 @@ def run_batch_plot_export(
     cancelled = True
   except Exception as exc:
     preparation_error = str(exc)
+  finally:
+    preparation_seconds = time.perf_counter() - preparation_started
 
   renderable = tuple(
     (item_index, item) for item_index, item in enumerate(items)
@@ -292,6 +300,7 @@ def run_batch_plot_export(
       cancelled = True
 
   if preparation_error is None and not cancelled:
+    render_started = time.perf_counter()
     if (
       execution_control is not None
       and execution_control.cancellation_token.is_cancelled()
@@ -346,6 +355,9 @@ def run_batch_plot_export(
         record_result(result)
         if cancelled:
           break
+    render_seconds = time.perf_counter() - render_started
+  else:
+    render_seconds = 0.0
 
   completed: list[BatchPlotExportItem] = []
   cancellation_recorded = any(
@@ -385,6 +397,12 @@ def run_batch_plot_export(
     "submitted_items": submitted_jobs,
     "completed_items": len(results),
     "peak_in_flight_items": peak_in_flight_jobs,
+    "phase_wall_seconds": {
+      "planning": planning_seconds,
+      "preparation": preparation_seconds,
+      "render": render_seconds,
+      "total": time.perf_counter() - operation_started,
+    },
   })
   manifest = output_root / f"{_safe_slug(spec.id)}.batch.json"
   progress("finalizing_manifest")
