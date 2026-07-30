@@ -1066,6 +1066,15 @@ Eviction affects only renderer cache data; a later miss recomputes the same norm
 coordinates from immutable prepared layers and cannot affect scientific results or output
 ordering. The byte estimate is a conservative diagnostic guard, not an OS RSS guarantee.
 
+The Batch Export adapter now estimates memory per prepared output item rather
+than using only the largest single source array. The estimate includes unique
+overlay source arrays, normalized coordinate/mask copies, per-event colors,
+vector representation overhead, and the hybrid scatter RGBA/provenance working
+set. It is used only to reduce the resolved worker count under an explicit
+memory budget; it does not reject a scientific export or alter display-event
+selection. The estimate remains conservative and must be rechecked against
+peak RSS for large compensation/derived/gating workloads.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become

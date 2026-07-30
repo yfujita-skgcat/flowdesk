@@ -1456,6 +1456,8 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   Python allocator・NumPy temporary・native libraryのpeak RSSを完全には保証しない。1サンプル分が
   予算を超えても実行を拒否するハード上限ではなく、effective workersを1へ抑える安全側のヒューリスティック
   である。大規模FCSで実測peak RSS、swap、OOMを確認し、必要なら警告と推定式を改訂する。
+  Batch Exportではunique overlay source、normalized/mask、event color、vector/hybrid rasterの
+  item単位working setも推定し、単一sourceだけを見てworker数を決めない。
 - [x] **raw dataと共有状態**: workerはraw FCS eventsを変更せず、共有project/cache/diagnostics
   listへ直接書き込まない。derived/compensationの一時配列はworker内で所有し、結果はcoordinatorが
   input sample順にmergeする。raw event hashとsequential parityを回帰テストで維持する。

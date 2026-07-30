@@ -8,13 +8,14 @@ import numpy as np
 from flowdesk_cli import batch_plot as batch_plot_module
 from flowdesk_cli.batch_plot import (
   _build_overlay_dependency_graph,
+  _estimate_batch_render_bytes,
   _gate_overlays,
   _shared_layer_bounds,
   batch_plot_command,
   write_plot_svg,
 )
 from flowdesk_core.execution_control import ExecutionOptions
-from flowdesk_core.models import ChannelSpec
+from flowdesk_core.models import BatchPlotExportSpec, ChannelSpec
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import save_project
@@ -33,6 +34,30 @@ def test_overlay_dependency_graph_is_deterministic_and_deduplicated() -> None:
     ("s3", "s4", "s2"),
   )
   assert graph == {"s1": ("s2", "s3", "s4"), "s2": ("s2", "s3", "s4")}
+
+
+def test_batch_memory_estimate_includes_overlay_and_hybrid_working_set() -> None:
+  layers = {
+    "s1": (np.zeros(100, dtype=np.float64), np.zeros(100, dtype=np.float64)),
+    "s2": (np.zeros(200, dtype=np.float64), np.zeros(200, dtype=np.float64)),
+  }
+  spec = BatchPlotExportSpec(
+    id="memory",
+    name="Memory",
+    width=800,
+    height=600,
+    vector_scatter_mode="hybrid_raster",
+    hybrid_scatter_dpi=600,
+  )
+  one_source = _estimate_batch_render_bytes(
+    spec, source_ids=("s1",), prepared_layers=layers, event_colors={},
+  )
+  overlay = _estimate_batch_render_bytes(
+    spec, source_ids=("s1", "s2", "s1"), prepared_layers=layers,
+    event_colors={"s2": tuple("#ff0000" for _ in range(200))},
+  )
+  assert overlay > one_source
+  assert overlay > 200 * 96
 
 
 def test_shared_layer_bounds_reduces_extrema_without_array_concatenation() -> None:

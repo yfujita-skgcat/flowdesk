@@ -279,12 +279,26 @@ def batch_plot_command(
         raise ValueError(json.dumps(preflight.to_mapping(), ensure_ascii=False))
 
     def estimate_render_bytes() -> int:
-      """Estimate one concurrently prepared render item's working memory."""
+      """Estimate the largest concurrently prepared render item.
+
+      The previous estimate considered only the largest single source array.
+      An output item may include several overlay sources, normalized tuple
+      copies, per-event colors, and a hybrid scatter image, so underestimating
+      it could admit too many workers under an explicit memory budget.
+      """
       if not prepared_layers:
         return 0
       return max(
-        int(x_values.nbytes + y_values.nbytes) * 4
-        for x_values, y_values in prepared_layers.values()
+        (
+          _estimate_batch_render_bytes(
+            spec,
+            source_ids=(sample_id, *overlay_ids_by_sample.get(sample_id, ())),
+            prepared_layers=prepared_layers,
+            event_colors=layer_event_colors,
+          )
+          for sample_id in target_sample_ids
+        ),
+        default=0,
       )
 
     def render(
@@ -632,6 +646,50 @@ def _write_render_payload(
     )
   else:
     raise ValueError(f"CLI renderer does not support {path.suffix!r}")
+
+
+def _estimate_batch_render_bytes(
+  spec: BatchPlotExportSpec,
+  *,
+  source_ids: Sequence[str],
+  prepared_layers: Mapping[str, tuple[np.ndarray, np.ndarray]],
+  event_colors: Mapping[str, tuple[str, ...]],
+) -> int:
+  """Estimate one prepared output item's temporary renderer memory.
+
+  This is deliberately conservative and presentation-only. It bounds worker
+  concurrency; it never changes the selected events or scientific results.
+  """
+  unique_source_ids = tuple(dict.fromkeys(
+    source_id for source_id in source_ids if source_id in prepared_layers
+  ))
+  event_count = 0
+  estimate = 0
+  for source_id in unique_source_ids:
+    x_values, y_values = prepared_layers[source_id]
+    count = min(len(x_values), len(y_values))
+    event_count += count
+    # Prepared NumPy arrays, normalized tuple coordinates, and visibility
+    # masks are retained at different points of the format-bundle lifetime.
+    estimate += int(x_values.nbytes + y_values.nbytes) * 4
+    estimate += count * 49
+    colors = event_colors.get(source_id)
+    if colors is not None:
+      estimate += len(colors) * 16
+  plot_width = max(1, spec.width - 80)
+  plot_height = max(1, spec.height - 110)
+  if spec.vector_scatter_mode == "hybrid_raster":
+    scale = spec.hybrid_scatter_dpi / 96.0
+    raster_pixels = max(1, round(plot_width * scale)) * max(
+      1, round(plot_height * scale)
+    )
+    # RGBA pixels, encoded PNG bytes, and point provenance records coexist.
+    estimate += raster_pixels * 8 + event_count * 96
+  elif spec.vector_scatter_mode == "compact_vector":
+    estimate += event_count * 48
+  else:
+    estimate += event_count * 32
+  return max(0, int(estimate))
 
 
 def _build_overlay_dependency_graph(
