@@ -244,7 +244,6 @@ def batch_plot_command(
       )
       return x_values[finite], y_values[finite], {
         "x_id": x_id, "y_id": y_id, "x_label": x_label, "y_label": y_label,
-        "view_spec": view_spec,
         "event_colors": event_colors,
       }
 
@@ -727,7 +726,8 @@ def _write_render_payload(
   if (
     path.suffix.lower() in {".svg", ".pdf"}
     and vector_cache is not None
-    and spec.vector_scatter_mode in {"compact_vector", "hybrid_raster"}
+    and spec.vector_scatter_mode in {"full_vector", "compact_vector", "hybrid_raster"}
+    and not event_colors
   ):
     cache = vector_cache.get("scatter")
     if cache is None:

@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from html import escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 
@@ -112,7 +112,9 @@ class VectorRenderCache:
   SVG and PDF use the same normalized layer points and compact batches. The
   optional hybrid raster bytes are also shared so a multi-format export does
   not rasterize the same scatter twice. This cache is presentation-only and
-  never participates in analytical results.
+  never participates in analytical results.  ``layers`` may also be reused by
+  full-vector writers when event colours are absent; this avoids converting
+  the same normalized coordinates once per output format.
   """
 
   layers: tuple[VectorScatterLayer, ...]
@@ -321,6 +323,10 @@ def write_plot_svg(
       f'preserveAspectRatio="none" data-scatter-dpi="{hybrid_info["dpi"]}" '
       f'href="data:image/png;base64,{base64.b64encode(hybrid_info["png"]).decode("ascii")}"/>'
     )
+  cached_layers_by_id = (
+    {layer.source_id: layer for layer in vector_cache.layers}
+    if vector_cache is not None and not event_colors else {}
+  )
   marker_ids: dict[str, str] = {}
   if full_vector:
     defs: list[str] = ['<defs><clipPath id="plot-clip">'
@@ -340,7 +346,7 @@ def write_plot_svg(
     defs.append("</defs>")
     elements.insert(0, "".join(defs))
     elements.append('<g clip-path="url(#plot-clip)">')
-  compact_batches = ()
+  compact_batches: tuple[CompactScatterBatch, ...] = ()
   if compact_vector:
     compact_batches = vector_cache.compact_batches if vector_cache else ()
   for index, source_id in enumerate(prepared.source_order):
@@ -349,10 +355,17 @@ def write_plot_svg(
     alpha = 1.0 if style is None else style.alpha
     marker_size = 3.0 if style is None else style.marker_size
     marker_shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
-    x_values, y_values = layers[source_id]
+    cached_layer = (
+      cached_layers_by_id.get(source_id)
+      if full_vector and not event_colors else None
+    )
+    if cached_layer is None:
+      points: Iterator[tuple[float, float]] = zip(*layers[source_id], strict=False)
+    else:
+      points = iter(cached_layer.points)
     if not compact_vector and not hybrid_raster:
       colors = None if event_colors is None else event_colors.get(source_id)
-      for point_index, (x_value, y_value) in enumerate(zip(x_values, y_values, strict=False)):
+      for point_index, (x_value, y_value) in enumerate(points):
         x = left + float(x_value) * plot_width
         y = top + (1.0 - float(y_value)) * plot_height
         point_color = color if colors is None or point_index >= len(colors) else colors[point_index]
@@ -523,6 +536,10 @@ def write_plot_pdf(
   hybrid_info: dict[str, Any] | None = None
   if hybrid_raster:
     hybrid_info = dict((vector_cache.hybrid_info if vector_cache else None) or {})
+  cached_layers_by_id = (
+    {layer.source_id: layer for layer in vector_cache.layers}
+    if vector_cache is not None and not event_colors else {}
+  )
   form_specs: list[tuple[tuple[int, int, int], float, str, float]] = []
   marker_refs: dict[tuple[str, str], int] = {}
   if full_vector:
@@ -533,7 +550,12 @@ def write_plot_pdf(
       marker_size = 2.0 if style is None else style.marker_size
       marker_shape = "circle" if style is None or style.marker_shape is None else style.marker_shape
       colors = None if event_colors is None else event_colors.get(source_id)
-      point_count = len(layers[source_id][0])
+      cached_layer = cached_layers_by_id.get(source_id)
+      point_count = (
+        len(cached_layer.points)
+        if cached_layer is not None and not event_colors
+        else len(layers[source_id][0])
+      )
       for index in range(point_count):
         color_text = default_color if colors is None or index >= len(colors) else colors[index]
         key = (source_id, color_text)
@@ -609,7 +631,13 @@ def write_plot_pdf(
       style = style_by_id.get(source_id)
       default_color = "#4c78a8" if style is None or style.color is None else style.color
       colors = None if event_colors is None else event_colors.get(source_id)
-      for index, (x_value, y_value) in enumerate(zip(*layers[source_id], strict=False)):
+      cached_layer = cached_layers_by_id.get(source_id)
+      points = (
+        iter(cached_layer.points)
+        if cached_layer is not None and not event_colors
+        else zip(*layers[source_id], strict=False)
+      )
+      for index, (x_value, y_value) in enumerate(points):
         x, y = _pdf_normalized_point(
           float(x_value), float(y_value), left, top, plot_width, plot_height, height,
         )

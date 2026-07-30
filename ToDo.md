@@ -1577,8 +1577,11 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
   scene、gate、tick、writerはtransform後のprepared layerだけを参照するため、PNG/SVG/PDFのbytesと
   event orderは変わらない。実FCS sequentialは21.97 s / 286,408 KBで、既知の全SHA-256と一致した。
 - [x] 同一sample/viewのSVG/PDFでは、compact scatter batchとhybrid scatter rasterを一度だけ構築し、
-  format間でimmutableなvector render cacheを再利用する。full-vectorの通常経路は不要なcache構築を
-  行わず、event order/color、point plan、sidecar metadata、出力bytesを変更しない回帰testを追加した。
+  format間でimmutableなvector render cacheを再利用する。単一色のfull-vectorでも同じ正規化座標
+  planをformat間で再利用し、event colorがある場合は描画順を変えないためcache groupingを行わない。
+  event order/color、point plan、sidecar metadata、出力bytesを変更しない回帰testを追加した。
+  100,000点のoffscreen診断ではSVG/PDF bundleが0.452 sから0.442 sとなったが、差は小さいため
+  worker数やvector modeの既定値を変更する根拠にはしない。
 - [x] batch targetがexplicit/groupの場合は、target sampleとoverlay依存sourceだけをprepareする。
   `shared_ranges`は必要source全体をreduceし、vector preflightは各output itemの最大event数で判定する。
   無関係sampleのFCS load、transform、density準備を行わず、unknown overlay sourceのvalidationは維持する。

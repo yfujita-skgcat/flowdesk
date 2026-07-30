@@ -1116,10 +1116,19 @@ scene preparation once and that the real writers remain byte-identical.
 For SVG/PDF vector modes, the same bundle additionally reuses an immutable
 VectorRenderCache. It contains the normalized vector layer plan, compact compound
 paths when applicable, and the hybrid scatter PNG bytes when hybrid_raster is selected.
-The cache is built lazily only for compact/hybrid output, so the full-vector path does
-not pay a new preparation cost. Writers still receive the same ordered layer input and
-produce the same bytes; this optimization only removes repeated format-adapter work.
-The cache is sample-scoped and is released with the existing format-bundle cache.
+The cache is built lazily for compact/hybrid output and for single-colour full-vector
+output. In the latter case it removes repeated coordinate conversion without changing
+event order. Event-coloured full-vector/compact output does not use coordinate grouping,
+because regrouping points could change translucent overlap order. Writers still receive
+the same ordered layer input and produce the same bytes; this optimization only removes
+repeated format-adapter work. The cache is sample-scoped and is released with the
+existing format-bundle cache.
+
+An offscreen diagnostic with 100,000 single-colour points and one SVG/PDF bundle
+measured 0.452 s without the full-vector cache and 0.442 s with it in the current
+environment. This small difference is evidence of a bounded adapter-cost reduction,
+not a reason to change the default vector mode or worker count; byte parity remains
+the required guarantee.
 
 An actual local FCS comparison on 2026-07-30 used `data/analysis.flowdesk` (4 samples,
 `max_points=0`, PNG/PDF, DPI 300, hybrid raster): sequential took 22.63 s with a

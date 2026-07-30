@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import base64
+import json
 import shutil
 import subprocess
 
@@ -23,6 +23,7 @@ from flowdesk_core.plot_export import (
   _display_tick_label,
   _vertical_text_image,
   prepare_plot_export,
+  prepare_vector_render_cache,
   resolve_export_canvas,
   write_plot_jpg,
   write_plot_pdf,
@@ -181,6 +182,55 @@ def test_full_vector_pdf_uses_form_xobject_and_one_do_per_event(tmp_path) -> Non
   assert b"/GS0 gs" in data
   assert b"/ca 0.4 /CA 0.4" in data
   assert b"/Subtype /Image" not in data
+
+
+def test_full_vector_cache_preserves_svg_and_pdf_bytes(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  presentation = PlotPresentationSpec(
+    source_styles=(SourceStyleSpec(source_id="s1", color="#336699", alpha=1.0),),
+  )
+  layers = {"s1": ((0.1, 0.2, 0.3), (0.2, 0.3, 0.4))}
+  options = BatchPlotExportSpec(
+    id="full-cache", name="Full cache", formats=("svg", "pdf"),
+    vector_scatter_mode="full_vector",
+  )
+  cache = prepare_vector_render_cache(
+    prepared, presentation, layers, options=options,
+  )
+  uncached_svg = tmp_path / "uncached.svg"
+  cached_svg = tmp_path / "cached.svg"
+  uncached_pdf = tmp_path / "uncached.pdf"
+  cached_pdf = tmp_path / "cached.pdf"
+  write_plot_svg(
+    uncached_svg, prepared, presentation, layers, options=options,
+  )
+  write_plot_svg(
+    cached_svg, prepared, presentation, layers, options=options,
+    render_cache=cache,
+  )
+  write_plot_pdf(
+    uncached_pdf, prepared, presentation, layers, options=options,
+  )
+  write_plot_pdf(
+    cached_pdf, prepared, presentation, layers, options=options,
+    render_cache=cache,
+  )
+  assert cached_svg.read_bytes() == uncached_svg.read_bytes()
+  assert cached_pdf.read_bytes() == uncached_pdf.read_bytes()
+  assert (
+    cached_svg.with_suffix(".svg.json").read_bytes()
+    == uncached_svg.with_suffix(".svg.json").read_bytes()
+  )
+  assert (
+    cached_pdf.with_suffix(".pdf.json").read_bytes()
+    == uncached_pdf.with_suffix(".pdf.json").read_bytes()
+  )
 
 
 def test_compact_batches_are_deterministic_and_preserve_duplicate_slots() -> None:
