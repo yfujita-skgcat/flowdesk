@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from threading import Lock
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -20,6 +21,7 @@ from flowdesk_core.fcs_io import read_fcs_sample
 from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import (
+  PreparedPlotExport,
   prepare_plot_export,
   write_plot_jpg,
   write_plot_pdf,
@@ -132,6 +134,9 @@ def batch_plot_command(
     shared_bounds: tuple[float, float, float, float] | None = None
     preflight_holder: dict[str, Any] = {}
     display_scene = dict(view.get("display_scene", {}))
+    prepared_render_cache: dict[str, tuple[Any, dict[str, Any], dict[str, Any]]] = {}
+    rendered_format_counts: dict[str, int] = {}
+    render_cache_lock = Lock()
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
       _info, sample_data = read_fcs_sample(sample["path"], str(sample["id"]))
@@ -255,6 +260,19 @@ def batch_plot_command(
       sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
     ) -> None:
       sample_id = str(sample["id"])
+      with render_cache_lock:
+        cached_payload = prepared_render_cache.get(sample_id)
+      if cached_payload is not None:
+        cached_prepared, cached_layers, cached_event_colors = cached_payload
+        _write_render_payload(
+          path, cached_prepared, cached_layers, cached_event_colors, spec
+        )
+        with render_cache_lock:
+          rendered_format_counts[sample_id] = rendered_format_counts.get(sample_id, 0) + 1
+          if rendered_format_counts[sample_id] >= len(spec.formats):
+            prepared_render_cache.pop(sample_id, None)
+            rendered_format_counts.pop(sample_id, None)
+        return
       x_values, y_values = prepared_layers[sample_id]
       metadata = layer_metadata[sample_id]
       x_id, y_id = metadata["x_id"], metadata["y_id"]
@@ -444,23 +462,19 @@ def batch_plot_command(
         }
       elif presentation.get("colormap") == "density":
         prepared.metadata["density_coloring"] = {"active": False, "reason": "overlay"}
+      with render_cache_lock:
+        prepared_render_cache[sample_id] = (
+          prepared, layers, visible_event_colors,
+        )
+        rendered_format_counts[sample_id] = 1
       # Batch formats must share the renderer-neutral scene adapter. The live
       # Qt widget remains the interactive preview, while one core renderer
       # keeps PNG/JPEG/SVG/PDF coordinates, ticks, gates, and event order equal.
-      if path.suffix.lower() == ".png":
-        write_plot_png(path, prepared, layers=layers, width=spec.width, height=spec.height,
-                       options=spec, event_colors=visible_event_colors)
-      elif path.suffix.lower() in {".jpg", ".jpeg"}:
-        write_plot_jpg(path, prepared, layers=layers, width=spec.width, height=spec.height,
-                       options=spec, event_colors=visible_event_colors)
-      elif path.suffix.lower() == ".svg":
-        write_plot_svg(path, prepared, layers=layers, options=spec,
-                       event_colors=visible_event_colors)
-      elif path.suffix.lower() == ".pdf":
-        write_plot_pdf(path, prepared, layers=layers, width=spec.width, height=spec.height,
-                       options=spec, event_colors=visible_event_colors)
-      else:
-        raise ValueError(f"CLI renderer does not support {path.suffix!r}")
+      _write_render_payload(path, prepared, layers, visible_event_colors, spec)
+      if len(spec.formats) <= 1:
+        with render_cache_lock:
+          prepared_render_cache.pop(sample_id, None)
+          rendered_format_counts.pop(sample_id, None)
 
     batch_report = run_batch_plot_export(
       spec, samples, output_dir, render, annotations=annotations,
@@ -486,6 +500,37 @@ def batch_plot_command(
   except (BatchPlotExportError, FileNotFoundError, KeyError, ValueError) as exc:
     print(f"Error: batch plot export failed: {exc}")
     return 1
+
+
+def _write_render_payload(
+  path: Path,
+  prepared: PreparedPlotExport,
+  layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]],
+  event_colors: dict[str, tuple[str, ...]],
+  spec: BatchPlotExportSpec,
+) -> None:
+  """Write one format from an item-scoped immutable prepared payload."""
+  if path.suffix.lower() == ".png":
+    write_plot_png(
+      path, prepared, layers=layers, width=spec.width, height=spec.height,
+      options=spec, event_colors=event_colors,
+    )
+  elif path.suffix.lower() in {".jpg", ".jpeg"}:
+    write_plot_jpg(
+      path, prepared, layers=layers, width=spec.width, height=spec.height,
+      options=spec, event_colors=event_colors,
+    )
+  elif path.suffix.lower() == ".svg":
+    write_plot_svg(
+      path, prepared, layers=layers, options=spec, event_colors=event_colors,
+    )
+  elif path.suffix.lower() == ".pdf":
+    write_plot_pdf(
+      path, prepared, layers=layers, width=spec.width, height=spec.height,
+      options=spec, event_colors=event_colors,
+    )
+  else:
+    raise ValueError(f"CLI renderer does not support {path.suffix!r}")
 
 
 def _normalize(
@@ -540,7 +585,7 @@ def _population_event_colors(
     )
     if membership is not None:
       colors[np.asarray(membership, dtype=bool)] = colored[population_id]
-  return colors[np.asarray(display_mask, dtype=bool)]
+  return np.asarray(colors[np.asarray(display_mask, dtype=bool)], dtype=str)
 
 
 def _normalized_ticks(

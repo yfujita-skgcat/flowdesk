@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
+from flowdesk_cli import batch_plot as batch_plot_module
 from flowdesk_cli.batch_plot import _gate_overlays, batch_plot_command, write_plot_svg
 from flowdesk_core.execution_control import ExecutionOptions
 from flowdesk_core.models import ChannelSpec
@@ -155,7 +156,7 @@ def test_batch_plot_prepares_only_target_and_overlay_sources(
     }],
     "batch_plot_exports": [{
       "id": "source-scope", "name": "Source scope", "target": "group",
-      "group_id": "selected", "plot_view_id": "view", "formats": ["svg"],
+      "group_id": "selected", "plot_view_id": "view", "formats": ["svg", "png"],
     }],
   }
   project_path = tmp_path / "source-scope.flowdesk"
@@ -183,11 +184,20 @@ def test_batch_plot_prepares_only_target_and_overlay_sources(
     return None, sample_data[sample_id]
 
   monkeypatch.setattr("flowdesk_cli.batch_plot.read_fcs_sample", read_sample)
+  original_prepare = batch_plot_module.prepare_plot_export
+  prepare_calls: list[str] = []
+
+  def prepare_once(*args, **kwargs):
+    prepare_calls.append(str(args[0]))
+    return original_prepare(*args, **kwargs)
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.prepare_plot_export", prepare_once)
 
   assert batch_plot_command(
     str(project_path), "source-scope", str(tmp_path / "exports")
   ) == 0
   assert loaded_ids == ["s1", "s2"]
+  assert prepare_calls == ["view"]
 
 
 def test_batch_plot_clips_gate_edges_at_the_viewport_boundary() -> None:

@@ -1478,6 +1478,9 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
   sample間で独立にrender可能であることを明示し、この単純ケースからparallel parity testを追加する。
   同一sceneからPNG/SVG/PDFを作る場合は、formatごとの完全独立jobとsample/view単位bundleの両方を
   benchmarkし、prepared arrayの再利用、peak memory、cancel granularityを比較して仕事単位を決める。
+- [x] 同一sample/viewのformat bundleでは、prepared scene、normalized layer、event colorをformat間で
+  再利用し、最後のformat後に短命cacheを解放する。2 formatでscene preparationが一度だけになるtestと
+  実writerのbyte parityを追加した。実FCS再測定後もthreadのspeedupは安定せず、既定値は逐次とする。
 - [x] batch targetがexplicit/groupの場合は、target sampleとoverlay依存sourceだけをprepareする。
   `shared_ranges`は必要source全体をreduceし、vector preflightは各output itemの最大event数で判定する。
   無関係sampleのFCS load、transform、density準備を行わず、unknown overlay sourceのvalidationは維持する。

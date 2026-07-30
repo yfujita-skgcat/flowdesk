@@ -937,6 +937,12 @@ uses the maximum event count of one planned output item rather than summing unre
 batch items. This source-scope optimization is covered by a group/overlay test and
 must preserve the existing unknown-source validation.
 
+Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
+normalized layers, and event-color mapping between formats. The cache is protected for
+thread callbacks and is released after the bundle's last format, so it does not become
+a batch-wide event-array cache. A regression test verifies that a two-format item calls
+scene preparation once and that the real writers remain byte-identical.
+
 An actual local FCS comparison on 2026-07-30 used `data/analysis.flowdesk` (4 samples,
 `max_points=0`, PNG/PDF, DPI 300, hybrid raster): sequential took 22.63 s with a
 270,084 KB maximum RSS, while thread/2 took 21.43 s with a 483,888 KB maximum RSS.
@@ -944,6 +950,11 @@ All eight PNG/PDF output hashes and sizes matched exactly. The measured speedup 
 only 1.06x while peak RSS was about 1.8x, and this project does not exercise a full
 compensation/derived-parameter workload. Keep thread rendering opt-in and repeat the
 measurement after any renderer or source-preparation change.
+
+After the format-bundle payload cache was added, the same comparison measured 22.24 s
+sequential and 21.21 s thread/2, with maximum RSS 269,668 KB and 483,876 KB respectively.
+The eight output hashes still matched. The small timing difference is not a stable
+speedup claim, while the memory multiplier remains material.
 
 - Treat the FCS file as a dependency source, not automatically as one executor job.
 - Submit only dependency-complete immutable prepared output items; begin parity testing
