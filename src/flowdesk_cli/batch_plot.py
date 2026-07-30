@@ -181,10 +181,13 @@ def batch_plot_command(
     normalized_cache_sizes: dict[
       tuple[str, tuple[tuple[float, float], tuple[float, float]]], int
     ] = {}
-    gate_overlay_cache: dict[
+    gate_overlay_cache: OrderedDict[
       tuple[object, ...], tuple[dict[str, Any], ...]
-    ] = {}
-    tick_cache: dict[tuple[object, ...], tuple[dict[str, object], ...]] = {}
+    ] = OrderedDict()
+    tick_cache: OrderedDict[
+      tuple[object, ...], tuple[dict[str, object], ...]
+    ] = OrderedDict()
+    presentation_cache_max_entries = 256
     render_cache_lock = Lock()
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -603,6 +606,8 @@ def batch_plot_command(
       )
       with render_cache_lock:
         gate_overlays = gate_overlay_cache.get(gate_cache_key)
+        if gate_overlays is not None:
+          gate_overlay_cache.move_to_end(gate_cache_key)
       if gate_overlays is None:
         gate_overlays = _gate_overlays(
           project, x_id, y_id, active_bounds,
@@ -611,6 +616,9 @@ def batch_plot_command(
         )
         with render_cache_lock:
           gate_overlay_cache[gate_cache_key] = gate_overlays
+          gate_overlay_cache.move_to_end(gate_cache_key)
+          while len(gate_overlay_cache) > presentation_cache_max_entries:
+            gate_overlay_cache.popitem(last=False)
       x_tick_key = (
         "x", active_bounds[0], view.get("x_transform_id"),
         str(display_scene.get("x_tick_policy", "auto")),
@@ -622,6 +630,10 @@ def batch_plot_command(
       with render_cache_lock:
         x_ticks = tick_cache.get(x_tick_key)
         y_ticks = tick_cache.get(y_tick_key)
+        if x_ticks is not None:
+          tick_cache.move_to_end(x_tick_key)
+        if y_ticks is not None:
+          tick_cache.move_to_end(y_tick_key)
       if x_ticks is None:
         x_ticks = tuple(_normalized_ticks(
           active_bounds[0], view.get("x_transform_id"), transform_by_id,
@@ -629,6 +641,9 @@ def batch_plot_command(
         ))
         with render_cache_lock:
           tick_cache[x_tick_key] = x_ticks
+          tick_cache.move_to_end(x_tick_key)
+          while len(tick_cache) > presentation_cache_max_entries:
+            tick_cache.popitem(last=False)
       if y_ticks is None:
         y_ticks = tuple(_normalized_ticks(
           active_bounds[1], view.get("y_transform_id"), transform_by_id,
@@ -636,6 +651,9 @@ def batch_plot_command(
         ))
         with render_cache_lock:
           tick_cache[y_tick_key] = y_ticks
+          tick_cache.move_to_end(y_tick_key)
+          while len(tick_cache) > presentation_cache_max_entries:
+            tick_cache.popitem(last=False)
       scene = {
         "x_ticks": x_ticks,
         "y_ticks": y_ticks,

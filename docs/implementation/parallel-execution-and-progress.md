@@ -1093,6 +1093,11 @@ uses the active source's recorded range, `shared_ranges` reduces the recorded ra
 density coloring uses the same bounds. This avoids rescanning NumPy arrays for every target
 without concatenating events or changing empty-source failure behavior.
 
+Gate geometry and transformed tick caches are bounded LRU presentation caches (256 entries
+each). Cache hits promote the key; evictions only cause deterministic recomputation from
+the immutable prepared layers and project definition. They must not be used for analytical
+membership, counts, statistics, or authoritative output inputs.
+
 The export coordinator also precomputes immutable sample lookup, manual overlay-color,
 and overlay-style maps. Render callbacks reuse these maps instead of rebuilding a sample
 dictionary or linearly scanning persisted overlay definitions for every source layer.

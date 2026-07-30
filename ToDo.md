@@ -1571,6 +1571,9 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [x] source preparation時に有限なX/Y extremaを一度だけ計算し、`current_view`のactive range、
   `shared_ranges`のreduce、density boundsで再利用する。空sourceは従来どおりexportを失敗させ、
   normalized event arraysやPNG/SVG/PDFのbytesを変更しない。
+- [x] target数・view range数に比例して増えていたgate geometry/tick cacheを各256 entryのLRUへ
+  bounded化する。hit時の順序を更新し、evictionはpresentation cacheだけに作用して出力順、gate
+  geometry、tick labels、scientific resultsを変更しない。
 - [x] format失敗・途中cancelでもitem-scopedのprepared scene、normalized layer、event color、hybrid
   rasterを即時解放する。成功bundleのformat間再利用は維持し、coordinator終了時には残存cacheを全解放して
   長いbatchで失敗itemがメモリを蓄積しない。
