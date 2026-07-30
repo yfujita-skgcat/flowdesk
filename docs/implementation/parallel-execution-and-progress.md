@@ -267,6 +267,13 @@ wait for a project-wide `Run Pipeline` merely to populate the plot.  Its latency
 therefore governed by the active request's display preparation, density calculation,
 per-event presentation payload, and Qt/pyqtgraph drawing.
 
+The canonical processed-display cache is a bounded GUI presentation cache: it keeps
+the four most-recent entries subject to an estimated 256 MiB NumPy payload budget,
+promotes entries on a hit, and removes entries for deleted/reconnected samples or
+project replacement. Eviction only causes a later cache miss and re-execution of the
+same immutable `ProcessedDisplayRequest`; it never changes authoritative counts,
+membership, statistics, or raw events.
+
 This distinction determines the execution boundaries:
 
 | Operation | First optimization boundary | Not an initial optimization |

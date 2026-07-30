@@ -265,6 +265,37 @@ def test_main_window_processed_display_uses_latest_selected_sample(
     qapp.processEvents()
 
 
+def test_main_window_bounds_processed_display_cache(qapp, tmp_path) -> None:
+  paths = []
+  for index in range(5):
+    path = tmp_path / f"cache-{index}.fcs"
+    write_fcs_file(
+      path,
+      np.array([[float(index), 1.0], [float(index + 1), 2.0]]),
+      ["X", "Y"],
+    )
+    paths.append(path)
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(path) for path in paths]) == 5
+    for sample in window._sample_browser.samples():
+      assert window._sample_browser.select_sample(sample.id)
+      _wait_until(
+        qapp,
+        lambda sample_id=sample.id: any(
+          result.sample_id == sample_id
+          for result in window._processed_display_cache.values()
+        ),
+      )
+    assert len(window._processed_display_cache) <= window._PROCESSED_DISPLAY_CACHE_MAX_ENTRIES
+    assert window._processed_display_cache_bytes >= 0
+    assert window._processed_display_cache_bytes <= window._PROCESSED_DISPLAY_CACHE_MAX_BYTES
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 def test_main_window_integrates_current_sample_preview_into_results_workspace(
   qapp,
   tmp_path,

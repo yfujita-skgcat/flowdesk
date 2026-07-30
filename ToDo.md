@@ -1317,6 +1317,9 @@ thread backend（Increment 8）とは別の計画である。
   更新し、whole-population density推定/normalizationは再実行しない。2026-07-30にはdensity
   scatterのdot size/opacity更新を`ScatterPlotItem.setSize()`/`setBrush()`へ分離し、既存event
   X/Yを`setData()`で再送信しないようにした。
+- [x] MainWindowのprocessed-display cacheを4件・推定256 MiBのLRUへ制限し、sample削除・再接続・
+  project置換時に対象配列とmembership maskを破棄する。evictionは表示cacheだけに作用し、
+  authoritative reportや科学計算結果は変更しない。cache上限とsample切替回帰testを追加した。
 - [x] `benchmark-density`へwarm semantic density replotを追加した。2026-07-29の20,000 events
   ×5回のoffscreen環境ではcold `plot_events`中央値216.0 msに対して、cached replot中央値は
   1.75 msだった。これは同一環境の表示測定であり、CI thresholdや解析speedupではない。

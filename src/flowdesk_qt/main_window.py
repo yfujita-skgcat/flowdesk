@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -336,6 +337,9 @@ def _project_bundle_path(value: str | Path) -> Path:
 
 
 class MainWindow(QMainWindow):
+    _PROCESSED_DISPLAY_CACHE_MAX_ENTRIES = 4
+    _PROCESSED_DISPLAY_CACHE_MAX_BYTES = 256 * 1024 * 1024
+
     """Main application window.
 
     Layout:
@@ -430,7 +434,10 @@ class MainWindow(QMainWindow):
         self._preview_revision = PreviewRevisionState()
         self._preview_report: PreviewReport | None = None
         self._last_result_report = None
-        self._processed_display_cache: dict[tuple[object, ...], ProcessedDisplayResult] = {}
+        self._processed_display_cache: OrderedDict[
+            tuple[object, ...], ProcessedDisplayResult
+        ] = OrderedDict()
+        self._processed_display_cache_bytes = 0
         self._old_membership_banner = False
         self._result_state = RuntimeResultState()
         self._preview_scheduler = PreviewScheduler(self)
@@ -1344,6 +1351,7 @@ class MainWindow(QMainWindow):
         # Remove event data for this sample
         self._event_data.pop(sample.id, None)
         self._sample_data.pop(sample.id, None)
+        self._drop_processed_display_cache_sample(sample.id)
         self._mark_results_stale(f"Removed: {sample.name}")
 
         # If the removed sample was the currently selected one, clear UI state
@@ -1369,6 +1377,7 @@ class MainWindow(QMainWindow):
         """Invalidate prior raw view and reload an explicitly accepted reconnect."""
         self._sample_data.pop(sample.id, None)
         self._event_data.pop(sample.id, None)
+        self._drop_processed_display_cache_sample(sample.id)
         self._mark_results_stale(f"Reconnected: {sample.name}")
         if self._current_sample_id == sample.id:
             self._on_sample_selected(sample)
@@ -1815,7 +1824,7 @@ class MainWindow(QMainWindow):
             sample_data, x_id, y_id, x_spec, y_spec
         )
         key = self._processed_display_key(request)
-        processed = self._processed_display_cache.get(key)
+        processed = self._get_processed_display_cache(key)
         if processed is None:
             previous = self._previous_processed_display(request)
             if (
@@ -1827,7 +1836,7 @@ class MainWindow(QMainWindow):
                 processed = previous
             else:
                 self._queue_processed_display(request)
-                processed = self._processed_display_cache.get(key)
+                processed = self._get_processed_display_cache(key)
                 if processed is None:
                     self._plot_widget.clear_plot()
                     if self._results_stale:
@@ -2014,6 +2023,54 @@ class MainWindow(QMainWindow):
             request.display_max_points,
         )
 
+    @staticmethod
+    def _processed_display_result_bytes(result: ProcessedDisplayResult) -> int:
+        """Estimate the retained NumPy payload for one display cache entry."""
+        membership_bytes = sum(
+            int(item.mask.nbytes)
+            for item in result.preview_report.population_membership
+        )
+        return int(result.events.nbytes + result.display_mask.nbytes + membership_bytes)
+
+    def _get_processed_display_cache(
+        self, key: tuple[object, ...]
+    ) -> ProcessedDisplayResult | None:
+        result = self._processed_display_cache.get(key)
+        if result is not None:
+            self._processed_display_cache.move_to_end(key)
+        return result
+
+    def _cache_processed_display(self, result: ProcessedDisplayResult) -> None:
+        """Store a display result using bounded LRU retention."""
+        key = self._processed_display_key(result)
+        previous = self._processed_display_cache.pop(key, None)
+        if previous is not None:
+            self._processed_display_cache_bytes -= self._processed_display_result_bytes(previous)
+        self._processed_display_cache[key] = result
+        self._processed_display_cache_bytes += self._processed_display_result_bytes(result)
+        while len(self._processed_display_cache) > self._PROCESSED_DISPLAY_CACHE_MAX_ENTRIES:
+            _, evicted = self._processed_display_cache.popitem(last=False)
+            self._processed_display_cache_bytes -= self._processed_display_result_bytes(evicted)
+        while (
+            self._processed_display_cache_bytes > self._PROCESSED_DISPLAY_CACHE_MAX_BYTES
+            and len(self._processed_display_cache) > 1
+        ):
+            _, evicted = self._processed_display_cache.popitem(last=False)
+            self._processed_display_cache_bytes -= self._processed_display_result_bytes(evicted)
+
+    def _drop_processed_display_cache_sample(self, sample_id: str) -> None:
+        """Remove cached display results for a deleted or reconnected sample."""
+        for key, result in tuple(self._processed_display_cache.items()):
+            if result.sample_id != sample_id:
+                continue
+            self._processed_display_cache.pop(key, None)
+            self._processed_display_cache_bytes -= self._processed_display_result_bytes(result)
+
+    def _clear_processed_display_cache(self) -> None:
+        """Drop all presentation cache entries and their retained arrays."""
+        self._processed_display_cache.clear()
+        self._processed_display_cache_bytes = 0
+
     def _queue_processed_display(self, request: ProcessedDisplayRequest) -> None:
         """Submit immutable canonical display work without blocking the GUI."""
         try:
@@ -2078,7 +2135,7 @@ class MainWindow(QMainWindow):
         )
         if self._processed_display_key(result) != self._processed_display_key(current):
             return
-        self._processed_display_cache[self._processed_display_key(result)] = result
+        self._cache_processed_display(result)
         self._replot()
 
     def _on_processed_display_failed(
@@ -3321,6 +3378,7 @@ class MainWindow(QMainWindow):
         self._sample_browser.clear_samples()
         self._event_data.clear()
         self._sample_data.clear()
+        self._clear_processed_display_cache()
         self._processed_display_scheduler.cancel_pending()
         self._current_sample_id = None
         self._channel_names = []
