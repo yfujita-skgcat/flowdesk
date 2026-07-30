@@ -963,7 +963,7 @@ fixtureはseedとpoint hashを固定し、raw eventsや解析結果を変更し�
 
 output directoryはprojectには保存されず、アプリケーション設定（`QSettings`）に最後に使用した値だけが保存される。次回ダイアログを開くと復元されるため、同じ場所へ繰り返し出力できる。projectを別のディレクトリへ移動しても、この設定はprojectとは独立している。
 
-`Run Export` はGUIを停止させずに実行されます。表示される `Batch Plot Export` progress windowには、準備・render・sidecar・manifestの段階と完了数が表示されます。`Cancel` は次の安全な出力境界で協調的に停止します。既に完了した画像とsidecarは保持され、未開始項目はmanifestで `not_started`、停止を受けた項目は `cancelled` と記録されます。cancel中でも、画像・sidecar・manifestが途中の内容で公開されることはありません。
+`Run Export` はGUIを停止させずに実行されます。表示される `Batch Plot Export` progress windowには、準備・render・sidecar・manifestの段階と完了数が表示されます。source準備中は、準備済みsourceのIDと `prepared source n/total` も表示されます。この段階の表示は出力ファイルの完了数とは別であり、sourceの完了順は出力順や科学的結果を変更しません。`Cancel` は次の安全な出力境界で協調的に停止します。既に完了した画像とsidecarは保持され、未開始項目はmanifestで `not_started`、停止を受けた項目は `cancelled` と記録されます。cancel中でも、画像・sidecar・manifestが途中の内容で公開されることはありません。
 
 CLIで実行する場合は、`flowdesk batch-plot <project> --export-id <id> --output-dir <dir>` に
 `--execution-backend thread --max-workers N` を追加すると、target/overlayに必要なFCSの読み込み・display

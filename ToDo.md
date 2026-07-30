@@ -1382,6 +1382,11 @@ thread backend（Increment 8）とは別の計画である。
   completion順で変えない。render時に依存graphを再構築せず、targetごとのsource順を再利用する。
 - [x] sequentialのままper-item/per-format progress、cooperative cancel、atomic staged output、
   `cancelled`/`not_started`を含むmanifestを実装する。coordinatorだけがmanifestを書く。
+- [x] bounded source preparationの完了をcoordinator threadからsource単位でprogressへ通知する。
+  GUIは`preparing_sources` phase中に`prepared source n/total`とsource IDを表示できるが、
+  `completed_units`は出力unitの進捗として0のまま保持する。workerからQtやprogress sinkを直接
+  呼ばず、source完了順はscene、shared range、manifest、出力順へ影響させない。既存のzero-argument
+  `prepare()` APIは互換性のため維持する。
 - [x] `shared_ranges`の全source範囲はイベント配列を連結せず、sourceごとのmin/maxをcoordinatorで
   reduceする。共有範囲の値を変えずに、準備段階の一時メモリを削減した。
 - [x] 同じsourceが複数targetのbase/overlayとして使われる場合、sourceと実際のboundsをキーに

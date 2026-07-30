@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from threading import Lock
@@ -253,7 +253,9 @@ def batch_plot_command(
         "event_colors": event_colors,
       }
 
-    def prepare_sources() -> None:
+    def prepare_sources(
+      report_progress: Callable[[str, int, int], None] | None = None,
+    ) -> None:
       nonlocal shared_bounds
       candidates = tuple(
         candidate for candidate in samples
@@ -338,6 +340,12 @@ def batch_plot_command(
             for future in sorted(done, key=lambda value: pending[value]):
               candidate_index = pending.pop(future)
               completed[candidate_index] = future.result()
+              if report_progress is not None:
+                report_progress(
+                  completed[candidate_index][0],
+                  len(completed),
+                  len(candidates),
+                )
         except BaseException:
           for future in pending:
             future.cancel()
@@ -346,7 +354,13 @@ def batch_plot_command(
           executor.shutdown(wait=True, cancel_futures=True)
         prepared_results = [completed[index] for index in range(len(candidates))]
       else:
-        prepared_results = [prepare_one(candidate) for candidate in candidates]
+        prepared_results = []
+        for candidate in candidates:
+          prepared_results.append(prepare_one(candidate))
+          if report_progress is not None:
+            report_progress(
+              prepared_results[-1][0], len(prepared_results), len(candidates)
+            )
         submitted_preparations = len(candidates)
         peak_preparation_in_flight = 1 if candidates else 0
       preparation_provenance_holder.update({
@@ -725,7 +739,7 @@ def batch_plot_command(
         spec, samples, output_dir, render, annotations=annotations,
         preflight=preflight_holder,
         preparation_provenance=preparation_provenance_holder,
-        prepare=prepare_sources,
+        prepare_with_progress=prepare_sources,
         estimate_render_bytes=estimate_render_bytes,
         execution_control=execution_control,
         group_members=group_members,

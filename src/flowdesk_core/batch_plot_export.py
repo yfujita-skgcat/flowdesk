@@ -159,6 +159,7 @@ def run_batch_plot_export(
   preflight: dict[str, Any] | None = None,
   preparation_provenance: Mapping[str, Any] | None = None,
   prepare: Callable[[], None] | None = None,
+  prepare_with_progress: Callable[[Callable[[str, int, int], None]], None] | None = None,
   estimate_render_bytes: Callable[[], int] | None = None,
   execution_control: ExecutionControl | None = None,
 ) -> BatchPlotExportReport:
@@ -166,11 +167,15 @@ def run_batch_plot_export(
 
   ``prepare`` owns shared source loading, display preparation, shared-range
   resolution, and renderer preflight.  It runs once before the first output,
-  leaving ``render`` to build one already-prepared output. Each sample's formats
-  are one bounded executor job so prepared arrays can be reused and item-level
-  cancellation remains deterministic. Final files and sidecars are published
-  only through same-directory atomic replacement.
+  leaving ``render`` to build one already-prepared output.  The optional
+  ``prepare_with_progress`` variant receives a coordinator-owned callback and
+  reports completed source IDs without letting workers call the progress sink.
+  Each sample's formats are one bounded executor job so prepared arrays can be
+  reused and item-level cancellation remains deterministic. Final files and
+  sidecars are published only through same-directory atomic replacement.
   """
+  if prepare is not None and prepare_with_progress is not None:
+    raise ValueError("prepare and prepare_with_progress are mutually exclusive")
   operation_started = time.perf_counter()
   planning_started = operation_started
   items = plan_batch_plot_export(
@@ -216,7 +221,20 @@ def run_batch_plot_export(
   try:
     if execution_control is not None:
       execution_control.cancellation_token.raise_if_cancelled()
-    if prepare is not None:
+    if prepare_with_progress is not None:
+      progress("preparing_sources")
+
+      def report_source_progress(sample_id: str, completed: int, total: int) -> None:
+        progress(
+          "preparing_sources",
+          sample_id=sample_id,
+          message=f"prepared source {completed}/{total}",
+        )
+
+      prepare_with_progress(report_source_progress)
+      if execution_control is not None:
+        execution_control.cancellation_token.raise_if_cancelled()
+    elif prepare is not None:
       progress("preparing_sources")
       prepare()
       if execution_control is not None:

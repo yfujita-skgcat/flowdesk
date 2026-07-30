@@ -161,6 +161,49 @@ def test_batch_run_prepares_once_and_reports_each_written_format(tmp_path) -> No
   assert not list(tmp_path.glob(".*.flowdesk-*"))
 
 
+def test_batch_run_reports_source_preparation_progress_on_coordinator(tmp_path) -> None:
+  spec = BatchPlotExportSpec(id="source-progress", name="Source progress", formats=("svg",))
+  events = []
+
+  def prepare(report_progress) -> None:
+    report_progress("s1", 1, 2)
+    report_progress("s2", 2, 2)
+
+  def render(sample, path, _spec) -> None:
+    path.write_text(sample["id"], encoding="utf-8")
+
+  report = run_batch_plot_export(
+    spec,
+    _samples(),
+    tmp_path,
+    render,
+    prepare_with_progress=prepare,
+    execution_control=ExecutionControl(progress_sink=events.append),
+  )
+
+  assert report.status == "success"
+  source_events = [event for event in events if event.phase == "preparing_sources"]
+  assert [(event.sample_id, event.message) for event in source_events[-2:]] == [
+    ("s1", "prepared source 1/2"),
+    ("s2", "prepared source 2/2"),
+  ]
+  assert all(event.completed_units == 0 for event in source_events)
+
+
+def test_batch_run_rejects_ambiguous_preparation_callbacks(tmp_path) -> None:
+  spec = BatchPlotExportSpec(id="source-callbacks", name="Source callbacks", formats=("svg",))
+
+  with pytest.raises(ValueError, match="mutually exclusive"):
+    run_batch_plot_export(
+      spec,
+      _samples(),
+      tmp_path,
+      lambda _sample, path, _spec: path.write_text("ok", encoding="utf-8"),
+      prepare=lambda: None,
+      prepare_with_progress=lambda _report: None,
+    )
+
+
 def test_batch_run_thread_backend_keeps_plan_order_and_manifest(tmp_path) -> None:
   spec = BatchPlotExportSpec(id="threaded", name="Threaded", formats=("svg",))
   control = ExecutionControl(options=ExecutionOptions(backend="thread", max_workers=2))

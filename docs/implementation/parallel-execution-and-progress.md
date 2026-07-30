@@ -898,6 +898,14 @@ GUI thread, and exposes `batchPlotProgressDialog`, `batchPlotProgressBar`,
 and `batchPlotProgressDetails`.  Cancel and window close request cooperative cancellation
 and wait for the worker; focused GUI tests cover completion, Cancel, and window close.
 
+Source preparation also exposes a coordinator-only callback for source-level progress.
+The CLI emits the prepared source ID and `prepared source n/total` while the bounded
+queue is drained.  These events keep `completed_units` at the output-unit count (zero
+until an output is published), so the GUI does not conflate preparation with rendering.
+Worker threads never call the progress sink or Qt.  Results are still merged in source
+order before `shared_ranges` reduction, and the legacy zero-argument `prepare()` callback
+remains supported.
+
 - Make source preparation and dependency planning explicit.
 - Add sequential batch progress, cancellation, cancellation manifest, and atomic staged
   outputs.
