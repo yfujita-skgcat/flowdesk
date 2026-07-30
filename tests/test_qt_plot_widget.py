@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -374,6 +375,85 @@ def test_density_coloring_replaces_uniform_plot_with_colored_scatter_item() -> N
     assert plot._event_colors is not None
     assert len(set(plot._event_colors.tolist())) > 32
     assert plot._scatter.opts["brush"] is not None
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
+def test_density_coloring_can_resolve_off_gui_thread_and_apply_brushes() -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(43)
+  x = np.concatenate((rng.normal(0.0, 0.2, 1000), rng.normal(2.0, 0.05, 100)))
+  y = np.concatenate((rng.normal(0.0, 0.2, 1000), rng.normal(2.0, 0.05, 100)))
+  expected = estimate_density_colors(
+    x,
+    y,
+    x,
+    y,
+    bounds=(float(x.min()), float(x.max()), float(y.min()), float(y.max())),
+    logical_size=(512, 512),
+  ).colors
+  try:
+    plot.plot_events(x, y, density_coloring=True, density_async=True)
+    assert plot._event_colors is None
+    assert plot._scatter is None
+    for _ in range(400):
+      QApplication.processEvents()
+      time.sleep(0.005)
+      if plot._event_colors is not None:
+        break
+    assert plot._event_colors is not None
+    assert plot._scatter is not None
+    assert np.array_equal(plot._event_colors, expected)
+    assert plot._density_pending_key is None
+    assert plot._density_scheduler.is_running() is False
+  finally:
+    plot.close()
+    plot.deleteLater()
+    QApplication.processEvents()
+
+
+def test_density_async_discards_stale_result_after_replot() -> None:
+  _app()
+  plot = PlotWidget()
+  rng = np.random.default_rng(44)
+  first_x = rng.normal(0.0, 0.2, 1200)
+  first_y = rng.normal(0.0, 0.2, 1200)
+  second_x = rng.normal(2.0, 0.1, 1200)
+  second_y = rng.normal(2.0, 0.1, 1200)
+  scheduler = plot._get_density_scheduler()
+  original_executor = scheduler._executor
+
+  def slow_executor(request):
+    time.sleep(0.04)
+    return original_executor(request)
+
+  scheduler._executor = slow_executor
+  expected = estimate_density_colors(
+    second_x,
+    second_y,
+    second_x,
+    second_y,
+    bounds=(
+      float(second_x.min()), float(second_x.max()),
+      float(second_y.min()), float(second_y.max()),
+    ),
+    logical_size=(512, 512),
+  ).colors
+  try:
+    plot.plot_events(first_x, first_y, density_coloring=True, density_async=True)
+    plot.plot_events(second_x, second_y, density_coloring=True, density_async=True)
+    for _ in range(200):
+      QApplication.processEvents()
+      time.sleep(0.005)
+      if plot._event_colors is not None and not plot._density_scheduler.is_running():
+        break
+    assert plot._event_colors is not None
+    assert np.array_equal(plot._event_colors, expected)
+    assert np.array_equal(plot._rendered_x, second_x)
+    assert np.array_equal(plot._rendered_y, second_y)
   finally:
     plot.close()
     plot.deleteLater()

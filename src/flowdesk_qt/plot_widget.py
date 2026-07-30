@@ -58,6 +58,11 @@ from flowdesk_core.transforms import (
     generate_transform_ticks,
     validate_transform,
 )
+from flowdesk_qt.density_scheduler import (
+    DensityColorRequest,
+    DensityColorResponse,
+    DensityColorScheduler,
+)
 from flowdesk_qt.diagnostics import invoke_callback
 from flowdesk_qt.plot_style import PlotStyleSettings
 
@@ -100,6 +105,10 @@ class PlotWidget(QWidget):
         self._density_input: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None
         self._density_cache_context: tuple[object, ...] | None = None
         self._density_coloring_active = False
+        self._density_pending_key: tuple[object, ...] | None = None
+        # Density scheduling is lazy: the common uniform/population path does
+        # not allocate a thread pool merely because a PlotWidget exists.
+        self._density_scheduler: DensityColorScheduler | None = None
         self._gate_items: list[Any] = []
         self._retired_plot_items: list[Any] = []
         self._gate_item_callbacks: dict[int, Any] = {}
@@ -469,6 +478,7 @@ class PlotWidget(QWidget):
         event_colors: NDArray[np.str_] | list[str] | None = None,
         density_coloring: bool = False,
         density_cache_context: tuple[object, ...] | None = None,
+        density_async: bool = False,
     ) -> None:
         """Render a scatter plot.
 
@@ -524,6 +534,10 @@ class PlotWidget(QWidget):
         self._density_input = (density_x, density_y) if density_coloring else None
         self._density_cache_context = density_cache_context if density_coloring else None
         self._density_coloring_active = density_coloring
+        if not density_coloring:
+            if self._density_scheduler is not None:
+                self._density_scheduler.cancel_pending()
+            self._density_pending_key = None
         self._displayed_event_count = len(x_plot)
         self._rendered_x = x_plot
         self._rendered_y = y_plot
@@ -579,7 +593,10 @@ class PlotWidget(QWidget):
             self._auto_range()
         self._refresh_ticks_for_current_view()
         if density_coloring and not reuse_density_scatter:
-            self._refresh_density_colors()
+            if density_async and density_key is not None:
+                self._schedule_density_colors(density_key)
+            else:
+                self._refresh_density_colors()
 
         # Update marginal histograms if enabled.
         self._update_marginal_histograms()
@@ -680,6 +697,9 @@ class PlotWidget(QWidget):
         self._density_input = None
         self._density_cache_context = None
         self._density_coloring_active = False
+        self._density_pending_key = None
+        if self._density_scheduler is not None:
+            self._density_scheduler.cancel_pending()
         self._is_histogram_mode = False
         self._update_labels()
 
@@ -688,8 +708,21 @@ class PlotWidget(QWidget):
         self._clear_gates()
         self._clear_preview()
 
+    def ensure_density_colors(self) -> None:
+        """Resolve pending density colors before a synchronous export."""
+        if self._density_pending_key is not None:
+            if self._density_scheduler is not None:
+                self._density_scheduler.cancel_pending()
+            self._refresh_density_colors()
+
+    def shutdown_density_scheduler(self) -> None:
+        """Wait for numerical density work before the owning window is destroyed."""
+        if self._density_scheduler is not None:
+            self._density_scheduler.shutdown()
+
     def closeEvent(self, event: Any) -> None:
         """Break ROI callback cycles before Qt destroys the graphics scene."""
+        self.shutdown_density_scheduler()
         self.release_transient_items()
         super().closeEvent(event)
 
@@ -814,6 +847,7 @@ class PlotWidget(QWidget):
         This exports the display state only.  It does not run analysis,
         change event data, or affect gate membership.
         """
+        self.ensure_density_colors()
         original_size = self.size()
         self._export_resolution_scale = max(0.01, float(resolution_scale))
         visibility = self._begin_export_visibility(export_options)
@@ -878,6 +912,7 @@ class PlotWidget(QWidget):
         resolution_scale: float = 1.0,
     ) -> None:
         """Render the current display-only scene to a JPEG file."""
+        self.ensure_density_colors()
         original_size = self.size()
         self._export_resolution_scale = max(0.01, float(resolution_scale))
         visibility = self._begin_export_visibility(export_options)
@@ -936,6 +971,7 @@ class PlotWidget(QWidget):
         resolution_scale: float = 1.0,
     ) -> None:
         """Export the display-only scene as SVG/PDF and write a metadata sidecar."""
+        self.ensure_density_colors()
         out_path = Path(path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         original_size = self.size()
@@ -1462,7 +1498,8 @@ class PlotWidget(QWidget):
                     previous is None
                     or previous.dot_opacity != s.dot_opacity
                 ):
-                    self._scatter.setBrush(self._density_brushes())
+                    if self._event_colors is not None:
+                        self._scatter.setBrush(self._density_brushes())
             elif self._population_scatter_items:
                 for item, color in self._population_scatter_items:
                     item.setSymbolSize(s.dot_size)
@@ -2273,6 +2310,8 @@ class PlotWidget(QWidget):
         key = self._density_color_key(
             input_x, input_y, self._rendered_x, self._rendered_y
         )
+        if key is None:
+            return
         colors = self._density_color_cache.get(key)
         if colors is None:
             colors = estimate_density_colors(
@@ -2280,6 +2319,84 @@ class PlotWidget(QWidget):
                 bounds=(x_min, x_max, y_min, y_max), logical_size=logical_size,
             ).colors
             self._density_color_cache = {key: colors}
+        self._apply_density_colors(colors, key)
+
+    def _schedule_density_colors(self, key: tuple[object, ...]) -> None:
+        """Submit renderer-neutral density work without touching Qt in the worker."""
+        if self._density_input is None or self._rendered_x is None or self._rendered_y is None:
+            return
+        input_x, input_y = self._density_input
+        if not len(input_x) or not len(self._rendered_x):
+            return
+        x_min, x_max = float(np.min(input_x)), float(np.max(input_x))
+        y_min, y_max = float(np.min(input_y)), float(np.max(input_y))
+        if x_min >= x_max or y_min >= y_max:
+            return
+        cached = self._density_color_cache.get(key)
+        if cached is not None:
+            self._apply_density_colors(cached, key)
+            return
+        self._density_pending_key = key
+        try:
+            scheduler = self._get_density_scheduler()
+            scheduler.schedule(
+                DensityColorRequest(
+                    key=key,
+                    input_x=input_x,
+                    input_y=input_y,
+                    query_x=self._rendered_x,
+                    query_y=self._rendered_y,
+                    bounds=(x_min, x_max, y_min, y_max),
+                    logical_size=(512, 512),
+                )
+            )
+        except RuntimeError as exc:
+            self._density_pending_key = None
+            self.set_status_banner(f"Density colors unavailable: {exc}")
+
+    def _get_density_scheduler(self) -> DensityColorScheduler:
+        if self._density_scheduler is None:
+            scheduler = DensityColorScheduler(self)
+            scheduler.density_ready.connect(self._on_density_ready)
+            scheduler.density_failed.connect(self._on_density_failed)
+            self._density_scheduler = scheduler
+        return self._density_scheduler
+
+    def _on_density_ready(self, response: DensityColorResponse) -> None:
+        """Apply only the latest semantic result on the GUI thread."""
+        if not self._density_coloring_active or self._density_input is None:
+            return
+        if self._density_pending_key != response.key:
+            return
+        if self._rendered_x is None or self._rendered_y is None:
+            return
+        current_key = self._density_color_key(
+            self._density_input[0], self._density_input[1],
+            self._rendered_x, self._rendered_y,
+        )
+        if current_key != response.key:
+            return
+        colors = np.asarray(response.result.colors, dtype=str)
+        if len(colors) != len(self._rendered_x):
+            return
+        self._density_color_cache = {response.key: colors}
+        self._density_pending_key = None
+        self._apply_density_colors(colors, response.key)
+
+    def _on_density_failed(
+        self, request: DensityColorRequest, error: Exception
+    ) -> None:
+        if self._density_pending_key != request.key:
+            return
+        self._density_pending_key = None
+        self.set_status_banner(f"Density colors unavailable: {error}")
+
+    def _apply_density_colors(
+        self, colors: NDArray[np.str_], key: tuple[object, ...]
+    ) -> None:
+        """Apply colors to an existing scatter with minimal Qt payload."""
+        if self._rendered_x is None or self._rendered_y is None:
+            return
         self._event_colors = colors
         brushes = self._density_brushes(colors)
         if self._population_scatter_items or (
@@ -2290,15 +2407,19 @@ class PlotWidget(QWidget):
         if self._scatter is None:
             self._scatter = ScatterPlotItem()
             self._plot_item.addItem(self._scatter)
-        self._scatter.setData(
-            x=self._rendered_x,
-            y=self._rendered_y,
-            pen=None,
-            brush=brushes,
-            size=self._style.dot_size,
-            symbol="o",
-            pxMode=True,
-        )
+        if self._scatter.data is None or len(self._scatter.data) != len(self._rendered_x):
+            self._scatter.setData(
+                x=self._rendered_x,
+                y=self._rendered_y,
+                pen=None,
+                brush=brushes,
+                size=self._style.dot_size,
+                symbol="o",
+                pxMode=True,
+            )
+        else:
+            self._scatter.setBrush(brushes)
+            self._scatter.setSize(self._style.dot_size)
         self._density_render_key = key
 
     def _density_brushes(

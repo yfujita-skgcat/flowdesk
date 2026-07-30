@@ -321,6 +321,36 @@ def test_batch_run_cancellation_keeps_completed_files_and_manifest(tmp_path) -> 
   assert [item["status"] for item in manifest["items"]] == ["success", "not_started"]
 
 
+def test_batch_run_thread_cancellation_keeps_atomic_outputs_and_order(tmp_path) -> None:
+  spec = BatchPlotExportSpec(id="thread-cancel", name="Thread cancel", formats=("svg",))
+  control = ExecutionControl(
+    options=ExecutionOptions(backend="thread", max_workers=2),
+  )
+  rendered: list[str] = []
+
+  def render(sample, path, _spec) -> None:
+    path.write_text(sample["id"], encoding="utf-8")
+    rendered.append(sample["id"])
+    control.cancellation_token.cancel()
+
+  report = run_batch_plot_export(
+    spec,
+    _samples(),
+    tmp_path,
+    render,
+    estimate_render_bytes=lambda: 128,
+    execution_control=control,
+  )
+
+  assert report.status == "partial_cancelled"
+  assert [item.sample_id for item in report.items] == ["s1", "s2"]
+  assert all(item.status in {"success", "not_started", "cancelled"} for item in report.items)
+  assert rendered
+  assert not list(tmp_path.glob(".*.flowdesk-*"))
+  manifest = json.loads((tmp_path / "thread-cancel.batch.json").read_text(encoding="utf-8"))
+  assert [item["sample_id"] for item in manifest["items"]] == ["s1", "s2"]
+
+
 def test_batch_run_discards_failed_staged_output(tmp_path) -> None:
   spec = BatchPlotExportSpec(id="export", name="Export", formats=("svg",))
 

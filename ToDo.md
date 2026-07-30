@@ -1442,12 +1442,25 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [ ] **代表 workloadの性能ゲート**: compensation、derived parameters、複数gate、statisticsを
   含む実データ相当のprofileを追加し、sequential/threadのwall time、peak RSS、CPU oversubscriptionを
   測定する。speedupが再現しない場合はthread backendを実験機能のまま維持する。
-- [ ] **Batch Plot Export並列化**: rendererのreentrancy、共有mutable state、Qt backend、overlayの
-  shared range barrierが未検証のため保留。Increment 9のparity、temporary/atomic replace、cancel、
-  plan順manifestのテスト完了前に実worker並列化を有効化しない。
-- [ ] **density histogram/chunk並列化**: global normalization、viewport変更時の色不変、cache lifetime、
-  QThreadPool終了時の安全性を満たす設計が未確定。既存のdensity cacheとstyle-only更新を優先し、任意の
-  event chunk workerやGUI thread外のQt object操作は行わない。
+- [x] **Batch Plot Exportの限定的並列化**: source準備、overlay依存、`shared_ranges` barrierを
+  coordinatorで解決した後、immutableなprepared output itemをCLIの明示指定時だけbounded thread
+  executorへ渡す実装を追加した。GUI実行と既定値は逐次のままとし、rendererのQt object操作はworkerで
+  行わない。temporary/atomic replace、cancel、plan順manifest、PNG/SVG/PDF parityを確認済み。
+  ただし、代表的なcompensation/derived/gating workload、Windows/PyInstaller、rendererの詳細な
+  reentrancy/GIL profileは未完了であり、既定並列化へ変更しない。
+- [ ] **Batch Plot Export並列化の残りの検証**: rendererのreentrancy、共有mutable state、Qt backend、
+  overlayのshared range barrier、workerごとのpeak RSS/open file数、代表FCS workload、Windows/
+  PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、GUIへ自動適用したり
+  しない。
+- [x] **density numeric workerの限定的導入**: MainWindowのdensity表示だけをlatest-winsの一worker
+  schedulerへ移し、read-only NumPy view（writable入力だけcopy）とsemantic keyでrenderer-neutralな色配列を計算する。
+  QBrush、ScatterPlotItem、brush適用はGUI threadだけで行い、stale結果を破棄する。同期exportはpending
+  densityを解決してから描画し、MainWindow/PlotWidget close時にworkerを待つ。viewport不変性、cached/
+  uncached parity、rapid replot、shutdownをfocused testで確認した。cold worker中は大きなplaceholder
+  scatterを描かず、計算完了後に一度だけデータを送る。
+- [ ] **density histogram/chunk並列化**: fixed-bin integer histogramのchunk合算、global smoothing/
+  normalization、memory budget、複数worker間の再現性は未実装。任意のevent chunk workerやGUI thread外の
+  Qt object操作は行わず、Increment 11で必要性と数学的mergeを再評価する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
   FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
   Increment 11のdecision recordで採否を決定する。
@@ -1471,11 +1484,20 @@ prepared layerではsequential 1.833 s、thread/2 1.580 s、出力bytes一致（
 compensation/derived parameterを含む代表workloadとWindows/PyInstaller確認は未完了であり、threadは
 明示指定時だけ許可し、既定値へ変更しない。
 
-- [ ] 「1 FCS = 1 worker」とは定義しない。FCSはsource/dependencyの単位であり、overlay出力は
+設計判断: 「1 FCS = 1 thread」は一般則にしない。FCSは入力sourceであり、実行単位ではない。overlayは
+複数FCSに依存し、`shared_ranges`は複数sourceの決定的reduceを必要とし、同一FCSから複数view・複数formatが
+生成される。また、source配列やdensity結果を複数出力で再利用できるため、FCSをそのまま各threadへ渡すと
+重複読込・重複変換・メモリ増加・出力順序の非決定性を招く。したがって、(1)必要sourceだけを一度prepareし、
+(2)依存関係と共有範囲を解決し、(3)source順・色・title・gateを含むimmutable prepared output itemを作り、
+(4)そのitemをbounded executorでrenderする。overlayなし・一source・共有範囲なしだけが単純な独立ケースであり、
+それ以外はdependency barrier後に並列化する。この判断は`docs/implementation/parallel-execution-and-progress.md`
+の「Why the worker unit is not simply one FCS file」と一致させる。
+
+- [x] 「1 FCS = 1 worker」とは定義しない。FCSはsource/dependencyの単位であり、overlay出力は
   複数FCSへ依存し、1 FCSから複数view/formatが生成され得る。全source準備、overlay dependency、
   `shared_ranges`を解決した後のimmutable `prepared output item`をexecutorの最小仕事単位とする。
-- [ ] overlayなし、共通軸範囲なし、必要sourceが1 sampleだけの出力について、source準備完了後は
-  sample間で独立にrender可能であることを明示し、この単純ケースからparallel parity testを追加する。
+- [x] overlayなし、共通軸範囲なし、必要sourceが1 sampleだけの出力について、source準備完了後は
+  sample間で独立にrender可能であることを確認し、sequential/threadのPNG/SVG/PDF byte parity testを追加した。
   同一sceneからPNG/SVG/PDFを作る場合は、formatごとの完全独立jobとsample/view単位bundleの両方を
   benchmarkし、prepared arrayの再利用、peak memory、cancel granularityを比較して仕事単位を決める。
 - [x] 同一sample/viewのformat bundleでは、prepared scene、normalized layer、event colorをformat間で
@@ -1484,18 +1506,18 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
 - [x] batch targetがexplicit/groupの場合は、target sampleとoverlay依存sourceだけをprepareする。
   `shared_ranges`は必要source全体をreduceし、vector preflightは各output itemの最大event数で判定する。
   無関係sampleのFCS load、transform、density準備を行わず、unknown overlay sourceのvalidationは維持する。
-- [ ] headless core rendererのreentrancyと共有mutable global stateがないことをtestしてから、
+- [x] headless core rendererのreentrancyと共有mutable global stateがないことをtestしてから、
   prepared output itemをbounded executorへ渡す。Qt/pyqtgraph/QPainter/QPixmapをworkerで
-  操作しない。
+  操作しない。実writerを複数threadから呼び出すparity testでPNG/SVG/PDFのbyte一致を確認した。
 - [ ] rendererがGILを保持するか、native処理で解放するかをprofileし、thread worker数1/2/Nで
   wall time、peak RSS、open file数を測定する。threadで再現可能なspeedupがなければ既定並列化を
   有効にせず、process backendはIncrement 11のmemory/copy/Windows spawn評価へ送る。
-- [ ] workerごとに一意なtemporary output/sidecarを所有させ、成功時だけsame-filesystem atomic
-  replaceする。collision policy対象外の既存fileを削除しない。
-- [ ] overlay shared source、`shared_ranges` barrier、複数format、strict/partial failure、
+- [x] workerごとに一意なtemporary output/sidecarを所有させ、成功時だけsame-filesystem atomic
+  replaceする。collision policy対象外の既存fileを削除しない。thread cancellationの回帰testも追加した。
+- [x] overlay shared source、`shared_ranges` barrier、複数format、strict/partial failure、
   cancellationでもmanifestのitem順、filename、scene、source order、statusをplan順に保つ。
-- [ ] sequential/parallel PNG/SVG/PDFでscene/sidecar、gate位置、軸label、dot order/colorが一致
-  し、failure/cancelが成功済み・無関係fileを破損しないtestを追加する。worker数はsample数だけで
+- [x] sequential/parallel PNG/SVG/PDFでscene/sidecar、gate位置、軸label、dot order/colorが一致
+  し、failure/cancelが成功済み・無関係fileを破損しないtestを追加した。worker数はsample数だけで
   なく、estimated prepared-scene bytes、format temporary bytes、rendererの安全上限でboundする。
 
 #### Increment 10: optional adjacent-sample prefetch

@@ -734,8 +734,9 @@ core result; no worker remains at shutdown.
 
 ### Increment 3: Off-thread density arrays and semantic cache
 
-Status (2026-07-29): the semantic cache key, viewport-invariant logical density
-grid, explicit all-event warning, and safe GUI-thread reuse path are implemented.
+Status (2026-07-30): the semantic cache key, viewport-invariant logical density
+grid, explicit all-event warning, safe GUI-thread reuse path, and an opt-in
+latest-wins numeric worker are implemented.
 For the same semantic processed-display identity, a gate/label-only replot retains
 the resolved density colors and existing `ScatterPlotItem`; it does not send a new
 per-event Qt payload.  Repeating an unchanged `PlotItem.setLogMode()` is also
@@ -752,10 +753,26 @@ the opacity update, compared with 234.8 ms cold `plot_events`. Opacity still req
 one brush per event, so this is presentation-payload evidence, not density-kernel
 speedup evidence.
 
-A first QThreadPool/NumPy density-worker attempt produced a fatal shutdown crash
-during the focused Qt tests, so it was reverted rather than shipping unsafe
-concurrency.  The remaining off-thread numeric result requires an owned-worker
-lifetime test and a GUI-thread-only final presentation step.
+Main-window density requests now use an owned one-worker `DensityColorScheduler`.
+The worker receives read-only NumPy views (copying only writable inputs) and returns only the
+renderer-neutral colour result.  `PlotWidget` applies brushes and creates or
+mutates `ScatterPlotItem` exclusively on the GUI thread.  A semantic key is used
+as the stale-result guard, so a rapid sample/axis/population change cannot apply
+an older result.  The scheduler is explicitly shut down by `MainWindow` and
+`PlotWidget`; synchronous export calls resolve any pending density result before
+painting.  While a cold worker is running, the new density scatter remains blank
+until its complete field is ready; this avoids concurrently painting a large
+placeholder array and keeps the event loop responsive.  The core estimator
+serializes overlapping density kernels because NumPy histogram/convolution
+re-entrancy varies across supported native-library builds.
+
+Focused Qt tests cover off-thread colour parity, stale-result discard, and clean
+completion.  A full Qt-file run still encounters an existing environment-specific
+segmentation fault in the unrelated sample-browser test; this is tracked as a
+distribution/CI issue and is not used as evidence of density correctness.
+An offscreen diagnostic run with 5,000 events measured about 12.6 ms for the GUI
+submission path and about 103 ms until the worker result was painted (Linux,
+NumPy 2.5.1); these values are workload/environment evidence, not CI thresholds.
 
 - Split density work into a renderer-neutral numeric result and GUI presentation.
   Numeric histogram/smoothing/normalization/color-index arrays may run in an owned worker;
@@ -777,7 +794,9 @@ lifetime test and a GUI-thread-only final presentation step.
 
 Acceptance: pan/zoom and repeated semantic requests reuse valid work; density colors do
 not change merely because the viewport changes; cache invalidates for every relevant
-upstream/display change; GUI remains responsive; cached/uncached colors are identical.
+upstream/display change; GUI remains responsive; cached/uncached colors are identical;
+stale worker results are discarded; export and shutdown never leave a density worker
+or apply Qt objects from a worker thread.
 
 ### Increment 4: Benchmark baseline and progress/cancel core types
 
@@ -955,6 +974,14 @@ After the format-bundle payload cache was added, the same comparison measured 22
 sequential and 21.21 s thread/2, with maximum RSS 269,668 KB and 483,876 KB respectively.
 The eight output hashes still matched. The small timing difference is not a stable
 speedup claim, while the memory multiplier remains material.
+
+The bounded executor now also has regression coverage for threaded cancellation: each
+worker owns a unique staged output/sidecar, successful staged files are atomically
+published, pending work is marked `not_started`, and the final manifest remains in
+plan order.  The real PNG/SVG/PDF writer parity test exercises concurrent calls into
+the headless renderer without Qt objects; matching bytes and sidecars are the
+reentrancy evidence currently available.  A full representative compensation/
+derived/gating profile and Windows/PyInstaller run remain deployment gates.
 
 - Treat the FCS file as a dependency source, not automatically as one executor job.
 - Submit only dependency-complete immutable prepared output items; begin parity testing

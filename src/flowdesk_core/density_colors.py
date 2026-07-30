@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import RLock
 
 import numpy as np
 from numpy.typing import NDArray
@@ -52,6 +53,7 @@ _PALETTE_STOPS = np.asarray((
   (31, 60, 255), (0, 200, 255), (0, 189, 69), (255, 230, 0), (237, 28, 36),
 ), dtype=np.float64)
 _DEFAULT_CONFIG = DensityColorConfig()
+_ESTIMATOR_LOCK = RLock()
 
 
 def estimate_density_colors(
@@ -65,6 +67,28 @@ def estimate_density_colors(
   config: DensityColorConfig = _DEFAULT_CONFIG,
 ) -> DensityColorResult:
   """Estimate a smooth field from full input and color separate display points."""
+  # NumPy histogram/convolution implementations used below are not guaranteed
+  # to be re-entrant across all supported BLAS/OpenMP combinations.  Density
+  # requests are latest-wins display work, so serializing this short numerical
+  # kernel avoids overlapping stale workers while keeping it off the GUI thread.
+  with _ESTIMATOR_LOCK:
+    return _estimate_density_colors(
+      input_x, input_y, query_x, query_y,
+      bounds=bounds, logical_size=logical_size, config=config,
+    )
+
+
+def _estimate_density_colors(
+  input_x: NDArray[np.float64],
+  input_y: NDArray[np.float64],
+  query_x: NDArray[np.float64],
+  query_y: NDArray[np.float64],
+  *,
+  bounds: tuple[float, float, float, float],
+  logical_size: tuple[int, int],
+  config: DensityColorConfig,
+) -> DensityColorResult:
+  """Unlocked implementation for the public density estimator."""
   x, y = _coordinates(input_x, input_y, "input")
   qx, qy = _coordinates(query_x, query_y, "query")
   x_min, x_max, y_min, y_max = bounds

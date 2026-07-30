@@ -1903,6 +1903,7 @@ class MainWindow(QMainWindow):
                 marginal_y_data=marginal_y,
                 event_colors=event_colors,
                 density_coloring=density_coloring,
+                density_async=density_coloring,
                 density_cache_context=(
                     self._processed_display_key(processed)
                     if density_coloring else None
@@ -3031,6 +3032,7 @@ class MainWindow(QMainWindow):
         """Do not destroy the window while its pipeline thread is running."""
         self._preview_scheduler.shutdown()
         self._processed_display_scheduler.shutdown()
+        self._plot_widget.shutdown_density_scheduler()
         worker = self._worker
         if worker is not None and worker.isRunning():
             worker.request_cancel()
