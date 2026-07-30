@@ -318,6 +318,41 @@ def test_main_window_uses_background_sample_load_for_large_input(
     qapp.processEvents()
 
 
+def test_main_window_prefetches_adjacent_sample_without_replotting_active(
+  qapp, tmp_path, monkeypatch,
+) -> None:
+  paths = []
+  values = []
+  for index in range(2):
+    path = tmp_path / f"prefetch-{index}.fcs"
+    events = np.array(
+      [[float(index + 1), 2.0], [float(index + 3), 4.0]], dtype=np.float64
+    )
+    write_fcs_file(path, events, ["X", "Y"])
+    paths.append(path)
+    values.append(events)
+  window = MainWindow()
+  monkeypatch.setattr(window, "_should_load_sample_async", lambda _sample: True)
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(path) for path in paths]) == 2
+    samples = window._sample_browser.samples()
+    assert window._sample_browser.select_sample(samples[0].id)
+    _wait_until(qapp, lambda: samples[0].id in window._sample_data)
+    _wait_until(qapp, lambda: window._plot_widget._rendered_x is not None)
+    original_rendered_x = window._plot_widget._rendered_x.copy()
+
+    window._start_adjacent_prefetch()
+    _wait_until(qapp, lambda: samples[1].id in window._sample_data)
+    np.testing.assert_allclose(window._plot_widget._rendered_x, original_rendered_x)
+
+    assert window._sample_browser.select_sample(samples[1].id)
+    _wait_until(qapp, lambda: np.array_equal(window._plot_widget._rendered_x, values[1][:, 0]))
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 def test_main_window_integrates_current_sample_preview_into_results_workspace(
   qapp,
   tmp_path,

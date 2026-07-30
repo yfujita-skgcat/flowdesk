@@ -1078,12 +1078,15 @@ gate.
 
 ### Increment 10: Optional adjacent-sample prefetch
 
-- Re-measure cache hit/miss, sample-switch latency, stage time, and peak memory after
-  Increments 1–3.
-- Add one bounded lower-priority adjacent-sample prefetch only if the new measurements
-  show a material benefit not already achieved by active-request scheduling/cache.
-- Active requests always supersede/cancel pending prefetch; memory-budget pressure
-  disables it.
+- Status (2026-07-30): a bounded implementation is present. After the active display
+  is ready, a 500 ms single-shot timer requests at most one adjacent unread large FCS
+  (>=4 MiB) through `SampleLoadScheduler`. A new active selection cancels pending
+  prefetch and the loaded prefetch is retained as exactly one non-active raw sample;
+  it is reused immediately if selected later. Prefetch completion never calls `replot`
+  for the active sample, and scheduler/window shutdown waits for the worker.
+- The implementation deliberately does not claim a speedup yet. Representative real-FCS
+  latency, peak-memory, cancel, and close measurements remain required; if they show no
+  material benefit or unacceptable memory growth, automatic prefetch must be disabled.
 
 Acceptance: current sample is never delayed by prefetch; cached/uncached display arrays
 and scientific preview results are identical.

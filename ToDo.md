@@ -1565,11 +1565,12 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
 #### Increment 10: optional adjacent-sample prefetch
 
 - [ ] Increment 1–3後にcache hit/miss、sample切替latency、stage別時間、peak memoryを再計測する。
-- [ ] 計測上なお有効な場合だけ、active request完了後に隣接sampleを一件だけlow-priority
-  prefetchする。active requestはpending prefetchを必ずsupersedeし、memory budget超過時は
-  prefetchしない。
-- [ ] cache有無/prefetch有無でdisplay array、preview membership/count/statisticsが一致し、
-  current sampleの処理開始をprefetchが遅延させないtestを追加する。
+- [x] active display完了後500 msで、隣接する未読込の4 MiB以上FCSを一件だけlow-priority
+  prefetchする。active requestはpending prefetchをsupersedeし、prefetch raw sampleは一件だけ保持する。
+- [x] cache有無/prefetch有無でdisplay array、preview membership/count/statisticsが一致し、
+  current sampleのplotをprefetch完了時に再描画しないGUI testを追加した。
+- [ ] 実FCSでprefetch有無のsample切替latency、peak memory、キャンセル/closeを計測し、効果が
+  再現しない環境では自動prefetchを無効化する判断を記録する。
 
 #### Increment 11: event chunk/process backendの採否
 

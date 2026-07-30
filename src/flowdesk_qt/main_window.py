@@ -339,6 +339,7 @@ def _project_bundle_path(value: str | Path) -> Path:
 
 class MainWindow(QMainWindow):
     _ASYNC_SAMPLE_LOAD_BYTES = 4 * 1024 * 1024
+    _SAMPLE_PREFETCH_DELAY_MS = 500
     _PROCESSED_DISPLAY_CACHE_MAX_ENTRIES = 4
     _PROCESSED_DISPLAY_CACHE_MAX_BYTES = 256 * 1024 * 1024
 
@@ -455,6 +456,11 @@ class MainWindow(QMainWindow):
         self._sample_load_scheduler = SampleLoadScheduler(self)
         self._sample_load_scheduler.sample_loaded.connect(self._on_sample_load_ready)
         self._sample_load_scheduler.sample_failed.connect(self._on_sample_load_failed)
+        self._sample_prefetch_timer = QTimer(self)
+        self._sample_prefetch_timer.setSingleShot(True)
+        self._sample_prefetch_timer.setInterval(self._SAMPLE_PREFETCH_DELAY_MS)
+        self._sample_prefetch_timer.timeout.connect(self._start_adjacent_prefetch)
+        self._prefetched_sample_ids: set[str] = set()
         self._pipeline_progress_timer = QTimer(self)
         self._pipeline_progress_timer.setInterval(25)
         self._pipeline_progress_timer.timeout.connect(self._drain_pipeline_progress)
@@ -1250,6 +1256,8 @@ class MainWindow(QMainWindow):
 
     def _on_sample_selected(self, sample: _SampleInfo) -> None:
         """Called when the user selects a sample in the browser."""
+        self._cancel_adjacent_prefetch()
+        self._prefetched_sample_ids.discard(sample.id)
         previous_x = self._channel_selector.x_channel()
         previous_y = self._channel_selector.y_channel()
         self._current_sample_id = sample.id
@@ -1302,6 +1310,7 @@ class MainWindow(QMainWindow):
         # Replot with current channel selection
         self._replot()
         self._update_compensation_status()
+        self._arm_adjacent_prefetch()
 
     def _on_manual_overlay_changed(self, state: dict[str, object]) -> None:
         """Refresh display layers without changing active sample or pipeline state."""
@@ -1361,6 +1370,7 @@ class MainWindow(QMainWindow):
         # Remove event data for this sample
         self._event_data.pop(sample.id, None)
         self._sample_data.pop(sample.id, None)
+        self._prefetched_sample_ids.discard(sample.id)
         self._drop_processed_display_cache_sample(sample.id)
         self._mark_results_stale(f"Removed: {sample.name}")
 
@@ -1412,6 +1422,9 @@ class MainWindow(QMainWindow):
         self._event_data[sample_id] = sample_data.events
         if self._current_sample_id == sample_id:
             self._on_sample_selected(sample)
+        else:
+            self._prefetched_sample_ids.add(sample_id)
+            self._trim_prefetched_samples(keep=sample_id)
 
     def _on_sample_load_failed(self, sample_id: str, error: object) -> None:
         """Report only a current-sample load failure; stale failures are ignored."""
@@ -1425,10 +1438,76 @@ class MainWindow(QMainWindow):
         self._plot_widget.clear_plot()
         self._update_status(f"Error loading {name}: {error}")
 
+    def _cancel_adjacent_prefetch(self) -> None:
+        """Cancel only not-yet-started prefetch work on an active request."""
+        self._sample_prefetch_timer.stop()
+        self._sample_load_scheduler.cancel_pending()
+
+    def _arm_adjacent_prefetch(self) -> None:
+        """Arm one delayed prefetch after the active display is ready."""
+        if self._current_sample_id is None:
+            return
+        samples = self._sample_browser.samples()
+        current_index = next(
+            (index for index, item in enumerate(samples)
+             if item.id == self._current_sample_id),
+            -1,
+        )
+        if current_index < 0:
+            return
+        candidates = samples[current_index + 1:] + samples[:current_index]
+        candidate = next(
+            (
+                item for item in candidates
+                if item.id not in self._sample_data
+                and item.status not in {"missing", "fingerprint mismatch"}
+                and self._should_load_sample_async(item)
+            ),
+            None,
+        )
+        if candidate is not None:
+            self._sample_prefetch_timer.start()
+
+    def _start_adjacent_prefetch(self) -> None:
+        """Start the delayed adjacent load only while the same sample is active."""
+        current_id = self._current_sample_id
+        if current_id is None:
+            return
+        samples = self._sample_browser.samples()
+        current_index = next(
+            (index for index, item in enumerate(samples) if item.id == current_id),
+            -1,
+        )
+        if current_index < 0:
+            return
+        candidates = samples[current_index + 1:] + samples[:current_index]
+        candidate = next(
+            (
+                item for item in candidates
+                if item.id not in self._sample_data
+                and item.status not in {"missing", "fingerprint mismatch"}
+                and self._should_load_sample_async(item)
+            ),
+            None,
+        )
+        if candidate is None or self._current_sample_id != current_id:
+            return
+        self._queue_sample_load(candidate)
+
+    def _trim_prefetched_samples(self, *, keep: str) -> None:
+        """Keep at most one non-active raw sample loaded by prefetch."""
+        for sample_id in tuple(self._prefetched_sample_ids):
+            if sample_id == keep or sample_id == self._current_sample_id:
+                continue
+            self._prefetched_sample_ids.discard(sample_id)
+            self._sample_data.pop(sample_id, None)
+            self._event_data.pop(sample_id, None)
+
     def _on_sample_reconnected(self, sample: _SampleInfo) -> None:
         """Invalidate prior raw view and reload an explicitly accepted reconnect."""
         self._sample_data.pop(sample.id, None)
         self._event_data.pop(sample.id, None)
+        self._prefetched_sample_ids.discard(sample.id)
         self._drop_processed_display_cache_sample(sample.id)
         self._mark_results_stale(f"Reconnected: {sample.name}")
         if self._current_sample_id == sample.id:
@@ -3140,6 +3219,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Do not destroy the window while its pipeline thread is running."""
         self._preview_scheduler.shutdown()
+        self._sample_prefetch_timer.stop()
         self._sample_load_scheduler.shutdown()
         self._processed_display_scheduler.shutdown()
         self._plot_widget.shutdown_density_scheduler()
@@ -3431,6 +3511,8 @@ class MainWindow(QMainWindow):
         self._sample_browser.clear_samples()
         self._event_data.clear()
         self._sample_data.clear()
+        self._sample_prefetch_timer.stop()
+        self._prefetched_sample_ids.clear()
         self._sample_load_scheduler.cancel_pending()
         self._clear_processed_display_cache()
         self._processed_display_scheduler.cancel_pending()

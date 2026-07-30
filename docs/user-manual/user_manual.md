@@ -58,6 +58,8 @@ Flowdesk では、次の三つの選択状態を区別する必要がある。
 
 通常の active sample は plot appearance の base dot color で描画する。Samples ペインの色見本は manual overlay 用であり、別 sample の overlay を有効にした場合だけそのレイヤーへ適用される。population に明示した表示色は base dot color より優先する。ただし overlay が一つでも有効な比較表示では、active sample を含む全 source を source ごとの単一色で描画し、population/gating の event 色は使わない。単一sampleでは Plot Presentation の `Event colors` から **Density color (single sample)** を選べる。このモードは、全有効表示イベントから局所密度をGaussian smoothingした連続的な青→シアン→緑→黄→赤で示す一方、描画する点数は `Display max points` の上限を維持する。高密度側は最大密度まで連続正規化するため、compactな集団も一律の赤ではなく内部の勾配を保つ。density色は選択populationの変換後分布に対して一度決まり、zoom、pan、plot resize、DPIでは変化しない。イベントごとのpopulation/gating色は使わない。overlayが一つでもある場合は自動的に通常色へ戻り、設定は保存されたままステータスで理由を表示する。GUIではdensityの数値計算を最新リクエストだけ受け付けるバックグラウンドworkerで行い、Qtの描画更新はGUI threadで行う。計算中は新しいdensity scatterが一時的に空になり、完了後に表示される。sampleや軸をすぐ切り替えた場合、古い結果は破棄される。PNG/SVG/PDFの同期exportでは、未完了のdensity計算を先に解決してから出力する。`Display max points = 0 (all events)` とdensity colorを組み合わせて20,000点を超える場合は、性能低下を示す非ブロッキング警告が表示される。これは表示だけの警告で、点数を自動変更しない。gate outline、membership、counts、frequency、統計は変化しない。
 
+active sampleの表示が完了すると、隣接する大容量FCS（4 MiB以上）を最大1件だけ低優先で先読みします。先読み結果は次回選択時に再利用されますが、選択変更時の保留要求は破棄され、現在表示中のplotを先読み完了だけを理由に再描画することはありません。メモリ使用量や実FCSでの効果を確認できない環境では、この機能による速度向上を前提にしないでください。
+
 ### 1.2 Results の鮮度
 
 Gate、compensation、derived parameter、analysis transform、statistic definition などを変更すると Results は `stale` になる。`Run Pipeline` または Results の `Auto` による再計算が完了するまで、古い結果を最新値として扱わない。
