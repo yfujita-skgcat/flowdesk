@@ -1021,6 +1021,12 @@ the headless renderer without Qt objects; matching bytes and sidecars are the
 reentrancy evidence currently available.  A full representative compensation/
 derived/gating profile and Windows/PyInstaller run remain deployment gates.
 
+`tools/benchmark_batch_plot.py` now records standard-library peak RSS and, on Linux,
+the open-file count after each run.  These are diagnostic fields (the RSS value is
+process-lifetime `ru_maxrss` and therefore should be compared using separate benchmark
+processes; unsupported platforms report `null`), not CI thresholds.  They make memory
+and descriptor leaks visible while the renderer backend remains opt-in.
+
 The batch manifest now records the actual execution unit (`prepared_output_item`),
 planned/submitted/completed item counts, and `peak_in_flight_items`.  These values are
 runtime telemetry, not scientific settings; they make the bounded-worker and cancellation

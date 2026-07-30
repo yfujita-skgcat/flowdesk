@@ -1537,6 +1537,9 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
 - [ ] rendererがGILを保持するか、native処理で解放するかをprofileし、thread worker数1/2/Nで
   wall time、peak RSS、open file数を測定する。threadで再現可能なspeedupがなければ既定並列化を
   有効にせず、process backendはIncrement 11のmemory/copy/Windows spawn評価へ送る。
+- [x] `tools/benchmark_batch_plot.py`へ標準ライブラリで取得できるpeak RSSと終了時open-file数の
+  診断値を追加した。OSが値を提供しない場合はnullとし、これは性能ゲートの補助データであって
+  CIの絶対thresholdではない。
 - [x] workerごとに一意なtemporary output/sidecarを所有させ、成功時だけsame-filesystem atomic
   replaceする。collision policy対象外の既存fileを削除しない。thread cancellationの回帰testも追加した。
 - [x] batch manifestのexecution provenanceへjob unit、planned/submitted/completed item数、実際の

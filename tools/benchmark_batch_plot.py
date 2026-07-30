@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 import tempfile
 import time
 from collections.abc import Mapping
@@ -39,6 +41,30 @@ class _RunResult(TypedDict):
   output_bytes: int
   status: str
   execution: Mapping[str, Any] | None
+  peak_rss_bytes: int | None
+  open_file_count_after: int | None
+
+
+def _peak_rss_bytes() -> int | None:
+  """Return process peak RSS using the platform's standard-library API."""
+  try:
+    import resource
+  except ImportError:
+    return None
+  value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+  # Linux and other Unix systems report KiB; macOS reports bytes.
+  return value * 1024 if sys.platform != "darwin" else value
+
+
+def _open_file_count() -> int | None:
+  """Return the current open-descriptor count where the OS exposes it."""
+  proc_fd = "/proc/self/fd"
+  if not os.path.isdir(proc_fd):
+    return None
+  try:
+    return len(os.listdir(proc_fd))
+  except OSError:
+    return None
 
 
 def run_batch_plot_benchmark(
@@ -141,6 +167,8 @@ def run_batch_plot_benchmark(
         "output_bytes": output_bytes,
         "status": report.status,
         "execution": report.execution_provenance,
+        "peak_rss_bytes": _peak_rss_bytes(),
+        "open_file_count_after": _open_file_count(),
       }
 
   serial = run("sequential")
