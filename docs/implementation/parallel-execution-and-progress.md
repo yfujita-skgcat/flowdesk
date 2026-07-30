@@ -1046,8 +1046,8 @@ before a later format callback, the coordinator clears all remaining bundles aft
 workers have joined. This bounds transient cache retention without changing output order
 or format parity.
 
-The normalized coordinate cache stores read-only NumPy arrays rather than expanding
-each coordinate into Python float tuples. This reduces object overhead while retaining
+The normalized coordinate and event-color caches store read-only NumPy arrays rather
+than expanding values into Python tuples. This reduces object overhead while retaining
 the same sequence contract for every writer; vector adapters still build their own
 immutable point plan when required. The retained-byte estimator uses NumPy `nbytes` and
 continues to include visibility masks and event colors. A real four-sample PNG/PDF run

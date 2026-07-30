@@ -44,7 +44,7 @@ from flowdesk_core.transforms import apply_transform, generate_transform_ticks
 from flowdesk_core.vector_scatter import preflight_vector_scatter_export
 from flowdesk_storage.project import load_project, resolve_sample_paths
 
-NormalizedPayload = tuple[LayerValues, np.ndarray, tuple[str, ...] | None]
+NormalizedPayload = tuple[LayerValues, np.ndarray, np.ndarray | None]
 
 
 def batch_plot_command(
@@ -433,7 +433,7 @@ def batch_plot_command(
       sources = []
       layers: dict[str, LayerValues] = {}
       visible_masks: dict[str, np.ndarray] = {}
-      visible_event_colors: dict[str, tuple[str, ...]] = {}
+      visible_event_colors: dict[str, np.ndarray] = {}
       for order, source_id in enumerate(source_ids):
         source_sample = sample_by_id[source_id]
         source_metadata = layer_metadata[source_id]
@@ -461,10 +461,14 @@ def batch_plot_command(
           normalized_x_visible.setflags(write=False)
           normalized_y_visible.setflags(write=False)
           colors = layer_event_colors.get(source_id)
+          normalized_colors = None
+          if colors is not None:
+            normalized_colors = np.asarray(colors[visible])
+            normalized_colors.setflags(write=False)
           normalized_payload = cast(NormalizedPayload, (
             (normalized_x_visible, normalized_y_visible),
             visible,
-            None if colors is None else tuple(str(color) for color in colors[visible]),
+            normalized_colors,
           ))
           with render_cache_lock:
             normalized_layer_cache[normalized_key] = normalized_payload
@@ -517,9 +521,9 @@ def batch_plot_command(
           full_x, full_y, full_x[visible], full_y[visible],
           bounds=density_bounds, logical_size=(512, 512),
         )
-        visible_event_colors = {
-          active_id: tuple(density_result.colors)
-        }
+        density_colors = np.asarray(density_result.colors)
+        density_colors.setflags(write=False)
+        visible_event_colors = {active_id: density_colors}
       elif len(source_ids) > 1:
         # Overlay comparisons use one color per source.  Population/gate display
         # colors must not leak into the active layer while overlays are present.
@@ -716,7 +720,7 @@ def _write_render_payload(
   path: Path,
   prepared: PreparedPlotExport,
   layers: dict[str, LayerValues],
-  event_colors: dict[str, tuple[str, ...]],
+  event_colors: Mapping[str, Any],
   spec: BatchPlotExportSpec,
   *,
   vector_cache: dict[str, VectorRenderCache] | None = None,
@@ -862,7 +866,9 @@ def _estimate_normalized_layer_bytes(
     int(getattr(values, "nbytes", len(values) * 8))
     for values in points
   )
-  color_bytes = 0 if colors is None else len(colors) * 16
+  color_bytes = 0 if colors is None else int(
+    getattr(colors, "nbytes", len(colors) * 16)
+  )
   return int(point_bytes + visible.nbytes + color_bytes)
 
 
