@@ -1039,6 +1039,13 @@ that dependency list. Unknown source validation remains in the planning layer, a
 the graph is display-only state: it does not alter population membership or source
 colors. A regression test covers order, duplicate removal, and hidden-source exclusion.
 
+Prepared render bundles are item-scoped. Successful PNG/JPEG/SVG/PDF formats reuse the
+same scene, normalized layers, event colors, and vector cache until the final format;
+any writer failure releases that bundle immediately. If cooperative cancellation stops
+before a later format callback, the coordinator clears all remaining bundles after its
+workers have joined. This bounds transient cache retention without changing output order
+or format parity.
+
 When the same source appears in multiple target scenes, the CLI reuses its normalized
 coordinates, visibility mask, and event-color order keyed by `(source_id, actual_bounds)`.
 This applies to both `shared_ranges` and `current_view`: targets with different persisted

@@ -377,7 +377,13 @@ def batch_plot_command(
         default=0,
       )
 
-    def render(
+    def discard_render_cache(sample_id: str) -> None:
+      """Release an item cache after a failed or cancelled format."""
+      with render_cache_lock:
+        prepared_render_cache.pop(sample_id, None)
+        rendered_format_counts.pop(sample_id, None)
+
+    def render_one(
       sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
     ) -> None:
       nonlocal normalized_cache_bytes
@@ -647,23 +653,42 @@ def batch_plot_command(
         vector_cache=writer_cache,
       )
       if len(spec.formats) <= 1:
-        with render_cache_lock:
-          prepared_render_cache.pop(sample_id, None)
-          rendered_format_counts.pop(sample_id, None)
+        discard_render_cache(sample_id)
 
-    batch_report = run_batch_plot_export(
-      spec, samples, output_dir, render, annotations=annotations,
-      preflight=preflight_holder,
-      preparation_provenance=preparation_provenance_holder,
-      prepare=prepare_sources,
-      estimate_render_bytes=estimate_render_bytes,
-      execution_control=execution_control,
-      group_members=group_members,
-      overlay_sample_ids={
-        sample_id: overlay_ids_by_sample[sample_id]
-        for sample_id in sample_by_id
-      },
-    )
+    def render(
+      sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
+    ) -> None:
+      sample_id = str(sample["id"])
+      try:
+        render_one(sample, path, _spec)
+      except BaseException:
+        # A failed first format otherwise leaves the prepared scene, normalized
+        # tuples, event colors, and hybrid raster alive until the whole batch
+        # ends.  Release it immediately; successful format bundles still retain
+        # the cache until their final format completes.
+        discard_render_cache(sample_id)
+        raise
+
+    try:
+      batch_report = run_batch_plot_export(
+        spec, samples, output_dir, render, annotations=annotations,
+        preflight=preflight_holder,
+        preparation_provenance=preparation_provenance_holder,
+        prepare=prepare_sources,
+        estimate_render_bytes=estimate_render_bytes,
+        execution_control=execution_control,
+        group_members=group_members,
+        overlay_sample_ids={
+          sample_id: overlay_ids_by_sample[sample_id]
+          for sample_id in sample_by_id
+        },
+      )
+    finally:
+      # Cancellation can stop before the next format callback, so clear any
+      # remaining bundle caches after the coordinator has joined all workers.
+      with render_cache_lock:
+        prepared_render_cache.clear()
+        rendered_format_counts.clear()
     print(f"Batch plot export {batch_report.status}: {len(batch_report.items)} samples")
     if batch_report.execution_provenance:
       print(

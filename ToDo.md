@@ -1566,6 +1566,9 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [x] 同一sample/viewのformat bundleでは、prepared scene、normalized layer、event colorをformat間で
   再利用し、最後のformat後に短命cacheを解放する。2 formatでscene preparationが一度だけになるtestと
   実writerのbyte parityを追加した。実FCS再測定後もthreadのspeedupは安定せず、既定値は逐次とする。
+- [x] format失敗・途中cancelでもitem-scopedのprepared scene、normalized layer、event color、hybrid
+  rasterを即時解放する。成功bundleのformat間再利用は維持し、coordinator終了時には残存cacheを全解放して
+  長いbatchで失敗itemがメモリを蓄積しない。
 - [x] 同一sample/viewのSVG/PDFでは、compact scatter batchとhybrid scatter rasterを一度だけ構築し、
   format間でimmutableなvector render cacheを再利用する。full-vectorの通常経路は不要なcache構築を
   行わず、event order/color、point plan、sidecar metadata、出力bytesを変更しない回帰testを追加した。
