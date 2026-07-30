@@ -11,7 +11,9 @@ from flowdesk_cli.batch_plot import (
   _build_overlay_dependency_graph,
   _estimate_batch_render_bytes,
   _gate_overlays,
+  _layer_bounds,
   _shared_layer_bounds,
+  _shared_layer_bounds_from_ranges,
   _write_render_payload,
   batch_plot_command,
   write_plot_svg,
@@ -109,6 +111,8 @@ def test_shared_layer_bounds_reduces_extrema_without_array_concatenation() -> No
     "s2": (np.array([-3.0, 4.0]), np.array([0.5, 8.0])),
   }
   assert _shared_layer_bounds(layers) == (-3.0, 4.0, 0.5, 8.0)
+  ranges = {source_id: _layer_bounds(*values) for source_id, values in layers.items()}
+  assert _shared_layer_bounds_from_ranges(ranges) == (-3.0, 4.0, 0.5, 8.0)
 
 
 def test_batch_plot_uses_canonical_derived_display_data(

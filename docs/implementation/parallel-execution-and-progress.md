@@ -1079,6 +1079,11 @@ and tick policy. `current_view` targets with different ranges receive independen
 tuples, while identical ranges avoid repeated transform tick generation. The cached scene
 values are renderer-neutral and are released with the export operation.
 
+Source preparation also records finite X/Y extrema once per required source. `current_view`
+uses the active source's recorded range, `shared_ranges` reduces the recorded ranges, and
+density coloring uses the same bounds. This avoids rescanning NumPy arrays for every target
+without concatenating events or changing empty-source failure behavior.
+
 The export coordinator also precomputes immutable sample lookup, manual overlay-color,
 and overlay-style maps. Render callbacks reuse these maps instead of rebuilding a sample
 dictionary or linearly scanning persisted overlay definitions for every source layer.

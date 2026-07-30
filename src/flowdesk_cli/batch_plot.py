@@ -131,6 +131,9 @@ def batch_plot_command(
       sample_id for sample_id in required_source_ids if sample_id in sample_by_id
     }
     prepared_layers: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    prepared_layer_bounds: dict[
+      str, tuple[tuple[float, float], tuple[float, float]]
+    ] = {}
     layer_metadata: dict[str, dict[str, Any]] = {}
     layer_event_colors: dict[str, np.ndarray] = {}
     shared_bounds: tuple[float, float, float, float] | None = None
@@ -324,11 +327,12 @@ def batch_plot_command(
       # Merge in project/source order regardless of worker completion order.
       for candidate_id, x_values, y_values, metadata in prepared_results:
         prepared_layers[candidate_id] = (x_values, y_values)
+        prepared_layer_bounds[candidate_id] = _layer_bounds(x_values, y_values)
         layer_metadata[candidate_id] = metadata
         if metadata.get("event_colors") is not None:
           layer_event_colors[candidate_id] = metadata["event_colors"]
       if spec.layout_policy == "shared_ranges":
-        shared_bounds = _shared_layer_bounds(prepared_layers)
+        shared_bounds = _shared_layer_bounds_from_ranges(prepared_layer_bounds)
       max_rendered_event_count = max(
         (
           sum(
@@ -414,8 +418,7 @@ def batch_plot_command(
           persisted_bounds
           if spec.layout_policy == "current_view" and persisted_bounds is not None
           else (
-            (float(np.min(x_values)), float(np.max(x_values))),
-            (float(np.min(y_values)), float(np.max(y_values))),
+            prepared_layer_bounds[sample_id]
           )
         )
       )
@@ -501,9 +504,10 @@ def batch_plot_command(
       if density_coloring:
         active_id = source_ids[0]
         full_x, full_y = prepared_layers[active_id]
+        density_x_bounds, density_y_bounds = prepared_layer_bounds[active_id]
         density_bounds = (
-          float(np.min(full_x)), float(np.max(full_x)),
-          float(np.min(full_y)), float(np.max(full_y)),
+          density_x_bounds[0], density_x_bounds[1],
+          density_y_bounds[0], density_y_bounds[1],
         )
         visible = visible_masks[active_id]
         density_result = estimate_density_colors(
@@ -885,6 +889,32 @@ def _shared_layer_bounds(
     max(float(np.max(x_values)) for x_values, _ in nonempty),
     min(float(np.min(y_values)) for _, y_values in nonempty),
     max(float(np.max(y_values)) for _, y_values in nonempty),
+  )
+
+
+def _shared_layer_bounds_from_ranges(
+  layer_bounds: Mapping[str, tuple[tuple[float, float], tuple[float, float]]],
+) -> tuple[float, float, float, float]:
+  """Reduce already computed source extrema without rescanning event arrays."""
+  if not layer_bounds:
+    raise ValueError("shared ranges require at least one prepared source")
+  return (
+    min(bounds[0][0] for bounds in layer_bounds.values()),
+    max(bounds[0][1] for bounds in layer_bounds.values()),
+    min(bounds[1][0] for bounds in layer_bounds.values()),
+    max(bounds[1][1] for bounds in layer_bounds.values()),
+  )
+
+
+def _layer_bounds(
+  x_values: np.ndarray, y_values: np.ndarray,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+  """Return one prepared layer's extrema without retaining event copies."""
+  if not x_values.size or not y_values.size:
+    raise ValueError("plot requires finite events")
+  return (
+    (float(np.min(x_values)), float(np.max(x_values))),
+    (float(np.min(y_values)), float(np.max(y_values))),
   )
 
 

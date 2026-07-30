@@ -1568,6 +1568,9 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
   実writerのbyte parityを追加した。実FCS再測定後もthreadのspeedupは安定せず、既定値は逐次とする。
 - [x] overlay source styleをtarget/sourceごとに再走査せず、export開始時に作成したsource-ID indexを
   scene構築で再利用する。first-match style precedenceと出力parityを維持する。
+- [x] source preparation時に有限なX/Y extremaを一度だけ計算し、`current_view`のactive range、
+  `shared_ranges`のreduce、density boundsで再利用する。空sourceは従来どおりexportを失敗させ、
+  normalized event arraysやPNG/SVG/PDFのbytesを変更しない。
 - [x] format失敗・途中cancelでもitem-scopedのprepared scene、normalized layer、event color、hybrid
   rasterを即時解放する。成功bundleのformat間再利用は維持し、coordinator終了時には残存cacheを全解放して
   長いbatchで失敗itemがメモリを蓄積しない。
