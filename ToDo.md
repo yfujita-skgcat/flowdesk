@@ -1580,6 +1580,7 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
   format間でimmutableなvector render cacheを再利用する。単一色のfull-vectorでも同じ正規化座標
   planをformat間で再利用し、event colorがある場合は描画順を変えないためcache groupingを行わない。
   event order/color、point plan、sidecar metadata、出力bytesを変更しない回帰testを追加した。
+  full-vector cacheは複数format bundleでのみ構築し、単一formatでは追加working setを作らない。
   100,000点のoffscreen診断ではSVG/PDF bundleが0.452 sから0.442 sとなったが、差は小さいため
   worker数やvector modeの既定値を変更する根拠にはしない。
 - [x] batch targetがexplicit/groupの場合は、target sampleとoverlay依存sourceだけをprepareする。

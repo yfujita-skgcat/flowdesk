@@ -12,11 +12,14 @@ from flowdesk_cli.batch_plot import (
   _estimate_batch_render_bytes,
   _gate_overlays,
   _shared_layer_bounds,
+  _write_render_payload,
   batch_plot_command,
   write_plot_svg,
 )
 from flowdesk_core.execution_control import ExecutionOptions
 from flowdesk_core.models import BatchPlotExportSpec, ChannelSpec
+from flowdesk_core.plot_export import VectorRenderCache, prepare_plot_export
+from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import save_project
@@ -35,6 +38,45 @@ def test_overlay_dependency_graph_is_deterministic_and_deduplicated() -> None:
     ("s3", "s4", "s2"),
   )
   assert graph == {"s1": ("s2", "s3", "s4"), "s2": ("s2", "s3", "s4")}
+
+
+def test_full_vector_cache_is_only_built_for_multi_format_bundle(
+  tmp_path: Path, monkeypatch
+) -> None:
+  prepared = prepare_plot_export(
+    "view", "scatter",
+    ({
+      "source_id": "s1", "sample_id": "s1", "population_id": "all",
+      "display_name": "S1", "visible": True,
+    },),
+    (OverlaySourceResolution("s1", "compatible"),),
+  )
+  layers = {"s1": ((0.1, 0.2), (0.3, 0.4))}
+  calls = 0
+  original = batch_plot_module.prepare_vector_render_cache
+
+  def counted(*args, **kwargs):
+    nonlocal calls
+    calls += 1
+    return original(*args, **kwargs)
+
+  monkeypatch.setattr(batch_plot_module, "prepare_vector_render_cache", counted)
+  single = BatchPlotExportSpec(
+    id="single", name="Single", formats=("svg",), vector_scatter_mode="full_vector",
+  )
+  _write_render_payload(
+    tmp_path / "single.svg", prepared, layers, {}, single, vector_cache={},
+  )
+  assert calls == 0
+
+  multi = BatchPlotExportSpec(
+    id="multi", name="Multi", formats=("svg", "pdf"), vector_scatter_mode="full_vector",
+  )
+  cache: dict[str, VectorRenderCache] = {}
+  _write_render_payload(
+    tmp_path / "multi.svg", prepared, layers, {}, multi, vector_cache=cache,
+  )
+  assert calls == 1
 
 
 def test_batch_memory_estimate_includes_overlay_and_hybrid_working_set() -> None:

@@ -728,6 +728,10 @@ def _write_render_payload(
     and vector_cache is not None
     and spec.vector_scatter_mode in {"full_vector", "compact_vector", "hybrid_raster"}
     and not event_colors
+    and (
+      spec.vector_scatter_mode != "full_vector"
+      or len(spec.formats) > 1
+    )
   ):
     cache = vector_cache.get("scatter")
     if cache is None:

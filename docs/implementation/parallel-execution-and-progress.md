@@ -1121,8 +1121,10 @@ output. In the latter case it removes repeated coordinate conversion without cha
 event order. Event-coloured full-vector/compact output does not use coordinate grouping,
 because regrouping points could change translucent overlap order. Writers still receive
 the same ordered layer input and produce the same bytes; this optimization only removes
-repeated format-adapter work. The cache is sample-scoped and is released with the
-existing format-bundle cache.
+repeated format-adapter work. A full-vector cache is constructed only when the bundle
+contains more than one output format; a single-format full-vector export avoids the
+additional working set. The cache is sample-scoped and is released with the existing
+format-bundle cache.
 
 An offscreen diagnostic with 100,000 single-colour points and one SVG/PDF bundle
 measured 0.452 s without the full-vector cache and 0.442 s with it in the current
