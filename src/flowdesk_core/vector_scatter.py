@@ -257,17 +257,20 @@ def compact_scatter_batches(
   result: list[CompactScatterBatch] = []
   for layer in layers:
     cell_size = max(layer.marker_size, 1e-9)
+    scale_x = plot_width / cell_size
+    scale_y = plot_height / cell_size
+    floor = math.floor
     grouped: dict[tuple[int, int, int], list[Point]] = {}
     cell_counts: dict[tuple[int, int], int] = {}
+    count_get = cell_counts.get
+    group_setdefault = grouped.setdefault
     for point in layer.points:
-      cell = (
-        math.floor(point[0] * plot_width / cell_size),
-        math.floor(point[1] * plot_height / cell_size),
-      )
-      slot = cell_counts.get(cell, 0)
+      cell_x = floor(point[0] * scale_x)
+      cell_y = floor(point[1] * scale_y)
+      cell = (cell_x, cell_y)
+      slot = count_get(cell, 0)
       cell_counts[cell] = slot + 1
-      key = (cell[0] % 3, cell[1] % 3, slot)
-      grouped.setdefault(key, []).append(point)
+      group_setdefault((cell_x % 3, cell_y % 3, slot), []).append(point)
     for key in sorted(grouped):
       points = grouped[key]
       for chunk_index in range(0, len(points), COMPACT_VECTOR_CHUNK_POINTS):
@@ -280,7 +283,11 @@ def compact_scatter_batches(
           marker_shape=layer.marker_shape,
           marker_size=layer.marker_size,
           z_index=layer.z_index,
-          batch_key=(key[0], key[1], key[2] * COMPACT_VECTOR_CHUNK_POINTS + chunk_index // COMPACT_VECTOR_CHUNK_POINTS),
+          batch_key=(
+            key[0], key[1],
+            key[2] * COMPACT_VECTOR_CHUNK_POINTS
+            + chunk_index // COMPACT_VECTOR_CHUNK_POINTS,
+          ),
         ))
   return tuple(result)
 

@@ -1498,6 +1498,7 @@ def _hybrid_scatter_raster(
   pixels = bytearray(raster_width * raster_height * 4)
   style_by_id = {style.source_id: style for style in selected.source_styles}
   point_records: list[dict[str, Any]] = []
+  rgb_cache: dict[str, tuple[int, int, int]] = {}
 
   def blend(index: int, color: tuple[int, int, int], alpha: float) -> None:
     src_a = max(0.0, min(1.0, alpha))
@@ -1525,7 +1526,10 @@ def _hybrid_scatter_raster(
       point_color_text = (
         color_text if colors is None or index >= len(colors) else colors[index]
       )
-      point_color = _rgb(point_color_text)
+      point_color = rgb_cache.get(point_color_text)
+      if point_color is None:
+        point_color = _rgb(point_color_text)
+        rgb_cache[point_color_text] = point_color
       x = float(x_value) * (raster_width - 1)
       y = (1.0 - float(y_value)) * (raster_height - 1)
       point_records.append({

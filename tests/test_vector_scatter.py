@@ -176,6 +176,21 @@ def test_compact_batches_are_chunked_at_the_documented_limit():
   assert sum(len(batch.points) for batch in batches) == len(points)
 
 
+def test_compact_large_layer_grouping_is_deterministic():
+  points = tuple(
+    ((index % 37) / 36.0, ((index * 11) % 41) / 40.0)
+    for index in range(5000)
+  )
+  layer = VectorScatterLayer("large", points, marker_size=1.5)
+  first = compact_scatter_batches((layer,), plot_width=720, plot_height=490)
+  second = compact_scatter_batches((layer,), plot_width=720, plot_height=490)
+  assert first == second
+  assert sum(len(batch.points) for batch in first) == len(points)
+  assert [batch.batch_key for batch in first] == sorted(
+    batch.batch_key for batch in first
+  )
+
+
 def test_benchmark_fixture_and_small_baseline_are_deterministic():
   first, first_hash = deterministic_scatter_fixture(1000, profile="mixed")
   second, second_hash = deterministic_scatter_fixture(1000, profile="mixed")

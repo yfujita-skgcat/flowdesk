@@ -263,6 +263,12 @@ The chunk constant is an implementation limit, not initially a user setting.
 Changing it must change the renderer algorithm version and be covered by
 reproducibility tests.
 
+The implementation keeps the grouping hot path allocation-light: per-layer
+scale factors, floor function, dictionary lookup, and group insertion method
+are bound once before the event loop. This is a performance-only optimization;
+the cell coordinates, occurrence slots, sorted batch keys, point order, and
+chunk boundaries must remain identical to the reference algorithm.
+
 ### Exact duplicate optimization
 
 An optional later optimization may replace `n` markers with identical center,

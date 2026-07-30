@@ -773,6 +773,8 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
   dense/sparse/duplicate/multi-source、path/node削減をtestする。単純な全circle unionは禁止する。
   3×3 residue spatial hashと同一cell slotで非重複compound batchを作り、SVG/PDFのpathへ
   出力する実装と、重複点・決定性・path削減のtestを追加した。
+  大規模layerのhot pathではcellスケールとfloor関数、辞書lookupを一度だけ束縛して
+  per-eventの計算を削減した。これはbatch順序・slot・compound pathを変更しない。
 - [x] Increment 15: `hybrid_raster`を実装する。既存の決定的display pointsだけを
   canonical source-over順で透明lossless scatter layerへ描画し、SVGは埋め込みPNG、
   PDFはsoft mask付きImage XObjectとしてplot rectangleへ配置する。grid/axes/ticks/text/
