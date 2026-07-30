@@ -152,6 +152,7 @@ def test_hybrid_scatter_cache_is_reused_across_svg_and_pdf(tmp_path, monkeypatch
     width=spec.width, height=spec.height, render_cache=cache,
   )
   assert calls == 1
+  assert cache.layers == ()
   assert (tmp_path / "plot.svg").stat().st_size > 0
   assert (tmp_path / "plot.pdf").stat().st_size > 0
 

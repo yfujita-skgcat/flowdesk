@@ -1581,6 +1581,7 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
   planをformat間で再利用し、event colorがある場合は描画順を変えないためcache groupingを行わない。
   event order/color、point plan、sidecar metadata、出力bytesを変更しない回帰testを追加した。
   full-vector cacheは複数format bundleでのみ構築し、単一formatでは追加working setを作らない。
+  compact/hybrid cacheではcompact batchまたはhybrid rasterと重複するlayer planを保持しない。
   100,000点のoffscreen診断ではSVG/PDF bundleが0.452 sから0.442 sとなったが、差は小さいため
   worker数やvector modeの既定値を変更する根拠にはしない。
 - [x] batch targetがexplicit/groupの場合は、target sampleとoverlay依存sourceだけをprepareする。

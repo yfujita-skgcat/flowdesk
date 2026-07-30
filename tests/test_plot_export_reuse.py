@@ -294,6 +294,26 @@ def test_compact_vector_pdf_uses_compound_paths_and_alpha_resources(tmp_path) ->
   assert b"/Subtype /Image" not in data
 
 
+def test_compact_vector_cache_does_not_retain_duplicate_layer_plan() -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),)
+  )
+  options = BatchPlotExportSpec(
+    id="compact-cache", name="Compact cache", formats=("svg", "pdf"),
+    vector_scatter_mode="compact_vector",
+  )
+  cache = prepare_vector_render_cache(
+    prepared, prepared.resolved_presentation.presentation,
+    {"s1": ((0.1, 0.2), (0.3, 0.4))}, options=options,
+  )
+  assert cache.layers == ()
+  assert cache.compact_batches
+
+
 def test_hybrid_svg_contains_scatter_only_lossless_png_and_provenance(tmp_path) -> None:
   source = ({
     "source_id": "s1", "sample_id": "sample-1", "population_id": "all",

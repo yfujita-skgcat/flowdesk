@@ -112,9 +112,9 @@ class VectorRenderCache:
   SVG and PDF use the same normalized layer points and compact batches. The
   optional hybrid raster bytes are also shared so a multi-format export does
   not rasterize the same scatter twice. This cache is presentation-only and
-  never participates in analytical results.  ``layers`` may also be reused by
-  full-vector writers when event colours are absent; this avoids converting
-  the same normalized coordinates once per output format.
+  never participates in analytical results. ``layers`` is retained only for
+  full-vector writers when event colours are absent; compact batches and hybrid
+  raster payloads already own their needed points.
   """
 
   layers: tuple[VectorScatterLayer, ...]
@@ -1002,15 +1002,18 @@ def prepare_vector_render_cache(
   _left, _top, plot_width, plot_height = _raster_layout(
     width, height, prepared, selected, options,
   )
-  vector_layers = _vector_layers(prepared, selected, layers)
+  vector_layers: tuple[VectorScatterLayer, ...] = ()
+  if options is None or options.vector_scatter_mode == "full_vector":
+    vector_layers = _vector_layers(prepared, selected, layers)
   compact_batches: tuple[CompactScatterBatch, ...] = ()
   if (
     options is not None
     and options.vector_scatter_mode == "compact_vector"
     and not event_colors
   ):
+    compact_source_layers = _vector_layers(prepared, selected, layers)
     compact_batches = compact_scatter_batches(
-      vector_layers, plot_width=plot_width, plot_height=plot_height,
+      compact_source_layers, plot_width=plot_width, plot_height=plot_height,
     )
   hybrid_info: Mapping[str, Any] | None = None
   if options is not None and options.vector_scatter_mode == "hybrid_raster":

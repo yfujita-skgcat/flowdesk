@@ -1126,6 +1126,12 @@ contains more than one output format; a single-format full-vector export avoids 
 additional working set. The cache is sample-scoped and is released with the existing
 format-bundle cache.
 
+For compact-vector output, the cache retains only the compound batches after they are
+constructed; for hybrid-raster output it retains only the raster/provenance payload.
+The temporary `VectorScatterLayer` tuple used to build those payloads is released before
+the format bundle is returned. This avoids a second copy of normalized points while
+preserving the original layer arrays, event order, and event-colour path.
+
 An offscreen diagnostic with 100,000 single-colour points and one SVG/PDF bundle
 measured 0.452 s without the full-vector cache and 0.442 s with it in the current
 environment. This small difference is evidence of a bounded adapter-cost reduction,
