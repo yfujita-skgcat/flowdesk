@@ -1468,6 +1468,25 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   opt-inのままとし、Windows/PyInstallerでworker終了、Ctrl-C、例外伝播、ログとresolved provenanceを
   確認する。
 
+#### Batch Export のFCS単位並列化に関する明示的な判断（2026-07-30）
+
+FCSファイル間のイベント配列そのものは独立しているため、依存関係を解決した後の
+prepared `(sample, view, format bundle)` は並列化候補である。ただし「FCSごとにスレッドを
+作るだけ」にはしない。target/group解決、overlay source、`shared_ranges`、補正・derived・
+transform、軸範囲、density normalization、vector preflightは複数出力で共有されるため、
+これらを各workerで重複実行すると結果の基準、メモリ使用量、処理時間が悪化する。最終出力先、
+Qt/pyqtgraph object、共有mutable cacheもworker間で同時に触れてはならない。
+
+- [x] 依存関係と共有範囲をcoordinatorで逐次確定し、immutable prepared itemを作ってから、
+  CLIで明示指定された場合だけbounded thread executorへ渡す。
+- [x] 同一sampleのPNG/SVG/PDFはprepared sceneとcolour mappingを再利用し、FCS読込・変換を
+  formatごとに繰り返さない。output pathのstaged/atomic replaceとmanifest順序はcoordinatorが管理する。
+- [ ] representative FCSで、逐次/並列の科学的結果・writer parity、peak RSS、open file数、
+  renderer reentrancy、Windows/PyInstaller shutdownを検証する。speedupが再現せず、または
+  memory増加が許容できない場合は逐次を既定値として維持する。
+- [ ] GUIのactive sample切替へこのbatch workerを流用しない。GUIは選択sampleだけをlatest-winsで
+  処理し、Qt/pyqtgraph mutationはGUI threadに限定する。
+
 #### Increment 9: bounded Batch Export parallel rendering
 
 実装状況（2026-07-30）: 初期bounded executorを実装した。source準備とoverlay/shared range解決は

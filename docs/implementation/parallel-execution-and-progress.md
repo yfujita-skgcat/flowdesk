@@ -898,6 +898,30 @@ optional memory budget, conservative worst-sample in-flight bytes, and declared
 OpenMP/BLAS/NumExpr inner-thread environment settings; it never enables all CPUs by
 default.  The full resolution is recorded in `ExecutionReport.execution_provenance`.
 
+### Decision record: why independent FCS files do not imply one-thread-per-file
+
+Batch export has a useful independence boundary, but it is narrower than the input-file
+boundary. After target/group selection, overlay-source resolution, shared-range reduction,
+compensation/derived/transform preparation, density normalization, and vector preflight
+have completed, an immutable prepared `(sample, view, format bundle)` can be rendered
+independently. This is the boundary used by the opt-in bounded thread backend.
+
+Do not submit one unrestricted task per FCS file. Doing so would duplicate shared
+preparation, increase peak event-array and temporary-array memory, and may concurrently
+touch non-reentrant renderer state, Qt/pyqtgraph objects, shared caches, or final output
+paths. The coordinator therefore owns dependency planning, shared reductions, cache
+lifetime, deterministic manifest order, staged/atomic replacement, cancellation, and
+failure aggregation. Workers receive only immutable prepared data and return isolated
+format bytes/metadata. A format bundle reuses its prepared scene and colour mapping so
+PNG, SVG, and PDF do not reload or transform the same FCS independently.
+
+This backend remains CLI opt-in and GUI export remains sequential until representative
+compensation/derived/gating FCS measurements demonstrate acceptable wall time, peak RSS,
+open-file count, writer reentrancy, and Windows/PyInstaller shutdown behavior. The
+backend must never be reused for active-sample GUI switching: that request concerns one
+selected sample and has separate latest-wins, Qt-thread-affinity, and density-cache
+constraints.
+
 Workers keep the shared cancellation token but suppress progress callbacks.  The
 coordinator submits at most the resolved worker count, publishes monotonic queued/completed
 events, cancels unstarted futures on an error/cancellation path, and waits for active
