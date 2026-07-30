@@ -1583,17 +1583,15 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
 
 #### Increment 11: event chunk/process backendの採否
 
-- [ ] Increment 3後のdensity profileとIncrement 8後のthread/GIL profileをreviewし、
-  event chunkまたはprocess backendが必要か記録する。CPU coreがあるという理由だけで追加
-  しない。
-- [ ] densityをchunk化する場合は固定binのinteger histogramをchunkごとに加算し、全chunkを
-  sumした後にglobal smoothingとglobal normalizationを各一回だけ行う。chunk-localな
-  smoothing/normalization/colormap scalingは禁止する。
-- [ ] 実装する場合はWindows `spawn`対応のtop-level worker、file-backedまたは明示shared-memory
-  input、aggregate memory budget、structured error/cancel、PyInstaller Linux/macOS/Windows
-  cleanupを先に設計・testする。巨大event arrayをtaskごとにpickleする実装は禁止する。
-- [ ] 上記条件を満たさない、または有意なspeedupがない場合はsequential/threadを維持し、
-  benchmark結論と制限を文書化してincrementを完了する。
+- [x] Increment 3後のdensity profileとIncrement 8後のthread/render profileをreviewし、
+  event chunkまたはprocess backendの必要性を記録した。CPU core数だけでは追加しない。
+- [x] densityのfixed-bin chunk実装は、global sum・smoothing・normalization parityを検証できる
+  profileとmemory budgetが揃うまで追加しない。現行の一worker renderer-neutral estimatorを維持する。
+- [x] Windows `spawn`、shared-memory、aggregate memory、cancel/cleanupのprocess設計条件を確認し、
+  巨大event arrayをpickleするbackendは実装しない判断を記録した。
+- [x] 2026-07-30のBatch Export benchmark（8×5,000）はthread/2が0.976倍、16×10,000は0.866倍で、
+  peak RSSもthreadで約1.4倍だった。再現可能なspeedupがないため、既定sequentialとCLI opt-in threadを
+  維持し、event chunk/process backendを本incrementでは実装しない。
 
 #### 完了条件
 

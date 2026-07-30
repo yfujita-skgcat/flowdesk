@@ -1144,13 +1144,20 @@ and scientific preview results are identical.
 
 ### Increment 11: Event-chunk/process backend decision
 
-- Review the post-Increment-3 density profile and post-Increment-8 thread/GIL profile.
-- Implement fixed-bin density accumulation chunks only with global sum, smoothing, and
-  normalization parity; do not introduce general arbitrary event chunking.
-- Implement a Windows-spawn-safe, memory-bounded process path only if the process decision
-  gate is met.
-- Otherwise record the benchmark conclusion and close the increment without production
-  chunk/process code.
+- Status (2026-07-30): decision complete; no production event-chunk or process backend
+  was added. Density remains a one-worker renderer-neutral estimator because its global
+  histogram/smoothing/normalization contract has not demonstrated a chunk speedup or
+  memory advantage. Arbitrary Python event chunks remain prohibited.
+- The bounded Batch Export diagnostic was repeated at 8 samples × 5,000 events and
+  16 samples × 10,000 events with PNG/SVG/PDF compact-vector output. Thread/2 measured
+  speed ratios of 0.976 and 0.866 (values below 1 are slower than sequential); thread
+  peak RSS was about 1.42× the sequential run in the larger profile. Output bytes and
+  manifest status remained identical. This is evidence against enabling more workers
+  by default, not a claim about every renderer or workload.
+- A process backend is deferred: Windows `spawn`, event-array transfer/shared-memory,
+  memory budgeting, structured cancellation, and PyInstaller cleanup would add a large
+  lifecycle surface without measured benefit. The existing CLI opt-in bounded thread
+  backend and sequential default remain the supported choices.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and
