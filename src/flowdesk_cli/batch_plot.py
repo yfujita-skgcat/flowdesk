@@ -494,14 +494,7 @@ def batch_plot_command(
           "display_name": str(source_sample.get("name", source_id)),
           "x_parameter_id": source_metadata["x_id"],
           "y_parameter_id": source_metadata["y_id"], "visible": True, "order": order,
-          "style": next(
-            (
-              dict(item.get("style", {}))
-              for item in view.get("overlay_sources", [])
-              if str(item.get("sample_id")) == source_id
-            ),
-            {},
-          ),
+          "style": dict(overlay_style_by_id.get(source_id, {})),
         })
       presentation = dict(presentation_template)
       density_coloring = presentation.get("colormap") == "density" and len(source_ids) == 1
