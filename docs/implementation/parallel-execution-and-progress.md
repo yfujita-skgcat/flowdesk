@@ -1053,6 +1053,11 @@ dictionary or linearly scanning persisted overlay definitions for every source l
 This is a planning/render overhead optimization only; source order and style precedence
 remain the persisted first-match order.
 
+Persisted presentation source styles are also indexed once by source ID. Each render
+copies only the styles for its ordered source list before applying manual-color and
+overlay-style overrides, preserving the existing precedence while avoiding a full style
+list scan for every target.
+
 The normalized-layer cache is an LRU bounded to `min(256, 4 * required_source_count)`
 entries (with a minimum of one) and an estimated 128 MiB payload budget. A single
 payload above the byte budget is not cached. This prevents many distinct `current_view`

@@ -127,6 +127,12 @@ def batch_plot_command(
     display_scene = dict(view.get("display_scene", {}))
     prepared_render_cache: dict[str, tuple[Any, dict[str, Any], dict[str, Any]]] = {}
     rendered_format_counts: dict[str, int] = {}
+    presentation_template = dict(view.get("presentation", {}))
+    persisted_source_styles: dict[str, dict[str, Any]] = {
+      str(style.get("source_id")): dict(style)
+      for style in presentation_template.get("source_styles", ())
+      if isinstance(style, Mapping) and style.get("source_id")
+    }
     overlay_style_by_id: dict[str, dict[str, Any]] = {}
     for overlay_source in view.get("overlay_sources", ()):
       if not isinstance(overlay_source, Mapping):
@@ -379,7 +385,7 @@ def batch_plot_command(
             {},
           ),
         })
-      presentation = dict(view.get("presentation", {}))
+      presentation = dict(presentation_template)
       density_coloring = presentation.get("colormap") == "density" and len(source_ids) == 1
       if density_coloring:
         active_id = source_ids[0]
@@ -407,9 +413,9 @@ def batch_plot_command(
         display_scene.get("y_axis_label") or metadata["y_label"]
       )
       source_styles = {
-        str(style.get("source_id")): dict(style)
-        for style in presentation.get("source_styles", [])
-        if isinstance(style, Mapping) and style.get("source_id")
+        source_id: dict(persisted_source_styles[source_id])
+        for source_id in source_ids
+        if source_id in persisted_source_styles
       }
       manual_colors = manual_overlay_colors
       for source_id in source_ids:

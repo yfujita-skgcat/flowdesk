@@ -1385,7 +1385,8 @@ thread backend（Increment 8）とは別の計画である。
   `current_view`の双方で、boundsが異なるtargetは別entryとして保持する。ゲートgeometryも
   軸、transform、bounds、outline色をキーにtarget間で一度だけ構築する。軸tickもbounds、
   transform、policyをキーにtarget間で再利用する。不変なsample/style/color lookupもexport
-  単位で前計算し、render callbackごとの辞書構築と線形探索を避ける。normalized layer cacheは
+  単位で前計算し、render callbackごとの辞書構築と線形探索を避ける。persisted source styleは
+  sourceごとに浅いcopyして再利用する。normalized layer cacheは
   source数に応じた最大256 entryかつ推定128 MiBのLRUとしてboundedに保持し、単一payloadが
   上限を超える場合はcacheしない。
 - [x] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
