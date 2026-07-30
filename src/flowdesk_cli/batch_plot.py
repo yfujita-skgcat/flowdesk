@@ -126,6 +126,19 @@ def batch_plot_command(
     display_scene = dict(view.get("display_scene", {}))
     prepared_render_cache: dict[str, tuple[Any, dict[str, Any], dict[str, Any]]] = {}
     rendered_format_counts: dict[str, int] = {}
+    overlay_style_by_id: dict[str, dict[str, Any]] = {}
+    for overlay_source in view.get("overlay_sources", ()):
+      if not isinstance(overlay_source, Mapping):
+        continue
+      source_id = overlay_source.get("sample_id")
+      style = overlay_source.get("style")
+      if source_id and isinstance(style, Mapping):
+        overlay_style_by_id.setdefault(str(source_id), dict(style))
+    manual_overlay_colors = (
+      dict(view.get("manual_overlay_colors", {}))
+      if isinstance(view.get("manual_overlay_colors", {}), Mapping)
+      else {}
+    )
     normalized_layer_cache: dict[
       tuple[str, tuple[tuple[float, float], tuple[float, float]]],
       tuple[tuple[tuple[float, ...], tuple[float, ...]], np.ndarray, tuple[str, ...] | None],
@@ -289,13 +302,12 @@ def batch_plot_command(
         and value not in overlay_candidates[:index]
       )
       source_ids = (sample_id, *overlay_ids)
-      source_by_id = {str(item["id"]): item for item in samples}
       sources = []
       layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] = {}
       visible_masks: dict[str, np.ndarray] = {}
       visible_event_colors: dict[str, tuple[str, ...]] = {}
       for order, source_id in enumerate(source_ids):
-        source_sample = source_by_id[source_id]
+        source_sample = sample_by_id[source_id]
         source_metadata = layer_metadata[source_id]
         source_x, source_y = prepared_layers[source_id]
         normalized_key = (source_id, active_bounds)
@@ -373,7 +385,7 @@ def batch_plot_command(
         for style in presentation.get("source_styles", [])
         if isinstance(style, Mapping) and style.get("source_id")
       }
-      manual_colors = view.get("manual_overlay_colors", {})
+      manual_colors = manual_overlay_colors
       for source_id in source_ids:
         explicit_color = (
           manual_colors.get(source_id)
@@ -385,10 +397,7 @@ def batch_plot_command(
             "source_id": source_id,
             "color": str(explicit_color),
           }
-        source_style = next(
-          (item.get("style") for item in sources if item.get("source_id") == source_id),
-          None,
-        )
+        source_style = overlay_style_by_id.get(source_id)
         if isinstance(source_style, Mapping):
           source_styles[source_id] = {
             **source_styles.get(source_id, {}),

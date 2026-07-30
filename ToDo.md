@@ -1384,7 +1384,8 @@ thread backend（Increment 8）とは別の計画である。
   normalized座標、表示mask、event color順を一度だけ作成して再利用する。`shared_ranges`と
   `current_view`の双方で、boundsが異なるtargetは別entryとして保持する。ゲートgeometryも
   軸、transform、bounds、outline色をキーにtarget間で一度だけ構築する。軸tickもbounds、
-  transform、policyをキーにtarget間で再利用する。
+  transform、policyをキーにtarget間で再利用する。不変なsample/style/color lookupもexport
+  単位で前計算し、render callbackごとの辞書構築と線形探索を避ける。
 - [x] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
   `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、
   `batchPlotProgressCurrentItem`、`batchPlotProgressCancelButton`、

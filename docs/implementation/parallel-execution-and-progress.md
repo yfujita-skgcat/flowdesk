@@ -1047,6 +1047,12 @@ and tick policy. `current_view` targets with different ranges receive independen
 tuples, while identical ranges avoid repeated transform tick generation. The cached scene
 values are renderer-neutral and are released with the export operation.
 
+The export coordinator also precomputes immutable sample lookup, manual overlay-color,
+and overlay-style maps. Render callbacks reuse these maps instead of rebuilding a sample
+dictionary or linearly scanning persisted overlay definitions for every source layer.
+This is a planning/render overhead optimization only; source order and style precedence
+remain the persisted first-match order.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become
