@@ -1565,9 +1565,11 @@ thread/2 23.09 s / 最大RSS 497,968 KBとなり、8出力のハッシュは引�
 - [x] headless core rendererのreentrancyと共有mutable global stateがないことをtestしてから、
   prepared output itemをbounded executorへ渡す。Qt/pyqtgraph/QPainter/QPixmapをworkerで
   操作しない。実writerを複数threadから呼び出すparity testでPNG/SVG/PDFのbyte一致を確認した。
-- [ ] rendererがGILを保持するか、native処理で解放するかをprofileし、thread worker数1/2/Nで
-  wall time、peak RSS、open file数を測定する。threadで再現可能なspeedupがなければ既定並列化を
-  有効にせず、process backendはIncrement 11のmemory/copy/Windows spawn評価へ送る。
+- [x] rendererがGILを保持するか、native処理で解放するかをprofileし、thread worker数1/2/4で
+  wall time、peak RSS、open file数を測定した。8 samples × 5,000 eventsのcompact-vector profileでは
+  thread/2は0.965倍、thread/4は0.686倍（いずれもsequential比）で、peak RSSはそれぞれ約1.38倍、
+  約1.95倍だった。threadで再現可能なspeedupがないため既定並列化を有効にせず、process backendは
+  Increment 11のmemory/copy/Windows spawn評価へ送る。
 - [x] `tools/benchmark_batch_plot.py`へ標準ライブラリで取得できるpeak RSSと終了時open-file数の
   診断値を追加した。OSが値を提供しない場合はnullとし、これは性能ゲートの補助データであって
   CIの絶対thresholdではない。

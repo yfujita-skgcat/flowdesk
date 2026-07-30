@@ -1115,6 +1115,13 @@ the headless renderer without Qt objects; matching bytes and sidecars are the
 reentrancy evidence currently available.  A full representative compensation/
 derived/gating profile and Windows/PyInstaller run remain deployment gates.
 
+The worker-count profile was repeated with tools/benchmark_batch_plot.py at
+8 samples × 5,000 events, compact-vector output, and worker counts 1/2/4.
+Thread/2 reached 0.965× sequential speed with peak RSS about 1.38×; thread/4
+reached 0.686× with peak RSS about 1.95×. Open-file count remained 4 after each
+run. These measurements reinforce the sequential default and CLI opt-in policy;
+they are diagnostic rather than CI timing thresholds.
+
 `tools/benchmark_batch_plot.py` now records standard-library peak RSS and, on Linux,
 the open-file count after each run.  These are diagnostic fields (the RSS value is
 process-lifetime `ru_maxrss` and therefore should be compared using separate benchmark
