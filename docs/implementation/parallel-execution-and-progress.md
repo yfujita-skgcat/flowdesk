@@ -781,8 +781,8 @@ placeholder array and keeps the event loop responsive.  The core estimator
 serializes overlapping density kernels because NumPy histogram/convolution
 re-entrancy varies across supported native-library builds.
 
-Focused Qt tests cover off-thread colour parity, stale-result discard, and clean
-completion.  A full Qt-file run still encounters an existing environment-specific
+Focused Qt tests cover off-thread colour parity, semantic cache reuse/invalidation,
+stale-result discard, rapid replot, and clean completion.  A full Qt-file run still encounters an existing environment-specific
 segmentation fault in the unrelated sample-browser test; this is tracked as a
 distribution/CI issue and is not used as evidence of density correctness.
 An offscreen diagnostic run with 5,000 events measured about 12.6 ms for the GUI

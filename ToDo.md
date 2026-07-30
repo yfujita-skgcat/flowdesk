@@ -1333,8 +1333,8 @@ thread backend（Increment 8）とは別の計画である。
   `sliding_window_view` + `tensordot`のベクトル化passへ置換した。edge padding、kernel、軸順序の
   数値契約を維持し、旧実装との差は浮動小数点丸め（最大約4e-16）以内である。20,000 eventsの
   density numeric中央値は今回の環境で71.9 ms（5回）だった。これは環境依存の診断値でありCI thresholdではない。
-- [ ] cached/uncachedのcolor一致、全関連設定のcache invalidation、rapid pan/zoom/sample
-  switch、shutdownをtestする。
+- [x] cached/uncachedのcolor一致、semantic context変更時のcache invalidation、rapid pan/zoom/sample
+  switch、shutdownをfocused testで確認した。stale density/display結果はcurrent requestへ適用されない。
 
 #### Increment 4: benchmark baselineと共通runtime control（進行中）
 
@@ -1343,10 +1343,10 @@ thread backend（Increment 8）とは別の計画である。
   OS/Python/NumPy/Qt/CPU、worker数、peak RSSをJSONへ記録する。生成event array/FCSはcommit
   しない。`make benchmark-pipeline`はcanonical pipelineだけを測定し、defaultではsmall
   profileを実行する。
-- [ ] display preparation、pipeline stage、batch source preparation、rendererを別々に計測し、
-  rendering時間をanalysis speedupとして報告しない。density displayは
-  `make benchmark-density`、vector rendererは`make benchmark`で既に別測定であり、次は
-  batch source preparationを明示して同じreport catalogへ追加する。
+- [x] display preparation/density numeric、canonical pipeline、batch source preparation、rendererを
+  別々に計測する診断入口を整備した。`make benchmark-density`、pipeline benchmark、Batch Export
+  manifestのplanning/preparation/render phase timingを使い、rendering時間をanalysis speedupとして
+  報告しない。絶対時間thresholdは設定しない。
 - [x] Qt非依存の`ExecutionOptions`、`ExecutionControl`、`ProgressEvent`、
   `CancellationToken`、typed cancellation outcomeを定義する。control未指定時は既存の
   sequential APIと結果を維持する。
