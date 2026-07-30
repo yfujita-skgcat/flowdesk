@@ -217,8 +217,6 @@ def batch_plot_command(
         )
       x_values = processed.events[processed.display_mask, processed.channel_index(x_id)]
       y_values = processed.events[processed.display_mask, processed.channel_index(y_id)]
-      raw_x_values = np.asarray(x_values, dtype=np.float64).copy()
-      raw_y_values = np.asarray(y_values, dtype=np.float64).copy()
       x_transform_id = view.get("x_transform_id")
       y_transform_id = view.get("y_transform_id")
       if x_transform_id:
@@ -247,7 +245,6 @@ def batch_plot_command(
       return x_values[finite], y_values[finite], {
         "x_id": x_id, "y_id": y_id, "x_label": x_label, "y_label": y_label,
         "view_spec": view_spec,
-        "raw_x": raw_x_values[finite], "raw_y": raw_y_values[finite],
         "event_colors": event_colors,
       }
 

@@ -1573,6 +1573,9 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
   Python object数とmemory estimateを削減した。writerはsequenceとして同じ値を読むため、PNG/SVG/PDFの
   event order・色・座標・byte parityを維持する。実FCS sequential再測定は21.82 s / 286,008 KBで、既存の
   21.96 s / 284,388 KB測定と同程度のため、速度向上を既定化の根拠にはしない。
+- [x] source preparationで作成していた未使用の`raw_x`/`raw_y`コピーとmetadataを削除した。以後の
+  scene、gate、tick、writerはtransform後のprepared layerだけを参照するため、PNG/SVG/PDFのbytesと
+  event orderは変わらない。実FCS sequentialは21.97 s / 286,408 KBで、既知の全SHA-256と一致した。
 - [x] 同一sample/viewのSVG/PDFでは、compact scatter batchとhybrid scatter rasterを一度だけ構築し、
   format間でimmutableなvector render cacheを再利用する。full-vectorの通常経路は不要なcache構築を
   行わず、event order/color、point plan、sidecar metadata、出力bytesを変更しない回帰testを追加した。

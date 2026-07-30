@@ -1055,6 +1055,12 @@ produced the same eight SHA-256 values; 21.82 s / 286,008 KB peak RSS was compar
 the prior 21.96 s / 284,388 KB baseline, so the change is a memory-pressure reduction,
 not evidence for enabling more workers.
 
+Source preparation no longer creates unused `raw_x`/`raw_y` copies or stores them in
+layer metadata. All downstream scene, gate, tick, and writer paths consume the prepared
+transformed layer directly. The real four-sample run remained byte-identical and measured
+21.97 s / 286,408 KB peak RSS; this is a working-set reduction, not a reason to change
+the sequential default.
+
 When the same source appears in multiple target scenes, the CLI reuses its normalized
 coordinates, visibility mask, and event-color order keyed by `(source_id, actual_bounds)`.
 This applies to both `shared_ranges` and `current_view`: targets with different persisted
