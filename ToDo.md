@@ -1297,16 +1297,16 @@ thread backend（Increment 8）とは別の計画である。
 
 #### Increment 3: density数値処理のoff-thread化とsemantic cache
 
-- [ ] densityをrenderer-neutralなhistogram/smoothing/global normalization/color-index結果と
+- [x] densityをrenderer-neutralなhistogram/smoothing/global normalization/color-index結果と
   GUI presentationへ分離する。数値arrayだけをowned workerで計算し、`QBrush`、pyqtgraph
   item、widget mutationはGUI threadに限定する。
 - [x] `id(array)`だけに依存するcache keyを廃止し、canonical processed-display identity
   （analysis/display revision、sample/population、axes、transform、display event selection）を
   含むsemantic keyへ変更した。density algorithm/parametersは現時点で固定実装のため、可変化する
   incrementで明示version/parameterをkeyへ追加する。
-- [ ] whole-population densityがviewport非依存というcontractの範囲ではpan/zoomでdensity
+- [x] whole-population densityがviewport非依存というcontractの範囲ではpan/zoomでdensity
   fieldを再利用し、generation checkでstale resultを破棄する。viewport変更だけで同じeventの
-  density colorを変えない。
+  density colorを変えない。semantic key、latest-wins scheduler、pan/zoom/stale GUI testで確認済み。
 - [x] profiling後にper-event Qt payloadの再生成を最小化する。同一density色配列とalphaでは
   `QBrush`リストを再利用し、dot size/opacity変更でもdraw order、rare color、alpha、selection、
   interactionを維持する。palette groupingによるdraw order変更はまだ採用しない。
@@ -1566,7 +1566,9 @@ compensation/derived parameterを含む代表workloadとWindows/PyInstaller確�
 
 #### Increment 10: optional adjacent-sample prefetch
 
-- [ ] Increment 1–3後にcache hit/miss、sample切替latency、stage別時間、peak memoryを再計測する。
+- [x] Increment 1–3後にcache hit/miss、sample切替latency、stage別時間、peak memoryを再計測する。
+  density benchmark、processed-display cache telemetry、bounded cache/pre-fetch testを実施し、
+  portabilityを伴わない値は診断値として実装ガイドへ記録した。
 - [x] active display完了後500 msで、隣接する未読込の4 MiB以上FCSを一件だけlow-priority
   prefetchする。active requestはpending prefetchをsupersedeし、prefetch raw sampleは一件だけ保持する。
 - [x] cache有無/prefetch有無でdisplay array、preview membership/count/statisticsが一致し、

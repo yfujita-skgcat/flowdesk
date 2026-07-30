@@ -793,6 +793,11 @@ Focused Qt tests cover off-thread colour parity, semantic cache reuse/invalidati
 stale-result discard, rapid replot, and clean completion.  A full Qt-file run still encounters an existing environment-specific
 segmentation fault in the unrelated sample-browser test; this is tracked as a
 distribution/CI issue and is not used as evidence of density correctness.
+The renderer-neutral result, GUI-only brush/item mutation, viewport-independent
+semantic reuse, and generation checks therefore satisfy the Increment 3 acceptance
+contract. Arbitrary event-chunk workers and process backends remain explicitly out of
+scope until the Increment 11 mathematical-merge, memory, cancellation, and packaging
+gates are met.
 An offscreen diagnostic run with 5,000 events measured about 12.6 ms for the GUI
 submission path and about 103 ms until the worker result was painted (Linux,
 NumPy 2.5.1); these values are workload/environment evidence, not CI thresholds.
