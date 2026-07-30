@@ -1475,6 +1475,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [ ] **代表 workloadの性能ゲート**: compensation、derived parameters、複数gate、statisticsを
   含む実データ相当のprofileを追加し、sequential/threadのwall time、peak RSS、CPU oversubscriptionを
   測定する。speedupが再現しない場合はthread backendを実験機能のまま維持する。
+- [x] `tools/benchmark_batch_plot.py`へ`--project`/`--export-id`を追加し、保存済みBatch Exportを
+  sequential/threadの別processで実行してmanifest phase、出力SHA-256、output bytes、peak RSS、open-file数を
+  JSONへ記録する。実FCSの8出力はbyte parityを確認できるが、thread/2は2026-07-31に約1.06倍の速度と
+  約1.74倍のRSSだったため、既定sequentialとCLI opt-in threadを維持する。これは代表writer/gate
+  workloadの測定入口であり、compensation/derivedを含む大規模profileとWindows/PyInstaller検証は未完了。
 - [x] **Batch Plot Exportの限定的並列化**: overlay依存、`shared_ranges` barrierをcoordinatorで
   解決し、必要sourceのFCS読込・display準備とimmutableなprepared output itemをCLIの明示指定時だけ
   bounded thread executorへ渡す実装を追加した。GUI実行と既定値は逐次のままとし、rendererのQt object操作はworkerで

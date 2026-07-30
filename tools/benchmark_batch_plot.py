@@ -8,8 +8,10 @@ prepared sample layers. It is a diagnostic tool, not a CI timing threshold.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -45,6 +47,19 @@ class _RunResult(TypedDict):
   open_file_count_after: int | None
 
 
+class _ProjectRunResult(TypedDict):
+  backend: str
+  elapsed_seconds: float
+  status: str
+  return_code: int
+  output_hashes: Mapping[str, str]
+  output_bytes: int
+  execution: Mapping[str, Any] | None
+  peak_rss_bytes: int | None
+  open_file_count_after: int | None
+  stderr_tail: str
+
+
 def _peak_rss_bytes() -> int | None:
   """Return process peak RSS using the platform's standard-library API."""
   try:
@@ -65,6 +80,135 @@ def _open_file_count() -> int | None:
     return len(os.listdir(proc_fd))
   except OSError:
     return None
+
+
+def _output_hashes(output_dir: Path) -> tuple[dict[str, str], int]:
+  """Hash only published plot files, excluding sidecars and the manifest."""
+  hashes: dict[str, str] = {}
+  output_bytes = 0
+  if not output_dir.is_dir():
+    return hashes, output_bytes
+  for path in sorted(output_dir.iterdir()):
+    if not path.is_file() or path.suffix.lower() not in {
+      ".png", ".jpg", ".jpeg", ".svg", ".pdf",
+    }:
+      continue
+    data = path.read_bytes()
+    hashes[path.name] = hashlib.sha256(data).hexdigest()
+    output_bytes += len(data)
+  return hashes, output_bytes
+
+
+def _run_project_backend(
+  project: Path,
+  export_id: str,
+  output_dir: Path,
+  backend: ExecutionBackend,
+  max_workers: int,
+) -> _ProjectRunResult:
+  """Run one project export in a child process for isolated RSS accounting."""
+  child_code = """
+import json
+import os
+import sys
+from flowdesk_cli.main import main
+
+status = main()
+try:
+  import resource
+except ImportError:
+  resource = None
+usage = None if resource is None else resource.getrusage(resource.RUSAGE_SELF)
+rss = None if usage is None else int(
+  usage.ru_maxrss * (1 if sys.platform == "darwin" else 1024)
+)
+fd_count = None
+if os.path.isdir("/proc/self/fd"):
+  try:
+    fd_count = len(os.listdir("/proc/self/fd"))
+  except OSError:
+    pass
+print("__FLOWDESK_BENCHMARK_CHILD__" + json.dumps({
+  "status": status, "peak_rss_bytes": rss, "open_file_count_after": fd_count,
+}))
+raise SystemExit(status)
+"""
+  command = [
+    sys.executable, "-c", child_code, "batch-plot", str(project),
+    "--export-id", export_id, "--output-dir", str(output_dir),
+    "--execution-backend", backend, "--max-workers", str(max_workers),
+  ]
+  output_dir.mkdir(parents=True, exist_ok=True)
+  started = time.perf_counter()
+  completed = subprocess.run(command, capture_output=True, text=True, check=False)
+  elapsed = time.perf_counter() - started
+  child_result: dict[str, Any] = {}
+  marker = "__FLOWDESK_BENCHMARK_CHILD__"
+  for line in reversed(completed.stdout.splitlines()):
+    if line.startswith(marker):
+      child_result = json.loads(line[len(marker):])
+      break
+  manifest_paths = sorted(output_dir.glob("*.batch.json"))
+  execution: Mapping[str, Any] | None = None
+  status = "failed"
+  if manifest_paths:
+    manifest = json.loads(manifest_paths[0].read_text(encoding="utf-8"))
+    status = str(manifest.get("status", status))
+    value = manifest.get("execution")
+    if isinstance(value, Mapping):
+      execution = dict(value)
+  hashes, output_bytes = _output_hashes(output_dir)
+  return {
+    "backend": backend,
+    "elapsed_seconds": elapsed,
+    "status": status,
+    "return_code": completed.returncode,
+    "output_hashes": hashes,
+    "output_bytes": output_bytes,
+    "execution": execution,
+    "peak_rss_bytes": child_result.get("peak_rss_bytes"),
+    "open_file_count_after": child_result.get("open_file_count_after"),
+    "stderr_tail": completed.stderr[-2000:],
+  }
+
+
+def run_project_batch_plot_benchmark(
+  *, project: Path | str, export_id: str, max_workers: int = 2,
+) -> dict[str, object]:
+  """Compare sequential/thread rendering for a real saved project.
+
+  Each backend runs in a fresh child process so peak RSS is not contaminated by
+  the preceding run.  Output hashes are retained for an explicit parity check.
+  """
+  if max_workers < 1:
+    raise ValueError("max_workers must be positive")
+  project_path = Path(project)
+  if not project_path.exists():
+    raise FileNotFoundError(project_path)
+  runs: dict[str, _ProjectRunResult] = {}
+  with tempfile.TemporaryDirectory(prefix="flowdesk-project-benchmark-") as root:
+    root_path = Path(root)
+    for backend in ("sequential", "thread"):
+      runs[backend] = _run_project_backend(
+        project_path, export_id, root_path / backend, backend, max_workers,
+      )
+  sequential = runs["sequential"]
+  threaded = runs["thread"]
+  sequential_hashes = dict(sequential["output_hashes"])
+  threaded_hashes = dict(threaded["output_hashes"])
+  return {
+    "project": str(project_path),
+    "export_id": export_id,
+    "max_workers": max_workers,
+    "sequential": sequential,
+    "thread": threaded,
+    "output_names_match": set(sequential_hashes) == set(threaded_hashes),
+    "output_hashes_match": sequential_hashes == threaded_hashes,
+    "thread_speedup": (
+      sequential["elapsed_seconds"] / threaded["elapsed_seconds"]
+      if threaded["elapsed_seconds"] else None
+    ),
+  }
 
 
 def run_batch_plot_benchmark(
@@ -193,14 +337,29 @@ def main() -> int:
   parser.add_argument("--events", type=int, default=5_000)
   parser.add_argument("--max-workers", type=int, default=2)
   parser.add_argument("--seed", type=int, default=1729)
+  parser.add_argument(
+    "--project", type=Path,
+    help="Benchmark a saved project instead of generating synthetic layers.",
+  )
+  parser.add_argument(
+    "--export-id",
+    help="Batch export definition ID required with --project.",
+  )
   parser.add_argument("--output", type=Path)
   args = parser.parse_args()
-  result = run_batch_plot_benchmark(
-    sample_count=args.samples,
-    event_count=args.events,
-    max_workers=args.max_workers,
-    seed=args.seed,
-  )
+  if args.project is not None:
+    if not args.export_id:
+      parser.error("--export-id is required with --project")
+    result = run_project_batch_plot_benchmark(
+      project=args.project, export_id=args.export_id, max_workers=args.max_workers,
+    )
+  else:
+    result = run_batch_plot_benchmark(
+      sample_count=args.samples,
+      event_count=args.events,
+      max_workers=args.max_workers,
+      seed=args.seed,
+    )
   rendered = json.dumps(result, indent=2, ensure_ascii=False) + "\n"
   if args.output is not None:
     args.output.parent.mkdir(parents=True, exist_ok=True)

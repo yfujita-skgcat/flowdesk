@@ -1021,6 +1021,19 @@ measured 1.833 s sequential versus 1.580 s thread/2 (1.16x) with identical
 full compensation/derived/gating FCS workload; repeat representative measurements
 before recommending this backend or enabling it by default.
 
+The benchmark also accepts `--project <bundle> --export-id <id>`. It runs the saved
+Batch Plot Export definition in separate child processes for sequential and thread
+backends, reads each manifest's phase/provenance, hashes every published
+PNG/JPEG/SVG/PDF, and reports child-process peak RSS and open-file count. The
+separate-process design avoids cumulative `ru_maxrss` contamination. For
+`data/analysis.flowdesk` and `batch-export-2c72921e28a9` on 2026-07-31, the
+measurement produced identical eight output hashes and 5,561,109 output bytes;
+sequential was 23.19 s / 287,739,904 bytes RSS, while thread/2 was 21.89 s /
+500,174,848 bytes RSS (1.06x speed, 1.74x RSS). This is an auditable
+representative writer/gate workload, not evidence to change the default backend;
+a larger compensation/derived-parameter profile and Windows/PyInstaller run
+remain gates.
+
 The CLI preparation path now resolves the batch target and overlay dependency map
 before reading FCS files. An explicit or group target prepares only its target samples
 and required overlay sources; unrelated samples are not loaded or transformed. A
