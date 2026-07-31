@@ -1549,8 +1549,8 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   定義ごとに再読込しないbounded cacheを追加した。memory budgetがある場合はresolved worker working setを
   先に予約し、残余だけをcache上限にする。残余がない場合はcacheを無効化し、manifestへ理由を記録する。
   cacheはraw eventだけを保持し、変換済み配列、gate membership、density、renderer objectは共有しない。
-  worker間cache共有のunit testとmemory-bound回帰testを追加したが、実FCS I/O speedupとWindows/PyInstaller
-  lifecycleは未検証であり、thread backendの既定値・GUI自動適用は変更しない。
+  worker間cache共有のunit test、memory-bound回帰test、実行後manifest hit/miss provenanceを追加したが、
+  実FCS I/O speedupとWindows/PyInstaller lifecycleは未検証であり、thread backendの既定値・GUI自動適用は変更しない。
 - [ ] **Batch Plot Export並列化の残りの検証**: rendererのreentrancy、共有mutable state、Qt backend、
   overlayのshared range barrier、Windows/PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、
   GUIへ自動適用したりしない。代表FCSでの出力parityとpeak RSSの測定は実施済みだが、

@@ -1276,7 +1276,10 @@ explicit budget only the residual is available to the raw cache (up to 256 MiB).
 residual budget, workers receive no cache and the manifest records
 `reason=no_residual_memory_budget`. The cache never contains transformed layers, masks,
 density colours, renderer objects, or authoritative results. This reduces duplicate FCS I/O
-without changing event identity, output order, cancellation, or the sequential default.
+without changing event identity, output order, cancellation, or the sequential default. The
+queue manifest refreshes cache `hits`, `misses`, `evictions`, `retained_bytes`, and the reserved
+worker bytes after all active futures finish, including failure and cancellation paths, so a
+reported cache benefit is auditable rather than inferred from the initial configuration.
 
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for

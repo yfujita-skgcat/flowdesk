@@ -205,13 +205,21 @@ def test_batch_plot_queue_supports_explicit_definition_parallelism(
 ) -> None:
   monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
   caches = []
+  shared_sample = SampleData(
+    "shared", np.zeros((2, 2), dtype=np.float64),
+    (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y")),
+  )
+  shared_key = ("shared", "shared.fcs", "fingerprint")
   lock = threading.Lock()
   active = 0
   peak = 0
 
   def fake_batch(*_args, **kwargs) -> int:
     nonlocal active, peak
-    caches.append(kwargs.get("_raw_sample_cache"))
+    cache = kwargs.get("_raw_sample_cache")
+    caches.append(cache)
+    assert cache is not None
+    cache.get_or_load(shared_key, lambda: ("info", shared_sample))
     with lock:
       active += 1
       peak = max(peak, active)
@@ -240,6 +248,8 @@ def test_batch_plot_queue_supports_explicit_definition_parallelism(
   assert manifest["queue_execution"]["submitted_definitions"] == 3
   assert manifest["queue_execution"]["completed_definitions"] == 3
   assert manifest["queue_execution"]["peak_in_flight_definitions"] == 2
+  assert manifest["raw_sample_cache"]["enabled"] is True
+  assert manifest["raw_sample_cache"]["hits"] >= 1
   assert [item["status"] for item in manifest["definitions"]] == [
     "success", "success", "success",
   ]

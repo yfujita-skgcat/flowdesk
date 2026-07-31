@@ -1281,6 +1281,17 @@ def batch_plot_queue_command(
         future.cancel()
     finally:
       executor.shutdown(wait=True, cancel_futures=True)
+      queue_manifest["raw_sample_cache"] = {
+        **raw_sample_cache.stats(),
+        "enabled": raw_cache_budget > 0,
+        "scope": "definition_parallelism",
+        "reserved_worker_bytes": (
+          estimated_queue_definition_bytes * effective_queue_workers
+        ),
+        **({} if raw_cache_budget > 0 else {
+          "reason": "no_residual_memory_budget",
+        }),
+      }
     if queue_manifest["status"] == "cancelled":
       for item in queue_items:
         if item["status"] == "running":
