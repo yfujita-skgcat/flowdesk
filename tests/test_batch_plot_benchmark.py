@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -45,3 +46,32 @@ def test_project_benchmark_compares_hashes_and_isolates_backends(tmp_path, monke
   assert result["output_hashes_match"] is True
   assert result["thread_speedup"] == 2.0
   assert result["memory_budget_mib"] == 128
+
+
+def test_representative_project_copy_adds_scientific_stages(tmp_path) -> None:
+  module = _benchmark_module()
+  project = tmp_path / "project.flowdesk"
+  project.mkdir()
+  (tmp_path / "sample.fcs").write_bytes(b"fixture")
+  (project / "manifest.json").write_text(json.dumps({
+    "samples": [{
+      "id": "s1",
+      "path": "../sample.fcs",
+      "channels": [
+        {"id": "fsc", "name": "FSC-A"},
+        {"id": "ssc", "name": "SSC-A"},
+      ],
+    }],
+    "gating_strategies_data": {
+      "default": {"gates": [{"id": "gate1"}]},
+    },
+  }), encoding="utf-8")
+
+  copied = module._prepare_representative_project(project, tmp_path / "copy")
+  manifest = json.loads((copied / "manifest.json").read_text(encoding="utf-8"))
+  assert Path(manifest["samples"][0]["path"]).is_absolute()
+  assert manifest["default_compensation_matrix_id"] == (
+    "benchmark_identity_compensation"
+  )
+  assert manifest["derived_parameters"][0]["source_stage"] == "compensated"
+  assert manifest["statistics"][0]["population_id"] == "gate1"

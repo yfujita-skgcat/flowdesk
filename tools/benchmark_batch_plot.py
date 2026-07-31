@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -99,6 +100,73 @@ def _output_hashes(output_dir: Path) -> tuple[dict[str, str], int]:
   return hashes, output_bytes
 
 
+def _prepare_representative_project(project: Path, destination_root: Path) -> Path:
+  """Copy a project and add deterministic scientific stages for benchmarking."""
+  if not project.is_dir():
+    raise NotADirectoryError(project)
+  destination = destination_root / project.name
+  shutil.copytree(project, destination)
+  manifest_path = destination / "manifest.json"
+  manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+  samples = manifest.get("samples", [])
+  if not samples:
+    raise ValueError("representative project must contain samples")
+  for sample in samples:
+    sample_path = Path(str(sample.get("path", "")))
+    if not sample_path.is_absolute():
+      sample_path = (project / sample_path).resolve()
+    sample["path"] = str(sample_path)
+  channels = {
+    str(channel.get("name")): str(channel.get("id"))
+    for channel in samples[0].get("channels", [])
+    if channel.get("name") and channel.get("id")
+  }
+  x_id = channels.get("FSC-A")
+  y_id = channels.get("SSC-A")
+  if not x_id or not y_id:
+    raise ValueError("representative project requires FSC-A and SSC-A channels")
+  matrix_id = "benchmark_identity_compensation"
+  manifest["compensation_matrices"] = [{
+    "id": matrix_id,
+    "name": "Benchmark identity compensation",
+    "source": "user_defined",
+    "channels": [x_id, y_id],
+    "matrix": [[1.0, 0.0], [0.0, 1.0]],
+  }]
+  manifest["default_compensation_matrix_id"] = matrix_id
+  manifest["derived_parameters"] = [{
+    "id": "benchmark_ratio",
+    "output_channel_id": "benchmark_ratio",
+    "name": "FSC-A / SSC-A ratio",
+    "expression": f"{x_id} / {y_id}",
+    "input_parameters": [x_id, y_id],
+    "invalid_value_policy": "fail_run",
+    "non_finite_policy": "strict",
+    "source_stage": "compensated",
+  }]
+  strategies = manifest.get("gating_strategies_data", {})
+  gate_ids = [
+    str(gate.get("id"))
+    for strategy in strategies.values()
+    if isinstance(strategy, dict)
+    for gate in strategy.get("gates", [])
+    if isinstance(gate, dict) and gate.get("id")
+  ]
+  if not gate_ids:
+    raise ValueError("representative project requires a gate")
+  manifest["statistics"] = [{
+    "id": "benchmark_gate_count",
+    "name": "Benchmark gate count",
+    "population_id": gate_ids[0],
+    "metric": "count",
+    "source_stage": "compensated",
+  }]
+  manifest_path.write_text(
+    json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+  )
+  return destination
+
+
 def _run_project_backend(
   project: Path,
   export_id: str,
@@ -177,7 +245,7 @@ raise SystemExit(status)
 
 def run_project_batch_plot_benchmark(
   *, project: Path | str, export_id: str, max_workers: int = 2,
-  memory_budget_mib: int | None = None,
+  memory_budget_mib: int | None = None, scientific_stages: bool = False,
 ) -> dict[str, object]:
   """Compare sequential/thread rendering for a real saved project.
 
@@ -194,9 +262,13 @@ def run_project_batch_plot_benchmark(
   runs: dict[str, _ProjectRunResult] = {}
   with tempfile.TemporaryDirectory(prefix="flowdesk-project-benchmark-") as root:
     root_path = Path(root)
+    benchmark_project = (
+      _prepare_representative_project(project_path, root_path)
+      if scientific_stages else project_path
+    )
     for backend in ("sequential", "thread"):
       runs[backend] = _run_project_backend(
-        project_path, export_id, root_path / backend, backend, max_workers,
+        benchmark_project, export_id, root_path / backend, backend, max_workers,
         memory_budget_mib,
       )
   sequential = runs["sequential"]
@@ -206,6 +278,7 @@ def run_project_batch_plot_benchmark(
   return {
     "project": str(project_path),
     "export_id": export_id,
+    "scientific_stages": scientific_stages,
     "max_workers": max_workers,
     "memory_budget_mib": memory_budget_mib,
     "sequential": sequential,
@@ -361,6 +434,10 @@ def main() -> int:
     help="Benchmark a saved project instead of generating synthetic layers.",
   )
   parser.add_argument(
+    "--scientific-stages", action="store_true",
+    help="Copy --project and add compensation, derived data, and statistics.",
+  )
+  parser.add_argument(
     "--export-id",
     help="Batch export definition ID required with --project.",
   )
@@ -372,6 +449,7 @@ def main() -> int:
     result = run_project_batch_plot_benchmark(
       project=args.project, export_id=args.export_id, max_workers=args.max_workers,
       memory_budget_mib=args.memory_budget_mib,
+      scientific_stages=args.scientific_stages,
     )
   else:
     result = run_batch_plot_benchmark(

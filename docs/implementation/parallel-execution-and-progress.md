@@ -983,6 +983,14 @@ backend must never be reused for active-sample GUI switching: that request conce
 selected sample and has separate latest-wins, Qt-thread-affinity, and density-cache
 constraints.
 
+`tools/benchmark_batch_plot.py --project data/analysis.flowdesk --export-id
+batch-export-2c72921e28a9 --scientific-stages` now copies the project to a temporary
+bundle, resolves its FCS paths, and adds identity compensation, a derived ratio, and a
+gate count statistic without modifying repository data. On 2026-07-31 this workload
+produced 8 PNG/PDF outputs with byte-identical sequential/thread results; sequential was
+24.28 s/288,719 KiB and thread/2 was 22.76 s/519,635 KiB (1.07x speedup). This is a
+Linux diagnostic only; writer reentrancy and Windows/PyInstaller shutdown remain open.
+
 Workers keep the shared cancellation token but suppress progress callbacks.  The
 coordinator submits at most the resolved worker count, publishes monotonic queued/completed
 events, cancels unstarted futures on an error/cancellation path, and waits for active

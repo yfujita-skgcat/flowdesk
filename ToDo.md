@@ -1485,7 +1485,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   sequential/threadの別processで実行してmanifest phase、出力SHA-256、output bytes、peak RSS、open-file数を
   JSONへ記録する。実FCSの8出力はbyte parityを確認できるが、thread/2は2026-07-31に約1.06倍の速度と
   約1.74倍のRSSだったため、既定sequentialとCLI opt-in threadを維持する。これは代表writer/gate
-  workloadの測定入口であり、compensation/derivedを含む大規模profileとWindows/PyInstaller検証は未完了。
+  workloadの測定入口であり、`--scientific-stages`で一時projectへidentity compensation、derived
+  ratio、gate countを追加できる。2026-07-31に実FCS 8出力でscientific stages付きbyte parityを確認した。
+  Windows/PyInstaller検証は未完了。
 - [x] 同じbenchmarkへ`--memory-budget-mib`を追加し、synthetic/project両モードでresolved worker数、
   memory limiting factor、出力parityを比較できるようにする。memory budgetはruntime診断だけであり、
   project definitionやBatch Exportの既定設定へ保存しない。
@@ -1498,7 +1500,7 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [ ] **Batch Plot Export並列化の残りの検証**: rendererのreentrancy、共有mutable state、Qt backend、
   overlayのshared range barrier、Windows/PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、
   GUIへ自動適用したりしない。代表FCSでの出力parityとpeak RSSの測定は実施済みだが、
-  現行データはcompensation/derivedを含む大規模workloadではない。
+  `--scientific-stages`でcompensation/derived/gate/statisticsを追加したworkloadもLinuxで測定済みである。
 - [x] **density numeric workerの限定的導入**: MainWindowのdensity表示だけをlatest-winsの一worker
   schedulerへ移し、read-only NumPy view（writable入力だけcopy）とsemantic keyでrenderer-neutralな色配列を計算する。
   QBrush、ScatterPlotItem、brush適用はGUI threadだけで行い、stale結果を破棄する。同期exportはpending
