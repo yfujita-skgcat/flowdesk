@@ -39,6 +39,8 @@ class BatchPlotExportRequest:
   execution_backend: str = "sequential"
   max_workers: int = 1
   memory_budget_mib: int | None = None
+  density_workers: int = 1
+  density_memory_budget_mib: int | None = None
 
 
 class BatchPlotExportDialog(QDialog):
@@ -166,6 +168,10 @@ class BatchPlotExportDialog(QDialog):
     self._memory_budget_mib = self._spin(
       "batchPlotMemoryBudgetMiBSpinBox", 0, 1_048_576, 0
     )
+    self._density_workers = self._spin("batchPlotDensityWorkersSpinBox", 1, 64, 1)
+    self._density_memory_budget_mib = self._spin(
+      "batchPlotDensityMemoryBudgetMiBSpinBox", 0, 1_048_576, 0
+    )
 
     self._visibility: dict[str, QCheckBox] = {}
     for key, label, checked in (
@@ -216,6 +222,10 @@ class BatchPlotExportDialog(QDialog):
     form.addRow("Execution backend", self._execution_backend)
     form.addRow("Max workers", self._max_workers)
     form.addRow("Memory budget (MiB, 0 = automatic)", self._memory_budget_mib)
+    form.addRow("Density workers (1 = sequential)", self._density_workers)
+    form.addRow(
+      "Density memory budget (MiB, 0 = automatic)", self._density_memory_budget_mib,
+    )
     form.addRow("Visibility", self._visibility["include_title"])
     for key in (
       "include_axis_labels", "include_ticks", "include_gates", "include_legend",
@@ -474,6 +484,8 @@ class BatchPlotExportDialog(QDialog):
       str(self._execution_backend.currentData() or "sequential"),
       self._max_workers.value(),
       (self._memory_budget_mib.value() or None),
+      self._density_workers.value(),
+      (self._density_memory_budget_mib.value() or None),
     )
 
   def definition_mapping(self) -> dict[str, Any]:

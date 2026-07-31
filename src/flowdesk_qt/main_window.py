@@ -46,6 +46,7 @@ from flowdesk_core.compensation import (
     resolve_compensation_binding,
 )
 from flowdesk_core.credits import credits_text
+from flowdesk_core.density_colors import DensityColorConfig
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.execution_control import (
     ExecutionCancelled,
@@ -296,11 +297,13 @@ class _BatchPlotExportWorker(QThread):
         export_id: str,
         output_dir: str,
         execution_options: ExecutionOptions | None = None,
+        density_config: DensityColorConfig | None = None,
     ) -> None:
         super().__init__()
         self._project_path = project_path
         self._export_id = export_id
         self._output_dir = output_dir
+        self._density_config = density_config
         self._status: int | None = None
         self._error: Exception | None = None
         self._progress_events: SimpleQueue[ProgressEvent] = SimpleQueue()
@@ -330,6 +333,7 @@ class _BatchPlotExportWorker(QThread):
                 self._output_dir,
                 renderer_backend="headless",
                 execution_control=self._execution_control,
+                density_config=self._density_config,
             )
         except Exception as exc:
             self._error = exc
@@ -4182,6 +4186,13 @@ class MainWindow(QMainWindow):
                     else request.memory_budget_mib * 1024 * 1024
                 ),
             ),
+            density_config=DensityColorConfig(
+                histogram_workers=request.density_workers,
+                histogram_memory_budget_bytes=(
+                    None if request.density_memory_budget_mib is None
+                    else request.density_memory_budget_mib * 1024 * 1024
+                ),
+            ),
         )
 
     def _start_batch_plot_export(
@@ -4190,6 +4201,7 @@ class MainWindow(QMainWindow):
         output_dir: str,
         *,
         execution_options: ExecutionOptions | None = None,
+        density_config: DensityColorConfig | None = None,
     ) -> None:
         """Run the saved headless Batch Export without blocking the event loop."""
         if self._project_path is None:
@@ -4204,7 +4216,7 @@ class MainWindow(QMainWindow):
         self._show_batch_plot_progress_dialog()
         self.action_batch_plot_export.setEnabled(False)
         self._batch_plot_worker = _BatchPlotExportWorker(
-            str(self._project_path), export_id, output_dir, execution_options
+            str(self._project_path), export_id, output_dir, execution_options, density_config
         )
         self._batch_plot_worker.finished.connect(self._on_batch_plot_export_finished)
         self._batch_plot_worker.start()

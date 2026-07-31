@@ -1364,9 +1364,10 @@ Submission uses an ordered in-flight window equal to the effective worker count 
 than unbounded `Executor.map` submission, so completed chunk arrays are released as they
 are merged and memory budget accounting remains meaningful.
 The headless `batch-plot` CLI exposes these as runtime-only `--density-workers` and
-`--density-memory-budget-mib` options. They affect only density colour preparation and
-are not written to the persisted export definition; GUI batch export remains at the
-safe default until its lifecycle and platform-specific controls are validated.
+`--density-memory-budget-mib` options. The GUI Batch Plot Export dialog exposes the same
+two runtime-only values and passes them to the same headless runner; neither path writes
+them to the persisted export definition. GUI defaults remain one density worker until
+Windows/PyInstaller lifecycle and platform-specific controls are validated.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and

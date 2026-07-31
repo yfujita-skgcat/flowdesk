@@ -35,6 +35,8 @@ def test_batch_plot_dialog_creates_new_definition_with_explicit_samples(qapp, tm
     assert request.execution_backend == "sequential"
     assert request.max_workers == 2
     assert request.memory_budget_mib is None
+    assert request.density_workers == 1
+    assert request.density_memory_budget_mib is None
     assert "execution_backend" not in request.definition
   finally:
     dialog.deleteLater()
@@ -48,14 +50,19 @@ def test_batch_plot_dialog_keeps_thread_settings_runtime_only(qapp, tmp_path) ->
     )
     dialog._max_workers.setValue(3)
     dialog._memory_budget_mib.setValue(128)
+    dialog._density_workers.setValue(4)
+    dialog._density_memory_budget_mib.setValue(64)
     dialog._output.setText(str(tmp_path))
     dialog._accept_run()
     request = dialog.request()
     assert request.execution_backend == "thread"
     assert request.max_workers == 3
     assert request.memory_budget_mib == 128
+    assert request.density_workers == 4
+    assert request.density_memory_budget_mib == 64
     assert "max_workers" not in request.definition
     assert "memory_budget_mib" not in request.definition
+    assert "density_workers" not in request.definition
   finally:
     dialog.deleteLater()
 

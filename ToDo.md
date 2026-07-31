@@ -1524,8 +1524,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   budgetではない。
 - [x] **headless density runtime controls**: `batch-plot` CLIへ`--density-workers`と
   `--density-memory-budget-mib`を追加し、保存済みBatch Export定義へ書き込まずdensity色準備だけへ
-  適用する。CLI parserと`DensityColorConfig`の受け渡しをテストした。GUIへ自動適用はしない。
-- [ ] **density workerの運用統合**: GUI/CLI設定、Windows/PyInstaller lifecycle、
+  適用する。CLI parserと`DensityColorConfig`の受け渡しをテストした。
+- [x] **GUI batch density runtime controls**: Batch Plot Export dialogへ同じdensity worker数と
+  density memory budgetを追加し、保存済みdefinitionへ書き込まずheadless workerへ渡す。
+  GUI object名、runtime-only保持、CLI/coreとの設定一致をテストした。
+- [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
   FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
