@@ -40,6 +40,14 @@ requires updating the capability constant in `batch_plot_export_dialog.py`, addi
 focused GUI coverage, rerunning the Windows/PyInstaller smoke tests, and documenting
 the measured parity, shutdown, and memory results in `ToDo.md`.
 
+The 2026-07-31 safety-gate re-audit confirmed that
+`BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=False` and
+`PIPELINE_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=False`; both dialogs keep the unfinished
+worker controls disabled. The focused dialog tests passed (11 tests). This is only
+UI-gating evidence: it does not count as evidence for Windows/PyInstaller lifecycle,
+renderer reentrancy, or real-FCS density-worker operation, so the CLI remains the only
+explicit opt-in surface until those checks are completed.
+
 Implement only one numbered increment per LLM run. Complete the interactive hot-path
 Increments 1–3 before the general progress/parallelism increments unless a new profile
 demonstrates a different dominant cost. Do not combine the density hot path, progress

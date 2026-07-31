@@ -1687,6 +1687,10 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **未検証worker設定のGUI安全ゲート**: 上記のWindows/PyInstaller、renderer再入性、density
   実FCS運用検証が完了するまで、Batch Plot Export GUIのbounded thread、max worker、memory budget、
   density worker設定を無効化した。CLIの明示opt-inとcore実装は保持し、検証完了時にのみGUIを再有効化する。
+- [x] **2026-07-31 GUI安全ゲート再監査**: `BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=False` と
+  `PIPELINE_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=False`、および両ダイアログのworker controlsが
+  disabledであることを確認した。focused GUI test 11件は通過したため、Windows/PyInstallerの
+  lifecycle、renderer再入性、density実FCSの証跡が揃うまではdisabled状態とCLI明示opt-inを維持する。
 - [x] CLIの`run`/`batch-plot`へ一時的なSIGINT handlerを接続し、Ctrl-Cを共通`CancellationToken`へ
   伝達する。batchは完了済み出力とcancelled manifestを保持し、終了コード130を返す。handlerは終了時に復元する。
 
