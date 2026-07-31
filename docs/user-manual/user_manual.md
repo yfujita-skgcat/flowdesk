@@ -278,7 +278,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |列|control|説明|
 |---|---|---|
 |Ov|checkbox|その sample を manual overlay として追加・削除する。active sample 自身は overlay にできず disabled。|
-|Col|color button|overlay color を QColorDialog で選ぶ。active sample の base layer 色には使わない。右クリックの `Clear Overlay Color` で明示色を削除し、共通の既定色（`#4c78a8`）へ戻せる。|
+|Col|color button|overlay color を QColorDialog で選ぶ。active sample の base layer 色には使わない。未選択時は自動色を塗りつぶし表示せず、破線枠で「明示色なし」を示す。右クリックの `Clear Overlay Color` で明示色を削除し、共通の自動色（`#4c78a8`）へ戻せる。|
 |Name|sample row selection|クリックすると active sample になる。先頭記号は channel/file status。|
 |Rel|表示ラベル|`active`、manual、reference、positive_control 等の relation/status。ラベル自体はクリック操作を持たない。|
 
@@ -843,7 +843,7 @@ Analysis → Use Multiple Analysis Groups をオンにすると Gating tab 下�
 |Gate outline style|solid / dashed / dotted / dashdot。|
 |Axis line width|0.5–20。|
 |Show major grid lines|主目盛位置の薄い補助線を表示する。既定値はオン。|
-|Event colors|scatter/dotでは `Single color`（通常）または `Density color (single sample)` を選択する。densityは表示点を固定128×128 gridで対数正規化して色付けし、overlay中は無効化される。その他のplot typeではcolormap名を指定できる。|
+|Event colors|scatter/dotでは `Single color`（通常）または `Density color (single sample)` を選択する。`Single color` の下にある `Single color` 欄の `Choose…` からドット色、`Single dot size` から base layer のドットサイズを指定でき、プロジェクトへ保存される。densityは表示点を固定128×128 gridで対数正規化して色付けし、選択した単色・単色用サイズは使わない。overlay中はdensityが無効化され、sourceごとの overlay 色・marker size が優先される。その他のplot typeではcolormap名を指定できる。|
 
 #### Sources tab
 

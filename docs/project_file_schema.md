@@ -31,3 +31,9 @@ Plot views store the display-only scatter limit as
 sampling. The current main-plot value is also mirrored in
 `plot_display_settings.display_max_points` for GUI restoration. Neither field may be
 used by the pipeline runner for gates, population counts, frequencies, or statistics.
+Plot view `presentation.single_color` stores the six-digit hexadecimal color used
+when a scatter/dot view selects `Single color`; it is display-only and is ignored
+when density coloring or an overlay source is active.
+`presentation.single_dot_size` stores the display-only base-layer marker size for
+single-sample scatter/dot views. Overlay source marker sizes remain in
+`presentation.source_styles`.

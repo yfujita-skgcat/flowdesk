@@ -91,6 +91,8 @@ class PlotStyleEditorDialog(QDialog):
       "gate_outline_style": self._gate_style_combo.currentData(),
       "axis_line_width": self._axis_width_spin.value(),
       "show_grid": self._show_grid_check.isChecked(),
+      "single_color": self._single_color_edit.text().strip(),
+      "single_dot_size": self._single_dot_size_spin.value(),
       "colormap": self._colormap_value(),
       "automatic_style_policy": self._presentation.get(
         "automatic_style_policy", "palette.v1"
@@ -210,6 +212,20 @@ class PlotStyleEditorDialog(QDialog):
     self._colormap_edit.addItem("Single color", None)
     self._colormap_edit.addItem("Density color (single sample)", "density")
     form.addRow("Event colors:", self._colormap_edit)
+    self._colormap_edit.currentIndexChanged.connect(
+      lambda _index: self._update_support_state()
+    )
+    self._single_color_edit = QLineEdit()
+    self._single_color_edit.setObjectName("plotSingleColorEdit")
+    form.addRow(
+      "Single color:",
+      self._color_row(
+        self._single_color_edit, "plotSingleColorButton", "#000000"
+      ),
+    )
+    self._single_dot_size_spin = self._spin(0.1, 100.0, 1.5, 0.1)
+    self._single_dot_size_spin.setObjectName("plotSingleDotSizeSpinBox")
+    form.addRow("Single dot size:", self._single_dot_size_spin)
     pages.addTab(form_widget, "General")
 
     source_form = QWidget()
@@ -437,6 +453,12 @@ class PlotStyleEditorDialog(QDialog):
       self._set_data(self._gate_style_combo, self._presentation.get("gate_outline_style", "solid"))
       self._axis_width_spin.setValue(float(self._presentation.get("axis_line_width", 2.0)))
       self._show_grid_check.setChecked(bool(self._presentation.get("show_grid", True)))
+      self._single_color_edit.setText(
+        str(self._presentation.get("single_color", "#000000"))
+      )
+      self._single_dot_size_spin.setValue(
+        float(self._presentation.get("single_dot_size", 1.5))
+      )
       self._set_colormap(self._presentation.get("colormap"))
       self._legend_list.clear()
       legend_ids = list(self._presentation.get("legend_source_ids", self._source_ids))
@@ -616,6 +638,21 @@ class PlotStyleEditorDialog(QDialog):
       "Supported for this plot type"
       if colormap_enabled else f"Unsupported for {self._plot_type}"
     )
+    single_color_enabled = colormap_enabled and self._colormap_value() is None
+    self._single_color_edit.setEnabled(single_color_enabled)
+    single_color_button = self._color_buttons.get(self._single_color_edit)
+    if single_color_button is not None:
+      single_color_button.setEnabled(single_color_enabled)
+    self._single_color_edit.setToolTip(
+      "Used when Event colors is Single color"
+      if single_color_enabled else "Disabled while density coloring is selected"
+    )
+    single_dot_size_enabled = self._plot_type in {"dot", "scatter"}
+    self._single_dot_size_spin.setEnabled(single_dot_size_enabled)
+    self._single_dot_size_spin.setToolTip(
+      "Base-layer marker size for a single-sample plot"
+      if single_dot_size_enabled else f"Unsupported for {self._plot_type}"
+    )
 
   def _typed_presentation(self) -> PlotPresentationSpec:
     source_styles = tuple(SourceStyleSpec(**{
@@ -640,6 +677,8 @@ class PlotStyleEditorDialog(QDialog):
       gate_outline_style=str(result["gate_outline_style"]),
       axis_line_width=float(result["axis_line_width"]),
       show_grid=bool(result["show_grid"]),
+      single_color=str(result["single_color"]),
+      single_dot_size=float(result["single_dot_size"]),
       colormap=result["colormap"],
       automatic_style_policy=str(result["automatic_style_policy"]),
       source_styles=source_styles,

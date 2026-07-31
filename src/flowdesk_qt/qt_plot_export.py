@@ -69,13 +69,23 @@ def render_batch_plot_qt(
   active_id = source_ids[0]
   active_x, active_y = raw_layers[active_id]
   active_style = source_styles.get(active_id, {})
+  active_style_updates = {
+    **style.__dict__,
+    "dot_opacity": float(active_style.get("alpha", style.dot_opacity)),
+    "dot_size": float(
+      active_style.get("marker_size", style.dot_size)
+      if len(source_ids) > 1 else style.dot_size
+    ),
+  }
+  # A single-sample plot uses the presentation's single color. Source styles
+  # are reserved for overlay layers; applying their automatic fallback here
+  # would unexpectedly replace the selected single color.
+  if len(source_ids) > 1:
+    active_style_updates["dot_color"] = str(
+      active_style.get("color", style.dot_color)
+    )
   widget.set_style(PlotStyleSettings(
-    **{
-      **style.__dict__,
-      "dot_color": str(active_style.get("color", style.dot_color)),
-      "dot_opacity": float(active_style.get("alpha", style.dot_opacity)),
-      "dot_size": float(active_style.get("marker_size", style.dot_size)),
-    }
+    **active_style_updates
   ))
   metadata = None if export_metadata is None else dict(export_metadata)
   if metadata is not None:
@@ -210,8 +220,8 @@ def _style_from_presentation(
   tick_font = presentation.get("tick_font", {})
   return PlotStyleSettings(
     background_color=str(presentation.get("background_color", "#ffffff")),
-    dot_color=str(source_styles.get(source_ids[0], {}).get("color", "#000000")),
-    dot_size=float(source_styles.get(source_ids[0], {}).get("marker_size", 1.5)),
+    dot_color=str(presentation.get("single_color", "#000000")),
+    dot_size=float(presentation.get("single_dot_size", 1.5)),
     dot_opacity=float(source_styles.get(source_ids[0], {}).get("alpha", 0.6)),
     gate_outline_color=str(presentation.get("gate_outline_color", "#e00000")),
     gate_fill_color=str(presentation.get("gate_outline_color", "#e00000")),

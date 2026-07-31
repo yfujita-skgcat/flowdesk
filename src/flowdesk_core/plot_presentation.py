@@ -122,6 +122,7 @@ def validate_presentation(
   supported = SUPPORTED_STYLE_FIELDS[plot_type]
   _validate_color(presentation.background_color, "background_color")
   _validate_color(presentation.gate_outline_color, "gate_outline_color")
+  _validate_color(presentation.single_color, "single_color")
   for style in presentation.source_styles:
     for field_name in (
       "color", "line_color", "histogram_fill_color", "histogram_outline_color"
@@ -150,6 +151,8 @@ def _presentation_fields() -> tuple[str, ...]:
     "title_font", "axis_label_font", "tick_font", "legend_font",
     "gate_outline_color", "gate_outline_width", "gate_outline_style", "axis_line_width",
     "show_grid",
+    "single_color",
+    "single_dot_size",
     "colormap",
     "automatic_style_policy",
   )

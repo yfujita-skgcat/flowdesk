@@ -289,6 +289,10 @@ class PlotWidget(QWidget):
         for key in ("background_color", "gate_outline_color"):
             if isinstance(value.get(key), str) and value[key]:
                 style_updates[key] = value[key]
+        if isinstance(value.get("single_color"), str) and value["single_color"]:
+            style_updates["dot_color"] = value["single_color"]
+        if value.get("single_dot_size") is not None:
+            style_updates["dot_size"] = float(value["single_dot_size"])
         tick_font = value.get("tick_font", {})
         if isinstance(tick_font, dict):
             style_updates.update({

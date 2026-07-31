@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
@@ -1032,6 +1033,8 @@ class PlotPresentationSpec:
   gate_outline_style: LineStyle = "solid"
   axis_line_width: float = 2.0
   show_grid: bool = True
+  single_color: str = "#000000"
+  single_dot_size: float = 1.5
   colormap: str | None = None
   automatic_style_policy: str = "palette.v1"
   source_styles: tuple[SourceStyleSpec, ...] = ()
@@ -1041,6 +1044,10 @@ class PlotPresentationSpec:
       raise ValueError(f"invalid plot title mode: {self.title_mode!r}")
     if self.legend_position not in {"right", "left", "top", "bottom", "inside"}:
       raise ValueError(f"invalid legend position: {self.legend_position!r}")
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", self.single_color):
+      raise ValueError(f"invalid single color: {self.single_color!r}")
+    if not math.isfinite(self.single_dot_size) or not 0.1 <= self.single_dot_size <= 100:
+      raise ValueError("single_dot_size must be finite and between 0.1 and 100")
     if not math.isfinite(self.gate_outline_width) or not 0.1 <= self.gate_outline_width <= 100:
       raise ValueError("gate_outline_width must be finite and between 0.1 and 100")
     if not math.isfinite(self.axis_line_width) or not 0.5 <= self.axis_line_width <= 20:

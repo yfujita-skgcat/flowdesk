@@ -4116,7 +4116,12 @@ class MainWindow(QMainWindow):
         colors: list[str] = []
         for sample in self._current_plot_sample_ids():
             if sample == self._current_sample_id:
-                colors.append(self._sample_overlay_color(sample))
+                # The active layer follows the single-sample presentation
+                # color. SampleBrowser's swatch fallback is overlay-only and
+                # must not leak into the active title line.
+                colors.append(
+                    str(presentation.get("single_color") or "#000000")
+                )
                 continue
             source = source_by_sample.get(sample, {})
             style = dict(source.get("style") or {})

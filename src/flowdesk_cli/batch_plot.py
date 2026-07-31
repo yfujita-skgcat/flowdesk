@@ -525,7 +525,10 @@ def batch_plot_command(
       finite = np.isfinite(x_values) & np.isfinite(y_values)
       event_colors = _population_event_colors(
         project, str(sample["id"]), processed.preview_report,
-        processed.display_mask, default_color="#000000",
+        processed.display_mask,
+        default_color=str(
+          view.get("presentation", {}).get("single_color", "#000000")
+        ),
       )
       if event_colors is not None:
         event_colors = event_colors[finite]
@@ -1010,13 +1013,24 @@ def batch_plot_command(
         "y_ticks": y_ticks,
         "title_colors": [
           str(
-            manual_colors.get(source_id)
-            if isinstance(manual_colors, Mapping) and manual_colors.get(source_id)
-            else (
-              source_styles.get(source_id, {}).get("color")
-              if "color" in set(source_styles.get(source_id, {}).get("manual_fields", ()))
-              else "#4c78a8"
-            )
+              presentation.get("single_color", "#000000")
+              if source_id == source_ids[0]
+              and not (
+                isinstance(manual_colors, Mapping)
+                and manual_colors.get(source_id)
+              )
+              and "color" not in set(
+                source_styles.get(source_id, {}).get("manual_fields", ())
+              )
+              else (
+                manual_colors.get(source_id)
+                if isinstance(manual_colors, Mapping) and manual_colors.get(source_id)
+                else (
+                  source_styles.get(source_id, {}).get("color")
+                  if "color" in set(source_styles.get(source_id, {}).get("manual_fields", ()))
+                  else "#4c78a8"
+                )
+              )
           )
           for source_id in source_ids
         ],

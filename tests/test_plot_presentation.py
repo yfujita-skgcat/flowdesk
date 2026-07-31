@@ -109,6 +109,8 @@ def test_plot_presentation_defaults_to_white_background() -> None:
   presentation = PlotPresentationSpec()
 
   assert presentation.background_color == "#ffffff"
+  assert presentation.single_color == "#000000"
+  assert presentation.single_dot_size == 1.5
   assert presentation.title_mode == "overlay_sample_titles"
   assert presentation.axis_line_width == 2.0
   assert presentation.show_grid is True

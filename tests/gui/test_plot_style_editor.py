@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QComboBox, QLineEdit, QPushButton, QTabWidget
+from PySide6.QtWidgets import (
+  QComboBox,
+  QDoubleSpinBox,
+  QLineEdit,
+  QPushButton,
+  QTabWidget,
+)
 
 from flowdesk_qt.plot_style_editor import PlotStyleEditorDialog
 
@@ -149,6 +155,35 @@ def test_style_editor_persists_single_sample_density_coloring(qapp) -> None:
     if restored is not None:
       restored.close()
       restored.deleteLater()
+      qapp.processEvents()
+
+
+def test_style_editor_single_color_has_palette_and_density_disables_it(qapp, monkeypatch) -> None:
+  dialog = PlotStyleEditorDialog("scatter", {}, ())
+  try:
+    button = dialog.findChild(QPushButton, "plotSingleColorButton")
+    edit = dialog.findChild(QLineEdit, "plotSingleColorEdit")
+    selector = dialog.findChild(QComboBox, "plotColormapEdit")
+    assert button is not None and edit is not None and selector is not None
+    assert edit.isEnabled()
+    monkeypatch.setattr(
+      "flowdesk_qt.plot_style_editor.QColorDialog.getColor",
+      lambda *_args: QColor("#A1B2C3"),
+    )
+    button.click()
+    assert edit.text() == "#a1b2c3"
+    assert dialog.presentation()["single_color"] == "#a1b2c3"
+    size = dialog.findChild(QDoubleSpinBox, "plotSingleDotSizeSpinBox")
+    assert size is not None
+    size.setValue(3.5)
+    assert dialog.presentation()["single_dot_size"] == 3.5
+    selector.setCurrentIndex(selector.findData("density"))
+    assert not edit.isEnabled()
+    selector.setCurrentIndex(selector.findData(None))
+    assert edit.isEnabled()
+  finally:
+    dialog.close()
+    dialog.deleteLater()
     qapp.processEvents()
 
 

@@ -511,9 +511,12 @@ class SampleBrowser(QWidget):
             swatch.setAccessibleName(f"Overlay color {sample.name}")
             swatch.setToolTip("Choose overlay source color")
             swatch.setFixedWidth(24)
-            self._set_swatch_style(
-                swatch, self.overlay_color(sample.id)
-            )
+            explicit_color = self._manual_overlay_colors.get(sample.id)
+            self._set_swatch_style(swatch, explicit_color)
+            if explicit_color is None:
+                swatch.setToolTip(
+                    "No overlay color selected; automatic color will be used"
+                )
             swatch.clicked.connect(
                 lambda _checked=False, sample_id=sample.id:
                 self._choose_overlay_color(sample_id)
@@ -550,10 +553,16 @@ class SampleBrowser(QWidget):
             self.select_sample(selected_id)
         self._update_overlay_row_states()
 
-    def _set_swatch_style(self, button: QPushButton, color: str) -> None:
-        button.setStyleSheet(
-            f"QPushButton {{ background-color: {color}; border: 1px solid #555; }}"
-        )
+    def _set_swatch_style(self, button: QPushButton, color: str | None) -> None:
+        if color:
+            button.setStyleSheet(
+                f"QPushButton {{ background-color: {color}; border: 1px solid #555; }}"
+            )
+        else:
+            button.setStyleSheet(
+                "QPushButton { background-color: transparent; "
+                "border: 2px dashed #777; }"
+            )
 
     def _update_overlay_row_states(self) -> None:
         active = self.selected_sample()
