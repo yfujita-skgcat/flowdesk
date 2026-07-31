@@ -383,6 +383,35 @@ def test_hybrid_scatter_preserves_per_event_population_colors() -> None:
   assert bytes((0, 0, 255)) in raster["rgb"]
 
 
+def test_hybrid_scatter_honors_cooperative_cancellation() -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),),
+    view_presentation={
+      "source_styles": [{"source_id": "s1", "alpha": 0.6}],
+    },
+  )
+  values = np.linspace(0.0, 1.0, 2_048, dtype=np.float64)
+  calls = 0
+
+  def cancel() -> None:
+    nonlocal calls
+    calls += 1
+    if calls >= 2:
+      raise RuntimeError("cancelled")
+
+  with pytest.raises(RuntimeError, match="cancelled"):
+    _hybrid_scatter_raster(
+      prepared, prepared.resolved_presentation.presentation,
+      {"s1": (tuple(values), tuple(values[::-1]))},
+      plot_width=256, plot_height=256, dpi=144, cancel_check=cancel,
+    )
+  assert calls >= 2
+
+
 def test_hybrid_opaque_fast_path_matches_pixel_center_coverage() -> None:
   source = ({
     "source_id": "s1", "sample_id": "sample-1", "population_id": "all",

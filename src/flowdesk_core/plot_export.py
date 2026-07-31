@@ -9,7 +9,7 @@ import math
 import re
 import struct
 import zlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from html import escape
 from pathlib import Path
@@ -260,6 +260,7 @@ def write_plot_svg(
   *,
   options: BatchPlotExportSpec | None = None,
   render_cache: VectorRenderCache | None = None,
+  cancel_check: Callable[[], None] | None = None,
 ) -> None:
   """Write a small deterministic SVG using the prepared source order."""
   selected = presentation or prepared.resolved_presentation.presentation
@@ -314,6 +315,7 @@ def write_plot_svg(
   if vector_cache is None and (compact_vector or hybrid_raster):
     vector_cache = prepare_vector_render_cache(
       prepared, selected, layers, options=options, event_colors=event_colors,
+      cancel_check=cancel_check,
     )
   hybrid_info: dict[str, Any] | None = None
   if hybrid_raster:
@@ -507,6 +509,7 @@ def write_plot_pdf(
   height: int = 600,
   options: BatchPlotExportSpec | None = None,
   render_cache: VectorRenderCache | None = None,
+  cancel_check: Callable[[], None] | None = None,
 ) -> None:
   """Write a minimal vector PDF using the same prepared layers and styles."""
   if width < 1 or height < 1 or not prepared.source_order:
@@ -532,6 +535,7 @@ def write_plot_pdf(
   if vector_cache is None and (compact_vector or hybrid_raster):
     vector_cache = prepare_vector_render_cache(
       prepared, selected, layers, options=options, event_colors=event_colors,
+      cancel_check=cancel_check,
     )
   hybrid_info: dict[str, Any] | None = None
   if hybrid_raster:
@@ -990,6 +994,7 @@ def prepare_vector_render_cache(
   *,
   options: BatchPlotExportSpec | None = None,
   event_colors: Mapping[str, Any] | None = None,
+  cancel_check: Callable[[], None] | None = None,
 ) -> VectorRenderCache:
   """Prepare the immutable scatter payload shared by SVG and PDF writers.
 
@@ -1021,6 +1026,7 @@ def prepare_vector_render_cache(
       prepared, selected, layers, plot_width=plot_width,
       plot_height=plot_height, dpi=options.hybrid_scatter_dpi,
       event_colors=event_colors,
+      cancel_check=cancel_check,
     )
   return VectorRenderCache(vector_layers, compact_batches, hybrid_info)
 
@@ -1522,6 +1528,7 @@ def _hybrid_scatter_raster(
   plot_width: float,
   plot_height: float,
   dpi: int,
+  cancel_check: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
   """Render only scatter markers into a transparent lossless RGBA raster."""
   if dpi < 72 or dpi > 2400:
@@ -1609,6 +1616,8 @@ def _hybrid_scatter_raster(
       pixels[:] = pillow_image.tobytes()
       pillow_image = None
     for index, (x_value, y_value) in enumerate(zip(x_values, y_values, strict=False)):
+      if cancel_check is not None and index % 256 == 0:
+        cancel_check()
       point_color_text = (
         color_text if colors is None or index >= len(colors) else colors[index]
       )
@@ -1639,6 +1648,9 @@ def _hybrid_scatter_raster(
           pillow_image, min_x, max_x, min_y, max_y, x, y, radius, shape,
           point_color, alpha,
         )
+
+    if cancel_check is not None:
+      cancel_check()
 
   if pillow_image is not None:
     pixels[:] = pillow_image.tobytes()

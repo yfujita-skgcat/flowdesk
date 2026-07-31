@@ -1281,6 +1281,11 @@ run, the old implementation took 18.5 s and the C-compositor path took 13.1 s. P
 the old and new implementations rasterized at both 150 and 600 DPI were pixel-identical;
 the Pillow dependency is required for this hybrid path and missing-package errors are
 reported explicitly.
+The same raster loop now accepts a coordinator-owned cancellation callback. It is checked
+every 256 events and at each source boundary; an active Pillow/NumPy operation is allowed to
+finish, then `ExecutionCancelled` propagates before any incomplete PDF/SVG is published.
+The callback is optional for direct core API callers, and normal uncancelled output is
+unchanged.
 
 The bounded executor now also has regression coverage for threaded cancellation: each
 worker owns a unique staged output/sidecar, successful staged files are atomically

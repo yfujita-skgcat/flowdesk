@@ -565,6 +565,10 @@ def batch_plot_command(
     ) -> None:
       nonlocal normalized_cache_bytes
       sample_id = str(sample["id"])
+      cancel_check = (
+        None if execution_control is None
+        else execution_control.cancellation_token.raise_if_cancelled
+      )
       with render_cache_lock:
         cached_payload = prepared_render_cache.get(sample_id)
       if cached_payload is not None:
@@ -573,7 +577,7 @@ def batch_plot_command(
         ) = cached_payload
         _write_render_payload(
           path, cached_prepared, cached_layers, cached_event_colors, spec,
-          vector_cache=cached_writer_cache,
+          vector_cache=cached_writer_cache, cancel_check=cancel_check,
         )
         with render_cache_lock:
           rendered_format_counts[sample_id] = rendered_format_counts.get(sample_id, 0) + 1
@@ -784,7 +788,7 @@ def batch_plot_command(
       # keeps PNG/JPEG/SVG/PDF coordinates, ticks, gates, and event order equal.
       _write_render_payload(
         path, prepared, layers, visible_event_colors, spec,
-        vector_cache=writer_cache,
+        vector_cache=writer_cache, cancel_check=cancel_check,
       )
       if len(spec.formats) <= 1:
         discard_render_cache(sample_id)
@@ -847,6 +851,7 @@ def _write_render_payload(
   spec: BatchPlotExportSpec,
   *,
   vector_cache: dict[str, VectorRenderCache] | None = None,
+  cancel_check: Callable[[], None] | None = None,
 ) -> None:
   """Write one format from an item-scoped immutable prepared payload."""
   cache: VectorRenderCache | None = None
@@ -865,6 +870,7 @@ def _write_render_payload(
       selected = prepared.resolved_presentation.presentation
       cache = prepare_vector_render_cache(
         prepared, selected, layers, options=spec, event_colors=event_colors,
+        cancel_check=cancel_check,
       )
       vector_cache["scatter"] = cache
   if path.suffix.lower() == ".png":
@@ -880,12 +886,13 @@ def _write_render_payload(
   elif path.suffix.lower() == ".svg":
     write_plot_svg(
       path, prepared, layers=layers, options=spec, event_colors=event_colors,
-      render_cache=cache,
+      render_cache=cache, cancel_check=cancel_check,
     )
   elif path.suffix.lower() == ".pdf":
     write_plot_pdf(
       path, prepared, layers=layers, width=spec.width, height=spec.height,
       options=spec, event_colors=event_colors, render_cache=cache,
+      cancel_check=cancel_check,
     )
   else:
     raise ValueError(f"CLI renderer does not support {path.suffix!r}")
