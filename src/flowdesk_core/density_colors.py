@@ -53,6 +53,9 @@ class DensityColorMetadata:
   normalization_log_density: tuple[float, float]
   valid_input_count: int
   algorithm_version: str
+  requested_histogram_workers: int
+  effective_histogram_workers: int
+  histogram_memory_budget_bytes: int | None
 
 
 @dataclass(frozen=True)
@@ -115,7 +118,7 @@ def _estimate_density_colors(
   shape = _grid_shape(width, height, config)
   finite = np.isfinite(x) & np.isfinite(y)
   visible = finite & (x >= x_min) & (x <= x_max) & (y >= y_min) & (y <= y_max)
-  histogram = _histogram2d(
+  histogram, effective_histogram_workers = _histogram2d(
     y[visible], x[visible], shape=shape,
     bounds=(x_min, x_max, y_min, y_max),
     chunk_size=config.histogram_chunk_size,
@@ -151,6 +154,8 @@ def _estimate_density_colors(
     DensityColorMetadata(
       bounds, shape, sigma, (float(low), float(high)),
       int(np.count_nonzero(visible)), config.algorithm_version,
+      config.histogram_workers, effective_histogram_workers,
+      config.histogram_memory_budget_bytes,
     ),
   )
 
@@ -204,7 +209,7 @@ def _histogram2d(
   chunk_size: int | None,
   workers: int,
   memory_budget_bytes: int | None,
-) -> NDArray[np.float64]:
+) -> tuple[NDArray[np.float64], int]:
   """Build a deterministic histogram, optionally in bounded-memory chunks.
 
   ``np.histogram2d`` returns floating counts even though every bin contains an
@@ -218,7 +223,7 @@ def _histogram2d(
       y_values, x_values, bins=shape,
       range=((bounds[2], bounds[3]), (bounds[0], bounds[1])),
     )
-    return histogram
+    return histogram, 1
   starts = range(0, len(x_values), chunk_size)
 
   def make_chunk(start: int) -> NDArray[np.int64]:
@@ -254,7 +259,7 @@ def _histogram2d(
     histogram = np.zeros(shape, dtype=np.int64)
     for start in chunk_starts:
       histogram += make_chunk(start)
-  return histogram.astype(np.float64)
+  return histogram.astype(np.float64), effective_workers
 
 
 def _gaussian_smooth(

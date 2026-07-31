@@ -703,6 +703,9 @@ def batch_plot_command(
           "sigma_cells": density_result.metadata.sigma_cells,
           "normalization_log_density": density_result.metadata.normalization_log_density,
           "valid_input_count": density_result.metadata.valid_input_count,
+          "requested_histogram_workers": density_result.metadata.requested_histogram_workers,
+          "effective_histogram_workers": density_result.metadata.effective_histogram_workers,
+          "histogram_memory_budget_bytes": density_result.metadata.histogram_memory_budget_bytes,
         }
       elif presentation.get("colormap") == "density":
         prepared.metadata["density_coloring"] = {"active": False, "reason": "overlay"}

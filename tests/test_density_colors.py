@@ -24,6 +24,8 @@ def test_smooth_density_is_deterministic_continuous_and_warmer_at_cluster_centre
   assert np.array_equal(result.colors, repeat.colors)
   assert result.metadata.grid_shape == (200, 300)
   assert result.metadata.algorithm_version == "smooth-density.v2"
+  assert result.metadata.requested_histogram_workers == 1
+  assert result.metadata.effective_histogram_workers == 1
 
 
 def test_density_normalization_does_not_clip_a_large_high_density_region() -> None:
@@ -65,6 +67,8 @@ def test_chunked_histogram_matches_unchunked_density_result() -> None:
   )
   assert np.array_equal(unchunked.colors, parallel.colors)
   assert np.array_equal(unchunked.normalized_density, parallel.normalized_density)
+  assert parallel.metadata.requested_histogram_workers == 2
+  assert parallel.metadata.effective_histogram_workers == 2
   budget_limited = estimate_density_colors(
     x, y, query_x, query_y,
     bounds=common["bounds"], logical_size=common["logical_size"],
@@ -74,6 +78,7 @@ def test_chunked_histogram_matches_unchunked_density_result() -> None:
   )
   assert np.array_equal(unchunked.colors, budget_limited.colors)
   assert np.array_equal(unchunked.normalized_density, budget_limited.normalized_density)
+  assert budget_limited.metadata.effective_histogram_workers == 1
 
 
 def test_density_chunk_size_rejects_non_positive_values() -> None:

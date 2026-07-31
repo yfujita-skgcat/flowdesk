@@ -1368,6 +1368,9 @@ The headless `batch-plot` CLI exposes these as runtime-only `--density-workers` 
 two runtime-only values and passes them to the same headless runner; neither path writes
 them to the persisted export definition. GUI defaults remain one density worker until
 Windows/PyInstaller lifecycle and platform-specific controls are validated.
+Density metadata records requested/effective histogram workers and the configured budget;
+batch sidecars therefore expose whether the budget reduced concurrency without changing
+the density field.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and

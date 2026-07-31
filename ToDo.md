@@ -1528,6 +1528,8 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **GUI batch density runtime controls**: Batch Plot Export dialogへ同じdensity worker数と
   density memory budgetを追加し、保存済みdefinitionへ書き込まずheadless workerへ渡す。
   GUI object名、runtime-only保持、CLI/coreとの設定一致をテストした。
+- [x] **density execution provenance**: density metadataとbatch sidecarへrequested/effective
+  histogram workersとmemory budgetを記録し、budgetによるworker削減を結果と区別して監査可能にした。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
