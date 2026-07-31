@@ -1418,6 +1418,15 @@ allowance because density colouring is disabled for overlays. This changes only 
 runtime worker limit under an explicit memory budget; it does not change density values,
 output bytes, or the sequential default.
 
+An additional 2026-07-31 Linux run of `data/analysis.flowdesk` and
+`batch-export-2c72921e28a9` (four samples, PNG/PDF) produced byte-identical outputs in
+both modes. Sequential execution took 21.286 s with a 314,208 KiB peak RSS; bounded
+thread/2 took 21.153 s with a 523,059 KiB peak RSS (1.006x sequential speed and about
+1.66x RSS). This confirms the current parity and bounded-worker implementation but does
+not justify changing the sequential default. Native Windows/PyInstaller shutdown and
+GUI-backend validation remain required before the parallel path can be considered
+operationally complete.
+
 Batch source preparation now has an explicit `ProcessedDisplayLayer` fast path. For an
 all-events view with no persisted population display colours, batch export skips the
 authoritative preview/statistics pass and runs the same compensation, derived-parameter,
