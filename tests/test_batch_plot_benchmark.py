@@ -54,6 +54,48 @@ def test_project_benchmark_compares_hashes_and_isolates_backends(tmp_path, monke
   assert result["timeout_seconds"] == 300.0
 
 
+def test_queue_project_benchmark_compares_recursive_hashes_and_cache_provenance(
+  tmp_path, monkeypatch,
+) -> None:
+  module = _benchmark_module()
+  project = tmp_path / "project.flowdesk"
+  project.write_text("placeholder", encoding="utf-8")
+  calls = []
+
+  def fake_run(
+    project_path, output_dir, backend, max_workers, memory_budget_mib,
+    timeout_seconds,
+  ):
+    calls.append((project_path, output_dir, backend, max_workers, memory_budget_mib))
+    return {
+      "backend": backend,
+      "elapsed_seconds": 2.0 if backend == "sequential" else 1.0,
+      "status": "success",
+      "return_code": 0,
+      "output_hashes": {"001_def/plot.png": "same"},
+      "output_bytes": 10,
+      "execution": {
+        "resolved_backend": backend,
+        "raw_sample_cache": {"hits": 2},
+      },
+      "peak_rss_bytes": 100,
+      "open_file_count_after": 4,
+      "stderr_tail": "",
+    }
+
+  monkeypatch.setattr(module, "_run_project_queue_backend", fake_run)
+  result = module.run_project_batch_queue_benchmark(
+    project=project, max_workers=2, memory_budget_mib=128,
+  )
+
+  assert [call[2] for call in calls] == ["sequential", "thread"]
+  assert all(call[3:] == (2, 128) for call in calls)
+  assert result["output_names_match"] is True
+  assert result["output_hashes_match"] is True
+  assert result["thread_speedup"] == 2.0
+  assert result["mode"] == "queue-all"
+
+
 def test_representative_project_copy_adds_scientific_stages(tmp_path) -> None:
   module = _benchmark_module()
   project = tmp_path / "project.flowdesk"

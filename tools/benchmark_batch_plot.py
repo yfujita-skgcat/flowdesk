@@ -83,19 +83,23 @@ def _open_file_count() -> int | None:
     return None
 
 
-def _output_hashes(output_dir: Path) -> tuple[dict[str, str], int]:
-  """Hash only published plot files, excluding sidecars and the manifest."""
+def _output_hashes(
+  output_dir: Path, *, recursive: bool = False,
+) -> tuple[dict[str, str], int]:
+  """Hash published plot files, excluding sidecars and manifests."""
   hashes: dict[str, str] = {}
   output_bytes = 0
   if not output_dir.is_dir():
     return hashes, output_bytes
-  for path in sorted(output_dir.iterdir()):
+  paths = output_dir.rglob("*") if recursive else output_dir.iterdir()
+  for path in sorted(paths):
     if not path.is_file() or path.suffix.lower() not in {
       ".png", ".jpg", ".jpeg", ".svg", ".pdf",
     }:
       continue
     data = path.read_bytes()
-    hashes[path.name] = hashlib.sha256(data).hexdigest()
+    name = path.relative_to(output_dir).as_posix()
+    hashes[name] = hashlib.sha256(data).hexdigest()
     output_bytes += len(data)
   return hashes, output_bytes
 
@@ -253,6 +257,143 @@ raise SystemExit(status)
     "peak_rss_bytes": child_result.get("peak_rss_bytes"),
     "open_file_count_after": child_result.get("open_file_count_after"),
     "stderr_tail": stderr[-2000:],
+  }
+
+
+def _run_project_queue_backend(
+  project: Path,
+  output_dir: Path,
+  backend: ExecutionBackend,
+  max_workers: int,
+  memory_budget_mib: int | None,
+  timeout_seconds: float = 300.0,
+) -> _ProjectRunResult:
+  """Run all saved definitions in a fresh process and inspect its queue manifest."""
+  queue_workers = 1 if backend == "sequential" else max_workers
+  child_code = """
+import json
+import os
+import sys
+from flowdesk_cli.main import main
+
+status = main()
+try:
+  import resource
+except ImportError:
+  resource = None
+usage = None if resource is None else resource.getrusage(resource.RUSAGE_SELF)
+rss = None if usage is None else int(
+  usage.ru_maxrss * (1 if sys.platform == "darwin" else 1024)
+)
+fd_count = None
+if os.path.isdir("/proc/self/fd"):
+  try:
+    fd_count = len(os.listdir("/proc/self/fd"))
+  except OSError:
+    pass
+print("__FLOWDESK_BENCHMARK_CHILD__" + json.dumps({
+  "status": status, "peak_rss_bytes": rss, "open_file_count_after": fd_count,
+}))
+raise SystemExit(status)
+"""
+  command = [
+    sys.executable, "-c", child_code, "batch-plot", str(project), "--queue-all",
+    "--output-dir", str(output_dir), "--queue-workers", str(queue_workers),
+    # Queue-level workers own concurrency; prohibit nested definition workers.
+    "--execution-backend", "sequential", "--max-workers", "1",
+  ]
+  if memory_budget_mib is not None:
+    command.extend(["--memory-budget-mib", str(memory_budget_mib)])
+  output_dir.mkdir(parents=True, exist_ok=True)
+  started = time.perf_counter()
+  timed_out = False
+  timeout_stderr = ""
+  try:
+    completed = subprocess.run(
+      command, capture_output=True, text=True, check=False,
+      timeout=timeout_seconds,
+    )
+  except subprocess.TimeoutExpired as exc:
+    timed_out = True
+    timeout_stderr = str(exc.stderr or exc.stdout or "")
+    completed = None
+  elapsed = time.perf_counter() - started
+  child_result: dict[str, Any] = {}
+  marker = "__FLOWDESK_BENCHMARK_CHILD__"
+  stdout = "" if completed is None else completed.stdout
+  for line in reversed(stdout.splitlines()):
+    if line.startswith(marker):
+      child_result = json.loads(line[len(marker):])
+      break
+  manifest_path = output_dir / "batch-queue-manifest.json"
+  execution: Mapping[str, Any] | None = None
+  status = "timeout" if timed_out else "failed"
+  if manifest_path.exists():
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    status = str(manifest.get("status", status))
+    value = manifest.get("queue_execution")
+    if isinstance(value, Mapping):
+      execution = dict(value)
+      cache = manifest.get("raw_sample_cache")
+      if isinstance(cache, Mapping):
+        execution["raw_sample_cache"] = dict(cache)
+  hashes, output_bytes = _output_hashes(output_dir, recursive=True)
+  stderr = timeout_stderr if timed_out else (completed.stderr if completed else "")
+  return {
+    "backend": backend,
+    "elapsed_seconds": elapsed,
+    "status": status,
+    "return_code": 124 if timed_out else (completed.returncode if completed else 1),
+    "output_hashes": hashes,
+    "output_bytes": output_bytes,
+    "execution": execution,
+    "peak_rss_bytes": child_result.get("peak_rss_bytes"),
+    "open_file_count_after": child_result.get("open_file_count_after"),
+    "stderr_tail": stderr[-2000:],
+  }
+
+
+def run_project_batch_queue_benchmark(
+  *, project: Path | str, max_workers: int = 2,
+  memory_budget_mib: int | None = None,
+  timeout_seconds: float = 300.0,
+) -> dict[str, object]:
+  """Compare sequential and bounded queue execution for all saved definitions."""
+  if max_workers < 1:
+    raise ValueError("max_workers must be positive")
+  if memory_budget_mib is not None and memory_budget_mib < 1:
+    raise ValueError("memory_budget_mib must be positive when set")
+  if timeout_seconds <= 0:
+    raise ValueError("timeout_seconds must be positive")
+  project_path = Path(project)
+  if not project_path.exists():
+    raise FileNotFoundError(project_path)
+  runs: dict[str, _ProjectRunResult] = {}
+  with tempfile.TemporaryDirectory(prefix="flowdesk-queue-benchmark-") as root:
+    root_path = Path(root)
+    for backend in ("sequential", "thread"):
+      runs[backend] = _run_project_queue_backend(
+        project_path, root_path / backend, backend, max_workers,
+        memory_budget_mib, timeout_seconds,
+      )
+  sequential = runs["sequential"]
+  threaded = runs["thread"]
+  sequential_hashes = dict(sequential["output_hashes"])
+  threaded_hashes = dict(threaded["output_hashes"])
+  return {
+    "project": str(project_path),
+    "mode": "queue-all",
+    "timeout_seconds": timeout_seconds,
+    "max_workers": max_workers,
+    "memory_budget_mib": memory_budget_mib,
+    "sequential": sequential,
+    "thread": threaded,
+    "output_names_match": set(sequential_hashes) == set(threaded_hashes),
+    "output_hashes_match": sequential_hashes == threaded_hashes,
+    "thread_speedup": (
+      sequential["elapsed_seconds"] / threaded["elapsed_seconds"]
+      if threaded["elapsed_seconds"] else None
+    ),
   }
 
 
@@ -462,17 +603,34 @@ def main() -> int:
     "--export-id",
     help="Batch export definition ID required with --project.",
   )
+  parser.add_argument(
+    "--queue", action="store_true",
+    help="Benchmark queue-all sequential/thread execution for --project.",
+  )
   parser.add_argument("--output", type=Path)
   args = parser.parse_args()
+  if args.queue and args.project is None:
+    parser.error("--queue requires --project")
   if args.project is not None:
-    if not args.export_id:
-      parser.error("--export-id is required with --project")
-    result = run_project_batch_plot_benchmark(
-      project=args.project, export_id=args.export_id, max_workers=args.max_workers,
-      memory_budget_mib=args.memory_budget_mib,
-      scientific_stages=args.scientific_stages,
-      timeout_seconds=args.timeout_seconds,
-    )
+    if args.queue:
+      if args.export_id:
+        parser.error("--queue cannot be combined with --export-id")
+      if args.scientific_stages:
+        parser.error("--queue cannot be combined with --scientific-stages")
+      result = run_project_batch_queue_benchmark(
+        project=args.project, max_workers=args.max_workers,
+        memory_budget_mib=args.memory_budget_mib,
+        timeout_seconds=args.timeout_seconds,
+      )
+    else:
+      if not args.export_id:
+        parser.error("--export-id is required with --project unless --queue is set")
+      result = run_project_batch_plot_benchmark(
+        project=args.project, export_id=args.export_id, max_workers=args.max_workers,
+        memory_budget_mib=args.memory_budget_mib,
+        scientific_stages=args.scientific_stages,
+        timeout_seconds=args.timeout_seconds,
+      )
   else:
     result = run_batch_plot_benchmark(
       sample_count=args.samples,

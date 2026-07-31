@@ -1127,6 +1127,16 @@ representative writer/gate workload, not evidence to change the default backend;
 the scientific-stages variant adds compensation, derived data, and gate statistics;
 Windows/PyInstaller shutdown remains a gate.
 
+The same tool accepts `--project <bundle> --queue` to benchmark every saved definition
+through the queue coordinator. It invokes sequential queue workers and bounded queue workers
+in separate child processes, reads `batch-queue-manifest.json`, includes `queue_execution` and
+final raw-cache provenance, recursively hashes published files below definition directories,
+and applies the same timeout/peak-RSS/open-file accounting. Queue mode is intentionally
+separate from `--export-id`: a single-definition writer benchmark cannot establish queue-level
+FCS I/O reuse or cache benefit. Output hash parity remains mandatory, and the result is
+diagnostic until representative multi-definition FCS and Windows/PyInstaller measurements are
+available.
+
 The CLI preparation path now resolves the batch target and overlay dependency map
 before reading FCS files. An explicit or group target prepares only its target samples
 and required overlay sources; unrelated samples are not loaded or transformed. A
