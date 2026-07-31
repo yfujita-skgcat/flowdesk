@@ -359,19 +359,41 @@ def test_batch_plot_queue_memory_estimate_uses_definition_sources(
   assert execution["estimated_definition_bytes"] == 64 * 1024 * 1024
 
   snapshot["batch_plot_exports"][1]["formats"] = ["png"]
-  snapshot["batch_plot_exports"][1]["width"] = 4_000
-  snapshot["batch_plot_exports"][1]["height"] = 3_000
+  snapshot["batch_plot_exports"][1]["width"] = 6_000
+  snapshot["batch_plot_exports"][1]["height"] = 4_000
   large_output_dir = tmp_path / "large-output"
   assert batch_plot_queue_command(
     "project.flowdesk", ("small-a", "small-b"), str(large_output_dir),
     queue_workers=2,
-    execution_options=ExecutionOptions(memory_budget_bytes=128 * 1024 * 1024),
+    execution_options=ExecutionOptions(memory_budget_bytes=192 * 1024 * 1024),
   ) == 0
   large_execution = json.loads(
     (large_output_dir / "batch-queue-manifest.json").read_text(encoding="utf-8")
   )["queue_execution"]
-  assert large_execution["effective_workers"] == 1
-  assert large_execution["estimated_definition_bytes"] > 64 * 1024 * 1024
+  assert large_execution["effective_workers"] == 2
+  assert 64 * 1024 * 1024 < large_execution["estimated_definition_bytes"] < 128 * 1024 * 1024
+
+  snapshot["batch_plot_exports"].extend([
+    {
+      "id": "large-a", "name": "Large A", "target": "explicit",
+      "sample_ids": ["large"], "plot_view_id": "view", "formats": ["svg"],
+    },
+    {
+      "id": "large-b", "name": "Large B", "target": "explicit",
+      "sample_ids": ["large"], "plot_view_id": "view", "formats": ["svg"],
+    },
+  ])
+  corrected_output_dir = tmp_path / "corrected-estimate"
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("large-a", "large-b"), str(corrected_output_dir),
+    queue_workers=2,
+    execution_options=ExecutionOptions(memory_budget_bytes=192 * 1024 * 1024),
+  ) == 0
+  corrected_execution = json.loads(
+    (corrected_output_dir / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )["queue_execution"]
+  assert corrected_execution["estimated_definition_bytes"] == 96 * 1024 * 1024
+  assert corrected_execution["effective_workers"] == 2
 
 
 def test_raw_sample_cache_is_bounded_and_tracks_fingerprint_hits() -> None:

@@ -1260,6 +1260,14 @@ memory budget; it does not reject a scientific export or alter display-event
 selection. The estimate remains conservative and must be rechecked against
 peak RSS for large compensation/derived/gating workloads.
 
+The queue-level return value must not apply the FCS multiplier a second time. The
+per-definition calculation already uses `sum(source_file_bytes) * 6 + output_working_set`;
+the queue resolver returns that value with a 64 MiB floor. A regression test uses a 16 MiB
+source (96 MiB estimated working set) and a 192 MiB explicit budget to verify that two
+definition workers remain eligible. This changes only scheduling utilization under an
+explicit runtime budget; it does not relax the per-definition estimate or alter raw events,
+output bytes, cancellation, or scientific results.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become

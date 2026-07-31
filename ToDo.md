@@ -1610,6 +1610,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **density batch memory estimate**: Batch Plot Exportのbounded render worker推定へ、density
   色配列、normalized density query、512×512 histogram/smoothing working setを保守的に加算した。
   density overlayではなく単一source時だけ適用し、densityの出力色・worker既定値・科学的結果は変更しない。
+- [x] **batch queue memory estimateの二重計上修正**: 定義ごとのFCS working setへ既に適用した
+  保守的な`×6`係数をqueue戻り値で再度掛けていたため、最大36倍の過大見積もりになっていた。
+  戻り値を定義ごとの見積もりそのもの（最低64 MiB）へ修正し、明示的なmemory budget下で安全な
+  queue worker数を不必要に1へ制限しないようにした。raw event、出力、scientific resultは変更せず、
+  16 MiB FCS×6=96 MiBの見積もりと2 worker解決を回帰testした。
 - [x] **batch display-stage fast path**: all-events batch viewでpopulation membership/statisticsが
   不要、かつpopulation display colorも未設定の場合、authoritative previewを実行せず同じcoreの
   compensation/derived/transform stageだけを`ProcessedDisplayLayer`へ返す経路を追加した。

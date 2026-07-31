@@ -1377,8 +1377,9 @@ def _estimate_queue_definition_bytes(
   if estimated_definition_bytes <= 0:
     return 0
   # FCS decode, processed arrays, normalized layers, and writer temporaries
-  # can coexist. Six times the file bytes is deliberately conservative.
-  return max(64 * 1024 * 1024, estimated_definition_bytes * 6)
+  # can coexist. The per-definition estimate above already applies the
+  # deliberately conservative six-times multiplier; do not apply it again.
+  return max(64 * 1024 * 1024, estimated_definition_bytes)
 
 
 def _write_queue_manifest(path: Path, payload: Mapping[str, Any]) -> None:
