@@ -1,6 +1,6 @@
 # PDF export performance and renderer parity
 
-Status: planned
+Status: Increment 2 implemented; remaining increments planned
 
 This guide is the implementation contract for the remaining PDF batch-export
 latency and GUI/export visual-parity defects. It is deliberately separate from

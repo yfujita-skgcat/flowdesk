@@ -50,6 +50,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 from flowdesk_core.density_colors import estimate_density_colors
 from flowdesk_core.models import GateSpec, TransformSpec
 from flowdesk_core.plot_presentation import resolve_presentation_layers
+from flowdesk_core.plot_scene import PlotScene, resolve_plot_layout
 from flowdesk_core.transforms import (
     TransformError,
     TransformTick,
@@ -309,16 +310,19 @@ class PlotWidget(QWidget):
             bold=weight == "bold",
             color=self._foreground_color(str(value.get("background_color", "#ffffff"))),
         )
-        title_qfont = QFont(family)
-        title_qfont.setPointSizeF(size)
-        title_qfont.setBold(weight == "bold")
-        title_height = max(
-            30,
-            QFontMetrics(title_qfont).height() * len(title_lines) + 8,
+        # Resolve the same logical title band used by headless export. Qt font
+        # metrics remain useful for glyph rendering, but do not decide the
+        # plot rectangle independently of the renderer-neutral scene.
+        layout = resolve_plot_layout(
+            PlotScene(title_lines=tuple(title_lines)),
+            value,
+            width=max(1, self.canvas_size()[0]),
+            height=max(1, self.canvas_size()[1]),
         )
-        # pyqtgraph's PlotItem.setTitle() fixes this row to 30 px.  Increase
-        # it after setting the HTML title so every overlay-title line remains
-        # inside the plot layout rather than being clipped at the top.
+        title_height = max(30, round(layout.margins[1]))
+        # pyqtgraph's PlotItem.setTitle() fixes this row to 30 px. Increase it
+        # after setting the HTML title so every title line remains in the
+        # reserved canonical title band.
         self._plot_item.titleLabel.setMaximumHeight(title_height)
         self._plot_item.layout.setRowFixedHeight(0, title_height)
         self._axis_label_text_style = self._label_font_style(value.get("axis_label_font"))

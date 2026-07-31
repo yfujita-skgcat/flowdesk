@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from math import isfinite
-from typing import Any, Mapping
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -56,7 +57,7 @@ class PlotScene:
           raise ValueError("plot scene tick positions must be in [0, 1]")
 
   @classmethod
-  def from_mapping(cls, value: Mapping[str, Any] | None = None) -> "PlotScene":
+  def from_mapping(cls, value: Mapping[str, Any] | None = None) -> PlotScene:
     """Build a scene from JSON-compatible display metadata."""
     raw = dict(value or {})
     raw_range = raw.get("view_range")
@@ -115,3 +116,114 @@ class PlotScene:
       self.to_mapping(), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+@dataclass(frozen=True)
+class PlotLayoutSpec:
+  """Logical layout shared by GUI and format-specific renderers.
+
+  Coordinates use a top-left origin and logical canvas units.  The layout is
+  presentation-only: it contains no event coordinates or analytical values.
+  ``plot_area`` remains a margin tuple for backwards-compatible scene files;
+  this object is the resolved rectangle for one concrete canvas and visibility
+  selection.
+  """
+
+  canvas_width: int
+  canvas_height: int
+  margins: tuple[float, float, float, float]
+  plot_rect: tuple[float, float, float, float]
+  title_block: tuple[float, float, float, float]
+  title_baselines: tuple[float, ...]
+  title_line_height: float
+
+  def __post_init__(self) -> None:
+    if self.canvas_width < 1 or self.canvas_height < 1:
+      raise ValueError("plot layout canvas must be positive")
+    if len(self.margins) != 4 or len(self.plot_rect) != 4 or len(self.title_block) != 4:
+      raise ValueError("plot layout rectangles must contain four values")
+    if self.title_line_height <= 0:
+      raise ValueError("plot layout title line height must be positive")
+    plot_x, plot_y, plot_width, plot_height = self.plot_rect
+    if plot_x < 0 or plot_y < 0 or plot_width <= 0 or plot_height <= 0:
+      raise ValueError("plot layout plot rectangle must be positive and in canvas")
+    if plot_x + plot_width > self.canvas_width + 1e-6:
+      raise ValueError("plot layout plot rectangle exceeds canvas width")
+    if plot_y + plot_height > self.canvas_height + 1e-6:
+      raise ValueError("plot layout plot rectangle exceeds canvas height")
+
+  def to_mapping(self) -> dict[str, Any]:
+    return {
+      "canvas_width": self.canvas_width,
+      "canvas_height": self.canvas_height,
+      "margins": list(self.margins),
+      "plot_rect": list(self.plot_rect),
+      "title_block": list(self.title_block),
+      "title_baselines": list(self.title_baselines),
+      "title_line_height": self.title_line_height,
+    }
+
+
+def _font_size(presentation: Mapping[str, Any] | None) -> float:
+  value = (presentation or {}).get("title_font", {})
+  if isinstance(value, Mapping):
+    value = value.get("size", 14.0)
+  else:
+    value = getattr(value, "size", 14.0)
+  try:
+    return max(1.0, float(value))
+  except (TypeError, ValueError):
+    return 14.0
+
+
+def resolve_plot_layout(
+  scene: PlotScene,
+  presentation: Mapping[str, Any] | None,
+  *,
+  width: int,
+  height: int,
+  include_title: bool = True,
+  include_axis_labels: bool = True,
+  include_ticks: bool = True,
+) -> PlotLayoutSpec:
+  """Resolve deterministic logical geometry for one rendered plot.
+
+  The title band is derived from the number of non-empty scene title lines,
+  not from a fixed y-coordinate.  A minimum top margin captured from the live
+  GUI is retained, while an insufficient margin is enlarged so title glyphs
+  cannot enter the data rectangle.  Font rasterisation remains backend
+  specific; line height and baselines are deliberately backend independent.
+  """
+  if width < 1 or height < 1:
+    raise ValueError("plot layout canvas must be positive")
+  raw_left, raw_top, raw_right, raw_bottom = scene.plot_area
+  left = max(0.0, float(raw_left))
+  right = max(0.0, float(raw_right))
+  bottom = max(0.0, float(raw_bottom))
+  lines = tuple(line for line in scene.title_lines if str(line))
+  font_size = _font_size(presentation)
+  line_height = max(18.0, font_size * 1.45)
+  title_height = (line_height * len(lines) + 8.0) if include_title and lines else 0.0
+  title_top_padding = 4.0 if title_height else 0.0
+  top = max(0.0, float(raw_top))
+  if title_height:
+    top = max(top, title_height + title_top_padding)
+  if include_ticks:
+    left = max(left, 1.0)
+    bottom = max(bottom, 1.0)
+  plot_width = max(1.0, float(width) - left - right)
+  plot_height = max(1.0, float(height) - top - bottom)
+  title_block_height = max(0.0, top - title_top_padding)
+  title_block = (0.0, 0.0, float(width), title_block_height)
+  title_baselines = tuple(
+    title_block_height - line_height * (len(lines) - index - 0.35)
+    for index in range(len(lines))
+  )
+  return PlotLayoutSpec(
+    canvas_width=int(width), canvas_height=int(height),
+    margins=(left, top, right, bottom),
+    plot_rect=(left, top, plot_width, plot_height),
+    title_block=title_block,
+    title_baselines=title_baselines,
+    title_line_height=line_height,
+  )

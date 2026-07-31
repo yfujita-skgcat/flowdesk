@@ -10,7 +10,7 @@ import re
 import struct
 import zlib
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from html import escape
 from pathlib import Path
 from typing import Any, Iterator
@@ -26,7 +26,7 @@ from flowdesk_core.plot_presentation import (
   resolve_presentation_title,
   validate_presentation,
 )
-from flowdesk_core.plot_scene import PlotScene
+from flowdesk_core.plot_scene import PlotLayoutSpec, PlotScene, resolve_plot_layout
 from flowdesk_core.vector_scatter import (
   CompactScatterBatch,
   VectorScatterLayer,
@@ -271,8 +271,9 @@ def write_plot_svg(
   if not prepared.source_order:
     raise PlotExportError("cannot export a plot with no visible source")
   width, height = _dimensions(800, 600, options)
-  left, top, plot_width, plot_height = _raster_layout(
-    width, height, prepared, selected, options,
+  layout = _resolved_layout(width, height, prepared, selected, options)
+  left, top, plot_width, plot_height = (
+    round(value) for value in layout.plot_rect
   )
   elements = [
     f'<rect width="100%" height="100%" fill="{escape(selected.background_color)}"/>',
@@ -280,10 +281,17 @@ def write_plot_svg(
   if options is None or options.include_ticks:
     elements.extend(_svg_axes(left, top, plot_width, plot_height))
   if options is None or options.include_title:
-    elements.append(
-      f'<text x="{width / 2:g}" y="32" text-anchor="middle" '
-      f'font-size="{selected.title_font.size}">{escape(selected.title)}</text>'
-    )
+    title_lines = _title_lines(prepared, selected)
+    title_colors = prepared.scene.title_colors
+    for index, line in enumerate(title_lines):
+      color = title_colors[index] if index < len(title_colors) else "#000000"
+      baseline = layout.title_baselines[index]
+      elements.append(
+        f'<text x="{width / 2:g}" y="{baseline:g}" text-anchor="middle" '
+        f'fill="{escape(str(color))}" font-family="{escape(selected.title_font.family)}" '
+        f'font-size="{selected.title_font.size:g}" '
+        f'font-weight="{escape(selected.title_font.weight)}">{escape(line)}</text>'
+      )
   if options is None or options.include_axis_labels:
     elements.extend([
       f'<text x="{left + plot_width / 2:g}" y="{height - 20:g}" text-anchor="middle">'
@@ -460,6 +468,9 @@ def write_plot_png(
   left, top, plot_width, plot_height = _raster_layout(
     canvas.logical_width, canvas.logical_height, prepared, selected, options,
   )
+  layout = _resolved_layout(
+    canvas.logical_width, canvas.logical_height, prepared, selected, options,
+  )
   left = round(left * device_scale)
   top = round(top * device_scale)
   plot_width = round(plot_width * device_scale)
@@ -498,7 +509,7 @@ def write_plot_png(
     )
   _draw_raster_text(
     draw, prepared, selected, width * scale, height * scale,
-    left, top, plot_width, plot_height, options, device_scale,
+    left, top, plot_width, plot_height, options, device_scale, layout,
   )
   out_path = Path(path)
   out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -536,6 +547,7 @@ def write_plot_pdf(
   left, top, plot_width, plot_height = _raster_layout(
     width, height, prepared, selected, options,
   )
+  layout = _resolved_layout(width, height, prepared, selected, options)
   commands = [
     f"{background[0] / 255:g} {background[1] / 255:g} {background[2] / 255:g} rg",
     f"0 0 {width} {height} re f",
@@ -688,6 +700,7 @@ def write_plot_pdf(
     commands.extend(_pdf_gates(_scene_gates(prepared), left, top, plot_width, plot_height, height))
   commands.extend(_pdf_scene_text(
     prepared, selected, left, top, plot_width, plot_height, width, height, options,
+    layout,
   ))
   # Text drawing commands may contain WinAnsi characters such as the
   # multiplication sign used in scientific tick labels ("2 × 10⁶").
@@ -1001,35 +1014,66 @@ def _raster_layout(
   selected: PlotPresentationSpec,
   options: BatchPlotExportSpec | None,
 ) -> tuple[int, int, int, int]:
-  """Resolve the normalized data rectangle from scene or default margins."""
-  scene_left, scene_top, scene_right, scene_bottom = prepared.scene.plot_area
-  layout_matches_scene = options is None or (
-    options.include_title and options.include_axis_labels and options.include_ticks
+  """Resolve the normalized data rectangle from the canonical layout."""
+  layout = resolve_plot_layout(
+    _scene_with_selected_title(prepared, selected),
+    asdict(selected),
+    width=width,
+    height=height,
+    include_title=options is None or options.include_title,
+    include_axis_labels=options is None or options.include_axis_labels,
+    include_ticks=options is None or options.include_ticks,
   )
-  if layout_matches_scene and all(value >= 0 for value in prepared.scene.plot_area):
-    left = round(scene_left)
-    top = round(scene_top)
-    right = round(scene_right)
-    bottom = round(scene_bottom)
-    plot_width = max(1, width - left - right)
-    plot_height = max(1, height - top - bottom)
-    return left, top, plot_width, plot_height
+  _assert_layout(layout)
+  left, top, plot_width, plot_height = layout.plot_rect
+  return round(left), round(top), round(plot_width), round(plot_height)
 
-  # Retain a defensive typography-based fallback for malformed scenes created
-  # by older callers. Valid PlotScene instances normally take the branch above.
-  title_lines = _scene_lines(prepared)
-  title_height = (
-    max(38, round(selected.title_font.size * 1.8)) * max(1, len(title_lines)) + 10
-    if (options is None or options.include_title) and title_lines else 18
+
+def _resolved_layout(
+  width: int,
+  height: int,
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  options: BatchPlotExportSpec | None,
+) -> PlotLayoutSpec:
+  """Return the same layout used by every format adapter."""
+  layout = resolve_plot_layout(
+    _scene_with_selected_title(prepared, selected),
+    asdict(selected),
+    width=width,
+    height=height,
+    include_title=options is None or options.include_title,
+    include_axis_labels=options is None or options.include_axis_labels,
+    include_ticks=options is None or options.include_ticks,
   )
-  left = max(74, round(selected.tick_font.size * 5.2))
-  bottom = max(48, round(selected.tick_font.size * 3.4))
-  right = 22
-  plot_width = max(1, width - left - right)
-  plot_height = max(1, height - title_height - bottom)
-  return (
-    round(left), round(title_height), round(plot_width), round(plot_height)
-  )
+  _assert_layout(layout)
+  return layout
+
+
+def _assert_layout(layout: PlotLayoutSpec) -> None:
+  """Reject layout geometry that could clip or overlap the data rectangle."""
+  if layout.title_baselines:
+    last_baseline = layout.title_baselines[-1]
+    if last_baseline + layout.title_line_height * 0.35 > layout.plot_rect[1] + 1e-6:
+      raise PlotExportError("title layout intersects plot rectangle")
+
+
+def _scene_with_selected_title(
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+) -> PlotScene:
+  """Use an explicit writer presentation title for direct-export callers."""
+  selected_lines = tuple(str(line) for line in selected.title.splitlines() if str(line))
+  if not selected_lines or selected_lines == prepared.scene.title_lines:
+    return prepared.scene
+  return replace(prepared.scene, title_lines=selected_lines)
+
+
+def _title_lines(
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+) -> tuple[str, ...]:
+  return _scene_with_selected_title(prepared, selected).title_lines
 
 
 def prepare_vector_render_cache(
@@ -1202,16 +1246,16 @@ def _draw_raster_text(
   plot_height: int,
   options: BatchPlotExportSpec | None,
   scale: int,
+  layout: PlotLayoutSpec,
 ) -> None:
   scene = _scene_mapping(prepared)
-  title_lines = _scene_lines(prepared)
+  title_lines = _title_lines(prepared, selected)
   title_colors = scene.get("title_colors", ()) if isinstance(scene, dict) else ()
   if options is None or options.include_title:
     title_font = _font(selected.title_font.size * scale, bold=selected.title_font.weight == "bold")
-    line_height = round(selected.title_font.size * 1.45 * scale)
     for index, line in enumerate(title_lines):
       color = str(title_colors[index]) if index < len(title_colors) else "#b8c7ff"
-      _draw_centered(draw, width // 2, 20 * scale + index * line_height, line,
+      _draw_centered(draw, width // 2, round(layout.title_baselines[index] * scale), line,
                      title_font, _rgb(color) + (255,))
   foreground = _foreground_rgba(selected.background_color)
   tick_font = _font(selected.tick_font.size * scale, bold=selected.tick_font.weight == "bold")
@@ -1363,12 +1407,13 @@ def _pdf_scene_text(
   page_width: int,
   page_height: int,
   options: BatchPlotExportSpec | None,
+  layout: PlotLayoutSpec,
 ) -> list[str]:
   """Emit ASCII-safe PDF text for titles, major ticks, and axis labels."""
   scene = _scene_mapping(prepared)
   commands: list[str] = []
   if options is None or options.include_title:
-    title_lines = _scene_lines(prepared)
+    title_lines = _title_lines(prepared, selected)
     colors = scene.get("title_colors", ())
     for index, line in enumerate(title_lines):
       color = str(colors[index]) if index < len(colors) else "#4c78a8"
@@ -1378,7 +1423,7 @@ def _pdf_scene_text(
       x = (page_width - len(text) * size * 0.55) / 2
       # PDF text coordinates use the baseline; Pillow's raster renderer
       # receives the top-left text coordinate.
-      y = page_height - 20 - size * 0.85 - index * size * 1.45
+      y = page_height - layout.title_baselines[index] - size * 0.15
       commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} {y:g} Td ({text}) Tj ET")
   foreground = _foreground_rgba(selected.background_color)
   red, green, blue = (value / 255 for value in foreground[:3])

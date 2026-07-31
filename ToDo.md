@@ -812,9 +812,12 @@ GUI/exportの視覚的齟齬を、scientific resultやdisplay-event selectionを
 - [ ] Increment 1: format別・stage別のPDF benchmark/provenanceを追加し、requested/effective workers、
   event数、hybrid DPI、rasterisation/compression/PDF write時間、RSS、hashを記録する。PNG/JPEG/PDF、
   vector mode、worker数を同一sceneで比較し、実FCSは手順だけを記録してFCSをcommitしない。
-- [ ] Increment 2: typed renderer-neutral `PlotLayoutSpec`（plot rectangle、title block/line anchor、
+- [x] Increment 2: typed renderer-neutral `PlotLayoutSpec`（plot rectangle、title block/line anchor、
   axis/tick/legend band、visibility）をcoreに追加する。GUIはこのlayoutを使ってtitle row/ViewBoxを
   配置し、batch itemごとにtitle行数を含むlayoutを解決する。固定margin snapshotだけに依存しない。
+  `flowdesk_core.plot_scene.resolve_plot_layout()`と`PlotWidget.set_presentation()`へ接続し、
+  title行数・font sizeに対してplot topを拡張する回帰testを追加した。writer全形式のdraw record統合は
+  Increment 3で継続する。
 - [ ] Increment 3: PNG/JPEG/SVG/PDFのtitle/axis/tick/gate/legendを同一layout draw recordから出力する。
   SVGの`selected.title`/固定`y=32`、PNG/PDFの固定20-unit title座標など旧pathを削除し、deadな
   `renderer_backend` APIと「GUI batchはQt adapter」という不正確な説明を整理する。Qt widgetをbatch

@@ -39,7 +39,7 @@ from flowdesk_core.plot_reuse import (
   TemplateSourceRole,
   map_template_sources,
 )
-from flowdesk_core.plot_scene import PlotScene
+from flowdesk_core.plot_scene import PlotScene, resolve_plot_layout
 from flowdesk_core.vector_scatter import VectorScatterLayer, compact_scatter_batches
 from flowdesk_storage.project import load_project, save_project
 
@@ -773,7 +773,25 @@ def test_export_uses_captured_scene_plot_area_margins(tmp_path) -> None:
     options=BatchPlotExportSpec(id="export", name="Export", width=200, height=160),
   )
   text = path.read_text(encoding="utf-8")
-  assert 'x="11" y="12" width="176" height="134"' in text
+  # The captured top margin is enlarged for the title block instead of
+  # allowing the title to overlap the data rectangle.
+  assert 'x="11" y="32" width="176" height="114"' in text
+
+
+def test_plot_layout_reserves_space_for_multiline_title() -> None:
+  scene = PlotScene.from_mapping({
+    "plot_area": [11, 12, 13, 14],
+    "title_lines": ["A", "B", "C"],
+  })
+  layout = resolve_plot_layout(
+    scene, {"title_font": {"size": 20}}, width=240, height=200,
+  )
+  assert layout.plot_rect[1] >= layout.title_block[3]
+  assert (
+    layout.title_baselines[-1] + layout.title_line_height * 0.35
+    <= layout.plot_rect[1]
+  )
+  assert len(layout.title_baselines) == 3
 
 
 def test_plot_scene_round_trip_is_renderer_neutral_and_excludes_analysis_data() -> None:
