@@ -73,7 +73,10 @@ def run_prefetch_benchmark(
     _info, synchronous = read_fcs_sample(path, "benchmark")
     synchronous_seconds = time.perf_counter() - started
     app = QCoreApplication.instance() or QCoreApplication([])
-    scheduler = SampleLoadScheduler()
+    # Parent the scheduler to the active application so its QThreadPool and
+    # signal bridge are destroyed in Qt's object tree, not during Python
+    # interpreter teardown after another Qt test has run.
+    scheduler = SampleLoadScheduler(app)
     try:
       started = time.perf_counter()
       asynchronous = _wait_for_sample(scheduler, path)
@@ -81,6 +84,11 @@ def run_prefetch_benchmark(
     finally:
       scheduler.shutdown()
       if QCoreApplication.instance() is app:
+        # The scheduler owns the QThreadPool and signal bridge.  Explicitly
+        # queue QObject deletion before the temporary benchmark application
+        # is allowed to tear down Qt, otherwise a late QRunnable signal can
+        # race interpreter shutdown when this test follows other Qt tests.
+        scheduler.deleteLater()
         app.processEvents()
     sync_hash = hashlib.sha256(synchronous.events.tobytes()).hexdigest()
     async_hash = hashlib.sha256(asynchronous.events.tobytes()).hexdigest()

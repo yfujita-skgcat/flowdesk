@@ -15,6 +15,8 @@ from PySide6.QtWidgets import QApplication
 
 from flowdesk_qt.main_window import _CompensationStatusIndicator
 
+pytestmark = pytest.mark.gui
+
 
 @pytest.fixture
 def indicator(qapp: QApplication) -> _CompensationStatusIndicator:

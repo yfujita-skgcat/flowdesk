@@ -12,6 +12,8 @@ from flowdesk_core.models import BatchPlotExportSpec
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 
+pytestmark = pytest.mark.gui
+
 
 def test_qt_batch_renderer_writes_the_shared_scene_and_image(qapp, tmp_path) -> None:
   path = tmp_path / "plot.png"
@@ -90,7 +92,10 @@ def test_qt_pdf_uses_the_same_logical_canvas_as_png(qapp, tmp_path) -> None:
     ["pdftoppm", "-r", "72", "-png", "-singlefile", str(pdf_path), str(raster_prefix)],
     check=True, capture_output=True,
   )
-  with Image.open(png_path) as png_image, Image.open(raster_prefix.with_suffix(".png")) as pdf_image:
+  with (
+    Image.open(png_path) as png_image,
+    Image.open(raster_prefix.with_suffix(".png")) as pdf_image,
+  ):
     assert png_image.size == pdf_image.size == (400, 300)
     png = np.asarray(png_image.convert("RGB"), dtype=np.float64)
     pdf = np.asarray(pdf_image.convert("RGB"), dtype=np.float64)
