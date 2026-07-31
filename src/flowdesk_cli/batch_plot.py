@@ -141,6 +141,14 @@ def batch_plot_command(
     preflight_holder: dict[str, Any] = {}
     preparation_provenance_holder: dict[str, Any] = {}
     display_scene = dict(view.get("display_scene", {}))
+    population_display_colors = project.get("plot_display_settings", {}).get(
+      "population_display_colors", {}
+    )
+    population_colors_configured = isinstance(population_display_colors, Mapping) and any(
+      isinstance(value, Mapping) and isinstance(value.get("color"), str)
+      and bool(value.get("color"))
+      for value in population_display_colors.values()
+    )
     prepared_render_cache: dict[
       str,
       tuple[
@@ -206,7 +214,7 @@ def batch_plot_command(
         plot_type=cast(PlotType, str(view.get("plot_type", "scatter"))),
         rendering_downsample=cast(dict[str, Any], view.get("rendering_downsample", {})),
       )
-      processed = runner.prepare_display_sample(ProcessedDisplayRequest(
+      processed = runner.prepare_display_layer(ProcessedDisplayRequest(
         revision=0,
         sample=sample_data,
         population_id=view_spec.population_id,
@@ -215,7 +223,7 @@ def batch_plot_command(
         x_transform_id=view.get("x_transform_id"),
         y_transform_id=view.get("y_transform_id"),
         display_max_points=int(view_spec.rendering_downsample.get("max_points", 20_000)),
-      ))
+      ), require_preview=population_colors_configured)
       processed_ids = {channel.id for channel in processed.channels}
       if x_id not in processed_ids or y_id not in processed_ids:
         raise ValueError(

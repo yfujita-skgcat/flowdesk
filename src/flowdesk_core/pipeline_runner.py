@@ -99,6 +99,7 @@ from flowdesk_core.overrides import (
 )
 from flowdesk_core.preview import PreviewReport, PreviewRequest
 from flowdesk_core.processed_display import (
+  ProcessedDisplayLayer,
   ProcessedDisplayRequest,
   ProcessedDisplayResult,
 )
@@ -438,12 +439,50 @@ class PipelineRunner:
     obtains membership through :meth:`preview_sample`.  Plot adapters may downsample only
     after consuming this result.
     """
-    preview = self.preview_sample(PreviewRequest(
+    layer = self.prepare_display_layer(request, require_preview=True)
+    preview = layer.preview_report
+    if preview is None:
+      raise PipelineError("display preview is required for the public display result")
+    return ProcessedDisplayResult(
       revision=request.revision,
-      sample=request.sample,
-      execution_profile_id=request.execution_profile_id,
-      required_population_id=request.population_id,
-    ))
+      sample_id=layer.sample_id,
+      population_id=layer.population_id,
+      x_parameter_id=layer.x_parameter_id,
+      y_parameter_id=layer.y_parameter_id,
+      x_transform_id=layer.x_transform_id,
+      y_transform_id=layer.y_transform_id,
+      plot_type=layer.plot_type,
+      display_max_points=layer.display_max_points,
+      events=layer.events,
+      channels=layer.channels,
+      display_mask=layer.display_mask,
+      preview_report=preview,
+      diagnostics=layer.diagnostics,
+    )
+
+  def prepare_display_layer(
+    self,
+    request: ProcessedDisplayRequest,
+    *,
+    require_preview: bool = False,
+  ) -> ProcessedDisplayLayer:
+    """Prepare display stages without forcing an authoritative preview.
+
+    Batch rendering of an all-events view does not need population membership
+    or statistics unless persisted population colours are requested.  Keeping
+    this opt-in avoids running the complete gating/statistics pipeline before
+    the same compensation/derived/transform stages are prepared for plotting.
+    GUI callers should continue using :meth:`prepare_display_sample`, which
+    always returns the authoritative preview report.
+    """
+    preview: PreviewReport | None = None
+    if require_preview or request.population_id != "all_events":
+      preview = self.preview_sample(PreviewRequest(
+        revision=request.revision,
+        sample=request.sample,
+        execution_profile_id=request.execution_profile_id,
+        required_population_id=request.population_id,
+      ))
     try:
       plan = plan_derived_parameters(
         self._derived_parameter_specs(),
@@ -498,6 +537,8 @@ class PipelineRunner:
     if request.population_id == "all_events":
       mask = np.ones(request.sample.event_count, dtype=np.bool_)
     else:
+      if preview is None:
+        raise PipelineError("display preview is required for selected populations")
       membership = next(
         (
           value for value in preview.population_membership
@@ -510,8 +551,10 @@ class PipelineRunner:
           f"display_population_missing: {request.population_id!r}"
         )
       mask = membership.mask
-    return ProcessedDisplayResult(
-      revision=request.revision,
+    diagnostics = compensation.diagnostics + derived_diagnostics
+    if preview is not None:
+      diagnostics += preview.diagnostics
+    return ProcessedDisplayLayer(
       sample_id=request.sample.sample_id,
       population_id=request.population_id,
       x_parameter_id=request.x_parameter_id,
@@ -524,7 +567,7 @@ class PipelineRunner:
       channels=enriched.channels,
       display_mask=mask,
       preview_report=preview,
-      diagnostics=compensation.diagnostics + derived_diagnostics + preview.diagnostics,
+      diagnostics=diagnostics,
     )
 
   def preview_derived_parameter(

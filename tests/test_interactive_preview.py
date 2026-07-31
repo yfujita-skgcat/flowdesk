@@ -265,6 +265,27 @@ def test_processed_display_rejects_missing_parameter_and_population() -> None:
     ))
 
 
+def test_display_layer_skips_authoritative_preview_for_all_events() -> None:
+  sample = _sample()
+  runner = PipelineRunner(_project(_strategy()))
+  request = ProcessedDisplayRequest(
+    revision=1,
+    sample=sample,
+    population_id="all_events",
+    x_parameter_id="x",
+    y_parameter_id="y",
+  )
+
+  layer = runner.prepare_display_layer(request)
+  full = runner.prepare_display_sample(request)
+
+  assert layer.preview_report is None
+  np.testing.assert_array_equal(layer.events, full.events)
+  np.testing.assert_array_equal(layer.display_mask, full.display_mask)
+  assert layer.diagnostics
+  assert layer.diagnostics[0] == full.diagnostics[0]
+
+
 def test_revision_state_invalidates_descendants_and_falls_back_to_ancestor() -> None:
   state = PreviewRevisionState()
   assert state.accept_authoritative(0)

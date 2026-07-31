@@ -45,6 +45,47 @@ class ProcessedDisplayRequest:
 
 
 @dataclass(frozen=True)
+class ProcessedDisplayLayer:
+  """Immutable display-stage data with an optional authoritative preview."""
+
+  sample_id: str
+  population_id: str
+  x_parameter_id: str
+  y_parameter_id: str | None
+  x_transform_id: str | None
+  y_transform_id: str | None
+  plot_type: str
+  display_max_points: int
+  events: NDArray[np.float64]
+  channels: tuple[ChannelSpec, ...]
+  display_mask: NDArray[np.bool_]
+  preview_report: PreviewReport | None = None
+  diagnostics: tuple[ExecutionDiagnostic, ...] = ()
+
+  def __post_init__(self) -> None:
+    if not self.x_parameter_id:
+      raise ValueError("processed display X parameter ID must be non-empty")
+    if self.display_max_points < 0:
+      raise ValueError("processed display max points must be non-negative")
+    events = np.array(self.events, dtype=np.float64, copy=True, order="C")
+    if events.ndim != 2 or events.shape[1] != len(self.channels):
+      raise ValueError("processed display events must align with channels")
+    mask = np.array(self.display_mask, dtype=np.bool_, copy=True)
+    if mask.ndim != 1 or len(mask) != len(events):
+      raise ValueError("processed display mask must align with events")
+    events.setflags(write=False)
+    mask.setflags(write=False)
+    object.__setattr__(self, "events", events)
+    object.__setattr__(self, "display_mask", mask)
+
+  def channel_index(self, parameter_id: str) -> int:
+    for index, channel in enumerate(self.channels):
+      if channel.id == parameter_id:
+        return index
+    raise KeyError(parameter_id)
+
+
+@dataclass(frozen=True)
 class ProcessedDisplayResult:
   """Immutable processed event view plus matching full-resolution membership."""
 

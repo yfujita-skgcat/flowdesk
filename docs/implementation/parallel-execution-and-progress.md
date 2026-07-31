@@ -1418,6 +1418,18 @@ allowance because density colouring is disabled for overlays. This changes only 
 runtime worker limit under an explicit memory budget; it does not change density values,
 output bytes, or the sequential default.
 
+Batch source preparation now has an explicit `ProcessedDisplayLayer` fast path. For an
+all-events view with no persisted population display colours, batch export skips the
+authoritative preview/statistics pass and runs the same compensation, derived-parameter,
+and transform stages used by the GUI display API. The public GUI
+`prepare_display_sample()` contract remains unchanged and always returns a full
+`PreviewReport`; selected populations or persisted population colours force that report
+in the batch path. The layer result is immutable and renderer-neutral. On the tracked
+four-sample FCS batch, PNG/PDF SHA-256 values remained byte-identical and preparation
+timing was 0.0585 s before versus 0.0544 s after in one Linux run; timing is diagnostic,
+while the main benefit is avoiding unnecessary authoritative gate/statistics work on
+projects where it is expensive.
+
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and
 Linux/macOS/Windows package tests.

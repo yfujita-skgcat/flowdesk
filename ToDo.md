@@ -1557,6 +1557,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **density batch memory estimate**: Batch Plot Exportのbounded render worker推定へ、density
   色配列、normalized density query、512×512 histogram/smoothing working setを保守的に加算した。
   density overlayではなく単一source時だけ適用し、densityの出力色・worker既定値・科学的結果は変更しない。
+- [x] **batch display-stage fast path**: all-events batch viewでpopulation membership/statisticsが
+  不要、かつpopulation display colorも未設定の場合、authoritative previewを実行せず同じcoreの
+  compensation/derived/transform stageだけを`ProcessedDisplayLayer`へ返す経路を追加した。
+  selected populationまたはpopulation colorが必要な場合は従来のpreviewを要求し、実FCS PNG/PDFの
+  SHA-256 parityを確認した。GUIの`prepare_display_sample`契約とscientific pipelineは変更しない。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
