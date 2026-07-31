@@ -419,6 +419,10 @@ def batch_plot_command(
             source_ids=(sample_id, *overlay_ids_by_sample.get(sample_id, ())),
             prepared_layers=prepared_layers,
             event_colors=layer_event_colors,
+            density_coloring=(
+              presentation_template.get("colormap") == "density"
+              and not overlay_ids_by_sample.get(sample_id, ())
+            ),
           )
           for sample_id in target_sample_ids
         ),
@@ -831,6 +835,7 @@ def _estimate_batch_render_bytes(
   source_ids: Sequence[str],
   prepared_layers: Mapping[str, tuple[np.ndarray, np.ndarray]],
   event_colors: Mapping[str, Any],
+  density_coloring: bool = False,
 ) -> int:
   """Estimate one prepared output item's temporary renderer memory.
 
@@ -853,6 +858,10 @@ def _estimate_batch_render_bytes(
     colors = event_colors.get(source_id)
     if colors is not None:
       estimate += len(colors) * 16
+    if density_coloring and len(unique_source_ids) == 1:
+      # Density rendering allocates an event-sized UTF-32 colour array and a
+      # float64 normalized-density query array in addition to ordinary points.
+      estimate += count * (28 + 8)
   plot_width = max(1, spec.width - 80)
   plot_height = max(1, spec.height - 110)
   if spec.vector_scatter_mode == "hybrid_raster":
@@ -866,6 +875,9 @@ def _estimate_batch_render_bytes(
     estimate += event_count * 48
   else:
     estimate += event_count * 32
+  if density_coloring and len(unique_source_ids) == 1:
+    # Histogram, smoothing, and convolution working arrays can coexist briefly.
+    estimate += 512 * 512 * 8 * 6
   return max(0, int(estimate))
 
 

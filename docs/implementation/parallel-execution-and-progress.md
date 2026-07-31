@@ -1410,6 +1410,14 @@ manifest generation, and non-empty output can be inspected. This smoke intention
 not enable the opt-in batch thread backend and does not claim PyInstaller executable
 shutdown, GUI interaction, or renderer reentrancy coverage.
 
+The batch render memory estimator also accounts for the density-only working set before
+resolving bounded render workers. A single-source density item includes the event-sized
+UTF-32 colour array, normalized-density query values, and a conservative 512×512 grid
+allowance for histogram/smoothing/convolution temporaries. Overlay items do not use this
+allowance because density colouring is disabled for overlays. This changes only the
+runtime worker limit under an explicit memory budget; it does not change density values,
+output bytes, or the sequential default.
+
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and
 Linux/macOS/Windows package tests.

@@ -103,8 +103,13 @@ def test_batch_memory_estimate_includes_overlay_and_hybrid_working_set() -> None
     spec, source_ids=("s1", "s2", "s1"), prepared_layers=layers,
     event_colors={"s2": tuple("#ff0000" for _ in range(200))},
   )
+  density = _estimate_batch_render_bytes(
+    spec, source_ids=("s1",), prepared_layers=layers, event_colors={},
+    density_coloring=True,
+  )
   assert overlay > one_source
   assert overlay > 200 * 96
+  assert density > one_source + 512 * 512 * 8 * 6
 
 
 def test_shared_layer_bounds_reduces_extrema_without_array_concatenation() -> None:
