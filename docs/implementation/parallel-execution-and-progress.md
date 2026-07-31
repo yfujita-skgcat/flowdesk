@@ -1384,7 +1384,7 @@ values for all eight outputs. This validates the runtime controls and provenance
 the representative project, but not large real-FCS chunk parallelism or Windows packaging.
 `tools/benchmark_density_plot.py` now accepts `--density-workers` and
 `--density-memory-budget-mib` for numeric-kernel measurements and records the requested
-runtime policy in JSON. The cold `PlotWidget` measurements intentionally retain the
+runtime policy, effective worker count, and peak RSS in JSON. The cold `PlotWidget` measurements intentionally retain the
 default density configuration, so the report does not incorrectly attribute a numeric
 worker setting to GUI rendering.
 

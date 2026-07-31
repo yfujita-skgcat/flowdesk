@@ -1538,7 +1538,8 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   chunk閾値未満のため実効workerは1であり、大規模real-FCSのchunk speedupやWindows検証とは区別する。
 - [x] **density benchmark runtime controls**: `tools/benchmark_density_plot.py`へdensity worker数と
   memory budget引数、JSON provenanceを追加した。numeric kernelだけへ設定を適用し、cold PlotWidgetは
-  default configのまま測定するため、GUI描画性能とnumeric worker効果を混同しない。
+  default configのまま測定するため、GUI描画性能とnumeric worker効果を混同しない。実効worker数と
+  peak RSSもJSONへ記録する。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、

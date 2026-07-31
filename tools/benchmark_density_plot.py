@@ -13,6 +13,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+try:
+  import resource
+except ImportError:  # pragma: no cover - Windows has no resource module
+  resource = None  # type: ignore[assignment]
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
@@ -59,13 +64,14 @@ def run_benchmark(
     float(y_values.min()), float(y_values.max()),
   )
   numeric_ms: list[float] = []
+  effective_workers: list[int] = []
   plot_ms: list[float] = []
   cached_replot_ms: list[float] = []
   size_update_ms: list[float] = []
   opacity_update_ms: list[float] = []
   for _ in range(repeats):
     started = time.perf_counter()
-    estimate_density_colors(
+    density_result = estimate_density_colors(
       x_values, y_values, x_values, y_values,
       bounds=bounds, logical_size=(512, 512),
       config=DensityColorConfig(
@@ -74,6 +80,7 @@ def run_benchmark(
       ),
     )
     numeric_ms.append((time.perf_counter() - started) * 1000.0)
+    effective_workers.append(density_result.metadata.effective_histogram_workers)
     widget = PlotWidget()
     try:
       started = time.perf_counter()
@@ -133,11 +140,15 @@ def run_benchmark(
       "cached_density_size_update": size_update_ms,
       "cached_density_opacity_update": opacity_update_ms,
       "density_numeric_median": _median_ms(numeric_ms),
+      "density_effective_workers": effective_workers,
       "plot_events_total_median": _median_ms(plot_ms),
       "cached_density_replot_median": _median_ms(cached_replot_ms),
       "cached_density_size_update_median": _median_ms(size_update_ms),
       "cached_density_opacity_update_median": _median_ms(opacity_update_ms),
     },
+    "peak_rss_kib": (
+      resource.getrusage(resource.RUSAGE_SELF).ru_maxrss if resource is not None else None
+    ),
   }
 
 
