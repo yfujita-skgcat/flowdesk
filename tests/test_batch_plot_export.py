@@ -331,8 +331,19 @@ def test_batch_run_thread_backend_preserves_real_writer_bytes(tmp_path) -> None:
       options=ExecutionOptions(backend="thread", max_workers=3),
     ),
   )
+  repeated_dir = tmp_path / "threaded-repeat"
+  repeated = run_batch_plot_export(
+    spec,
+    samples,
+    repeated_dir,
+    render,
+    estimate_render_bytes=lambda: 4096,
+    execution_control=ExecutionControl(
+      options=ExecutionOptions(backend="thread", max_workers=3),
+    ),
+  )
 
-  assert sequential.status == threaded.status == "success"
+  assert sequential.status == threaded.status == repeated.status == "success"
   assert [item.sample_id for item in sequential.items] == [
     item.sample_id for item in threaded.items
   ]
@@ -350,6 +361,8 @@ def test_batch_run_thread_backend_preserves_real_writer_bytes(tmp_path) -> None:
       sequential_sidecar.pop("output", None)
       threaded_sidecar.pop("output", None)
       assert sequential_sidecar == threaded_sidecar
+      repeated_path = next(repeated_dir.glob(f"*_{sample['id']}_*.{extension}"))
+      assert threaded_path.read_bytes() == repeated_path.read_bytes()
 
 
 def test_batch_run_cancellation_keeps_completed_files_and_manifest(tmp_path) -> None:

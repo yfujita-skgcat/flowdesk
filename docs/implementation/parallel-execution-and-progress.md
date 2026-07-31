@@ -1047,6 +1047,11 @@ measured 1.833 s sequential versus 1.580 s thread/2 (1.16x) with identical
 full compensation/derived/gating FCS workload; repeat representative measurements
 before recommending this backend or enabling it by default.
 
+The writer parity test also repeats the bounded thread export in a fresh output
+directory and compares every PNG/SVG/PDF byte and sidecar. This is a deterministic
+same-process reentrancy smoke test; it does not replace native Windows/PyInstaller
+shutdown validation.
+
 The benchmark also accepts `--project <bundle> --export-id <id>` and the optional
 `--memory-budget-mib M`. It runs the saved
 Batch Plot Export definition in separate child processes for sequential and thread

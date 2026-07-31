@@ -1501,6 +1501,7 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   overlayのshared range barrier、Windows/PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、
   GUIへ自動適用したりしない。代表FCSでの出力parityとpeak RSSの測定は実施済みだが、
   `--scientific-stages`でcompensation/derived/gate/statisticsを追加したworkloadもLinuxで測定済みである。
+  同一process内のPNG/SVG/PDF再実行parity smoke testは追加済みだが、native Windows/PyInstaller終了処理は未検証。
 - [x] **density numeric workerの限定的導入**: MainWindowのdensity表示だけをlatest-winsの一worker
   schedulerへ移し、read-only NumPy view（writable入力だけcopy）とsemantic keyでrenderer-neutralな色配列を計算する。
   QBrush、ScatterPlotItem、brush適用はGUI threadだけで行い、stale結果を破棄する。同期exportはpending
