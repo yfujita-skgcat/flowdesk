@@ -973,7 +973,7 @@ output directoryはprojectには保存されず、アプリケーション設定
 
 `Run Export` はGUIを停止させずに実行されます。表示される `Batch Plot Export` progress windowには、準備・render・sidecar・manifestの段階と完了数が表示されます。source準備中は、準備済みsourceのIDと `prepared source n/total` も表示されます。この段階の表示は出力ファイルの完了数とは別であり、sourceの完了順は出力順や科学的結果を変更しません。`Cancel` はsource境界、256イベント単位の描画checkpoint、次の安全な出力境界で協調的に停止します。既に完了した画像とsidecarは保持され、未開始項目はmanifestで `not_started`、停止を受けた項目は `cancelled` と記録されます。cancel中でも、画像・sidecar・manifestが途中の内容で公開されることはありません。
 
-保存済み定義がある場合は、ダイアログの `Run Saved Queue` で定義を一覧の順番にまとめて実行できます。`Queue failure policy` は既定の `Fail fast`（最初の失敗で停止）と `Continue after failures`（失敗を記録して次へ進む）から選びます。各定義はoutput directory下の番号付きサブディレクトリへ出力され、全定義で同じキャンセル、thread/memory、density worker設定を共有します。キューは現在の編集内容を保存せず、保存済みproject定義だけを実行します。進捗windowの `Cancel` は現在の定義の安全な境界で停止し、完了済み定義の出力とmanifestを保持します。
+保存済み定義がある場合は、ダイアログの `Run Saved Queue` で定義を一覧の順番にまとめて実行できます。`Queue failure policy` は既定の `Fail fast`（最初の失敗で停止）と `Continue after failures`（失敗を記録して次へ進む）から選びます。各定義はoutput directory下の番号付きサブディレクトリへ出力され、全定義で同じキャンセルとruntime policyを共有します。thread/memory、density worker設定はGUIでは検証完了まで無効化されています。キューは現在の編集内容を保存せず、保存済みproject定義だけを実行します。進捗windowの `Cancel` は現在の定義の安全な境界で停止し、完了済み定義の出力とmanifestを保持します。
 
 キューのoutput directoryには `batch-queue-manifest.json` もatomicに更新されます。各定義のID、番号付きoutput directory、`not_started` / `running` / `success` / `failed` / `cancelled` 状態、終了コードを記録します。キュー全体の状態は `running`、`success`、`partial_failure`、`failed`、`cancelled` のいずれかです。これは実行監査用であり、個別定義の既存sidecar/manifestを置き換えません。
 
