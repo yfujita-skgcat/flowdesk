@@ -8,7 +8,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
-from threading import Lock
+from threading import Lock, local
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -68,7 +68,15 @@ def batch_plot_command(
     spec = batch_plot_export_spec_from_mapping(raw)
     samples = resolve_sample_paths(project, Path(project_path))
     annotations = project.get("annotations", [])
-    runner = PipelineRunner(project)
+    runner_local = local()
+
+    def runner_for_current_thread() -> PipelineRunner:
+      """Return a runner whose mutable display cache is thread-confined."""
+      current = getattr(runner_local, "runner", None)
+      if current is None:
+        current = PipelineRunner(project)
+        runner_local.runner = current
+      return current
     view = next(
       (item for item in project.get("plot_views", [])
        if str(item.get("id")) == spec.plot_view_id),
@@ -214,7 +222,7 @@ def batch_plot_command(
         plot_type=cast(PlotType, str(view.get("plot_type", "scatter"))),
         rendering_downsample=cast(dict[str, Any], view.get("rendering_downsample", {})),
       )
-      processed = runner.prepare_display_layer(ProcessedDisplayRequest(
+      processed = runner_for_current_thread().prepare_display_layer(ProcessedDisplayRequest(
         revision=0,
         sample=sample_data,
         population_id=view_spec.population_id,

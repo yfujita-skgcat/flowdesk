@@ -22,6 +22,7 @@ from flowdesk_cli.batch_plot import (
 from flowdesk_core.density_colors import DensityColorConfig
 from flowdesk_core.execution_control import ExecutionOptions
 from flowdesk_core.models import BatchPlotExportSpec, ChannelSpec
+from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import VectorRenderCache, prepare_plot_export
 from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.sample import SampleData
@@ -402,6 +403,8 @@ def test_batch_plot_thread_backend_prepares_sources_concurrently(
   }
   entered = threading.Barrier(2)
   both_prepared = threading.Event()
+  runner_ids: set[int] = set()
+  runner_ids_lock = threading.Lock()
 
   monkeypatch.setattr(
     "flowdesk_cli.batch_plot.resolve_sample_paths",
@@ -420,12 +423,21 @@ def test_batch_plot_thread_backend_prepares_sources_concurrently(
     return None, sample_data[Path(path).stem]
 
   monkeypatch.setattr("flowdesk_cli.batch_plot.read_fcs_sample", read_sample)
+  original_prepare_display_layer = PipelineRunner.prepare_display_layer
+
+  def record_runner(self, *args, **kwargs):
+    with runner_ids_lock:
+      runner_ids.add(id(self))
+    return original_prepare_display_layer(self, *args, **kwargs)
+
+  monkeypatch.setattr(PipelineRunner, "prepare_display_layer", record_runner)
   output_dir = tmp_path / "exports"
   assert batch_plot_command(
     str(project_path), "prepare-thread", str(output_dir),
     execution_options=ExecutionOptions(backend="thread", max_workers=2),
   ) == 0
   assert both_prepared.is_set()
+  assert len(runner_ids) == 2
   assert len(tuple(output_dir.glob("*.svg"))) == 2
   manifest = json.loads(next(output_dir.glob("*.batch.json")).read_text(encoding="utf-8"))
   assert manifest["execution"]["preparation"]["backend"] == "thread"

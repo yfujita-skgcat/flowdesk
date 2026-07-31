@@ -1507,6 +1507,10 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   行わない。temporary/atomic replace、cancel、plan順manifest、PNG/SVG/PDF parityを確認済み。
   ただし、代表的なcompensation/derived/gating workload、Windows/PyInstaller、rendererの詳細な
   reentrancy/GIL profileは未完了であり、既定並列化へ変更しない。
+- [x] source-preparation workerごとにthread-localな`PipelineRunner`を所有させ、display-stage LRUを
+  worker間で共有しないようにした。raw event、prepared array、source順のmerge契約は変更せず、並列準備回帰testで
+  workerごとに別runnerが使われることを確認した。thread-local化後も実FCS出力のSHA-256は逐次と一致し、
+  thread backendの速度を既定化する根拠にはしていない。
 - [ ] **Batch Plot Export並列化の残りの検証**: rendererのreentrancy、共有mutable state、Qt backend、
   overlayのshared range barrier、Windows/PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、
   GUIへ自動適用したりしない。代表FCSでの出力parityとpeak RSSの測定は実施済みだが、

@@ -1093,6 +1093,16 @@ preparation jobs holding candidate state. The preparation provenance records sub
 source count and observed peak in-flight sources, and regression tests require the latter
 to stay at or below the resolved worker limit.
 
+Each source-preparation worker owns a thread-local `PipelineRunner`. The runner contains
+mutable display-stage LRU state, so sharing one runner instance across preparation threads
+would introduce cache races even though raw samples are independent. The coordinator's
+runner is not reused by worker threads; prepared arrays are merged in source order and the
+thread-local runners are released with the executor.
+The regression test forces two source reads to overlap and verifies that the workers use
+distinct runner instances. A post-fix real-FCS benchmark retained byte-identical outputs;
+its one-run thread/2 result was slower than sequential, so this safety fix does not change
+the explicit opt-in/default-worker decision.
+
 The real `data/analysis.flowdesk` workload was rerun after enabling source-preparation
 threads: sequential took 22.03 s / 289,888 KB peak RSS, while thread/2 took 24.90 s /
 489,036 KB. Preparation itself took about 0.04 s and rendering 24.56 s in the threaded
