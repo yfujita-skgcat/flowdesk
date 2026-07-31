@@ -801,6 +801,39 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
   SVG/PDF構造測定、chunk制限、layer hash/event count不変性検査を追加した。thresholdはbaseline
   保存時点では未設定とし、CI回帰値を固定しない。
 
+#### Phase B7.3.G: PDF性能とGUI/export layout parity（計画）
+
+実装前に`docs/implementation/pdf-export-performance-and-renderer-parity.md`、
+`docs/implementation/plot-export-completion.md`、
+`docs/implementation/lightweight-vector-scatter-export.md`を全文読む。PDFの遅さと
+GUI/exportの視覚的齟齬を、scientific resultやdisplay-event selectionを変えずに解消する。
+一回のLLM実行では下記incrementを一つだけ実装し、テスト、user manual、ToDo更新、commitを完了して停止する。
+
+- [ ] Increment 1: format別・stage別のPDF benchmark/provenanceを追加し、requested/effective workers、
+  event数、hybrid DPI、rasterisation/compression/PDF write時間、RSS、hashを記録する。PNG/JPEG/PDF、
+  vector mode、worker数を同一sceneで比較し、実FCSは手順だけを記録してFCSをcommitしない。
+- [ ] Increment 2: typed renderer-neutral `PlotLayoutSpec`（plot rectangle、title block/line anchor、
+  axis/tick/legend band、visibility）をcoreに追加する。GUIはこのlayoutを使ってtitle row/ViewBoxを
+  配置し、batch itemごとにtitle行数を含むlayoutを解決する。固定margin snapshotだけに依存しない。
+- [ ] Increment 3: PNG/JPEG/SVG/PDFのtitle/axis/tick/gate/legendを同一layout draw recordから出力する。
+  SVGの`selected.title`/固定`y=32`、PNG/PDFの固定20-unit title座標など旧pathを削除し、deadな
+  `renderer_backend` APIと「GUI batchはQt adapter」という不正確な説明を整理する。Qt widgetをbatch
+  workerから描画してbackend統一したことにしてはならない。
+- [ ] Increment 4: profileで選んだPDF hybrid最適化を一件だけ実装する。まず同一style/sourceの
+  source-overを数学的に同値なtiled/vectorised処理へ置換できるか評価し、異なる色/alpha/z-order/
+  density colorは絶対にmerge/reorderしない。process backendはshared-memory、Windows spawn、cancel、
+  aggregate memory、parityを証明できる場合だけ別incrementとして採用する。
+- [ ] Increment 5: GUI screenshot、PNG、SVG、PDF rasterisationを同一sceneで比較するvisual parity
+  regressionを追加する。long/multiline title、overlay色、density、gate、save/reload、別active sampleを
+  含め、titleとplot rectangleの重なり、label/color/geometry driftをfailにする。font anti-aliasing差だけは
+  明示toleranceにする。
+
+受け入れ条件: `rendering_started: 0/N`中でも現在path、sub-stage、経過時間、effective workerが分かる。
+PDFの主要hot stageは測定で特定し、選択した最適化は同一scene/point plan/scientific resultを保った上で
+改善値を記録する。全export routeがcanonical layoutを使い、旧writer bypassが残らず、titleがplot areaと
+重ならないことをGUI/PNG/SVG/PDFで検証する。詳細なLLM向け指示、禁止事項、target file、test commandは
+`docs/implementation/pdf-export-performance-and-renderer-parity.md`を正とする。
+
 `docs/bug.md` のplot画像export要求は、既存のsingle PNG/SVG/PDF exportと
 `BatchPlotExportSpec`だけでは完了していない。実装前に
 `docs/implementation/plot-export-completion.md`を全文読む。一度のLLM/Codex実行では
