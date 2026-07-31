@@ -1670,7 +1670,11 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
   再現しない環境では自動prefetchを無効化する判断を記録する。現在のdata/ FCSはすべて4 MiB未満のため、
   prefetch実パスの測定は未実施である。`tools/benchmark_prefetch.py`で生成した300,000 eventの
   4.8 MiB FCSでは同期/非同期のevent countとraw hashが一致することを確認したが、これはinstrument
-  dataのlatency・peak memory・GUI cancel/closeを代替しない。
+  dataのlatency・peak memory・GUI cancel/closeを代替しない。既存の`data/9_A3.fcs`を
+  `--path`で測定できるようbenchmarkを拡張し、2026-07-31 Linuxの一回の測定では
+  2,248,944 bytes、32.7 ms（同期）/7.5 ms（scheduler）、event count/hash一致、peak RSS
+  121,408 KiBだった（OS cache等の影響を受ける診断値）。
+  ただし4 MiB閾値未満なのでこれはprefetch実パスの測定ではなく、scheduler経路の実FCS smokeである。
 
 #### Increment 11: event chunk/process backendの採否
 

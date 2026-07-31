@@ -1298,6 +1298,13 @@ gate.
   loading took 4.9 ms and `SampleLoadScheduler` loading took 7.7 ms; event counts
   and raw hashes matched. This validates the acquisition path and immutability only,
   not instrument-data GUI latency, peak memory, cancellation, or close behavior.
+  The benchmark also accepts `--path <existing.fcs>` and reports source event counts,
+  path size, and peak RSS. On 2026-07-31 Linux, `data/9_A3.fcs` (2,248,944 bytes,
+  below the 4 MiB prefetch threshold) measured 32.7 ms synchronous versus 7.5 ms
+  scheduler loading in one run, with identical event count/hash and 121,408 KiB peak RSS.
+  These timings are diagnostic and affected by the OS file cache. Because
+  this file does not enter the automatic adjacent-sample threshold, the result is an
+  acquisition/scheduler smoke measurement, not proof of GUI prefetch benefit.
 - The implementation deliberately does not claim a speedup yet. Representative real-FCS
   latency, peak-memory, cancel, and close measurements remain required; if they show no
   material benefit or unacceptable memory growth, automatic prefetch must be disabled.
