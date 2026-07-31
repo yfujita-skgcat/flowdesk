@@ -986,6 +986,12 @@ collision、manifest順は並列化しても変わりません。GUIのBatch Exp
 runtime-onlyで指定できます。`--density-memory-budget-mib M`を併用すると、histogram working setの保守的な
 見積もりに基づいて同時density worker数を抑制します。既定は1 workerで、全FCS配列のRSSを保証する上限ではありません。CLI実行中にCtrl-Cを押すと協調キャンセルが要求され、完了済み出力を保持したcancelled manifestを作成して終了コード130を返します。実行中のnative数値処理を強制停止せず、安全なstage境界で停止します。
 大規模なdensity計算では、histogram chunkの完了時と平滑化処理の境界でもキャンセルを確認します。現在実行中のNumPy処理は安全に完了させます。
+複数の保存済み定義を順番に実行する場合は、`--queue-export-id <id>` を繰り返します。
+queueでは定義ごとに `<output-dir>/001_<id>/` のような安全なサブディレクトリへ出力し、
+`--queue-failure-policy continue` を指定すると一つの定義が失敗しても次の定義を続行します。
+既定の `fail-fast` では最初の失敗で停止します。すべての定義は同じ cancellation token と
+runtime worker/memory設定を共有し、Ctrl-Cでは終了コード130を返します。`--export-id` と
+`--queue-export-id` は同時に指定できません。
 ダイアログで`Bounded threads (opt-in)`を選んだ場合だけ同じruntime設定を使用し、
 batch manifestの`execution`には、実行単位（`prepared_output_item`）、計画数、投入数、完了数、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、

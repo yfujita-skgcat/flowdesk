@@ -1197,7 +1197,9 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 - [ ] plugin manifestへinput type、output type、version、resource、permissionsを定義する。
 - [ ] pluginは別processを既定とし、project内codeを自動実行しない。
 - [ ] outputをderived parameter、Population、table、artifactとして検証してimportする。
-- [ ] batch queueへsample selector、parallelism、cancel、failure policy、output dirを追加する。
+- [x] saved Batch Plot Export definitionをCLI queueへ追加する。`--queue-export-id`を複数指定でき、
+  definitionごとの安全なoutput subdirectory、既存runtime parallelism/memory設定、共通cancel、
+  `fail-fast`/`continue` policyを使用する。GUI queue、plugin queue、definition間の並列実行は未実装。
 - [ ] crashed/timeout/malformed pluginがprojectを破損しないtestを追加する。
 
 ### Phase D7: Preferences、help、accessibility [S24]

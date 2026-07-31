@@ -196,6 +196,26 @@ def test_batch_plot_cli_parses_density_runtime_options(
   )
 
 
+def test_batch_plot_cli_parses_definition_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+  received: dict[str, object] = {}
+
+  def fake_queue(project: str, export_ids: object, output_dir: str, **kwargs: object) -> int:
+    received.update({"project": project, "export_ids": export_ids, "output_dir": output_dir})
+    received.update(kwargs)
+    return 0
+
+  monkeypatch.setattr(cli_main, "batch_plot_queue_command", fake_queue)
+  monkeypatch.setattr(sys, "argv", [
+    "flowdesk", "batch-plot", "example.flowdesk",
+    "--queue-export-id", "e1", "--queue-export-id", "e2",
+    "--queue-failure-policy", "continue", "--output-dir", "out",
+  ])
+
+  assert cli_main.main() == 0
+  assert received["export_ids"] == ["e1", "e2"]
+  assert received["failure_policy"] == "continue"
+
+
 def test_run_project_with_output(tmp_path: Path) -> None:
   proj_dir = _create_minimal_project(tmp_path)
   out_file = tmp_path / "results.tsv"

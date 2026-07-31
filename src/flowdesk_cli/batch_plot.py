@@ -20,6 +20,7 @@ from flowdesk_core.batch_plot_export import (
 )
 from flowdesk_core.density_colors import DensityColorConfig, estimate_density_colors
 from flowdesk_core.execution_control import (
+  ExecutionCancelled,
   ExecutionControl,
   ExecutionOptions,
   resolve_execution_workers,
@@ -841,6 +842,53 @@ def batch_plot_command(
   except (BatchPlotExportError, FileNotFoundError, KeyError, ValueError) as exc:
     print(f"Error: batch plot export failed: {exc}")
     return 1
+
+
+def batch_plot_queue_command(
+  project_path: str,
+  export_ids: Sequence[str],
+  output_dir: str,
+  *,
+  failure_policy: str = "fail-fast",
+  execution_control: ExecutionControl | None = None,
+  execution_options: ExecutionOptions | None = None,
+  density_config: DensityColorConfig | None = None,
+) -> int:
+  """Run several saved plot definitions with one cooperative queue control."""
+  if failure_policy not in {"continue", "fail-fast"}:
+    raise ValueError("failure_policy must be 'continue' or 'fail-fast'")
+  queue = tuple(dict.fromkeys(str(value) for value in export_ids if str(value)))
+  if not queue:
+    raise ValueError("at least one export definition is required")
+  root = Path(output_dir)
+  results: list[tuple[str, int]] = []
+  for index, export_id in enumerate(queue, start=1):
+    if execution_control is not None:
+      try:
+        execution_control.cancellation_token.raise_if_cancelled()
+      except ExecutionCancelled:
+        return 130
+    definition_dir = root / f"{index:03d}_{_queue_slug(export_id)}"
+    result = batch_plot_command(
+      project_path, export_id, str(definition_dir),
+      execution_control=execution_control,
+      execution_options=execution_options,
+      density_config=density_config,
+    )
+    results.append((export_id, result))
+    if result == 130:
+      return 130
+    if result != 0 and failure_policy == "fail-fast":
+      return result
+  succeeded = sum(result == 0 for _export_id, result in results)
+  print(f"Batch plot queue completed: {succeeded}/{len(results)} definitions")
+  return 0 if succeeded == len(results) else 1
+
+
+def _queue_slug(export_id: str) -> str:
+  """Make a definition ID safe and deterministic as a queue subdirectory."""
+  slug = "".join(char if char.isalnum() or char in "-_" else "_" for char in export_id)
+  return slug[:80] or "export"
 
 
 def _write_render_payload(

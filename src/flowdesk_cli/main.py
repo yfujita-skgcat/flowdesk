@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from flowdesk_cli.batch_gate import batch_gate_command
-from flowdesk_cli.batch_plot import batch_plot_command
+from flowdesk_cli.batch_plot import batch_plot_command, batch_plot_queue_command
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
 from flowdesk_core.credits import credits_text
@@ -158,7 +158,15 @@ def main() -> int:
     "batch-plot", help="Export plots for every sample from a saved definition."
   )
   plot_parser.add_argument("project", help="Path to the .flowdesk project bundle.")
-  plot_parser.add_argument("--export-id", required=True, help="Batch plot export definition ID.")
+  plot_parser.add_argument("--export-id", help="Batch plot export definition ID.")
+  plot_parser.add_argument(
+    "--queue-export-id", action="append", default=[],
+    help="Add a saved definition to a sequential queue (repeatable).",
+  )
+  plot_parser.add_argument(
+    "--queue-failure-policy", choices=("fail-fast", "continue"), default="fail-fast",
+    help="Queue behavior after one definition fails (default: fail-fast).",
+  )
   plot_parser.add_argument("--output-dir", required=True, help="Output directory.")
   plot_parser.add_argument(
     "--execution-backend",
@@ -236,6 +244,26 @@ def main() -> int:
     )
     control = ExecutionControl(options=options)
     with _cli_cancellation_context(control):
+      if args.queue_export_id:
+        if args.export_id is not None:
+          raise SystemExit("--export-id and --queue-export-id cannot be combined")
+        return batch_plot_queue_command(
+          args.project,
+          args.queue_export_id,
+          args.output_dir,
+          failure_policy=args.queue_failure_policy,
+          execution_control=control,
+          execution_options=options,
+          density_config=DensityColorConfig(
+            histogram_workers=args.density_workers,
+            histogram_memory_budget_bytes=(
+              None if args.density_memory_budget_mib is None
+              else args.density_memory_budget_mib * 1024 * 1024
+            ),
+          ),
+        )
+      if args.export_id is None:
+        raise SystemExit("--export-id or --queue-export-id is required")
       return batch_plot_command(
         args.project,
         args.export_id,

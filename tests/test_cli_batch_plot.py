@@ -17,6 +17,7 @@ from flowdesk_cli.batch_plot import (
   _shared_layer_bounds_from_ranges,
   _write_render_payload,
   batch_plot_command,
+  batch_plot_queue_command,
   write_plot_svg,
 )
 from flowdesk_core.density_colors import DensityColorConfig
@@ -28,6 +29,26 @@ from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import save_project
+
+
+def test_batch_plot_queue_uses_definition_subdirectories_and_continues(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  calls: list[tuple[str, str]] = []
+
+  def fake_batch(project: str, export_id: str, output_dir: str, **kwargs: object) -> int:
+    calls.append((export_id, output_dir))
+    return 1 if export_id == "bad/id" else 0
+
+  monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("ok", "bad/id", "last"), str(tmp_path),
+    failure_policy="continue",
+  ) == 1
+  assert [item[0] for item in calls] == ["ok", "bad/id", "last"]
+  assert calls[0][1].endswith("001_ok")
+  assert calls[1][1].endswith("002_bad_id")
+  assert calls[2][1].endswith("003_last")
 
 
 def test_overlay_dependency_graph_is_deterministic_and_deduplicated() -> None:

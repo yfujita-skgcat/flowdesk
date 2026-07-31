@@ -32,6 +32,21 @@ are validated before an atomic project import.
 6. Validate/import derived parameters, populations, tables, and artifacts separately.
 7. Add GUI queue/status after CLI behavior is stable.
 
+## Implemented CLI batch-plot queue slice
+
+The first queue slice is intentionally limited to saved `Batch Plot Export` definitions;
+it does not execute plugins or project-embedded code. `flowdesk batch-plot` accepts repeated
+`--queue-export-id` values and runs them in declaration order. Each definition receives a
+safe numbered subdirectory under the requested output directory, the same runtime worker and
+memory policy, and one shared cooperative cancellation token. `fail-fast` is the default;
+`continue` records failures and proceeds to later definitions. A queue cannot combine
+`--export-id` with `--queue-export-id`, and queue items are sequential at the definition level
+even when each definition opts into bounded sample-level rendering threads.
+
+This slice deliberately leaves GUI queue editing, plugin subprocess isolation, queue-level
+parallelism, and cross-definition cache sharing for later increments. The existing per-definition
+manifest and atomic output rules remain authoritative.
+
 ## Required tests
 
 - API compatibility version rejection is explicit.
@@ -53,4 +68,3 @@ pytest -q tests/test_cli.py tests/test_pipeline_runner.py tests/test_project_sto
 ruff check src tests
 mypy src/flowdesk_core src/flowdesk_storage src/flowdesk_cli
 ```
-
