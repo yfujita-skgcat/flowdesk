@@ -146,6 +146,9 @@ Tests and benchmarks:
   declaration order, and fail-fast/cancel stops submitting new definitions without
   force-terminating active writers. GUI queue controls remain sequential/disabled until
   native Windows/PyInstaller and peak-memory/reentrancy measurements justify exposure.
+  When `--memory-budget-mib` is supplied, a conservative six-times-FCS-file-size estimate
+  limits queue workers further; the resolved count, estimate, budget, and limiting factor
+  are written to queue provenance.
 
 ## Non-goals
 

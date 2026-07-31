@@ -244,6 +244,33 @@ def test_batch_plot_queue_rejects_nested_thread_backends(tmp_path: Path) -> None
     )
 
 
+def test_batch_plot_queue_applies_memory_budget_to_queue_workers(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  sample_path = tmp_path / "sample.fcs"
+  sample_path.write_bytes(b"fcs")
+  snapshot = {
+    "samples": [{"id": "s1", "path": str(sample_path)}],
+    "batch_plot_exports": [],
+  }
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: snapshot)
+  monkeypatch.setattr(
+    batch_plot_module, "batch_plot_command", lambda *_args, **_kwargs: 0,
+  )
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("first", "second"), str(tmp_path / "out"),
+    queue_workers=2,
+    execution_options=ExecutionOptions(
+      memory_budget_bytes=32 * 1024 * 1024,
+    ),
+  ) == 0
+  manifest = json.loads(
+    (tmp_path / "out" / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )
+  assert manifest["queue_execution"]["effective_workers"] == 1
+  assert "memory_budget" in manifest["queue_execution"]["limiting_factors"]
+
+
 def test_raw_sample_cache_is_bounded_and_tracks_fingerprint_hits() -> None:
   cache = _RawSampleCache(32)
   sample = SampleData(

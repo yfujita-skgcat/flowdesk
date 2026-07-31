@@ -1213,7 +1213,8 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
     分離し、cache hit/miss/eviction/保持bytesを`batch-queue-manifest.json`へ記録する。
   - [x] CLI-only `--queue-workers N`による定義単位bounded並列を追加する。各定義のinner backendを
     sequentialへ固定し、shared cancellation、宣言順manifest merge、fail-fast/continue、active writerの
-    協調終了を維持する。GUIには未検証のため公開しない。
+    協調終了を維持する。`--memory-budget-mib`はFCS file sizeからqueue worker数も制限し、
+    見積もりとlimiting factorをmanifestへ記録する。GUIには未検証のため公開しない。
   plugin queue、definition間の並列実行は未実装。
 - [ ] crashed/timeout/malformed pluginがprojectを破損しないtestを追加する。
 

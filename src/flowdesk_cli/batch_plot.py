@@ -988,6 +988,20 @@ def batch_plot_queue_command(
     for item in project_snapshot.get("batch_plot_exports", ())
     if isinstance(item, Mapping) and item.get("id")
   }
+  estimated_queue_definition_bytes = _estimate_queue_definition_bytes(
+    project_snapshot, project_path,
+  )
+  queue_memory_limit = None
+  queue_limiting_factors: list[str] = []
+  if base_options.memory_budget_bytes is not None and estimated_queue_definition_bytes > 0:
+    queue_memory_limit = max(
+      1, base_options.memory_budget_bytes // estimated_queue_definition_bytes
+    )
+    if queue_memory_limit < queue_workers:
+      queue_limiting_factors.append("memory_budget")
+  effective_queue_workers = min(
+    queue_workers, len(queue), queue_memory_limit or queue_workers,
+  )
   root = Path(output_dir)
   root.mkdir(parents=True, exist_ok=True)
   queue_manifest_path = root / "batch-queue-manifest.json"
@@ -1008,10 +1022,13 @@ def batch_plot_queue_command(
     "queue_execution": {
       "backend": "sequential" if queue_workers == 1 else "thread",
       "requested_workers": queue_workers,
-      "effective_workers": min(queue_workers, len(queue)),
+      "effective_workers": effective_queue_workers,
+      "memory_budget_bytes": base_options.memory_budget_bytes,
+      "estimated_definition_bytes": estimated_queue_definition_bytes,
+      "limiting_factors": queue_limiting_factors,
       "nested_definition_backend": (
         "sequential" if queue_workers > 1 else (
-      base_options.backend
+          base_options.backend
         )
       ),
     },
@@ -1128,7 +1145,7 @@ def batch_plot_queue_command(
       "enabled": False, "reason": "definition_parallelism",
     }
     _write_queue_manifest(queue_manifest_path, queue_manifest)
-    effective_workers = min(queue_workers, len(queue))
+    effective_workers = effective_queue_workers
     executor = ThreadPoolExecutor(
       max_workers=effective_workers, thread_name_prefix="flowdesk-batch-queue",
     )
@@ -1214,6 +1231,36 @@ def _queue_slug(export_id: str) -> str:
   """Make a definition ID safe and deterministic as a queue subdirectory."""
   slug = "".join(char if char.isalnum() or char in "-_" else "_" for char in export_id)
   return slug[:80] or "export"
+
+
+def _estimate_queue_definition_bytes(
+  project: Mapping[str, Any], project_path: str,
+) -> int:
+  """Estimate one definition's queue working set from tracked FCS files.
+
+  The estimate is intentionally conservative and only limits explicit queue
+  concurrency. It does not alter event arrays or scientific execution.
+  """
+  total_file_bytes = 0
+  project_root = Path(project_path).expanduser().resolve().parent
+  for sample in project.get("samples", ()):
+    if not isinstance(sample, Mapping):
+      continue
+    raw_path = sample.get("path")
+    if not raw_path:
+      continue
+    path = Path(str(raw_path)).expanduser()
+    if not path.is_absolute():
+      path = project_root / path
+    try:
+      total_file_bytes += max(0, path.stat().st_size)
+    except OSError:
+      continue
+  if total_file_bytes <= 0:
+    return 0
+  # FCS decode, processed arrays, normalized layers, and writer temporaries
+  # can coexist. Six times the file bytes is deliberately conservative.
+  return max(64 * 1024 * 1024, total_file_bytes * 6)
 
 
 def _write_queue_manifest(path: Path, payload: Mapping[str, Any]) -> None:
