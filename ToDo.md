@@ -1225,6 +1225,10 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 - [x] compensation変更はcompensation以降、derived変更はderived以降、transform/gate/statistics変更は
   それぞれのstage以降を無効化するkey回帰テストを追加した。raw event自体はfingerprintだけを参照し、
   cacheへ保存しない。
+- [x] GUI schedulerの同一project snapshot内にbounded in-memory display-stage LRUを追加した。
+  immutable raw event array identityを保持してcompensation/derived/transform結果を最大4 entry・128 MiBで
+  再利用し、project snapshot変更時はrunnerごと破棄する。authoritative preview、gate membership、
+  statisticsはcacheせず、永続payload cacheとは別機能として扱う。
 - [ ] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。実装は下記の
   `Parallel execution and progress`を上から一incrementずつ行う。
 - [ ] scatter downsampling変更でscientific count/statisticsが変わらないことをtestする。

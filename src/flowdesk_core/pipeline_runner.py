@@ -10,6 +10,7 @@ Used by GUI, CLI, and Python API. Must never import PySide6, Qt, or flowdesk_qt.
 from __future__ import annotations
 
 import hashlib
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from copy import deepcopy
@@ -163,6 +164,16 @@ class _AnalysisData:
 
 
 @dataclass(frozen=True)
+class _DisplayStageCacheEntry:
+  """Immutable processed stage retained for repeated display requests."""
+
+  raw_events: NDArray[np.float64]
+  transformed: _AnalysisData
+  diagnostics: tuple[ExecutionDiagnostic, ...]
+  estimated_bytes: int
+
+
+@dataclass(frozen=True)
 class _CompensationStepResult:
   """Canonical compensated view plus report-ready diagnostics."""
 
@@ -252,6 +263,12 @@ class PipelineRunner:
     # A runner is an execution snapshot. Nested GUI/project mutations after
     # construction must not alter a running batch or preview calculation.
     self._project = deepcopy(dict(project))
+    self._display_stage_cache: OrderedDict[
+      tuple[object, ...], _DisplayStageCacheEntry
+    ] = OrderedDict()
+    self._display_stage_cache_bytes = 0
+    self._display_stage_cache_max_entries = 4
+    self._display_stage_cache_max_bytes = 128 * 1024 * 1024
 
   # ------------------------------------------------------------------
   # Public API
@@ -295,6 +312,61 @@ class PipelineRunner:
       )
       for sample in selected
     }
+
+  @staticmethod
+  def _display_stage_cache_key(
+    request: ProcessedDisplayRequest,
+  ) -> tuple[object, ...]:
+    """Identify immutable input arrays without copying their event payload."""
+    events = request.sample.events
+    pointer = int(events.__array_interface__["data"][0])
+    return (
+      request.sample_id,
+      id(events),
+      pointer,
+      events.shape,
+      tuple(channel.id for channel in request.sample.channels),
+      request.execution_profile_id,
+    )
+
+  def _get_display_stage_cache(
+    self, key: tuple[object, ...],
+  ) -> _DisplayStageCacheEntry | None:
+    entry = self._display_stage_cache.get(key)
+    if entry is not None:
+      self._display_stage_cache.move_to_end(key)
+    return entry
+
+  def _cache_display_stage(
+    self,
+    key: tuple[object, ...],
+    raw_events: NDArray[np.float64],
+    transformed: _AnalysisData,
+    diagnostics: tuple[ExecutionDiagnostic, ...],
+  ) -> None:
+    estimated_bytes = int(
+      raw_events.nbytes + transformed.events.nbytes
+      + transformed.events.shape[0] * 8
+    )
+    if estimated_bytes > self._display_stage_cache_max_bytes:
+      return
+    entry = _DisplayStageCacheEntry(
+      raw_events, transformed, diagnostics, estimated_bytes,
+    )
+    previous = self._display_stage_cache.pop(key, None)
+    if previous is not None:
+      self._display_stage_cache_bytes -= previous.estimated_bytes
+    self._display_stage_cache[key] = entry
+    self._display_stage_cache_bytes += estimated_bytes
+    while (
+      len(self._display_stage_cache) > self._display_stage_cache_max_entries
+      or (
+        self._display_stage_cache_bytes > self._display_stage_cache_max_bytes
+        and len(self._display_stage_cache) > 1
+      )
+    ):
+      _, evicted = self._display_stage_cache.popitem(last=False)
+      self._display_stage_cache_bytes -= evicted.estimated_bytes
 
   def run(
     self,
@@ -483,36 +555,46 @@ class PipelineRunner:
         execution_profile_id=request.execution_profile_id,
         required_population_id=request.population_id,
       ))
-    try:
-      plan = plan_derived_parameters(
-        self._derived_parameter_specs(),
-        (channel.id for channel in request.sample.channels),
+    stage_key = self._display_stage_cache_key(request)
+    cached_stage = self._get_display_stage_cache(stage_key)
+    if cached_stage is None:
+      try:
+        plan = plan_derived_parameters(
+          self._derived_parameter_specs(),
+          (channel.id for channel in request.sample.channels),
+        )
+      except DerivedParameterPlanningError as exc:
+        raise PipelineError(f"{exc.code}: {exc}") from exc
+      sample_meta = next(
+        (
+          value for value in self._project.get("samples", [])
+          if value.get("id") == request.sample.sample_id
+        ),
+        {"id": request.sample.sample_id},
       )
-    except DerivedParameterPlanningError as exc:
-      raise PipelineError(f"{exc.code}: {exc}") from exc
-    sample_meta = next(
-      (
-        value for value in self._project.get("samples", [])
-        if value.get("id") == request.sample.sample_id
-      ),
-      {"id": request.sample.sample_id},
-    )
-    raw = _AnalysisData(request.sample.events, request.sample.channels)
-    compensation = self._step_compensation(
-      raw,
-      sample_id=request.sample.sample_id,
-      execution_profile_id=request.execution_profile_id,
-      group_ids=self._sample_group_ids(sample_meta),
-    )
-    try:
-      enriched, derived_diagnostics = self._step_derived_parameters(
-        compensation.data, raw, request.sample.sample_id, plan
+      raw = _AnalysisData(request.sample.events, request.sample.channels)
+      compensation = self._step_compensation(
+        raw,
+        sample_id=request.sample.sample_id,
+        execution_profile_id=request.execution_profile_id,
+        group_ids=self._sample_group_ids(sample_meta),
       )
-    except _DerivedParameterStepError as exc:
-      raise PipelineError(
-        f"{exc.diagnostic.code}: {exc.diagnostic.message}"
-      ) from exc
-    transformed = self._step_transforms(enriched)
+      try:
+        enriched, derived_diagnostics = self._step_derived_parameters(
+          compensation.data, raw, request.sample.sample_id, plan
+        )
+      except _DerivedParameterStepError as exc:
+        raise PipelineError(
+          f"{exc.diagnostic.code}: {exc.diagnostic.message}"
+        ) from exc
+      transformed = self._step_transforms(enriched)
+      stage_diagnostics = compensation.diagnostics + derived_diagnostics
+      self._cache_display_stage(
+        stage_key, request.sample.events, transformed, stage_diagnostics,
+      )
+    else:
+      transformed = cached_stage.transformed
+      stage_diagnostics = cached_stage.diagnostics
     channel_ids = transformed.channel_ids
     requested_parameters = (request.x_parameter_id, request.y_parameter_id)
     for parameter_id in requested_parameters:
@@ -551,7 +633,7 @@ class PipelineRunner:
           f"display_population_missing: {request.population_id!r}"
         )
       mask = membership.mask
-    diagnostics = compensation.diagnostics + derived_diagnostics
+    diagnostics = stage_diagnostics
     if preview is not None:
       diagnostics += preview.diagnostics
     return ProcessedDisplayLayer(
@@ -563,8 +645,8 @@ class PipelineRunner:
       y_transform_id=request.y_transform_id,
       plot_type=request.plot_type,
       display_max_points=request.display_max_points,
-      events=enriched.events,
-      channels=enriched.channels,
+      events=transformed.events,
+      channels=transformed.channels,
       display_mask=mask,
       preview_report=preview,
       diagnostics=diagnostics,

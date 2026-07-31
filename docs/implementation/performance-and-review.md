@@ -68,6 +68,14 @@ algorithm/software version while excluding display, export path, timestamp, and 
 worker settings. This increment only creates auditable keys and invalidation tests; cache
 payload reads/writes remain disabled until serialization, size limits, corruption recovery,
 and raw-data immutability are reviewed.
+For interactive display only, `PipelineRunner` now retains a bounded in-memory LRU of the
+compensation/derived/transform stage result while a scheduler-owned runner serves one
+project snapshot. The key uses sample/event-array identity, pointer/shape, channel IDs, and
+execution profile; the raw array is retained by reference to prevent identity reuse. The
+limit is four entries or 128 MiB, whichever is reached first. A changed project snapshot
+creates a new runner, and authoritative preview reports, gate membership, statistics, and
+all persistent cache payloads remain uncached. This optimization is display preparation
+only and cannot affect scientific results.
 
 ## Scatter rendering contract
 

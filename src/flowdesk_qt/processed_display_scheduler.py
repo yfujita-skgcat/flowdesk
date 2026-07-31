@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from typing import Any
@@ -65,6 +67,8 @@ class ProcessedDisplayScheduler(QObject):
   ) -> None:
     super().__init__(parent)
     self._executor = executor or self._run_display
+    self._default_runner: PipelineRunner | None = None
+    self._default_runner_project_key: str | None = None
     self._timer = QTimer(self)
     self._timer.setSingleShot(True)
     self._timer.setInterval(debounce_ms)
@@ -94,6 +98,8 @@ class ProcessedDisplayScheduler(QObject):
     self.cancel_pending()
     self._pool.waitForDone()
     self._active = None
+    self._default_runner = None
+    self._default_runner_project_key = None
 
   def _start_pending(self) -> None:
     if self._closed or self._active is not None or self._pending is None:
@@ -119,8 +125,15 @@ class ProcessedDisplayScheduler(QObject):
       self.display_failed.emit(request, error)
     self._start_pending()
 
-  @staticmethod
   def _run_display(
+    self,
     project: Mapping[str, Any], request: ProcessedDisplayRequest
   ) -> ProcessedDisplayResult:
-    return PipelineRunner(project).prepare_display_sample(request)
+    project_key = hashlib.sha256(
+      json.dumps(project, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    if project_key != self._default_runner_project_key:
+      self._default_runner = PipelineRunner(project)
+      self._default_runner_project_key = project_key
+    assert self._default_runner is not None
+    return self._default_runner.prepare_display_sample(request)

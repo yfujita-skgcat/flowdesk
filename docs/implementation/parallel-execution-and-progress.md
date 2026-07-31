@@ -1430,6 +1430,14 @@ timing was 0.0585 s before versus 0.0544 s after in one Linux run; timing is dia
 while the main benefit is avoiding unnecessary authoritative gate/statistics work on
 projects where it is expensive.
 
+The processed-display scheduler reuses its `PipelineRunner` only while the immutable
+project snapshot hash is unchanged. That runner has a four-entry/128 MiB in-memory LRU for
+compensation/derived/transform display stages, keyed by sample event-array identity and
+channel/profile context. Project edits, reconnects with a new event array, or scheduler
+shutdown discard the runner and its cache. Preview reports and scientific memberships are
+still recomputed through the canonical pipeline; this cache is not persisted and is not
+used by authoritative batch execution.
+
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and
 Linux/macOS/Windows package tests.

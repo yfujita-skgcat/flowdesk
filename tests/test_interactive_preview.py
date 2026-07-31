@@ -286,6 +286,46 @@ def test_display_layer_skips_authoritative_preview_for_all_events() -> None:
   assert layer.diagnostics[0] == full.diagnostics[0]
 
 
+def test_display_layer_reuses_stage_cache_for_same_sample() -> None:
+  sample = _sample()
+  runner = PipelineRunner(_project(_strategy()))
+  calls = 0
+  original = runner._step_compensation
+
+  def counted(*args, **kwargs):
+    nonlocal calls
+    calls += 1
+    return original(*args, **kwargs)
+
+  runner._step_compensation = counted
+  first_request = ProcessedDisplayRequest(
+    revision=1, sample=sample, population_id="all_events",
+    x_parameter_id="x", y_parameter_id="y",
+  )
+  second_request = ProcessedDisplayRequest(
+    revision=2, sample=sample, population_id="all_events",
+    x_parameter_id="x", y_parameter_id="y", display_max_points=100,
+  )
+
+  first = runner.prepare_display_layer(first_request)
+  second = runner.prepare_display_layer(second_request)
+
+  assert calls == 1
+  np.testing.assert_array_equal(first.events, second.events)
+  assert runner._display_stage_cache_bytes > 0
+
+
+def test_display_stage_cache_drops_oversized_entry() -> None:
+  sample = _sample()
+  runner = PipelineRunner(_project(_strategy()))
+  runner._display_stage_cache_max_bytes = 1
+  runner.prepare_display_layer(ProcessedDisplayRequest(
+    revision=1, sample=sample, population_id="all_events", x_parameter_id="x",
+  ))
+  assert not runner._display_stage_cache
+  assert runner._display_stage_cache_bytes == 0
+
+
 def test_revision_state_invalidates_descendants_and_falls_back_to_ancestor() -> None:
   state = PreviewRevisionState()
   assert state.accept_authoritative(0)
