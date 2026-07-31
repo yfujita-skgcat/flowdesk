@@ -1487,7 +1487,7 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   約1.74倍のRSSだったため、既定sequentialとCLI opt-in threadを維持する。これは代表writer/gate
   workloadの測定入口であり、`--scientific-stages`で一時projectへidentity compensation、derived
   ratio、gate countを追加できる。2026-07-31に実FCS 8出力でscientific stages付きbyte parityを確認した。
-  Windows/PyInstaller検証は未完了。
+  `--timeout-seconds`でchild processのハングをtimeout status/exit 124として記録できる。Windows/PyInstaller検証は未完了。
 - [x] 同じbenchmarkへ`--memory-budget-mib`を追加し、synthetic/project両モードでresolved worker数、
   memory limiting factor、出力parityを比較できるようにする。memory budgetはruntime診断だけであり、
   project definitionやBatch Exportの既定設定へ保存しない。

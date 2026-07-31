@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -19,11 +20,15 @@ def test_project_benchmark_compares_hashes_and_isolates_backends(tmp_path, monke
   project = tmp_path / "project.flowdesk"
   project.write_text("placeholder", encoding="utf-8")
 
-  def fake_run(project_path, export_id, output_dir, backend, max_workers, memory_budget_mib):
+  def fake_run(
+    project_path, export_id, output_dir, backend, max_workers, memory_budget_mib,
+    timeout_seconds,
+  ):
     assert project_path == project
     assert export_id == "export"
     assert max_workers == 2
     assert memory_budget_mib == 128
+    assert timeout_seconds == 300.0
     return {
       "backend": backend,
       "elapsed_seconds": 2.0 if backend == "sequential" else 1.0,
@@ -46,6 +51,7 @@ def test_project_benchmark_compares_hashes_and_isolates_backends(tmp_path, monke
   assert result["output_hashes_match"] is True
   assert result["thread_speedup"] == 2.0
   assert result["memory_budget_mib"] == 128
+  assert result["timeout_seconds"] == 300.0
 
 
 def test_representative_project_copy_adds_scientific_stages(tmp_path) -> None:
@@ -75,3 +81,19 @@ def test_representative_project_copy_adds_scientific_stages(tmp_path) -> None:
   )
   assert manifest["derived_parameters"][0]["source_stage"] == "compensated"
   assert manifest["statistics"][0]["population_id"] == "gate1"
+
+
+def test_project_backend_reports_timeout_without_hanging(tmp_path, monkeypatch) -> None:
+  module = _benchmark_module()
+
+  def timeout_run(*_args, **_kwargs):
+    raise subprocess.TimeoutExpired("flowdesk", 0.01, stderr="child timeout")
+
+  monkeypatch.setattr(module.subprocess, "run", timeout_run)
+  result = module._run_project_backend(
+    tmp_path / "project.flowdesk", "export", tmp_path / "output",
+    "sequential", 1, None, 0.01,
+  )
+  assert result["status"] == "timeout"
+  assert result["return_code"] == 124
+  assert "child timeout" in result["stderr_tail"]

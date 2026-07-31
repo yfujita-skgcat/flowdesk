@@ -174,8 +174,9 @@ def _run_project_backend(
   backend: ExecutionBackend,
   max_workers: int,
   memory_budget_mib: int | None,
+  timeout_seconds: float = 300.0,
 ) -> _ProjectRunResult:
-  """Run one project export in a child process for isolated RSS accounting."""
+  """Run one project export with bounded lifetime and isolated RSS accounting."""
   child_code = """
 import json
 import os
@@ -211,17 +212,28 @@ raise SystemExit(status)
     command.extend(["--memory-budget-mib", str(memory_budget_mib)])
   output_dir.mkdir(parents=True, exist_ok=True)
   started = time.perf_counter()
-  completed = subprocess.run(command, capture_output=True, text=True, check=False)
+  timed_out = False
+  timeout_stderr = ""
+  try:
+    completed = subprocess.run(
+      command, capture_output=True, text=True, check=False,
+      timeout=timeout_seconds,
+    )
+  except subprocess.TimeoutExpired as exc:
+    timed_out = True
+    timeout_stderr = str(exc.stderr or exc.stdout or "")
+    completed = None
   elapsed = time.perf_counter() - started
   child_result: dict[str, Any] = {}
   marker = "__FLOWDESK_BENCHMARK_CHILD__"
-  for line in reversed(completed.stdout.splitlines()):
+  stdout = "" if completed is None else completed.stdout
+  for line in reversed(stdout.splitlines()):
     if line.startswith(marker):
       child_result = json.loads(line[len(marker):])
       break
   manifest_paths = sorted(output_dir.glob("*.batch.json"))
   execution: Mapping[str, Any] | None = None
-  status = "failed"
+  status = "timeout" if timed_out else "failed"
   if manifest_paths:
     manifest = json.loads(manifest_paths[0].read_text(encoding="utf-8"))
     status = str(manifest.get("status", status))
@@ -229,23 +241,25 @@ raise SystemExit(status)
     if isinstance(value, Mapping):
       execution = dict(value)
   hashes, output_bytes = _output_hashes(output_dir)
+  stderr = timeout_stderr if timed_out else (completed.stderr if completed else "")
   return {
     "backend": backend,
     "elapsed_seconds": elapsed,
     "status": status,
-    "return_code": completed.returncode,
+    "return_code": 124 if timed_out else (completed.returncode if completed else 1),
     "output_hashes": hashes,
     "output_bytes": output_bytes,
     "execution": execution,
     "peak_rss_bytes": child_result.get("peak_rss_bytes"),
     "open_file_count_after": child_result.get("open_file_count_after"),
-    "stderr_tail": completed.stderr[-2000:],
+    "stderr_tail": stderr[-2000:],
   }
 
 
 def run_project_batch_plot_benchmark(
   *, project: Path | str, export_id: str, max_workers: int = 2,
   memory_budget_mib: int | None = None, scientific_stages: bool = False,
+  timeout_seconds: float = 300.0,
 ) -> dict[str, object]:
   """Compare sequential/thread rendering for a real saved project.
 
@@ -256,6 +270,8 @@ def run_project_batch_plot_benchmark(
     raise ValueError("max_workers must be positive")
   if memory_budget_mib is not None and memory_budget_mib < 1:
     raise ValueError("memory_budget_mib must be positive when set")
+  if timeout_seconds <= 0:
+    raise ValueError("timeout_seconds must be positive")
   project_path = Path(project)
   if not project_path.exists():
     raise FileNotFoundError(project_path)
@@ -269,7 +285,7 @@ def run_project_batch_plot_benchmark(
     for backend in ("sequential", "thread"):
       runs[backend] = _run_project_backend(
         benchmark_project, export_id, root_path / backend, backend, max_workers,
-        memory_budget_mib,
+        memory_budget_mib, timeout_seconds,
       )
   sequential = runs["sequential"]
   threaded = runs["thread"]
@@ -279,6 +295,7 @@ def run_project_batch_plot_benchmark(
     "project": str(project_path),
     "export_id": export_id,
     "scientific_stages": scientific_stages,
+    "timeout_seconds": timeout_seconds,
     "max_workers": max_workers,
     "memory_budget_mib": memory_budget_mib,
     "sequential": sequential,
@@ -438,6 +455,10 @@ def main() -> int:
     help="Copy --project and add compensation, derived data, and statistics.",
   )
   parser.add_argument(
+    "--timeout-seconds", type=float, default=300.0,
+    help="Fail each project child process after this many seconds.",
+  )
+  parser.add_argument(
     "--export-id",
     help="Batch export definition ID required with --project.",
   )
@@ -450,6 +471,7 @@ def main() -> int:
       project=args.project, export_id=args.export_id, max_workers=args.max_workers,
       memory_budget_mib=args.memory_budget_mib,
       scientific_stages=args.scientific_stages,
+      timeout_seconds=args.timeout_seconds,
     )
   else:
     result = run_batch_plot_benchmark(
