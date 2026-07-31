@@ -45,6 +45,9 @@ even when each definition opts into bounded sample-level rendering threads.
 
 The GUI now exposes the same saved-definition queue through `Run Saved Queue`; it uses the
 headless queue adapter in a Qt worker and keeps cancellation/progress updates on the GUI side.
+The queue emits `batch_plot_queue` progress events for `definition_started` and
+`definition_completed`, with deterministic `completed_units`/`total_units` and the definition ID
+in `sample_id`. Nested `batch_plot_export` events remain available for source/render detail.
 The queue still deliberately leaves plugin subprocess isolation, queue-level parallelism, and
 cross-definition cache sharing for later increments. The existing per-definition manifest and
 atomic output rules remain authoritative.

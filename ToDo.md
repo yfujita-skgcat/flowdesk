@@ -1200,7 +1200,8 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 - [x] saved Batch Plot Export definitionをCLI queueへ追加する。`--queue-export-id`を複数指定でき、
   definitionごとの安全なoutput subdirectory、既存runtime parallelism/memory設定、共通cancel、
   `fail-fast`/`continue` policyを使用する。GUIの`Run Saved Queue`も同じheadless adapter、
-  progress、cancel、runtime-only設定で実行する。plugin queue、definition間の並列実行は未実装。
+  progress、cancel、runtime-only設定で実行する。definition開始/完了のqueue progress eventと
+  nested source/render progressを区別する。plugin queue、definition間の並列実行は未実装。
 - [ ] crashed/timeout/malformed pluginがprojectを破損しないtestを追加する。
 
 ### Phase D7: Preferences、help、accessibility [S24]

@@ -4349,8 +4349,8 @@ class MainWindow(QMainWindow):
         if worker is None:
             return
         for event in worker.drain_progress_events():
-            if event.operation != "batch_plot_export":
-                continue
+            if event.operation not in {"batch_plot_export", "batch_plot_queue"}:
+              continue
             bar = self._batch_plot_progress_bar
             if bar is not None:
                 if event.total_units:

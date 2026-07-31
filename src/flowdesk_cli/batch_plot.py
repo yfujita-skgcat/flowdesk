@@ -23,6 +23,7 @@ from flowdesk_core.execution_control import (
   ExecutionCancelled,
   ExecutionControl,
   ExecutionOptions,
+  ProgressEvent,
   resolve_execution_workers,
 )
 from flowdesk_core.fcs_io import read_fcs_sample
@@ -868,6 +869,15 @@ def batch_plot_queue_command(
         execution_control.cancellation_token.raise_if_cancelled()
       except ExecutionCancelled:
         return 130
+      execution_control.emit_progress(ProgressEvent(
+        operation_id="batch_plot_queue",
+        operation="batch_plot_queue",
+        phase="definition_started",
+        completed_units=index - 1,
+        total_units=len(queue),
+        sample_id=export_id,
+        message=f"definition {index}/{len(queue)}: {export_id}",
+      ))
     definition_dir = root / f"{index:03d}_{_queue_slug(export_id)}"
     result = batch_plot_command(
       project_path, export_id, str(definition_dir),
@@ -876,6 +886,16 @@ def batch_plot_queue_command(
       density_config=density_config,
     )
     results.append((export_id, result))
+    if execution_control is not None:
+      execution_control.emit_progress(ProgressEvent(
+        operation_id="batch_plot_queue",
+        operation="batch_plot_queue",
+        phase="definition_completed",
+        completed_units=index,
+        total_units=len(queue),
+        sample_id=export_id,
+        message=f"definition {index}/{len(queue)} completed with status {result}",
+      ))
     if result == 130:
       return 130
     if result != 0 and failure_policy == "fail-fast":

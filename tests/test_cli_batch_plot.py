@@ -21,7 +21,7 @@ from flowdesk_cli.batch_plot import (
   write_plot_svg,
 )
 from flowdesk_core.density_colors import DensityColorConfig
-from flowdesk_core.execution_control import ExecutionOptions
+from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
 from flowdesk_core.models import BatchPlotExportSpec, ChannelSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import VectorRenderCache, prepare_plot_export
@@ -49,6 +49,29 @@ def test_batch_plot_queue_uses_definition_subdirectories_and_continues(
   assert calls[0][1].endswith("001_ok")
   assert calls[1][1].endswith("002_bad_id")
   assert calls[2][1].endswith("003_last")
+
+
+def test_batch_plot_queue_emits_definition_progress(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  events = []
+  control = ExecutionControl(progress_sink=events.append)
+
+  def fake_batch(*_args, **_kwargs) -> int:
+    return 0
+
+  monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("first", "second"), str(tmp_path),
+    execution_control=control,
+  ) == 0
+  assert [(event.phase, event.completed_units, event.total_units, event.sample_id)
+          for event in events] == [
+    ("definition_started", 0, 2, "first"),
+    ("definition_completed", 1, 2, "first"),
+    ("definition_started", 1, 2, "second"),
+    ("definition_completed", 2, 2, "second"),
+  ]
 
 
 def test_overlay_dependency_graph_is_deterministic_and_deduplicated() -> None:
