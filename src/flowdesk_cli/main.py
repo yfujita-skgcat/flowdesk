@@ -8,7 +8,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from flowdesk_cli.batch_gate import batch_gate_command
-from flowdesk_cli.batch_plot import batch_plot_command, batch_plot_queue_command
+from flowdesk_cli.batch_plot import (
+  batch_plot_command,
+  batch_plot_definition_ids,
+  batch_plot_queue_command,
+)
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
 from flowdesk_core.credits import credits_text
@@ -164,6 +168,10 @@ def main() -> int:
     help="Add a saved definition to a sequential queue (repeatable).",
   )
   plot_parser.add_argument(
+    "--queue-all", action="store_true",
+    help="Queue every saved definition in project declaration order.",
+  )
+  plot_parser.add_argument(
     "--queue-failure-policy", choices=("fail-fast", "continue"), default="fail-fast",
     help="Queue behavior after one definition fails (default: fail-fast).",
   )
@@ -244,12 +252,24 @@ def main() -> int:
     )
     control = ExecutionControl(options=options)
     with _cli_cancellation_context(control):
-      if args.queue_export_id:
+      if args.queue_export_id or args.queue_all:
         if args.export_id is not None:
-          raise SystemExit("--export-id and --queue-export-id cannot be combined")
+          raise SystemExit("--export-id and queue options cannot be combined")
+        if args.queue_export_id and args.queue_all:
+          raise SystemExit("--queue-all and --queue-export-id cannot be combined")
+        queue_export_ids = args.queue_export_id
+        if args.queue_all:
+          try:
+            queue_export_ids = list(batch_plot_definition_ids(args.project))
+          except (FileNotFoundError, KeyError, ValueError) as exc:
+            print(f"Error: could not read batch plot definitions: {exc}")
+            return 1
+          if not queue_export_ids:
+            print("Error: project has no saved batch plot definitions")
+            return 1
         return batch_plot_queue_command(
           args.project,
-          args.queue_export_id,
+          queue_export_ids,
           args.output_dir,
           failure_policy=args.queue_failure_policy,
           execution_control=control,
@@ -263,7 +283,7 @@ def main() -> int:
           ),
         )
       if args.export_id is None:
-        raise SystemExit("--export-id or --queue-export-id is required")
+        raise SystemExit("--export-id, --queue-export-id, or --queue-all is required")
       return batch_plot_command(
         args.project,
         args.export_id,

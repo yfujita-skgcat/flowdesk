@@ -216,6 +216,38 @@ def test_batch_plot_cli_parses_definition_queue(monkeypatch: pytest.MonkeyPatch)
   assert received["failure_policy"] == "continue"
 
 
+def test_batch_plot_cli_queue_all_uses_saved_definition_order(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  received: dict[str, object] = {}
+
+  monkeypatch.setattr(cli_main, "batch_plot_definition_ids", lambda _project: ("first", "second"))
+  monkeypatch.setattr(
+    cli_main, "batch_plot_queue_command",
+    lambda project, export_ids, output_dir, **kwargs: (
+      received.update({"project": project, "export_ids": export_ids, "output_dir": output_dir})
+      or 0
+    ),
+  )
+  monkeypatch.setattr(sys, "argv", [
+    "flowdesk", "batch-plot", "example.flowdesk", "--queue-all", "--output-dir", "out",
+  ])
+
+  assert cli_main.main() == 0
+  assert received["export_ids"] == ["first", "second"]
+
+
+def test_batch_plot_cli_rejects_queue_all_with_explicit_queue(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setattr(sys, "argv", [
+    "flowdesk", "batch-plot", "example.flowdesk", "--queue-all",
+    "--queue-export-id", "first", "--output-dir", "out",
+  ])
+  with pytest.raises(SystemExit, match="queue-all"):
+    cli_main.main()
+
+
 def test_run_project_with_output(tmp_path: Path) -> None:
   proj_dir = _create_minimal_project(tmp_path)
   out_file = tmp_path / "results.tsv"

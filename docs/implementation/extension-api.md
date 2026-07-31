@@ -36,7 +36,7 @@ are validated before an atomic project import.
 
 The first queue slice is intentionally limited to saved `Batch Plot Export` definitions;
 it does not execute plugins or project-embedded code. `flowdesk batch-plot` accepts repeated
-`--queue-export-id` values and runs them in declaration order. Each definition receives a
+`--queue-export-id` values, or `--queue-all` to select every saved definition, and runs them in declaration order. Each definition receives a
 safe numbered subdirectory under the requested output directory, the same runtime worker and
 memory policy, and one shared cooperative cancellation token. `fail-fast` is the default;
 `continue` records failures and proceeds to later definitions. A queue cannot combine

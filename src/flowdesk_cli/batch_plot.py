@@ -51,6 +51,16 @@ from flowdesk_storage.serialization import atomic_write_json
 NormalizedPayload = tuple[LayerValues, np.ndarray, np.ndarray | None]
 
 
+def batch_plot_definition_ids(project_path: str) -> tuple[str, ...]:
+  """Return saved batch-plot definition IDs in project declaration order."""
+  project = load_project(project_path)
+  return tuple(
+    str(item["id"])
+    for item in project.get("batch_plot_exports", ())
+    if isinstance(item, Mapping) and item.get("id")
+  )
+
+
 def batch_plot_command(
   project_path: str,
   export_id: str,
