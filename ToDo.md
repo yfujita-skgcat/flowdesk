@@ -822,10 +822,10 @@ GUI/exportの視覚的齟齬を、scientific resultやdisplay-event selectionを
   `flowdesk_core.plot_scene.resolve_plot_layout()`と`PlotWidget.set_presentation()`へ接続し、
   title行数・font sizeに対してplot topを拡張する回帰testを追加した。writer全形式のdraw record統合は
   Increment 3で継続する。
-- [ ] Increment 3: PNG/JPEG/SVG/PDFのtitle/axis/tick/gate/legendを同一layout draw recordから出力する。
-  SVGの`selected.title`/固定`y=32`、PNG/PDFの固定20-unit title座標など旧pathを削除し、deadな
-  `renderer_backend` APIと「GUI batchはQt adapter」という不正確な説明を整理する。Qt widgetをbatch
-  workerから描画してbackend統一したことにしてはならない。
+- [x] Increment 3: PNG/JPEG/SVG/PDFのtitle/axis/tick/gate/legendを同一layout draw recordから出力する。
+  typed `PlotLayoutSpec`のtitle/axis anchorを全writerで共有し、SVGの旧固定座標とdeadな
+  `renderer_backend` APIを削除した。複数行タイトル時のSVG凡例もtitle band内へ配置し、plot areaとの
+  重なりを防止した。Qt widgetをbatch workerから描画してbackend統一したことにはしていない。
 - [ ] Increment 4: profileで選んだPDF hybrid最適化を一件だけ実装する。まず同一style/sourceの
   source-overを数学的に同値なtiled/vectorised処理へ置換できるか評価し、異なる色/alpha/z-order/
   density colorは絶対にmerge/reorderしない。process backendはshared-memory、Windows spawn、cancel、

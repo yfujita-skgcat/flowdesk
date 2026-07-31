@@ -1034,7 +1034,7 @@ Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベ
 
 GUIとheadless exportは、X/Y parameter、transform ID、viewport、tick、title/source色、gate geometry、clip、z-orderを含む共通のrenderer-neutral `PlotScene`を使用する。sidecarにはsceneの決定的hashも記録される。作成中gateのpreviewや編集用handleはsceneに含まれないため、exportへ混入しない。OSやフォントbackendが異なる場合はpixel完全一致ではなく、scene値と幾何・色・文字配置の許容差を再現性の基準とする。
 
-GUIから実行する`Batch Plot Export`もCLIと同じrenderer-neutral core rendererを使います。これにより、PNG/JPEG/SVG/PDFの表示範囲、点の順序と色、axis、tick、gate、title、軸ラベルは同じ`PlotScene`から出力されます。ライブ画面は引き続きQt/pyqtgraphで描画されるため、OSやフォントbackendによるアンチエイリアス差はあり得ますが、バッチ形式間で座標系や表示要素が変わることはありません。
+ GUIから実行する`Batch Plot Export`もCLIと同じrenderer-neutral core rendererを使います。これにより、PNG/JPEG/SVG/PDFの表示範囲、点の順序と色、axis、tick、gate、title、軸ラベルは同じ`PlotScene`と`PlotLayoutSpec`から出力されます。複数行タイトルの下へ凡例を配置するため、タイトルがplot areaへ重なることはありません。ライブ画面は引き続きQt/pyqtgraph、出力はPillow/SVG/PDFの独立adapterで描画されるため、OSやフォントbackendによるアンチエイリアス差はあり得ますが、論理座標・文字列・色・表示範囲は一致します。
 
 `current_view`では、出力サイズや1:1 aspectの指定があっても、GUIで現在表示している変換後のX/Y範囲を優先する。単一sourceでは、ゲートで色付けされたpopulationをcanonical previewのmembershipに従って同じ色で描画する。overlayがある比較表示では、active sourceを含むすべてのsourceを保存済み個別色（または既定source色）の単一色で描画し、population/gating色は使用しない。単一sourceのDensity color設定は、全変換後populationから決めた同じevent-order色としてPNG/SVG/PDFへ適用される。current viewは出力するイベントをclipするだけでdensityを再正規化しない。sidecarにはgrid・smoothing・normalization・algorithm versionが記録される。overlay sourceがある場合は通常色へ戻る。
 

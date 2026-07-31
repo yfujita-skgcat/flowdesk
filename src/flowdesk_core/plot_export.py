@@ -276,6 +276,8 @@ def write_plot_svg(
   left, top, plot_width, plot_height = (
     round(value) for value in layout.plot_rect
   )
+  foreground = _foreground_rgba(selected.background_color)
+  axis_color = f"#{foreground[0]:02x}{foreground[1]:02x}{foreground[2]:02x}"
   elements = [
     f'<rect width="100%" height="100%" fill="{escape(selected.background_color)}"/>',
   ]
@@ -295,10 +297,15 @@ def write_plot_svg(
       )
   if options is None or options.include_axis_labels:
     elements.extend([
-      f'<text x="{left + plot_width / 2:g}" y="{height - 20:g}" text-anchor="middle">'
+      f'<text x="{layout.x_axis_label_anchor[0]:g}" y="{layout.x_axis_label_anchor[1]:g}" '
+      f'text-anchor="middle" fill="{axis_color}" '
+      f'font-size="{selected.axis_label_font.size:g}">'
       f"{escape(selected.x_axis_display_label or '')}</text>",
-      f'<text x="15" y="{top + plot_height / 2:g}" text-anchor="middle" '
-      f'transform="rotate(-90 15 {top + plot_height / 2:g})">'
+      f'<text x="{layout.y_axis_label_anchor[0]:g}" y="{layout.y_axis_label_anchor[1]:g}" '
+      f'text-anchor="middle" fill="{axis_color}" '
+      f'transform="rotate(-90 {layout.y_axis_label_anchor[0]:g} '
+      f'{layout.y_axis_label_anchor[1]:g})" '
+      f'font-size="{selected.axis_label_font.size:g}">'
       f"{escape(selected.y_axis_display_label or '')}</text>",
     ])
   style_by_id = {style.source_id: style for style in selected.source_styles}
@@ -410,8 +417,17 @@ def write_plot_svg(
         )
     label = style.legend_label if style and style.legend_label else source_labels[source_id]
     if options is None or options.include_legend:
+      # The former implementation used y=55 for every export.  That fixed
+      # coordinate collides with the second/third title line in overlays.
+      # Keep the legend in the resolved title band so it cannot enter the
+      # plot rectangle or overlap title glyphs.
+      title_end = (
+        layout.title_baselines[-1] + layout.title_line_height * 0.55
+        if layout.title_baselines else 0.0
+      )
+      legend_y = max(title_end + 4.0, layout.title_block[1] + 4.0) + index * 18.0
       elements.append(
-        f'<text x="{width - 180:g}" y="{55 + index * 20}" fill="{escape(color)}">'
+        f'<text x="{width - 180:g}" y="{legend_y:g}" fill="{escape(color)}">'
         f"{escape(str(label))}</text>"
       )
     if cancel_check is not None:
@@ -904,7 +920,7 @@ def _svg_scene_axes(
   bottom = top + height
   scene = _scene_mapping(prepared)
   foreground = _foreground_rgba(selected.background_color)
-  axis_color = "#%02x%02x%02x" % foreground[:3]
+  axis_color = f"#{foreground[0]:02x}{foreground[1]:02x}{foreground[2]:02x}"
   elements = [
     f'<rect x="{left:g}" y="{top:g}" width="{width:g}" height="{height:g}" '
     f'fill="none" stroke="{axis_color}" stroke-width="{selected.axis_line_width:g}"/>',

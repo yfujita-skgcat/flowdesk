@@ -33,20 +33,11 @@ may additionally be reduced by the memory budget.
 
 The visual-parity audit found actual divergent code paths:
 
-1. `MainWindow._BatchPlotExportWorker` explicitly requests
-   `renderer_backend="headless"`, while `batch_plot_command()` currently does
-   not consume `renderer_backend` at all. The parameter is dead API, not a
-   backend selector.
-2. GUI uses pyqtgraph `PlotItem` and reserves its title row from
+1. GUI uses pyqtgraph `PlotItem` and reserves its title row from
    `QFontMetrics`. Batch PNG, SVG, and PDF use separate core writers.
-3. The core `PlotScene` transfers only a plot-area margin. It has no typed
-   title block/baseline geometry.
-4. `_draw_raster_text()` and `_pdf_scene_text()` place title lines at fixed
-   20-unit offsets. They do not derive their baselines from the actual title
-   block or plot rectangle.
-5. `write_plot_svg()` still draws one `selected.title` at fixed `y=32`; it
-   does not use `scene.title_lines`, `scene.title_colors`, or a shared title
-   layout. This is legacy rendering code and must not remain authoritative.
+2. The physical adapters still use independent font rasterisation, so exact
+   pixels are not expected; their logical layout, strings, colors, and bounds
+   must be identical.
 
 Thus the current guarantee is only partial shared *scene data*, not one
 physical renderer backend. A headless SVG/PDF backend is required for CLI and
@@ -151,9 +142,8 @@ Required tests:
 ## 5. Increment 2: remove divergent legacy writer layout
 
 Make SVG, PDF, PNG, and JPEG consume the same resolved layout object. Remove
-all hard-coded title coordinates and duplicated margin constants from writer
-code, including the current SVG `selected.title`/`y=32` path and the
-PNG/PDF 20-unit title offsets. SVG must use `scene.title_lines` and
+all hard-coded title/axis coordinates and duplicated margin constants from
+writer code. SVG must use `scene.title_lines` and
 `scene.title_colors`; PDF and raster writers must use exactly the same line
 anchors and visibility policy.
 
@@ -185,6 +175,11 @@ Required tests:
 - a deleted legacy helper cannot be reached by normal export paths;
 - project migration preserves old projects until re-save and assigns the
   documented layout contract version.
+
+Implementation status: the typed layout, shared title/axis anchors, SVG scene
+axes, and dynamic legend placement are implemented. The old renderer selector
+and fixed SVG title/axis coordinates are removed. Remaining work is the
+cross-backend visual fixture and any measured hybrid-raster optimization.
 
 ## 6. Increment 3: PDF hybrid-raster performance work
 

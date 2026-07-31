@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import shutil
 import subprocess
 
@@ -122,9 +123,48 @@ def test_svg_export_contains_title_labels_legend_and_metadata(tmp_path) -> None:
   assert "CD3 overlay" in text
   assert "Control" in text
   assert "CD3" in text
+  # Legend placement must follow the resolved title band rather than the
+  # former fixed y=55 coordinate (which overlapped multi-line titles).
   metadata = json.loads(path.with_suffix(".svg.json").read_text(encoding="utf-8"))
+  layout = metadata["plot_layout"]
+  title_baseline = layout["title_baselines"][-1]
+  legend_match = re.search(r'<text x="620" y="([0-9.]+)"[^>]*>Control</text>', text)
+  assert legend_match is not None
+  assert float(legend_match.group(1)) > title_baseline
   assert metadata["ordered_source_ids"] == ["s1"]
   assert metadata["scientific_note"]
+
+
+def test_all_export_adapters_publish_the_same_resolved_layout(tmp_path) -> None:
+  sources = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", sources, (OverlaySourceResolution("s1", "compatible"),),
+    scene={
+      "title_lines": ["line one", "line two", "line three"],
+      "title_colors": ["#4c78a8", "#4c78a8", "#4c78a8"],
+      "x_axis_label": "X", "y_axis_label": "Y", "source_order": ["s1"],
+      "x_ticks": [{"position": 0.5, "label": "1e2", "major": True}],
+      "y_ticks": [{"position": 0.5, "label": "1e3", "major": True}],
+    },
+  )
+  options = BatchPlotExportSpec(
+    id="layout", name="Layout", formats=("png", "svg", "pdf"),
+    width=640, height=480, vector_scatter_mode="hybrid_raster",
+  )
+  layers = {"s1": ((0.25, 0.75), (0.25, 0.75))}
+  write_plot_png(tmp_path / "plot.png", prepared, layers=layers, options=options)
+  write_plot_svg(tmp_path / "plot.svg", prepared, layers=layers, options=options)
+  write_plot_pdf(tmp_path / "plot.pdf", prepared, layers=layers, options=options)
+  layouts = [
+    json.loads((tmp_path / f"plot.{suffix}.json").read_text()) ["plot_layout"]
+    for suffix in ("png", "svg", "pdf")
+  ]
+  assert layouts[0] == layouts[1] == layouts[2]
+  layout = layouts[0]
+  assert layout["title_baselines"][-1] < layout["plot_rect"][1]
 
 
 def test_full_vector_svg_reuses_markers_and_places_each_event_once(tmp_path) -> None:
