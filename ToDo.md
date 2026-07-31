@@ -1536,6 +1536,13 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   sequential queueとbounded queueを別processで比較する。queue manifestのresolved backend、worker数、
   memory制限、raw cache hit/miss、再帰的なPNG/SVG/PDF hash、peak RSS、timeoutをJSONへ記録し、
   queue-level FCS I/O speedupを単一定義benchmarkと区別して測定できるようにした。
+- [x] 同じbenchmarkへ`--queue-repeat N`を追加し、元projectを変更せず一時bundleへ最初の保存definitionを
+  N件複製する。relative FCS pathを一時bundle外のabsolute pathへ解決し、definition ID/nameを一意化してから
+  queue-allを実行する。これは測定用のruntime fixtureであり、scientific project definitionや既定workerを変更しない。
+- [x] **2026-07-31 queue-repeat 2実FCS測定**: `data/analysis.flowdesk --queue --queue-repeat 2 --max-workers 2`
+  で2 definitions・4 samples・PNG/PDF 16出力を比較した。出力 hashは完全一致し、parallel raw cacheは
+  hit=4/miss=8だった。sequential 30.588 s / 315,359 KiB、thread/2 32.353 s / 563,352 KiBで
+  speed ratioは0.945、RSSは約1.79倍だった。thread backendの既定化根拠にはならず、GUI worker controlsは無効のまま維持する。
 - [x] **2026-07-31 queue smoke**: `data/analysis.flowdesk --queue --max-workers 2`を実FCSで実行し、
   4 samples・PNG/PDF 8出力のrecursive hash parityを確認した。sequential 15.656 s / 314,110 KiB、
   queue指定 thread 15.484 s / 314,348 KiB（1.011x）で、cache provenanceとresolved backendも記録された。

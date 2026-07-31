@@ -96,6 +96,32 @@ def test_queue_project_benchmark_compares_recursive_hashes_and_cache_provenance(
   assert result["mode"] == "queue-all"
 
 
+def test_queue_project_copy_repeats_definition_without_mutating_source(tmp_path) -> None:
+  module = _benchmark_module()
+  project = tmp_path / "project.flowdesk"
+  project.mkdir()
+  (project / "sample.fcs").write_bytes(b"fixture")
+  (project / "manifest.json").write_text(json.dumps({
+    "samples": [{"id": "s1", "path": "sample.fcs"}],
+    "batch_plot_exports": [{
+      "id": "export", "name": "Export", "target": "all",
+      "plot_view_id": "view", "formats": ["svg"],
+    }],
+  }), encoding="utf-8")
+
+  copied = module._prepare_queue_project(project, tmp_path / "copy", 3)
+  source_manifest = json.loads(
+    (project / "manifest.json").read_text(encoding="utf-8")
+  )
+  copied_manifest = json.loads(
+    (copied / "manifest.json").read_text(encoding="utf-8")
+  )
+  assert len(source_manifest["batch_plot_exports"]) == 1
+  assert len(copied_manifest["batch_plot_exports"]) == 3
+  assert len({item["id"] for item in copied_manifest["batch_plot_exports"]}) == 3
+  assert Path(copied_manifest["samples"][0]["path"]).is_absolute()
+
+
 def test_representative_project_copy_adds_scientific_stages(tmp_path) -> None:
   module = _benchmark_module()
   project = tmp_path / "project.flowdesk"

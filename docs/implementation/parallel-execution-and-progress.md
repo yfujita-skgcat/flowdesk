@@ -1137,6 +1137,21 @@ FCS I/O reuse or cache benefit. Output hash parity remains mandatory, and the re
 diagnostic until representative multi-definition FCS and Windows/PyInstaller measurements are
 available.
 
+For a project with only one saved definition, `--queue-repeat N` creates a temporary copy,
+resolves its relative FCS paths to absolute references, and duplicates the first export
+definition with unique IDs/names before running queue-all. The source project and its scientific
+definition are never modified. This is a benchmark fixture for measuring queue-level cache
+reuse and worker overlap, not an application feature and not a reason to change default
+parallelism.
+
+The first multi-definition real-FCS measurement used `--queue-repeat 2` on
+`data/analysis.flowdesk` (two definitions, four samples, 16 PNG/PDF outputs). Sequential
+queue took 30.588 s with 315,359 KiB peak RSS; thread/2 took 32.353 s with 563,352 KiB RSS
+(speed ratio 0.945, RSS about 1.79x). All output hashes matched, and the shared raw cache
+reported four hits and eight misses. This demonstrates cache reuse and deterministic parity,
+but not a useful speedup; the default remains sequential and GUI worker controls remain
+disabled until platform and representative-workload evidence changes.
+
 The first real-FCS queue smoke on 2026-07-31 used `data/analysis.flowdesk` (one saved
 definition, four samples, PNG/PDF). Sequential queue took 15.656 s with 314,110 KiB peak
 RSS; the queue command requested two workers but resolved to one and took 15.484 s with

@@ -171,6 +171,38 @@ def _prepare_representative_project(project: Path, destination_root: Path) -> Pa
   return destination
 
 
+def _prepare_queue_project(
+  project: Path, destination_root: Path, repeat_definitions: int,
+) -> Path:
+  """Copy a project and duplicate its first export definition for queue tests."""
+  if repeat_definitions < 1:
+    raise ValueError("repeat_definitions must be positive")
+  if not project.is_dir():
+    raise NotADirectoryError(project)
+  destination = destination_root / project.name
+  shutil.copytree(project, destination)
+  manifest_path = destination / "manifest.json"
+  manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+  exports = manifest.get("batch_plot_exports", [])
+  if not isinstance(exports, list) or not exports:
+    raise ValueError("queue benchmark project must contain a saved batch definition")
+  for sample in manifest.get("samples", []):
+    raw_path = sample.get("path")
+    if isinstance(raw_path, str) and not Path(raw_path).is_absolute():
+      sample["path"] = str((project / raw_path).resolve())
+  base = dict(exports[0])
+  base_id = str(base.get("id", "benchmark-export"))
+  for index in range(2, repeat_definitions + 1):
+    duplicate = dict(base)
+    duplicate["id"] = f"{base_id}__queue_benchmark_{index}"
+    duplicate["name"] = f"{base.get('name', base_id)} (queue benchmark {index})"
+    exports.append(duplicate)
+  manifest_path.write_text(
+    json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+  )
+  return destination
+
+
 def _run_project_backend(
   project: Path,
   export_id: str,
@@ -356,7 +388,7 @@ raise SystemExit(status)
 def run_project_batch_queue_benchmark(
   *, project: Path | str, max_workers: int = 2,
   memory_budget_mib: int | None = None,
-  timeout_seconds: float = 300.0,
+  timeout_seconds: float = 300.0, repeat_definitions: int = 1,
 ) -> dict[str, object]:
   """Compare sequential and bounded queue execution for all saved definitions."""
   if max_workers < 1:
@@ -365,15 +397,21 @@ def run_project_batch_queue_benchmark(
     raise ValueError("memory_budget_mib must be positive when set")
   if timeout_seconds <= 0:
     raise ValueError("timeout_seconds must be positive")
+  if repeat_definitions < 1:
+    raise ValueError("repeat_definitions must be positive")
   project_path = Path(project)
   if not project_path.exists():
     raise FileNotFoundError(project_path)
   runs: dict[str, _ProjectRunResult] = {}
   with tempfile.TemporaryDirectory(prefix="flowdesk-queue-benchmark-") as root:
     root_path = Path(root)
+    benchmark_project = (
+      _prepare_queue_project(project_path, root_path, repeat_definitions)
+      if repeat_definitions > 1 else project_path
+    )
     for backend in ("sequential", "thread"):
       runs[backend] = _run_project_queue_backend(
-        project_path, root_path / backend, backend, max_workers,
+        benchmark_project, root_path / backend, backend, max_workers,
         memory_budget_mib, timeout_seconds,
       )
   sequential = runs["sequential"]
@@ -385,6 +423,7 @@ def run_project_batch_queue_benchmark(
     "mode": "queue-all",
     "timeout_seconds": timeout_seconds,
     "max_workers": max_workers,
+    "repeat_definitions": repeat_definitions,
     "memory_budget_mib": memory_budget_mib,
     "sequential": sequential,
     "thread": threaded,
@@ -607,10 +646,18 @@ def main() -> int:
     "--queue", action="store_true",
     help="Benchmark queue-all sequential/thread execution for --project.",
   )
+  parser.add_argument(
+    "--queue-repeat", type=int, default=1,
+    help="Duplicate the first saved definition N times in a temporary queue project.",
+  )
   parser.add_argument("--output", type=Path)
   args = parser.parse_args()
   if args.queue and args.project is None:
     parser.error("--queue requires --project")
+  if not args.queue and args.queue_repeat != 1:
+    parser.error("--queue-repeat requires --queue")
+  if args.queue_repeat < 1:
+    parser.error("--queue-repeat must be positive")
   if args.project is not None:
     if args.queue:
       if args.export_id:
@@ -621,6 +668,7 @@ def main() -> int:
         project=args.project, max_workers=args.max_workers,
         memory_budget_mib=args.memory_budget_mib,
         timeout_seconds=args.timeout_seconds,
+        repeat_definitions=args.queue_repeat,
       )
     else:
       if not args.export_id:
