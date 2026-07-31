@@ -279,7 +279,7 @@ def write_plot_svg(
     f'<rect width="100%" height="100%" fill="{escape(selected.background_color)}"/>',
   ]
   if options is None or options.include_ticks:
-    elements.extend(_svg_axes(left, top, plot_width, plot_height))
+    elements.extend(_svg_scene_axes(prepared, selected, layout))
   if options is None or options.include_title:
     title_lines = _title_lines(prepared, selected)
     title_colors = prepared.scene.title_colors
@@ -427,7 +427,7 @@ def write_plot_svg(
   out_path.parent.mkdir(parents=True, exist_ok=True)
   out_path.write_text(svg, encoding="utf-8")
   out_path.with_suffix(out_path.suffix + ".json").write_text(
-    json.dumps(_export_metadata(prepared, options, hybrid_info), indent=2, ensure_ascii=False) + "\n",
+    json.dumps(_export_metadata(prepared, options, hybrid_info, selected), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
   )
 
@@ -517,7 +517,7 @@ def write_plot_png(
     (width, height), Image.Resampling.LANCZOS
   ).save(out_path, format="PNG", dpi=(canvas.dpi, canvas.dpi))
   out_path.with_suffix(out_path.suffix + ".json").write_text(
-    json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
+    json.dumps(_export_metadata(prepared, options, selected=selected), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
   )
 
@@ -792,7 +792,7 @@ def write_plot_pdf(
   out_path.parent.mkdir(parents=True, exist_ok=True)
   out_path.write_bytes(bytes(pdf))
   out_path.with_suffix(out_path.suffix + ".json").write_text(
-    json.dumps(_export_metadata(prepared, options, hybrid_info), indent=2, ensure_ascii=False) + "\n",
+    json.dumps(_export_metadata(prepared, options, hybrid_info, selected), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
   )
 
@@ -810,6 +810,7 @@ def write_plot_jpg(
   cancel_check: Callable[[], None] | None = None,
 ) -> None:
   """Write JPEG through Pillow without making Qt part of the core renderer."""
+  selected = presentation or prepared.resolved_presentation.presentation
   try:
     from PIL import Image
   except ImportError as exc:
@@ -826,7 +827,7 @@ def write_plot_jpg(
     png_path.unlink(missing_ok=True)
     png_path.with_suffix(png_path.suffix + ".json").unlink(missing_ok=True)
   Path(path).with_suffix(Path(path).suffix + ".json").write_text(
-    json.dumps(_export_metadata(prepared, options), indent=2, ensure_ascii=False) + "\n",
+    json.dumps(_export_metadata(prepared, options, selected=selected), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
   )
 
@@ -844,9 +845,17 @@ def _export_metadata(
   prepared: PreparedPlotExport,
   options: BatchPlotExportSpec | None,
   vector_scatter: dict[str, Any] | None = None,
+  selected: PlotPresentationSpec | None = None,
 ) -> dict[str, Any]:
   metadata = dict(prepared.metadata)
-  metadata["export_canvas"] = resolve_export_canvas(options).to_mapping()
+  canvas = resolve_export_canvas(options)
+  selected_presentation = selected or prepared.resolved_presentation.presentation
+  metadata["export_canvas"] = canvas.to_mapping()
+  metadata["renderer_contract_version"] = "plot-layout.v1"
+  metadata["plot_layout"] = _resolved_layout(
+    canvas.logical_width, canvas.logical_height, prepared,
+    selected_presentation, options,
+  ).to_mapping()
   if options is not None:
     metadata["export_options"] = asdict(options)
     metadata["vector_scatter"] = {
@@ -867,16 +876,76 @@ def _export_metadata(
   return metadata
 
 
-def _svg_axes(left: int, top: int, width: int, height: int) -> list[str]:
+def _svg_scene_axes(
+  prepared: PreparedPlotExport,
+  selected: PlotPresentationSpec,
+  layout: PlotLayoutSpec,
+) -> list[str]:
+  """Render scene ticks/labels instead of the former fraction-based axes."""
+  left, top, width, height = (float(value) for value in layout.plot_rect)
+  bottom = top + height
+  scene = _scene_mapping(prepared)
+  foreground = _foreground_rgba(selected.background_color)
+  axis_color = "#%02x%02x%02x" % foreground[:3]
   elements = [
-    f'<path d="M {left} {top} V {top + height} H {left + width}" '
-    'fill="none" stroke="#808080" stroke-width="1"/>',
+    f'<rect x="{left:g}" y="{top:g}" width="{width:g}" height="{height:g}" '
+    f'fill="none" stroke="{axis_color}" stroke-width="{selected.axis_line_width:g}"/>',
   ]
-  for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
-    x = left + fraction * width
-    y = top + (1.0 - fraction) * height
-    elements.append(f'<path d="M {x:g} {top + height} v 5 M {left - 5} {y:g} h 5" '
-                    'stroke="#808080" stroke-width="1"/>')
+  for axis, horizontal in (("x_ticks", True), ("y_ticks", False)):
+    for tick in scene.get(axis, ()):
+      if not isinstance(tick, Mapping):
+        continue
+      position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
+      major = bool(tick.get("major", True))
+      if horizontal:
+        x = left + position * width
+        y = bottom
+        grid = f'M {x:g} {top:g} V {bottom:g}'
+        tick_path = f'M {x:g} {bottom:g} v {6 if major else 3:g}'
+      else:
+        x = left
+        y = bottom - position * height
+        grid = f'M {left:g} {y:g} H {left + width:g}'
+        tick_path = f'M {left:g} {y:g} h {-6 if major else -3:g}'
+      if selected.show_grid:
+        elements.append(
+          f'<path d="{grid}" fill="none" stroke="#d8d8d8" '
+          f'stroke-width="{1.0 if not major else 1.25:g}"/>'
+        )
+      elements.append(
+        f'<path d="{tick_path}" fill="none" stroke="{axis_color}" '
+        f'stroke-width="{selected.axis_line_width:g}"/>'
+      )
+      if major:
+        label = _display_tick_label(str(tick.get("label", "")))
+        if not label:
+          continue
+        if horizontal:
+          elements.append(
+            f'<text x="{x:g}" y="{bottom + selected.tick_font.size + 9:g}" '
+            f'text-anchor="middle" fill="{axis_color}" '
+            f'font-size="{selected.tick_font.size:g}">{escape(label)}</text>'
+          )
+        else:
+          elements.append(
+            f'<text x="{left - selected.tick_font.size * 0.8:g}" y="{y + selected.tick_font.size * 0.35:g}" '
+            f'text-anchor="end" fill="{axis_color}" '
+            f'font-size="{selected.tick_font.size:g}">{escape(label)}</text>'
+          )
+  if selected.x_axis_display_label:
+    elements.append(
+      f'<text x="{left + width / 2:g}" y="{bottom + selected.axis_label_font.size * 2.4:g}" '
+      f'text-anchor="middle" fill="{axis_color}" '
+      f'font-size="{selected.axis_label_font.size:g}">{escape(selected.x_axis_display_label)}</text>'
+    )
+  if selected.y_axis_display_label:
+    y_center = top + height / 2
+    elements.append(
+      f'<text x="{left - selected.tick_font.size * 3.2:g}" y="{y_center:g}" '
+      f'text-anchor="middle" transform="rotate(-90 {left - selected.tick_font.size * 3.2:g} {y_center:g})" '
+      f'fill="{axis_color}" font-size="{selected.axis_label_font.size:g}">'
+      f'{escape(selected.y_axis_display_label)}</text>'
+    )
   return elements
 
 

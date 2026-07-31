@@ -580,13 +580,14 @@ anti-aliasing. Define visual equivalence as the scene contract plus measured
 geometry/style agreement; do not use cross-platform pixel hashes as a
 scientific correctness test.
 
-The GUI-triggered Batch Plot Export now selects the Qt/pyqtgraph adapter. It
-constructs a temporary `PlotWidget` from the same processed display arrays,
-transform specifications, viewport, presentation, and gate definitions used
-by the live GUI, then asks that widget to render the PNG. Direct CLI execution
-continues to use the Qt-independent renderer unless `renderer_backend="qt"`
-is explicitly selected, so headless execution remains available on systems
-without PySide6.
+The GUI-triggered Batch Plot Export uses the Qt-independent core renderer in a
+worker thread. It constructs the same processed display arrays, transform
+specifications, viewport, presentation, and gate definitions as the live GUI,
+but does not create a temporary `PlotWidget` in the worker. The live GUI and
+headless outputs therefore share a canonical scene/layout contract while
+retaining independent physical adapters. The former `renderer_backend`
+selector was a dead parameter and has been removed; CLI/headless execution
+remains available without PySide6.
 
 For `current_view` exports, the transformed X/Y ViewBox range is captured
 before the temporary export resize/aspect operation and restored for the

@@ -276,7 +276,6 @@ def batch_plot_command(
   export_id: str,
   output_dir: str,
   *,
-  renderer_backend: str = "headless",
   execution_control: ExecutionControl | None = None,
   execution_options: ExecutionOptions | None = None,
   density_config: DensityColorConfig | None = None,

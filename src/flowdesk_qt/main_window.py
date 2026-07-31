@@ -348,7 +348,6 @@ class _BatchPlotExportWorker(QThread):
                     self._project_path,
                     self._export_ids[0],
                     self._output_dir,
-                    renderer_backend="headless",
                     execution_control=self._execution_control,
                     density_config=self._density_config,
                 )
