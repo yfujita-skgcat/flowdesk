@@ -16,30 +16,36 @@ except ImportError:  # pragma: no cover - Windows has no resource module
   resource = None  # type: ignore[assignment]
 
 import numpy as np
-from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
+from PySide6.QtCore import QCoreApplication, QEventLoop
 
 from flowdesk_core.fcs_io import read_fcs_sample, write_fcs_file
 from flowdesk_qt.sample_load_scheduler import SampleLoadScheduler
 
 
-def _wait_for_sample(scheduler: SampleLoadScheduler, path: Path) -> object:
-  loop = QEventLoop()
+def _wait_for_sample(
+  scheduler: SampleLoadScheduler, path: Path, app: QCoreApplication,
+) -> object:
   result: list[object] = []
   error: list[Exception] = []
 
   def loaded(_sample_id: str, sample: object) -> None:
     result.append(sample)
-    loop.quit()
 
   def failed(_sample_id: str, exc: object) -> None:
     error.append(exc if isinstance(exc, Exception) else RuntimeError(str(exc)))
-    loop.quit()
 
   scheduler.sample_loaded.connect(loaded)
   scheduler.sample_failed.connect(failed)
   scheduler.schedule("benchmark", str(path))
-  QTimer.singleShot(300_000, loop.quit)
-  loop.exec()
+  deadline = time.monotonic() + 300.0
+  # Do not enter a nested Qt event loop here.  The benchmark can run after
+  # widgets/pyqtgraph tests have torn down deferred objects, and nested exec()
+  # makes that lifetime boundary unnecessarily fragile.  Polling the existing
+  # application event queue still delivers the scheduler's queued signal while
+  # keeping ownership and shutdown on the caller's event loop.
+  while not result and not error and time.monotonic() < deadline:
+    app.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, 50)
+    time.sleep(0.001)
   scheduler.sample_loaded.disconnect(loaded)
   scheduler.sample_failed.disconnect(failed)
   if error:
@@ -79,7 +85,7 @@ def run_prefetch_benchmark(
     scheduler = SampleLoadScheduler(app)
     try:
       started = time.perf_counter()
-      asynchronous = _wait_for_sample(scheduler, path)
+      asynchronous = _wait_for_sample(scheduler, path, app)
       asynchronous_seconds = time.perf_counter() - started
     finally:
       scheduler.shutdown()
