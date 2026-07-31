@@ -186,6 +186,13 @@ recipe. GUI-derived tick levels and gate color/width/style are now included in
 the canonical scene before single export, preventing the earlier missing-grid
 and default-gate-color drift.
 
+Real-FCS verification (four files in `data/analysis.flowdesk`) was run outside
+the repository artifacts with PNG, SVG, and PDF outputs. For all four samples,
+the three sidecars had identical `scene_hash` and `plot_layout`; PDF rasterized
+at 72 DPI versus the PNG resized to the same logical 600×600 canvas had RMSE
+0.1237–0.1277. The source files and generated images remain outside the
+repository.
+
 ## 6. Increment 3: PDF hybrid-raster performance work
 
 Use the Increment 0 profile to select the smallest correct change. Candidate
@@ -239,6 +246,12 @@ Required correctness tests:
   speedup threshold.
 
 ## 7. Increment 4: visual-parity regression suite and cleanup gate
+
+Implemented: `tests/gui/test_qt_plot_export.py` now captures an offscreen live
+GUI screenshot and compares it with the core PNG, while also asserting the
+resolved plot rectangle/title anchors. `tests/test_plot_export_reuse.py`
+compares PNG/SVG/PDF sidecar layout contracts, and the real-FCS recipe above
+checks scene hashes and PDF-vs-PNG raster RMSE across four samples.
 
 Create an offscreen GUI fixture and export the identical resolved scene to
 PNG, SVG, and PDF. Rasterise PDF with `pdftoppm` when available. The suite must

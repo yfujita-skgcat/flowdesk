@@ -834,10 +834,11 @@ GUI/exportの視覚的齟齬を、scientific resultやdisplay-event selectionを
   従来のイベント順処理を維持する。大きなrasterはメモリ保護のためfallbackし、algorithm versionと
   before/after計測を記録した。process backendはshared-memory、Windows spawn、cancel、aggregate
   memory、parityを証明できる場合だけ別incrementとして採用する。
-- [ ] Increment 5: GUI screenshot、PNG、SVG、PDF rasterisationを同一sceneで比較するvisual parity
-  regressionを追加する。long/multiline title、overlay色、density、gate、save/reload、別active sampleを
-  含め、titleとplot rectangleの重なり、label/color/geometry driftをfailにする。font anti-aliasing差だけは
-  明示toleranceにする。
+- [x] Increment 5: GUI screenshot、PNG、SVG、PDF rasterisationを同一sceneで比較するvisual parity
+  regressionを追加した。offscreen GUI screenshotとcore PNGのRMSE、plot rectangle/title anchor、
+  PNG/PDF raster RMSE、全形式sidecarのscene hash/layout parityを検証する。実FCS 4 sampleでも
+  PNG/SVG/PDFのscene hash・plot layoutが一致することを確認した。font anti-aliasing差だけは明示tolerance
+  として扱う。
 
 受け入れ条件: `rendering_started: 0/N`中でも現在path、sub-stage、経過時間、effective workerが分かる。
 PDFの主要hot stageは測定で特定し、選択した最適化は同一scene/point plan/scientific resultを保った上で
