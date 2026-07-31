@@ -22,6 +22,24 @@ This guide deliberately separates three different problems:
 3. **Batch Plot Export** has deterministic planning and shared-source dependencies, then
    independent output items. It needs progress and cancellation before parallel rendering.
 
+## GUI capability gate for unfinished worker backends
+
+The core and CLI retain explicit `thread`/density-worker options for benchmark and
+diagnostic runs, but the Qt Batch Plot Export dialog must not expose them as executable
+controls while the operational checks below remain open:
+
+- native Windows and PyInstaller worker shutdown/close/error propagation;
+- renderer reentrancy and Qt-backend isolation under concurrent output items;
+- large real-FCS peak RSS and cancellation behavior for density workers.
+
+Until all three are verified, the dialog shows `Sequential (recommended)` but disables
+the execution-backend selector, max-worker and memory-budget spin boxes, and density
+worker controls. This is a presentation/runtime safety gate only: it does not remove
+the headless implementation or change project definitions. Re-enabling the controls
+requires updating the capability constant in `batch_plot_export_dialog.py`, adding
+focused GUI coverage, rerunning the Windows/PyInstaller smoke tests, and documenting
+the measured parity, shutdown, and memory results in `ToDo.md`.
+
 Implement only one numbered increment per LLM run. Complete the interactive hot-path
 Increments 1–3 before the general progress/parallelism increments unless a new profile
 demonstrates a different dominant cost. Do not combine the density hot path, progress

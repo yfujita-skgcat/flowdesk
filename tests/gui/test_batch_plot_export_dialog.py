@@ -67,6 +67,19 @@ def test_batch_plot_dialog_keeps_thread_settings_runtime_only(qapp, tmp_path) ->
     dialog.deleteLater()
 
 
+def test_batch_plot_dialog_disables_unverified_worker_controls(qapp) -> None:
+  dialog = BatchPlotExportDialog([], [], [], [], "main-view")
+  try:
+    assert dialog._execution_backend.isEnabled() is False
+    assert dialog._max_workers.isEnabled() is False
+    assert dialog._memory_budget_mib.isEnabled() is False
+    assert dialog._density_workers.isEnabled() is False
+    assert dialog._density_memory_budget_mib.isEnabled() is False
+    assert "disabled" in dialog._experimental_workers_status.text().lower()
+  finally:
+    dialog.deleteLater()
+
+
 def test_batch_plot_dialog_runs_saved_queue_with_shared_runtime_policy(qapp, tmp_path) -> None:
   dialog = BatchPlotExportDialog(
     [

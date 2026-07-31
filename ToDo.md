@@ -1626,6 +1626,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [ ] **GUI/配布環境の確認**: GUIはQt thread affinityとshutdown時のworker未残留を守る。CLI flagsは
   opt-inのままとし、Windows/PyInstallerでworker終了、Ctrl-C、例外伝播、ログとresolved provenanceを
   確認する。
+- [x] **未検証worker設定のGUI安全ゲート**: 上記のWindows/PyInstaller、renderer再入性、density
+  実FCS運用検証が完了するまで、Batch Plot Export GUIのbounded thread、max worker、memory budget、
+  density worker設定を無効化した。CLIの明示opt-inとcore実装は保持し、検証完了時にのみGUIを再有効化する。
 - [x] CLIの`run`/`batch-plot`へ一時的なSIGINT handlerを接続し、Ctrl-Cを共通`CancellationToken`へ
   伝達する。batchは完了済み出力とcancelled manifestを保持し、終了コード130を返す。handlerは終了時に復元する。
 

@@ -114,7 +114,7 @@ OSごとのユーザー書込み可能なアプリケーションデータ領域
 10. **Save Project**（Ctrl+S）で現在のprojectへ上書き保存する。未保存projectの場合は保存名を入力し、その名前の `.flowdesk` directory bundle として保存する。別名で保存する場合は **Save Project As...** を使う。
 
 Analysis → **Pipeline Execution Settings...** では、次回のRun Pipelineだけに適用するruntime設定を選べる。
-既定は`Sequential (recommended)`で、`Bounded threads (opt-in)`を選ぶとsample単位のbounded thread実行を有効にする。
+既定は`Sequential (recommended)`です。`Bounded threads (opt-in)`はCLIの明示指定でのみ利用できます。GUIのBatch Plot Exportダイアログでは、Windows/PyInstallerのworker終了処理とrenderer再入性の検証が完了するまで、実験的なworker backend、worker数、memory budget、density worker設定を無効化しています。
 `Max workers`は同時sample数、`Memory budget`はcompensated/derived/transformed配列とmembershipを含む保守的な上限である。
 これらの値はprojectへ保存されず、GUIのactive sample表示やsample内event分割には使用されない。thread実行は速度向上を保証しないため、代表データで結果一致とpeak memoryを確認した場合だけ使用する。
 
@@ -985,7 +985,7 @@ output directoryはprojectには保存されず、アプリケーション設定
 
 キュー開始時には保存済み定義のID indexも作成されるため、定義数が多い場合でも各定義のlookupを繰り返しません。これはメタデータlookupの最適化であり、FCS読込・変換・density計算の結果を定義間で共有するものではありません。
 
-ダイアログの `Execution backend` は既定で `Sequential (recommended)` です。`Bounded threads (opt-in)` を選ぶと、保存済み定義には影響しないruntime-only設定として、サンプル単位のbounded thread renderingを使用します。`Max workers` は同時sample/view item数、`Memory budget` は準備済み配列とwriter一時領域の保守的な推定上限です。thread backendは速度向上が保証されず、メモリ使用量が増えることがあるため、代表データでparityとpeak RSSを確認した場合だけ使用してください。GUIでもQt/pyqtgraphオブジェクトはworker threadで操作しません。
+ダイアログの `Execution backend` は `Sequential (recommended)` に固定されています。`Bounded threads (opt-in)`、`Max workers`、`Memory budget`、density worker設定は、Windows/PyInstallerのworker終了処理とrenderer再入性の検証が完了するまでGUIでは選択できません。検証済みの実験を行う場合はCLIで明示指定します。これらは保存済み定義に影響しないruntime-only設定です。thread backendは速度向上が保証されず、メモリ使用量が増えることがあるため、代表データでparityとpeak RSSを確認した場合だけ使用してください。
 `Density workers` と `Density memory budget` はdensity colorのfixed-bin histogram計算だけに適用されるruntime-only設定です。既定は1 workerで、densityの色結果や保存済み定義は変更しません。大きなデータで使用する場合は、色parityとpeak RSSを確認してから増やしてください。
 密度色を含むbatch出力のsidecarには、要求worker数、実効worker数、memory budgetが記録されます。
 

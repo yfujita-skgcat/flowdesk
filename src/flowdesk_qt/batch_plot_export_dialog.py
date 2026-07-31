@@ -28,6 +28,13 @@ from PySide6.QtWidgets import (
 from flowdesk_core.plot_export import resolve_export_canvas
 
 
+# The experimental worker controls remain available to the headless CLI for
+# measured opt-in runs, but GUI/packaged lifecycle validation is incomplete.
+# Keep these controls visible for discoverability while preventing accidental
+# use until the Windows/PyInstaller and renderer shutdown checks are complete.
+BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE = False
+
+
 @dataclass(frozen=True)
 class BatchPlotExportRequest:
   """Serializable dialog output; it contains no loaded event data."""
@@ -175,6 +182,21 @@ class BatchPlotExportDialog(QDialog):
     self._density_memory_budget_mib = self._spin(
       "batchPlotDensityMemoryBudgetMiBSpinBox", 0, 1_048_576, 0
     )
+    self._experimental_workers_status = QLabel(
+      "Experimental worker controls are disabled in the GUI until "
+      "Windows/PyInstaller lifecycle validation is complete."
+    )
+    self._experimental_workers_status.setObjectName(
+      "batchPlotExperimentalWorkersStatusLabel"
+    )
+    self._experimental_workers_status.setWordWrap(True)
+    self._execution_backend.setEnabled(BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
+    self._max_workers.setEnabled(BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
+    self._memory_budget_mib.setEnabled(BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
+    self._density_workers.setEnabled(BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
+    self._density_memory_budget_mib.setEnabled(
+      BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE
+    )
 
     self._visibility: dict[str, QCheckBox] = {}
     for key, label, checked in (
@@ -233,6 +255,7 @@ class BatchPlotExportDialog(QDialog):
     form.addRow(
       "Density memory budget (MiB, 0 = automatic)", self._density_memory_budget_mib,
     )
+    form.addRow("", self._experimental_workers_status)
     form.addRow("Visibility", self._visibility["include_title"])
     for key in (
       "include_axis_labels", "include_ticks", "include_gates", "include_legend",
