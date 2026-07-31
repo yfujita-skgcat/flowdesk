@@ -984,7 +984,7 @@ CLIで実行する場合は、`flowdesk batch-plot <project> --export-id <id> --
 collision、manifest順は並列化しても変わりません。GUIのBatch Exportも既定は逐次renderですが、
 密度色を使用するCLI batch exportでは、`--density-workers N`で固定bin density histogramのchunk計算worker数を
 runtime-onlyで指定できます。`--density-memory-budget-mib M`を併用すると、histogram working setの保守的な
-見積もりに基づいて同時density worker数を抑制します。既定は1 workerで、全FCS配列のRSSを保証する上限ではありません。
+見積もりに基づいて同時density worker数を抑制します。既定は1 workerで、全FCS配列のRSSを保証する上限ではありません。CLI実行中にCtrl-Cを押すと協調キャンセルが要求され、完了済み出力を保持したcancelled manifestを作成して終了コード130を返します。実行中のnative数値処理を強制停止せず、安全なstage境界で停止します。
 ダイアログで`Bounded threads (opt-in)`を選んだ場合だけ同じruntime設定を使用し、
 batch manifestの`execution`には、実行単位（`prepared_output_item`）、計画数、投入数、完了数、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、

@@ -787,6 +787,8 @@ def batch_plot_command(
         f"workers={batch_report.execution_provenance['effective_max_workers']}/"
         f"{batch_report.execution_provenance['requested_max_workers']}"
       )
+    if batch_report.status in {"cancelled", "partial_cancelled"}:
+      return 130
     return 0 if batch_report.status == "success" else 1
   except (BatchPlotExportError, FileNotFoundError, KeyError, ValueError) as exc:
     print(f"Error: batch plot export failed: {exc}")

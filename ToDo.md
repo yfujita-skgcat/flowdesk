@@ -1586,6 +1586,8 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [ ] **GUI/配布環境の確認**: GUIはQt thread affinityとshutdown時のworker未残留を守る。CLI flagsは
   opt-inのままとし、Windows/PyInstallerでworker終了、Ctrl-C、例外伝播、ログとresolved provenanceを
   確認する。
+- [x] CLIの`run`/`batch-plot`へ一時的なSIGINT handlerを接続し、Ctrl-Cを共通`CancellationToken`へ
+  伝達する。batchは完了済み出力とcancelled manifestを保持し、終了コード130を返す。handlerは終了時に復元する。
 
 #### Batch Export のFCS単位並列化に関する明示的な判断（2026-07-30）
 

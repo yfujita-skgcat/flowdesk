@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import signal
 import sys
 from pathlib import Path
 
@@ -89,6 +90,19 @@ def test_run_project_reports_cooperative_cancellation(
 
   assert run_project_command(str(project), execution_control=control) == 130
   assert "Cancelled: execution cancelled" in capsys.readouterr().err
+
+
+def test_cli_cancellation_context_requests_token_and_restores_handler() -> None:
+  control = ExecutionControl()
+  previous = signal.getsignal(signal.SIGINT)
+
+  with cli_main._cli_cancellation_context(control):
+    handler = signal.getsignal(signal.SIGINT)
+    assert callable(handler)
+    handler(signal.SIGINT, None)
+    assert control.cancellation_token.is_cancelled()
+
+  assert signal.getsignal(signal.SIGINT) is previous
 
 
 def test_run_project_passes_runtime_execution_options_to_core(

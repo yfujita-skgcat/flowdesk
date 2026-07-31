@@ -1026,6 +1026,12 @@ same runtime-only controls, defaulting to sequential and requiring explicit thre
 Interactive sample display remains a separate one-sample scheduler/cache problem; this GUI
 setting does not split events within one sample or alter the project definition.
 
+The CLI entry point installs a temporary SIGINT handler for both `run` and `batch-plot`.
+The first Ctrl-C sets the shared `CancellationToken` instead of forcefully interrupting a
+native stage. Batch export then completes its safe cancellation boundary, preserves already
+published outputs, writes the cancellation manifest, and returns exit code 130. The handler
+is restored after the operation, and the core/GUI control contracts remain unchanged.
+
 - Add explicit sequential/thread executor selection without project serialization.
 - Estimate canonical per-sample array and membership memory before submission.
 - Bound and record effective workers; retain coordinator-owned cancellation/progress.

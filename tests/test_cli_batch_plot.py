@@ -194,6 +194,37 @@ def test_batch_plot_uses_canonical_derived_display_data(
   assert density["histogram_memory_budget_bytes"] == 1
 
 
+def test_batch_plot_command_maps_cancellation_to_sigint_exit_code(
+  tmp_path: Path, monkeypatch,
+) -> None:
+  project = {
+    "project_id": "batch-cancel-cli",
+    "project_version": CURRENT_PROJECT_VERSION,
+    "pipeline_version": "0.1",
+    "samples": [],
+    "plot_views": [{
+      "id": "view", "plot_type": "scatter", "population_id": "all_events",
+      "x_parameter": "x", "y_parameter": "y",
+    }],
+    "batch_plot_exports": [{
+      "id": "cancel-export", "name": "Cancel export", "target": "all",
+      "plot_view_id": "view", "formats": ["svg"],
+    }],
+  }
+  project_path = tmp_path / "batch-cancel-cli.flowdesk"
+  save_project(project_path, project)
+  monkeypatch.setattr(
+    "flowdesk_cli.batch_plot.resolve_sample_paths", lambda *_args: [],
+  )
+  control = batch_plot_module.ExecutionControl()
+  control.cancellation_token.cancel()
+
+  assert batch_plot_command(
+    str(project_path), "cancel-export", str(tmp_path / "exports"),
+    execution_control=control,
+  ) == 130
+
+
 def test_batch_plot_renders_manual_overlay_sources_in_order(
   tmp_path: Path, monkeypatch
 ) -> None:

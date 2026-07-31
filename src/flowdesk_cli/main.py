@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import signal
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from flowdesk_cli.batch_gate import batch_gate_command
 from flowdesk_cli.batch_plot import batch_plot_command
@@ -10,7 +13,22 @@ from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
 from flowdesk_core.credits import credits_text
 from flowdesk_core.density_colors import DensityColorConfig
-from flowdesk_core.execution_control import ExecutionOptions
+from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
+
+
+@contextmanager
+def _cli_cancellation_context(control: ExecutionControl) -> Iterator[None]:
+  """Map Ctrl-C to cooperative cancellation for one CLI operation."""
+  previous = signal.getsignal(signal.SIGINT)
+
+  def request_cancel(_signum: int, _frame: object) -> None:
+    control.cancellation_token.cancel()
+
+  signal.signal(signal.SIGINT, request_cancel)
+  try:
+    yield
+  finally:
+    signal.signal(signal.SIGINT, previous)
 
 
 def _positive_integer(value: str) -> int:
@@ -180,23 +198,27 @@ def main() -> int:
     return 0
 
   if args.command == "run":
-    return run_project_command(
-      args.project,
-      output=args.output,
-      statistics_output=args.statistics_output,
-      execution_profile_id=args.execution_profile,
-      layout=args.layout,
-      include_internal_ids=args.include_internal_ids,
-      include_qc=args.include_qc,
-      execution_options=ExecutionOptions(
-        backend=args.execution_backend,
-        max_workers=args.max_workers,
-        memory_budget_bytes=(
-          None if args.memory_budget_mib is None
-          else args.memory_budget_mib * 1024 * 1024
-        ),
+    options = ExecutionOptions(
+      backend=args.execution_backend,
+      max_workers=args.max_workers,
+      memory_budget_bytes=(
+        None if args.memory_budget_mib is None
+        else args.memory_budget_mib * 1024 * 1024
       ),
     )
+    control = ExecutionControl(options=options)
+    with _cli_cancellation_context(control):
+      return run_project_command(
+        args.project,
+        output=args.output,
+        statistics_output=args.statistics_output,
+        execution_profile_id=args.execution_profile,
+        layout=args.layout,
+        include_internal_ids=args.include_internal_ids,
+        include_qc=args.include_qc,
+        execution_control=control,
+        execution_options=options,
+      )
   if args.command == "inspect":
     return inspect_fcs_command(args.fcs_file)
   if args.command == "batch-gate":
@@ -204,26 +226,30 @@ def main() -> int:
       args.project, args.fcs_files, args.output, args.execution_profile
     )
   if args.command == "batch-plot":
-    return batch_plot_command(
-      args.project,
-      args.export_id,
-      args.output_dir,
-      execution_options=ExecutionOptions(
-        backend=args.execution_backend,
-        max_workers=args.max_workers,
-        memory_budget_bytes=(
-          None if args.memory_budget_mib is None
-          else args.memory_budget_mib * 1024 * 1024
-        ),
-      ),
-      density_config=DensityColorConfig(
-        histogram_workers=args.density_workers,
-        histogram_memory_budget_bytes=(
-          None if args.density_memory_budget_mib is None
-          else args.density_memory_budget_mib * 1024 * 1024
-        ),
+    options = ExecutionOptions(
+      backend=args.execution_backend,
+      max_workers=args.max_workers,
+      memory_budget_bytes=(
+        None if args.memory_budget_mib is None
+        else args.memory_budget_mib * 1024 * 1024
       ),
     )
+    control = ExecutionControl(options=options)
+    with _cli_cancellation_context(control):
+      return batch_plot_command(
+        args.project,
+        args.export_id,
+        args.output_dir,
+        execution_control=control,
+        execution_options=options,
+        density_config=DensityColorConfig(
+          histogram_workers=args.density_workers,
+          histogram_memory_budget_bytes=(
+            None if args.density_memory_budget_mib is None
+            else args.density_memory_budget_mib * 1024 * 1024
+          ),
+        ),
+      )
 
   parser.print_help()
   return 0
