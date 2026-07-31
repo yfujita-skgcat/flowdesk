@@ -152,6 +152,21 @@ def test_batch_plot_worker_receives_runtime_execution_options(qapp) -> None:
     worker.deleteLater()
 
 
+def test_batch_plot_worker_receives_density_runtime_options(qapp) -> None:
+  from flowdesk_core.density_colors import DensityColorConfig
+  from flowdesk_qt.main_window import _BatchPlotExportWorker
+
+  config = DensityColorConfig(histogram_workers=4, histogram_memory_budget_bytes=64 * 1024 * 1024)
+  worker = _BatchPlotExportWorker(
+    "project.flowdesk", "export", "output", density_config=config,
+  )
+  try:
+    assert worker._density_config == config
+  finally:
+    worker.request_cancel()
+    worker.deleteLater()
+
+
 def test_pipeline_worker_receives_runtime_execution_options(qapp) -> None:
   from flowdesk_qt.main_window import _PipelineWorker
 

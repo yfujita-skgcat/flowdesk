@@ -1530,7 +1530,7 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   適用する。CLI parserと`DensityColorConfig`の受け渡しをテストした。
 - [x] **GUI batch density runtime controls**: Batch Plot Export dialogへ同じdensity worker数と
   density memory budgetを追加し、保存済みdefinitionへ書き込まずheadless workerへ渡す。
-  GUI object名、runtime-only保持、CLI/coreとの設定一致をテストした。
+  GUI object名、runtime-only保持、CLI/coreとの設定一致、worker受け渡しをテストした。
 - [x] **density execution provenance**: density metadataとbatch sidecarへrequested/effective
   histogram workersとmemory budgetを記録し、budgetによるworker削減を結果と区別して監査可能にした。
 - [x] **density batch E2E**: `data/analysis.flowdesk`のdensity viewを4 samples・PNG/PDFで実行し、
