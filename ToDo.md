@@ -1536,6 +1536,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **density batch E2E**: `data/analysis.flowdesk`のdensity viewを4 samples・PNG/PDFで実行し、
   8出力のsidecar provenance、非空出力、budget有無のbyte/SHA-256一致を確認した。代表sampleは
   chunk閾値未満のため実効workerは1であり、大規模real-FCSのchunk speedupやWindows検証とは区別する。
+- [x] **density benchmark runtime controls**: `tools/benchmark_density_plot.py`へdensity worker数と
+  memory budget引数、JSON provenanceを追加した。numeric kernelだけへ設定を適用し、cold PlotWidgetは
+  default configのまま測定するため、GUI描画性能とnumeric worker効果を混同しない。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、

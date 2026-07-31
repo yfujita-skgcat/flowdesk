@@ -18,7 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import numpy as np
 from PySide6.QtWidgets import QApplication
 
-from flowdesk_core.density_colors import estimate_density_colors
+from flowdesk_core.density_colors import DensityColorConfig, estimate_density_colors
 from flowdesk_qt.plot_widget import PlotWidget
 
 
@@ -36,12 +36,22 @@ def _median_ms(values: list[float]) -> float:
   return float(np.median(np.asarray(values, dtype=np.float64)))
 
 
-def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
+def run_benchmark(
+  point_count: int,
+  repeats: int,
+  seed: int,
+  density_workers: int = 1,
+  density_memory_budget_bytes: int | None = None,
+) -> dict[str, Any]:
   """Measure density estimation and cold PlotWidget rendering separately."""
   if point_count < 2:
     raise ValueError("point_count must be at least 2")
   if repeats < 1:
     raise ValueError("repeats must be positive")
+  if density_workers < 1:
+    raise ValueError("density_workers must be positive")
+  if density_memory_budget_bytes is not None and density_memory_budget_bytes < 1:
+    raise ValueError("density_memory_budget_bytes must be positive")
   app = QApplication.instance() or QApplication([])
   x_values, y_values = _fixture(point_count, seed)
   bounds = (
@@ -58,6 +68,10 @@ def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
     estimate_density_colors(
       x_values, y_values, x_values, y_values,
       bounds=bounds, logical_size=(512, 512),
+      config=DensityColorConfig(
+        histogram_workers=density_workers,
+        histogram_memory_budget_bytes=density_memory_budget_bytes,
+      ),
     )
     numeric_ms.append((time.perf_counter() - started) * 1000.0)
     widget = PlotWidget()
@@ -102,6 +116,11 @@ def run_benchmark(point_count: int, repeats: int, seed: int) -> dict[str, Any]:
     "algorithm_version": "interactive_density_plot_benchmark.v1",
     "thresholds": None,
     "fixture": {"point_count": point_count, "seed": seed, "cold_widget": True},
+    "density_runtime": {
+      "requested_workers": density_workers,
+      "memory_budget_bytes": density_memory_budget_bytes,
+      "plot_widget_uses_default_density_config": True,
+    },
     "environment": {
       "platform": platform.platform(),
       "python": sys.version,
@@ -127,11 +146,17 @@ def main() -> int:
   parser.add_argument("--points", type=int, default=20_000)
   parser.add_argument("--repeats", type=int, default=5)
   parser.add_argument("--seed", type=int, default=1729)
+  parser.add_argument("--density-workers", type=int, default=1)
+  parser.add_argument("--density-memory-budget-mib", type=int)
   parser.add_argument(
     "--output", type=Path, default=Path("artifacts/density-plot-benchmark.json"),
   )
   args = parser.parse_args()
-  result = run_benchmark(args.points, args.repeats, args.seed)
+  result = run_benchmark(
+    args.points, args.repeats, args.seed, args.density_workers,
+    None if args.density_memory_budget_mib is None
+    else args.density_memory_budget_mib * 1024 * 1024,
+  )
   args.output.parent.mkdir(parents=True, exist_ok=True)
   args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
   print(json.dumps(result, indent=2))

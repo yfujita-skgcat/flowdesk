@@ -1382,6 +1382,11 @@ effective=1 (the populations were below the 250,000-event chunk threshold); a se
 run with the same worker request and no density budget produced byte-identical SHA-256
 values for all eight outputs. This validates the runtime controls and provenance path on
 the representative project, but not large real-FCS chunk parallelism or Windows packaging.
+`tools/benchmark_density_plot.py` now accepts `--density-workers` and
+`--density-memory-budget-mib` for numeric-kernel measurements and records the requested
+runtime policy in JSON. The cold `PlotWidget` measurements intentionally retain the
+default density configuration, so the report does not incorrectly attribute a numeric
+worker setting to GUI rendering.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and
