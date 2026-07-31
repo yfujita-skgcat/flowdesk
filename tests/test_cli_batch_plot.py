@@ -19,6 +19,7 @@ from flowdesk_cli.batch_plot import (
   batch_plot_command,
   write_plot_svg,
 )
+from flowdesk_core.density_colors import DensityColorConfig
 from flowdesk_core.execution_control import ExecutionOptions
 from flowdesk_core.models import BatchPlotExportSpec, ChannelSpec
 from flowdesk_core.plot_export import VectorRenderCache, prepare_plot_export
@@ -146,6 +147,7 @@ def test_batch_plot_uses_canonical_derived_display_data(
       "id": "derived-view", "plot_type": "scatter",
       "population_id": "all_events", "x_parameter": "ratio",
       "y_parameter": "signal", "rendering_downsample": {"max_points": 0},
+      "presentation": {"colormap": "density"},
     }],
     "batch_plot_exports": [{
       "id": "derived-export", "name": "Derived export", "target": "all",
@@ -156,7 +158,7 @@ def test_batch_plot_uses_canonical_derived_display_data(
   save_project(project_path, project)
   sample = SampleData(
     "s1",
-    np.array([[2.0, 1.0], [4.0, 0.0], [6.0, 3.0]], dtype=np.float64),
+    np.array([[2.0, 1.0], [4.0, 2.0], [6.0, 1.0]], dtype=np.float64),
     (ChannelSpec(id="signal", name="Signal"), ChannelSpec(id="reference", name="Reference")),
   )
   monkeypatch.setattr(
@@ -168,7 +170,10 @@ def test_batch_plot_uses_canonical_derived_display_data(
   )
 
   output_dir = tmp_path / "exports"
-  assert batch_plot_command(str(project_path), "derived-export", str(output_dir)) == 0
+  assert batch_plot_command(
+    str(project_path), "derived-export", str(output_dir),
+    density_config=DensityColorConfig(histogram_workers=2, histogram_memory_budget_bytes=1),
+  ) == 0
   output = next(output_dir.glob("*.svg"))
   assert output.stat().st_size > 0
   sidecar = json.loads(output.with_suffix(".svg.json").read_text(encoding="utf-8"))
@@ -177,6 +182,10 @@ def test_batch_plot_uses_canonical_derived_display_data(
   assert sidecar["sources"][0]["y_parameter_id"] == "signal"
   assert sidecar["presentation"]["x_axis_display_label"] == "Ratio"
   assert sidecar["presentation"]["y_axis_display_label"] == "Signal"
+  density = sidecar["density_coloring"]
+  assert density["requested_histogram_workers"] == 2
+  assert density["effective_histogram_workers"] == 1
+  assert density["histogram_memory_budget_bytes"] == 1
 
 
 def test_batch_plot_renders_manual_overlay_sources_in_order(
