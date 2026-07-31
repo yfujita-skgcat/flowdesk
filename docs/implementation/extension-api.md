@@ -52,6 +52,9 @@ The queue loads the project bundle once and passes the immutable mapping snapsho
 definition invocation. It does not share raw FCS arrays, transformed layers, density fields, or
 mutable renderer caches across definitions; those remain definition-scoped to preserve output
 isolation and bounded memory behavior.
+The queue also atomically updates `batch-queue-manifest.json` after each definition boundary.
+The manifest is an audit index only: it records ordered definition IDs, output directories,
+failure/cancellation status, and result codes without replacing per-definition manifests.
 The queue still deliberately leaves plugin subprocess isolation, queue-level parallelism, and
 cross-definition cache sharing for later increments. The existing per-definition manifest and
 atomic output rules remain authoritative.

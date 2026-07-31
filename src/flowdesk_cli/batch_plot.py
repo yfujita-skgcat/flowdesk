@@ -46,6 +46,7 @@ from flowdesk_core.transforms import apply_transform, generate_transform_ticks
 from flowdesk_core.vector_scatter import preflight_vector_scatter_export
 from flowdesk_storage.project import load_project, resolve_sample_paths
 from flowdesk_storage.manifest import ManifestValidationError
+from flowdesk_storage.serialization import atomic_write_json
 
 NormalizedPayload = tuple[LayerValues, np.ndarray, np.ndarray | None]
 
@@ -873,13 +874,39 @@ def batch_plot_queue_command(
     print(f"Error: batch plot queue project load failed: {exc}")
     return 1
   root = Path(output_dir)
+  root.mkdir(parents=True, exist_ok=True)
+  queue_manifest_path = root / "batch-queue-manifest.json"
+  queue_items = [
+    {
+      "index": index,
+      "export_id": export_id,
+      "output_directory": str(root / f"{index:03d}_{_queue_slug(export_id)}"),
+      "status": "not_started",
+      "result_code": None,
+    }
+    for index, export_id in enumerate(queue, start=1)
+  ]
+  queue_manifest = {
+    "schema_version": 1,
+    "status": "running",
+    "failure_policy": failure_policy,
+    "definitions": queue_items,
+  }
+  _write_queue_manifest(queue_manifest_path, queue_manifest)
   results: list[tuple[str, int]] = []
   for index, export_id in enumerate(queue, start=1):
+    queue_item = queue_items[index - 1]
     if execution_control is not None:
       try:
         execution_control.cancellation_token.raise_if_cancelled()
       except ExecutionCancelled:
+        queue_item["status"] = "cancelled"
+        queue_manifest["status"] = "cancelled"
+        _write_queue_manifest(queue_manifest_path, queue_manifest)
         return 130
+    queue_item["status"] = "running"
+    _write_queue_manifest(queue_manifest_path, queue_manifest)
+    if execution_control is not None:
       execution_control.emit_progress(ProgressEvent(
         operation_id="batch_plot_queue",
         operation="batch_plot_queue",
@@ -898,6 +925,10 @@ def batch_plot_queue_command(
       _project_snapshot=project_snapshot,
     )
     results.append((export_id, result))
+    queue_item["status"] = (
+      "success" if result == 0 else "cancelled" if result == 130 else "failed"
+    )
+    queue_item["result_code"] = result
     if execution_control is not None:
       execution_control.emit_progress(ProgressEvent(
         operation_id="batch_plot_queue",
@@ -909,10 +940,16 @@ def batch_plot_queue_command(
         message=f"definition {index}/{len(queue)} completed with status {result}",
       ))
     if result == 130:
+      queue_manifest["status"] = "cancelled"
+      _write_queue_manifest(queue_manifest_path, queue_manifest)
       return 130
     if result != 0 and failure_policy == "fail-fast":
+      queue_manifest["status"] = "failed"
+      _write_queue_manifest(queue_manifest_path, queue_manifest)
       return result
   succeeded = sum(result == 0 for _export_id, result in results)
+  queue_manifest["status"] = "success" if succeeded == len(results) else "partial_failure"
+  _write_queue_manifest(queue_manifest_path, queue_manifest)
   print(f"Batch plot queue completed: {succeeded}/{len(results)} definitions")
   return 0 if succeeded == len(results) else 1
 
@@ -921,6 +958,14 @@ def _queue_slug(export_id: str) -> str:
   """Make a definition ID safe and deterministic as a queue subdirectory."""
   slug = "".join(char if char.isalnum() or char in "-_" else "_" for char in export_id)
   return slug[:80] or "export"
+
+
+def _write_queue_manifest(path: Path, payload: Mapping[str, Any]) -> None:
+  """Publish queue status without making image output depend on its audit file."""
+  try:
+    atomic_write_json(path, dict(payload))
+  except OSError as exc:
+    print(f"Warning: could not write batch queue manifest: {exc}")
 
 
 def _write_render_payload(

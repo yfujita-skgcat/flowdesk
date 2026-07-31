@@ -50,6 +50,32 @@ def test_batch_plot_queue_uses_definition_subdirectories_and_continues(
   assert calls[0][1].endswith("001_ok")
   assert calls[1][1].endswith("002_bad_id")
   assert calls[2][1].endswith("003_last")
+  manifest = json.loads(
+    (tmp_path / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )
+  assert manifest["status"] == "partial_failure"
+  assert [item["status"] for item in manifest["definitions"]] == [
+    "success", "failed", "success",
+  ]
+
+
+def test_batch_plot_queue_manifest_preserves_not_started_items_on_fail_fast(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
+  monkeypatch.setattr(
+    batch_plot_module, "batch_plot_command", lambda *_args, **_kwargs: 1,
+  )
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("first", "second"), str(tmp_path),
+  ) == 1
+  manifest = json.loads(
+    (tmp_path / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )
+  assert manifest["status"] == "failed"
+  assert [item["status"] for item in manifest["definitions"]] == [
+    "failed", "not_started",
+  ]
 
 
 def test_batch_plot_queue_emits_definition_progress(
