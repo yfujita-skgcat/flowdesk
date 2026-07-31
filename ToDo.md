@@ -1219,8 +1219,12 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 - [x] load（deterministic fixture construction）、compensation、derived、transform、gating、
   statisticsをbenchmark JSONのstage boundariesへ分離して記録する。renderはcanonical pipelineと
   混同せず、既存のbatch/vector benchmarkで別計測する。
-- [ ] cache keyへinput fingerprintと全上流definition hashを含める。
-- [ ] matrix/derived/transform/gate/statistics変更時のcache invalidation testを追加する。
+- [x] `flowdesk_storage.cache.build_pipeline_cache_key`を追加し、sample ID、input fingerprint、
+  software/cache algorithm version、execution profile、全上流definitionの累積stage hashを含める。
+  display/export/runtime設定は除外し、cache payloadの読み書きはまだ有効化しない。
+- [x] compensation変更はcompensation以降、derived変更はderived以降、transform/gate/statistics変更は
+  それぞれのstage以降を無効化するkey回帰テストを追加した。raw event自体はfingerprintだけを参照し、
+  cacheへ保存しない。
 - [ ] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。実装は下記の
   `Parallel execution and progress`を上から一incrementずつ行う。
 - [ ] scatter downsampling変更でscientific count/statisticsが変わらないことをtestする。

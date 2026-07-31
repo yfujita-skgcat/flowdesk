@@ -61,6 +61,13 @@ hashes of every upstream definition. Cached arrays/results are derived and dispo
 Changing compensation invalidates all downstream stages; derived changes invalidate
 derived onward; transform changes invalidate transform onward; gate changes invalidate the
 affected gate descendants/statistics/reports.
+`flowdesk_storage.cache.build_pipeline_cache_key` now implements this identity as a
+cumulative stage hash (`compensation` → `derived_parameters` → `transforms` → `gating` →
+`statistics`). It includes sample context, input fingerprint, execution profile, and cache
+algorithm/software version while excluding display, export path, timestamp, and runtime
+worker settings. This increment only creates auditable keys and invalidation tests; cache
+payload reads/writes remain disabled until serialization, size limits, corruption recovery,
+and raw-data immutability are reviewed.
 
 ## Scatter rendering contract
 
@@ -86,7 +93,9 @@ affected gate descendants/statistics/reports.
    derived parameters, transforms, gating, and statistics, while `fixture_construction`
    is the synthetic load boundary.
 3. Establish baseline memory/time and then add documented regression thresholds.
-4. Add cache-key builder and invalidation unit tests before enabling cache reads.
+4. Add cache-key builder and invalidation unit tests before enabling cache reads. The key
+   builder and cumulative downstream invalidation tests are now implemented in
+   `src/flowdesk_storage/cache.py`; payload persistence remains a separate increment.
 5. Enable one cached stage at a time and compare exact/accepted numeric results.
 6. Complete `parallel-execution-and-progress.md` Increments 1–3 first: remove redundant
    density submission, activate asynchronous processed-display scheduling, and add
