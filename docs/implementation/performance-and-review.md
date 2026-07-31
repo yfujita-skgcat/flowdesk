@@ -26,9 +26,12 @@ and prevent performance work from changing scientific results.
 
 ## Dataset contract
 
-Add a deterministic synthetic generator under `benchmarks/` or `tests/support/` with
-recorded seed, event count, channel count, population proportions, and expected gate
-counts. Standard profiles are 100k, 1M, and 10M events. Do not commit generated arrays.
+The deterministic generator is implemented in `flowdesk_core.pipeline_benchmark`.
+`PIPELINE_BENCHMARK_PROFILES` provides `small` (100k × 8), `medium` (1M × 8), and
+`large` (10M × 2) runtime-only profiles. `deterministic_pipeline_samples(..., seed=1729)`
+records the seed and produces immutable arrays; generated events are never committed.
+Run an opt-in report with, for example,
+`python tools/benchmark_pipeline.py --profile small --seed 1729 --output artifacts/pipeline-benchmark.json`.
 
 ## Measurement contract
 
@@ -95,8 +98,9 @@ only and cannot affect scientific results.
 
 ## Increments
 
-1. Add deterministic generator and correctness-only profile tests.
-2. Add benchmark harness/report JSON without performance thresholds.
+1. Add deterministic generator and correctness-only profile tests. **Complete:** the
+   generator, standard profiles, fixed seed contract, and immutable-event tests exist.
+2. Add benchmark harness/report JSON without performance thresholds. **Complete:**
    `tools/benchmark_pipeline.py` writes `stage_boundaries_ms.stages` for compensation,
    derived parameters, transforms, gating, and statistics, while `fixture_construction`
    is the synthetic load boundary.

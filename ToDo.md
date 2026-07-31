@@ -1228,8 +1228,10 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 
 以下はRelease Aから継続し、各release終了時に更新する。
 
-- [ ] `docs/implementation/performance-and-review.md`へ10万、100万、1000万events profileを追加する。
-- [ ] deterministic synthetic dataset generatorとseedを固定する。
+- [x] `docs/implementation/performance-and-review.md`へ10万、100万、1000万events profileを追加する。
+  `small`/`medium`/`large` profileと実行コマンドをbenchmark guideへ記録した。
+- [x] deterministic synthetic dataset generatorとseedを固定する。`deterministic_pipeline_samples`
+  はseedとsample indexから再現可能なimmutable eventsを生成し、generated arrayをcommitしない。
 - [x] load（deterministic fixture construction）、compensation、derived、transform、gating、
   statisticsをbenchmark JSONのstage boundariesへ分離して記録する。renderはcanonical pipelineと
   混同せず、既存のbatch/vector benchmarkで別計測する。
@@ -1243,7 +1245,7 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
   immutable raw event array identityを保持してcompensation/derived/transform結果を最大4 entry・128 MiBで
   再利用し、project snapshot変更時はrunnerごと破棄する。authoritative preview、gate membership、
   statisticsはcacheせず、永続payload cacheとは別機能として扱う。
-- [ ] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。実装は下記の
+- [x] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。実装は下記の
   `Parallel execution and progress`を上から一incrementずつ行う。
 - [x] scatter downsampling変更でscientific count/statisticsが変わらないことをGUI回帰testで確認する。
 - [x] rare-event visibilityの限界をGUI status bannerとuser manualへ表示する。
@@ -1654,7 +1656,7 @@ Qt/pyqtgraph object、共有mutable cacheもworker間で同時に触れてはな
   23.06 s/476,864 KBで、8出力のバイトとSHA-256は完全一致した。threadは約0.96倍と遅く、RSSは約1.67倍
   増加したため、逐次を既定値として維持する。Windows/PyInstaller、renderer reentrancy、
   compensation/derived/gatingを含む代表workloadは未検証である。
-- [ ] GUIのactive sample切替へこのbatch workerを流用しない。GUIは選択sampleだけをlatest-winsで
+- [x] GUIのactive sample切替へこのbatch workerを流用しない。GUIは選択sampleだけをlatest-winsで
   処理し、Qt/pyqtgraph mutationはGUI threadに限定する。
 - [x] GUI Batch Exportダイアログへruntime-onlyの`Sequential`/`Bounded threads`、`Max workers`、
   `Memory budget`を追加する。thread backendは明示選択時だけ有効で、worker数・memory budgetは
