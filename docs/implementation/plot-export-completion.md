@@ -747,6 +747,31 @@ That guide supersedes only the scatter representation rules after its numbered
 increments are implemented. Until then, the current no-raster SVG/PDF
 acceptance contract in this guide remains authoritative.
 
+### Batch title/style parity and rendering progress (implemented)
+
+Batch source construction must match the GUI's presentation state instead of
+reusing stale per-source values from an older saved definition. Convert the
+project's `sample_title` annotations to `AnnotationSpec` and call the shared
+`resolve_sample_title()` helper for every source. For an active source, the
+current Plot Presentation `single_color` and dot size are authoritative; a
+persisted source-style color is retained only for overlay sources. This keeps
+both dots and title text consistent with the GUI while preserving manual
+overlay colors.
+
+`run_batch_plot_export()` emits a non-counting `rendering_started` progress event
+before each renderer call. The existing `rendering` completion counter remains
+unchanged, so callers retain the same total-unit semantics while the dialog can
+show the current output path during expensive preparation and rendering.
+
+The hybrid scatter compositor writes directly into an RGBA NumPy buffer and
+updates a streaming SHA-256 point-plan hash instead of creating one Python
+record/JSON object per event. The algorithm is versioned as
+`hybrid_scatter_raster.v2`; event order, source z-order, alpha compositing,
+coordinates, and scientific data are unchanged. High-DPI transparent scatter
+plots can still be CPU-bound by design, so performance claims must report event
+count, canvas size, DPI, scatter mode, and worker count. Reuse the vector cache
+when the same resolved scene is exported to SVG/PDF.
+
 ## Non-goals
 
 - Report/layout editing belongs to Phase C2.

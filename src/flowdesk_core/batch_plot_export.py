@@ -290,6 +290,12 @@ def run_batch_plot_export(
         staged_path = _staged_output_path(path)
         staged_sidecar = staged_path.with_suffix(staged_path.suffix + ".json")
         try:
+          progress(
+            "rendering_started",
+            sample_id=item.sample_id,
+            output_path=path_text,
+            message="Rendering output",
+          )
           render(sample, staged_path, spec)
           if not staged_path.exists() or staged_path.stat().st_size == 0:
             raise BatchPlotExportError(f"renderer produced no output: {path}")

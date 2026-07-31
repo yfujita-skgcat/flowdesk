@@ -1578,10 +1578,6 @@ def _hybrid_scatter_raster(
   """Render only scatter markers into a transparent lossless RGBA raster."""
   if dpi < 72 or dpi > 2400:
     raise PlotExportError("hybrid scatter dpi must be between 72 and 2400")
-  try:
-    from PIL import Image
-  except ImportError as exc:
-    raise PlotExportError("hybrid raster export requires the Pillow package") from exc
   raster_scale = dpi / 96.0
   raster_width = max(1, round(plot_width * raster_scale))
   raster_height = max(1, round(plot_height * raster_scale))
@@ -1590,9 +1586,9 @@ def _hybrid_scatter_raster(
     (raster_height, raster_width, 4)
   )
   style_by_id = {style.source_id: style for style in selected.source_styles}
-  point_records: list[dict[str, Any]] = []
+  point_hasher = hashlib.sha256()
+  rendered_event_count = 0
   rgb_cache: dict[str, tuple[int, int, int]] = {}
-  pillow_image: Any | None = None
 
   def blend_opaque_row(
     pixel_y: int,
@@ -1619,7 +1615,6 @@ def _hybrid_scatter_raster(
       rgba[pixel_y, min_x + positions, 3] = 255
 
   def blend_alpha_marker(
-    image: Any,
     min_x: int,
     max_x: int,
     min_y: int,
@@ -1631,9 +1626,14 @@ def _hybrid_scatter_raster(
     color: tuple[int, int, int],
     alpha: float,
   ) -> None:
-    """Apply one exact pixel-center mask using Pillow's C alpha compositor."""
-    mask_width = max_x - min_x + 1
-    mask_height = max_y - min_y + 1
+    """Alpha-composite one marker directly into the NumPy RGBA buffer.
+
+    The previous implementation allocated a Pillow mask and tile for every
+    event, then called ``Image.alpha_composite``.  That preserved z-order but
+    made large hybrid exports quadratic in Python/Qt object overhead.  The
+    equations below are the same source-over operation applied to only the
+    marker footprint, preserving event order and overlap intensity.
+    """
     x_positions = np.arange(min_x, max_x + 1, dtype=np.float64) + 0.5 - center_x
     y_positions = np.arange(min_y, max_y + 1, dtype=np.float64)[:, None] + 0.5 - center_y
     if shape == "circle":
@@ -1642,11 +1642,84 @@ def _hybrid_scatter_raster(
       inside = (
         np.abs(x_positions[None, :]) <= radius
         ) & (np.abs(y_positions) <= radius)
-    alpha_value = round(255 * max(0.0, min(1.0, alpha)))
-    mask = Image.fromarray(np.where(inside, alpha_value, 0).astype(np.uint8), "L")
-    tile = Image.new("RGBA", (mask_width, mask_height), color + (alpha_value,))
-    tile.putalpha(mask)
-    image.alpha_composite(tile, (min_x, min_y))
+    local_y, local_x = np.nonzero(inside)
+    if not len(local_x):
+      return
+    pixel_y = min_y + local_y
+    pixel_x = min_x + local_x
+    destination = rgba[pixel_y, pixel_x].astype(np.float64)
+    source_alpha = max(0.0, min(1.0, alpha))
+    destination_alpha = destination[:, 3] / 255.0
+    output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha)
+    nonzero = output_alpha > 0.0
+    output_rgb = np.zeros((len(destination), 3), dtype=np.float64)
+    output_rgb[nonzero] = (
+      np.asarray(color, dtype=np.float64)[None, :] * source_alpha
+      + destination[nonzero, :3]
+      * destination_alpha[nonzero, None]
+      * (1.0 - source_alpha)
+    ) / output_alpha[nonzero, None]
+    rgba[pixel_y, pixel_x, :3] = np.rint(output_rgb).astype(np.uint8)
+    rgba[pixel_y, pixel_x, 3] = np.rint(output_alpha * 255.0).astype(np.uint8)
+
+  def blend_uniform_alpha_layer(
+    x_values: Sequence[float],
+    y_values: Sequence[float],
+    radius: float,
+    shape: str,
+    color: tuple[int, int, int],
+    alpha: float,
+  ) -> None:
+    """Composite a uniform-color layer using one count raster.
+
+    For one source with one color, drawing events one at a time is
+    commutative: ``n`` identical source-over operations equal one operation
+    with alpha ``1 - (1 - a) ** n``.  Accumulating marker coverage with
+    ``np.add.at`` removes the per-event Pillow/NumPy allocation while keeping
+    overlap density and source z-order intact.
+    """
+    x = np.asarray(x_values, dtype=np.float64) * (raster_width - 1)
+    y = (1.0 - np.asarray(y_values, dtype=np.float64)) * (raster_height - 1)
+    base_x = np.floor(x).astype(np.int64)
+    base_y = np.floor(y).astype(np.int64)
+    frac_x = x - base_x
+    frac_y = y - base_y
+    extent = max(1, math.ceil(radius + 1.0))
+    counts = np.zeros((raster_height, raster_width), dtype=np.int32)
+    for offset_y in range(-extent, extent + 1):
+      pixel_y = base_y + offset_y
+      valid_y = (pixel_y >= 0) & (pixel_y < raster_height)
+      if not np.any(valid_y):
+        continue
+      dy = offset_y + 0.5 - frac_y
+      for offset_x in range(-extent, extent + 1):
+        pixel_x = base_x + offset_x
+        valid = valid_y & (pixel_x >= 0) & (pixel_x < raster_width)
+        if shape == "circle":
+          valid &= (offset_x + 0.5 - frac_x) ** 2 + dy ** 2 <= radius * radius
+        else:
+          valid &= np.abs(offset_x + 0.5 - frac_x) <= radius
+          valid &= np.abs(dy) <= radius
+        if np.any(valid):
+          np.add.at(counts, (pixel_y[valid], pixel_x[valid]), 1)
+      if cancel_check is not None:
+        cancel_check()
+    pixel_y, pixel_x = np.nonzero(counts)
+    if not len(pixel_x):
+      return
+    destination = rgba[pixel_y, pixel_x].astype(np.float64)
+    source_alpha = max(0.0, min(1.0, alpha))
+    output_alpha = 1.0 - (1.0 - source_alpha) ** counts[pixel_y, pixel_x]
+    destination_alpha = destination[:, 3] / 255.0
+    combined_alpha = output_alpha + destination_alpha * (1.0 - output_alpha)
+    output_rgb = (
+      np.asarray(color, dtype=np.float64)[None, :] * output_alpha[:, None]
+      + destination[:, :3]
+      * destination_alpha[:, None]
+      * (1.0 - output_alpha[:, None])
+    ) / combined_alpha[:, None]
+    rgba[pixel_y, pixel_x, :3] = np.rint(output_rgb).astype(np.uint8)
+    rgba[pixel_y, pixel_x, 3] = np.rint(combined_alpha * 255.0).astype(np.uint8)
 
   for z_index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
@@ -1657,9 +1730,25 @@ def _hybrid_scatter_raster(
     radius = marker_size * raster_scale / 2.0
     x_values, y_values = layers[source_id]
     colors = None if event_colors is None else event_colors.get(source_id)
-    if alpha >= 1.0 and pillow_image is not None:
-      pixels[:] = pillow_image.tobytes()
-      pillow_image = None
+    if alpha < 1.0 and colors is None:
+      for index, (x_value, y_value) in enumerate(
+        zip(x_values, y_values, strict=False)
+      ):
+        if cancel_check is not None and index % 256 == 0:
+          cancel_check()
+        point_hasher.update(source_id.encode("utf-8"))
+        point_hasher.update(b"\0")
+        point_hasher.update(struct.pack(">dd", float(x_value), float(y_value)))
+        point_hasher.update(color_text.encode("utf-8"))
+        point_hasher.update(b"\0")
+        point_hasher.update(struct.pack(">ddI", float(alpha), float(marker_size), z_index))
+        point_hasher.update(shape.encode("utf-8"))
+        point_hasher.update(b"\0")
+        rendered_event_count += 1
+      blend_uniform_alpha_layer(
+        x_values, y_values, radius, shape, rgb_cache.setdefault(color_text, _rgb(color_text)), alpha
+      )
+      continue
     for index, (x_value, y_value) in enumerate(zip(x_values, y_values, strict=False)):
       if cancel_check is not None and index % 256 == 0:
         cancel_check()
@@ -1672,11 +1761,18 @@ def _hybrid_scatter_raster(
         rgb_cache[point_color_text] = point_color
       x = float(x_value) * (raster_width - 1)
       y = (1.0 - float(y_value)) * (raster_height - 1)
-      point_records.append({
-        "source_id": source_id, "x": float(x_value), "y": float(y_value),
-        "color": point_color_text, "alpha": alpha, "marker_shape": shape,
-        "marker_size": marker_size, "z_index": z_index,
-      })
+      rendered_event_count += 1
+      # The provenance contract needs a deterministic point-plan identity,
+      # not the full JSON record list.  Hash a stable binary record directly
+      # to avoid constructing hundreds of thousands of temporary dictionaries.
+      point_hasher.update(source_id.encode("utf-8"))
+      point_hasher.update(b"\0")
+      point_hasher.update(struct.pack(">dd", float(x_value), float(y_value)))
+      point_hasher.update(point_color_text.encode("utf-8"))
+      point_hasher.update(b"\0")
+      point_hasher.update(struct.pack(">ddI", float(alpha), float(marker_size), z_index))
+      point_hasher.update(shape.encode("utf-8"))
+      point_hasher.update(b"\0")
       min_x = max(0, math.floor(x - radius - 1))
       max_x = min(raster_width - 1, math.ceil(x + radius + 1))
       min_y = max(0, math.floor(y - radius - 1))
@@ -1687,18 +1783,13 @@ def _hybrid_scatter_raster(
             pixel_y, min_x, max_x, x, y, radius, shape, point_color,
           )
       else:
-        if pillow_image is None:
-          pillow_image = Image.frombytes("RGBA", (raster_width, raster_height), pixels)
         blend_alpha_marker(
-          pillow_image, min_x, max_x, min_y, max_y, x, y, radius, shape,
+          min_x, max_x, min_y, max_y, x, y, radius, shape,
           point_color, alpha,
         )
 
     if cancel_check is not None:
       cancel_check()
-
-  if pillow_image is not None:
-    pixels[:] = pillow_image.tobytes()
 
   raw_rows = b"".join(
     b"\x00" + bytes(pixels[row * raster_width * 4:(row + 1) * raster_width * 4])
@@ -1710,18 +1801,14 @@ def _hybrid_scatter_raster(
     + _png_chunk(b"IDAT", zlib.compress(raw_rows, 6))
     + _png_chunk(b"IEND", b"")
   )
-  canonical = json.dumps(
-    {
-      "mode": "hybrid_raster", "algorithm_version": "hybrid_scatter_raster.v1",
-      "dpi": dpi, "width": raster_width, "height": raster_height,
-      "source_order": list(prepared.source_order), "points": point_records,
-    }, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-  ).encode("utf-8")
+  point_hasher.update(struct.pack(">III", dpi, raster_width, raster_height))
+  point_hasher.update(b"hybrid_scatter_raster.v2\0")
+  point_hasher.update("\0".join(prepared.source_order).encode("utf-8"))
   return {
     "png": png, "rgb": bytes(value for index, value in enumerate(pixels) if index % 4 != 3),
     "alpha": bytes(pixels[index] for index in range(3, len(pixels), 4)),
     "width": raster_width, "height": raster_height, "dpi": dpi,
-    "rendered_event_count": len(point_records),
-    "point_plan_hash": hashlib.sha256(canonical).hexdigest(),
-    "algorithm_version": "hybrid_scatter_raster.v1",
+    "rendered_event_count": rendered_event_count,
+    "point_plan_hash": point_hasher.hexdigest(),
+    "algorithm_version": "hybrid_scatter_raster.v2",
   }

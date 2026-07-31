@@ -18,6 +18,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
+from flowdesk_core.annotations import resolve_sample_title
 from flowdesk_core.batch_plot_export import (
   BatchPlotExportError,
   batch_plot_export_spec_from_mapping,
@@ -32,7 +33,13 @@ from flowdesk_core.execution_control import (
   resolve_execution_workers,
 )
 from flowdesk_core.fcs_io import read_fcs_sample
-from flowdesk_core.models import BatchPlotExportSpec, PlotType, PlotViewSpec, TransformSpec
+from flowdesk_core.models import (
+  AnnotationSpec,
+  BatchPlotExportSpec,
+  PlotType,
+  PlotViewSpec,
+  TransformSpec,
+)
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import (
   LayerValues,
@@ -55,6 +62,26 @@ from flowdesk_storage.project import load_project, resolve_sample_paths
 from flowdesk_storage.serialization import atomic_write_json
 
 NormalizedPayload = tuple[LayerValues, np.ndarray, np.ndarray | None]
+
+
+def _annotation_specs(values: object) -> tuple[AnnotationSpec, ...]:
+  """Convert persisted annotation mappings for deterministic sample titles."""
+  if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+    return ()
+  result: list[AnnotationSpec] = []
+  for value in values:
+    if not isinstance(value, Mapping):
+      continue
+    try:
+      result.append(AnnotationSpec(
+        sample_id=str(value["sample_id"]),
+        keyword=str(value["keyword"]),
+        value=value.get("value"),
+        source=value["source"],
+      ))
+    except (KeyError, TypeError, ValueError):
+      continue
+  return tuple(result)
 
 
 class _RawSampleCache:
@@ -299,6 +326,7 @@ def batch_plot_command(
       else resolve_sample_paths(project, Path(project_path))
     )
     annotations = project.get("annotations", [])
+    annotation_specs = _annotation_specs(annotations)
     runner_local = local()
 
     def runner_for_current_thread() -> PipelineRunner:
@@ -893,7 +921,12 @@ def batch_plot_command(
         sources.append({
           "source_id": source_id, "sample_id": source_id,
           "population_id": str(view.get("population_id", "all_events")),
-          "display_name": str(source_sample.get("name", source_id)),
+          "display_name": resolve_sample_title(
+            source_id,
+            str(source_sample.get("name", source_id)),
+            str(source_sample.get("path", "")),
+            annotation_specs,
+          ),
           "x_parameter_id": source_metadata["x_id"],
           "y_parameter_id": source_metadata["y_id"], "visible": True, "order": order,
           "style": dict(overlay_style_by_id.get(source_id, {})),
@@ -963,6 +996,16 @@ def batch_plot_command(
           }
       for source_id in source_ids:
         style = source_styles.setdefault(source_id, {"source_id": source_id})
+        if source_id == source_ids[0]:
+          # The active layer is rendered by the GUI's base PlotStyleSettings,
+          # not by a stale per-source overlay swatch.  Keep the persisted
+          # source style for overlays only, otherwise a previous overlay color
+          # can leak into the active dots and title line.
+          style["color"] = str(presentation.get("single_color") or "#000000")
+          style["marker_size"] = float(
+            presentation.get("single_dot_size") or 1.5
+          )
+          style["alpha"] = 0.60
         manual_fields = set(style.get("manual_fields", ()))
         if not style.get("color"):
           style["color"] = (
@@ -1666,7 +1709,10 @@ def _write_render_payload(
     path.suffix.lower() in {".svg", ".pdf"}
     and vector_cache is not None
     and spec.vector_scatter_mode in {"full_vector", "compact_vector", "hybrid_raster"}
-    and not event_colors
+    and (
+      spec.vector_scatter_mode == "hybrid_raster"
+      or not event_colors
+    )
     and (
       spec.vector_scatter_mode != "full_vector"
       or len(spec.formats) > 1

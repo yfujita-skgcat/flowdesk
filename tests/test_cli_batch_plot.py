@@ -823,10 +823,22 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
       "id": "overlay-view", "plot_type": "scatter", "population_id": "all_events",
       "x_parameter": "x", "y_parameter": "y", "rendering_downsample": {"max_points": 0},
       "manual_overlay_sample_ids": ["s2"],
-      "presentation": {"title": "Overlay", "source_styles": [
+      "presentation": {"title": "Overlay", "single_color": "#00aa66",
+        "source_styles": [
+        {"source_id": "s1", "color": "#4c78a8"},
         {"source_id": "s2", "color": "#ff0000"},
       ]},
     }],
+    "annotations": [
+      {
+        "sample_id": "s1", "keyword": "sample_title",
+        "value": "Active title", "source": "workspace",
+      },
+      {
+        "sample_id": "s2", "keyword": "sample_title",
+        "value": "Overlay title", "source": "workspace",
+      },
+    ],
     "gating_strategies_data": {"default": {
       "id": "default", "name": "Default", "gates": [{
         "id": "gate-1", "name": "Gate", "gate_type": "rectangle",
@@ -889,7 +901,10 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
     execution_options=ExecutionOptions(backend="thread", max_workers=2),
   ) == 0
   text = next(output_dir.glob("*s1*.svg")).read_text(encoding="utf-8")
+  assert 'fill="#00aa66"' in text
   assert 'fill="#ff0000"' in text
+  assert "Active title" in text
+  assert "Overlay title" in text
   assert 'stroke="#00ff00"' in text
   # Both target scenes use the same shared range.  Each source is normalized
   # once (X/Y), then reused when it appears as the other target's overlay.
