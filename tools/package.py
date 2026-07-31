@@ -47,8 +47,11 @@ def smoke(
   qt_platform: str | None = None,
   output_dir: Path | None = None,
   batch_export_id: str | None = None,
+  timeout: int = 60,
 ) -> None:
   """Run package smoke checks without rebuilding artifacts."""
+  if timeout < 1:
+    raise ValueError("timeout must be positive")
   if batch_export_id is not None and project is None:
     raise ValueError("--batch-export-id requires --project")
   gui = _executable("flowdesk")
@@ -62,8 +65,9 @@ def smoke(
     command.extend(["--cli", str(cli), "--project", str(project)])
     if fcs_file is not None:
       command.extend(["--fcs", str(fcs_file)])
-    if batch_export_id is not None:
-      command.extend(["--batch-export-id", batch_export_id])
+  if batch_export_id is not None:
+    command.extend(["--batch-export-id", batch_export_id])
+  command.extend(["--timeout", str(timeout)])
   if qt_platform is not None:
     command.extend(["--qt-platform", qt_platform])
   command.extend(["--output-dir", str(output_dir or ROOT / "artifacts" / "package-smoke")])
@@ -130,6 +134,12 @@ def main() -> int:
   smoke_parser.add_argument("--qt-platform")
   smoke_parser.add_argument("--output-dir", type=Path)
   smoke_parser.add_argument("--batch-export-id")
+  smoke_parser.add_argument(
+    "--timeout",
+    type=int,
+    default=60,
+    help="Timeout in seconds for each packaged smoke command (default: 60).",
+  )
   manifest_parser = subparsers.add_parser("manifest")
   manifest_parser.add_argument("--output", type=Path, required=True)
   subparsers.add_parser("check")
@@ -138,7 +148,10 @@ def main() -> int:
   if args.command == "build":
     build()
   elif args.command == "smoke":
-    smoke(args.project, args.fcs, args.qt_platform, args.output_dir, args.batch_export_id)
+    smoke(
+      args.project, args.fcs, args.qt_platform, args.output_dir,
+      args.batch_export_id, args.timeout,
+    )
   elif args.command == "manifest":
     manifest(args.output)
   else:
