@@ -1059,7 +1059,8 @@ incrementでは両者を一つの authoritative report から統合し、GUI・C
 - [x] `docs/implementation/table-editor.md`を全文読み、column sourceとiterator contractを追記する。
 - [x] `TableDefinitionSpec`、`TableColumnSpec`、typed result row/cellをcore/schemaへ追加する。GUIは後続increment。
 - [x] keyword、StatisticSpec、constant列をexplicit sample runnerへ実装する。
-- [ ] platform result、安全なformula列を実装する。
+- [x] 安全なarithmetic formula列を実装し、依存順序、cycle、未知参照、unsafe call、status伝播を検証する。
+- [ ] platform result列とより高度なformula機能を実装する。
 - [x] explicit sample iterationでkeyword/statistic columnをcore table runnerへ実装する。missing、
   ambiguous、undefined/error statusを列ずれなく返す。`row_iterator=group`のresolved member
   mappingも実装する。Population path/plate well iterationは後続。

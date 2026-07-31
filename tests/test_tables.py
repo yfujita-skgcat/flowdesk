@@ -146,3 +146,45 @@ def test_group_table_requires_resolved_members() -> None:
   )
   with pytest.raises(ValueError, match="not resolved"):
     run_table_definition(definition, (), group_members={})
+
+
+def test_table_runner_evaluates_formula_dependencies_without_eval() -> None:
+  definition = TableDefinitionSpec(
+    id="table", name="Formula table", row_iterator="samples", columns=(
+      TableColumnSpec(id="a", name="A", source="constant", constant=2),
+      TableColumnSpec(id="b", name="B", source="formula", formula="a * 3"),
+      TableColumnSpec(id="c", name="C", source="formula", formula="b + a"),
+    ),
+  )
+  result = run_table_definition(definition, ("s1",))
+  assert [cell.value for cell in result.rows[0].values] == [2, 6, 8]
+
+
+def test_table_runner_rejects_formula_cycles_and_unsafe_calls() -> None:
+  cycle = TableDefinitionSpec(
+    id="cycle", name="Cycle", columns=(
+      TableColumnSpec(id="a", name="A", source="formula", formula="b + 1"),
+      TableColumnSpec(id="b", name="B", source="formula", formula="a + 1"),
+    ),
+  )
+  with pytest.raises(ValueError, match="cycle"):
+    run_table_definition(cycle, ("s1",))
+  unsafe = TableDefinitionSpec(
+    id="unsafe", name="Unsafe", columns=(
+      TableColumnSpec(id="a", name="A", source="formula", formula="abs(1)"),
+    ),
+  )
+  with pytest.raises(ValueError, match="unknown"):
+    run_table_definition(unsafe, ("s1",))
+
+
+def test_table_runner_propagates_formula_dependency_status() -> None:
+  definition = TableDefinitionSpec(
+    id="table", name="Formula table", columns=(
+      TableColumnSpec(id="missing", name="Missing", source="keyword", keyword="x"),
+      TableColumnSpec(id="derived", name="Derived", source="formula", formula="missing + 1"),
+    ),
+  )
+  result = run_table_definition(definition, ("s1",))
+  assert result.rows[0].values[1].status == "undefined"
+  assert result.rows[0].values[1].reason == "formula_dependency_undefined"
