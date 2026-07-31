@@ -1393,6 +1393,11 @@ the representative project, but not large real-FCS chunk parallelism or Windows 
 runtime policy, effective worker count, and peak RSS in JSON. The cold `PlotWidget` measurements intentionally retain the
 default density configuration, so the report does not incorrectly attribute a numeric
 worker setting to GUI rendering.
+On 2026-07-31 Linux, a 1,000,000-event synthetic profile with four workers and a 64 MiB
+histogram budget measured 215.4 ms numeric median, effective workers=4, and 324,712 KiB
+process peak RSS. This confirms the large-input opt-in path is exercised; it is synthetic
+diagnostic evidence and does not justify changing the default or claim a platform-wide
+RSS bound.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and

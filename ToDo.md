@@ -1543,6 +1543,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   memory budget引数、JSON provenanceを追加した。numeric kernelだけへ設定を適用し、cold PlotWidgetは
   default configのまま測定するため、GUI描画性能とnumeric worker効果を混同しない。実効worker数と
   peak RSSもJSONへ記録する。
+- [x] **density large-input profile**: 1,000,000 synthetic events、worker=4、64 MiB budgetで
+  numeric median 215.4 ms、effective worker=4、peak RSS 324,712 KiBを確認した。synthetic診断値であり、
+  default変更やplatform-wide RSS保証の根拠にはしない。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
