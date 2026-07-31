@@ -119,6 +119,23 @@ only and cannot affect scientific results.
 9. Review Increments 10–11 only after remeasurement; preserve full-data counts and do not
    add prefetch, event chunks, or processes without measured benefit.
 
+### 2026-07-31 Linux regression audit
+
+The following focused gates were rerun after the queue memory-estimate and Qt renderer
+cleanup changes:
+
+- `tests/test_cli_batch_plot.py` and `tests/test_batch_plot_export.py`: 45 passed.
+- `tests/test_density_colors.py`, `tests/gui/test_qt_plot_export.py`, and
+  `tests/gui/test_batch_plot_export_dialog.py`: 18 passed.
+- `python -m pytest -m 'not gui' -q`: 937 passed, 309 deselected.
+
+These results validate deterministic output/manifest behavior, bounded queue bookkeeping,
+density worker controls, and the tested Qt export lifecycle on Linux. They do not close the
+remaining Windows/PyInstaller lifecycle, native Qt long-run reentrancy, or large real-FCS
+prefetch measurements. The GUI worker controls therefore remain opt-in/disabled by the
+safety gate, and intermittent suite-level Qt/pyqtgraph shutdown segmentation faults must be
+reproduced before changing scheduler ownership or default worker counts.
+
 ## Required tests
 
 - 100k/1M/10M profiles have identical expected population proportions/count rules.

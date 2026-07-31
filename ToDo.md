@@ -1615,6 +1615,12 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   compensation/derived/transform stageだけを`ProcessedDisplayLayer`へ返す経路を追加した。
   selected populationまたはpopulation colorが必要な場合は従来のpreviewを要求し、実FCS PNG/PDFの
   SHA-256 parityを確認した。GUIの`prepare_display_sample`契約とscientific pipelineは変更しない。
+- [x] **2026-07-31 Linux性能回帰監査**: queue/rendererのthread・memory・cancellation、density色計算、
+  PNG/PDF export dialogのfocused testを再実行し、45件、18件が全て成功した。`python -m pytest -m
+  'not gui' -q`も937 passed/309 deselectedで完了した。これはLinuxのheadless/Qt smokeであり、
+  Windows/PyInstallerのworker終了、native Qt backendの長時間再入性、4 MiB以上の実FCS prefetchを
+  完了扱いにしない。full GUI suiteの断続的なQt/pyqtgraph終了時segmentation faultは既知の残課題として
+  記録し、再現条件なしにschedulerやworkerの既定値を変更しない。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [x] **hybrid rasterの小配列ベクトル化を不採用とする記録**: alpha<1 markerの内側pixel
