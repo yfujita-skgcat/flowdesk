@@ -977,6 +977,8 @@ output directoryはprojectには保存されず、アプリケーション設定
 
 キュー実行中は、定義開始・定義完了の進捗も表示されます。定義内部のsource準備・render進捗と定義単位の進捗は別の段階として扱われ、定義の完了順ではなく宣言順の定義番号で表示されます。
 
+キューではproject定義を開始時に一度だけ読み込み、各定義へ同じsnapshotを渡します。FCSのイベント配列や表示準備結果を定義間で共有するものではなく、定義ごとのtarget、overlay、range、色、出力は従来どおり独立して解決されます。
+
 ダイアログの `Execution backend` は既定で `Sequential (recommended)` です。`Bounded threads (opt-in)` を選ぶと、保存済み定義には影響しないruntime-only設定として、サンプル単位のbounded thread renderingを使用します。`Max workers` は同時sample/view item数、`Memory budget` は準備済み配列とwriter一時領域の保守的な推定上限です。thread backendは速度向上が保証されず、メモリ使用量が増えることがあるため、代表データでparityとpeak RSSを確認した場合だけ使用してください。GUIでもQt/pyqtgraphオブジェクトはworker threadで操作しません。
 `Density workers` と `Density memory budget` はdensity colorのfixed-bin histogram計算だけに適用されるruntime-only設定です。既定は1 workerで、densityの色結果や保存済み定義は変更しません。大きなデータで使用する場合は、色parityとpeak RSSを確認してから増やしてください。
 密度色を含むbatch出力のsidecarには、要求worker数、実効worker数、memory budgetが記録されます。

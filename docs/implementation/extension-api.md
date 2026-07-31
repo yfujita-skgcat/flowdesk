@@ -48,6 +48,10 @@ headless queue adapter in a Qt worker and keeps cancellation/progress updates on
 The queue emits `batch_plot_queue` progress events for `definition_started` and
 `definition_completed`, with deterministic `completed_units`/`total_units` and the definition ID
 in `sample_id`. Nested `batch_plot_export` events remain available for source/render detail.
+The queue loads the project bundle once and passes the immutable mapping snapshot to each
+definition invocation. It does not share raw FCS arrays, transformed layers, density fields, or
+mutable renderer caches across definitions; those remain definition-scoped to preserve output
+isolation and bounded memory behavior.
 The queue still deliberately leaves plugin subprocess isolation, queue-level parallelism, and
 cross-definition cache sharing for later increments. The existing per-definition manifest and
 atomic output rules remain authoritative.

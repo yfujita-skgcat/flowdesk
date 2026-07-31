@@ -41,6 +41,7 @@ def test_batch_plot_queue_uses_definition_subdirectories_and_continues(
     return 1 if export_id == "bad/id" else 0
 
   monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
   assert batch_plot_queue_command(
     "project.flowdesk", ("ok", "bad/id", "last"), str(tmp_path),
     failure_policy="continue",
@@ -61,6 +62,7 @@ def test_batch_plot_queue_emits_definition_progress(
     return 0
 
   monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
   assert batch_plot_queue_command(
     "project.flowdesk", ("first", "second"), str(tmp_path),
     execution_control=control,
@@ -72,6 +74,30 @@ def test_batch_plot_queue_emits_definition_progress(
     ("definition_started", 1, 2, "second"),
     ("definition_completed", 2, 2, "second"),
   ]
+
+
+def test_batch_plot_queue_loads_project_snapshot_once(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  loads: list[str] = []
+  calls: list[object] = []
+
+  monkeypatch.setattr(
+    batch_plot_module, "load_project",
+    lambda path: loads.append(str(path)) or {"batch_plot_exports": []},
+  )
+
+  def fake_batch(*_args, **kwargs) -> int:
+    calls.append(kwargs.get("_project_snapshot"))
+    return 0
+
+  monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("first", "second"), str(tmp_path),
+  ) == 0
+  assert loads == ["project.flowdesk"]
+  assert len(calls) == 2
+  assert calls[0] is calls[1]
 
 
 def test_overlay_dependency_graph_is_deterministic_and_deduplicated() -> None:

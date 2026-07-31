@@ -45,6 +45,7 @@ from flowdesk_core.processed_display import ProcessedDisplayRequest
 from flowdesk_core.transforms import apply_transform, generate_transform_ticks
 from flowdesk_core.vector_scatter import preflight_vector_scatter_export
 from flowdesk_storage.project import load_project, resolve_sample_paths
+from flowdesk_storage.manifest import ManifestValidationError
 
 NormalizedPayload = tuple[LayerValues, np.ndarray, np.ndarray | None]
 
@@ -58,11 +59,16 @@ def batch_plot_command(
   execution_control: ExecutionControl | None = None,
   execution_options: ExecutionOptions | None = None,
   density_config: DensityColorConfig | None = None,
+  _project_snapshot: Mapping[str, Any] | None = None,
 ) -> int:
   try:
     if execution_control is None and execution_options is not None:
       execution_control = ExecutionControl(options=execution_options)
-    project = load_project(project_path)
+    project = (
+      _project_snapshot
+      if _project_snapshot is not None
+      else load_project(project_path)
+    )
     raw = next(
       item for item in project.get("batch_plot_exports", [])
       if str(item.get("id")) == export_id
@@ -861,6 +867,11 @@ def batch_plot_queue_command(
   queue = tuple(dict.fromkeys(str(value) for value in export_ids if str(value)))
   if not queue:
     raise ValueError("at least one export definition is required")
+  try:
+    project_snapshot = load_project(project_path)
+  except (FileNotFoundError, KeyError, ValueError, ManifestValidationError) as exc:
+    print(f"Error: batch plot queue project load failed: {exc}")
+    return 1
   root = Path(output_dir)
   results: list[tuple[str, int]] = []
   for index, export_id in enumerate(queue, start=1):
@@ -884,6 +895,7 @@ def batch_plot_queue_command(
       execution_control=execution_control,
       execution_options=execution_options,
       density_config=density_config,
+      _project_snapshot=project_snapshot,
     )
     results.append((export_id, result))
     if execution_control is not None:
