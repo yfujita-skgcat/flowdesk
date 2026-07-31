@@ -41,6 +41,8 @@ class BatchPlotExportRequest:
   memory_budget_mib: int | None = None
   density_workers: int = 1
   density_memory_budget_mib: int | None = None
+  queue_export_ids: tuple[str, ...] = ()
+  queue_failure_policy: str = "fail-fast"
 
 
 class BatchPlotExportDialog(QDialog):
@@ -66,6 +68,7 @@ class BatchPlotExportDialog(QDialog):
     self._groups = [dict(item) for item in groups]
     self._views = [dict(item) for item in plot_views]
     self._run = False
+    self._queue_run = False
     self._delete_definition_id: str | None = None
     self._vector_scatter_mode = "hybrid_raster"
     self._hybrid_scatter_dpi = 600
@@ -192,6 +195,10 @@ class BatchPlotExportDialog(QDialog):
     self._collision.addItem("Replace existing", "replace")
     self._collision.addItem("Add suffix", "suffix")
     self._strict = self._check("Strict export", "batchPlotStrictCheckBox", True)
+    self._queue_failure_policy = QComboBox()
+    self._queue_failure_policy.setObjectName("batchPlotQueueFailurePolicyCombo")
+    self._queue_failure_policy.addItem("Fail fast", "fail-fast")
+    self._queue_failure_policy.addItem("Continue after failures", "continue")
     self._output = QLineEdit()
     self._output.setObjectName("batchPlotOutputDirectoryLineEdit")
     browse = QPushButton("Browse…")
@@ -249,6 +256,10 @@ class BatchPlotExportDialog(QDialog):
     run = QPushButton("Run Export")
     run.setObjectName("batchPlotRunExportButton")
     run.clicked.connect(self._accept_run)
+    queue = QPushButton("Run Saved Queue")
+    queue.setObjectName("batchPlotRunQueueButton")
+    queue.clicked.connect(self._accept_queue)
+    queue.setEnabled(bool(self._definitions))
     cancel = QPushButton("Cancel")
     cancel.setObjectName("batchPlotCancelButton")
     cancel.clicked.connect(self.reject)
@@ -256,7 +267,9 @@ class BatchPlotExportDialog(QDialog):
     buttons.addStretch(1)
     buttons.addWidget(save)
     buttons.addWidget(run)
+    buttons.addWidget(queue)
     buttons.addWidget(cancel)
+    form.addRow("Queue failure policy", self._queue_failure_policy)
 
     layout = QVBoxLayout(self)
     layout.addWidget(QLabel("Create or update a reusable export definition."))
@@ -445,6 +458,17 @@ class BatchPlotExportDialog(QDialog):
     if self._validate(True):
       self.accept()
 
+  def _accept_queue(self) -> None:
+    if not self._definitions:
+      QMessageBox.warning(self, "Invalid batch queue", "Save at least one export definition first.")
+      return
+    if not self._output.text().strip():
+      QMessageBox.warning(self, "Invalid batch queue", "Select an output directory.")
+      return
+    self._queue_run = True
+    self._run = False
+    self.accept()
+
   def _accept_delete(self) -> None:
     definition_id = str(self._definition.currentData() or "")
     if not definition_id:
@@ -486,6 +510,9 @@ class BatchPlotExportDialog(QDialog):
       (self._memory_budget_mib.value() or None),
       self._density_workers.value(),
       (self._density_memory_budget_mib.value() or None),
+      tuple(str(item.get("id", "")) for item in self._definitions if item.get("id"))
+      if self._queue_run else (),
+      str(self._queue_failure_policy.currentData() or "fail-fast"),
     )
 
   def definition_mapping(self) -> dict[str, Any]:

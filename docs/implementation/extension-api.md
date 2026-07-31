@@ -43,9 +43,11 @@ memory policy, and one shared cooperative cancellation token. `fail-fast` is the
 `--export-id` with `--queue-export-id`, and queue items are sequential at the definition level
 even when each definition opts into bounded sample-level rendering threads.
 
-This slice deliberately leaves GUI queue editing, plugin subprocess isolation, queue-level
-parallelism, and cross-definition cache sharing for later increments. The existing per-definition
-manifest and atomic output rules remain authoritative.
+The GUI now exposes the same saved-definition queue through `Run Saved Queue`; it uses the
+headless queue adapter in a Qt worker and keeps cancellation/progress updates on the GUI side.
+The queue still deliberately leaves plugin subprocess isolation, queue-level parallelism, and
+cross-definition cache sharing for later increments. The existing per-definition manifest and
+atomic output rules remain authoritative.
 
 ## Required tests
 

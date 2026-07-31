@@ -67,6 +67,32 @@ def test_batch_plot_dialog_keeps_thread_settings_runtime_only(qapp, tmp_path) ->
     dialog.deleteLater()
 
 
+def test_batch_plot_dialog_runs_saved_queue_with_shared_runtime_policy(qapp, tmp_path) -> None:
+  dialog = BatchPlotExportDialog(
+    [
+      {"id": "first", "name": "First"},
+      {"id": "second", "name": "Second"},
+    ], [], [], [], "main-view",
+  )
+  try:
+    dialog._output.setText(str(tmp_path))
+    dialog._queue_failure_policy.setCurrentIndex(
+      dialog._queue_failure_policy.findData("continue")
+    )
+    dialog._execution_backend.setCurrentIndex(dialog._execution_backend.findData("thread"))
+    dialog._max_workers.setValue(3)
+    dialog._accept_queue()
+    request = dialog.request()
+    assert request.run is False
+    assert request.queue_export_ids == ("first", "second")
+    assert request.queue_failure_policy == "continue"
+    assert request.output_dir == str(tmp_path)
+    assert request.execution_backend == "thread"
+    assert request.max_workers == 3
+  finally:
+    dialog.deleteLater()
+
+
 def test_batch_plot_dialog_loads_saved_definition(qapp) -> None:
   dialog = BatchPlotExportDialog(
     [{

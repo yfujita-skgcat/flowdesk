@@ -167,6 +167,29 @@ def test_batch_plot_worker_receives_density_runtime_options(qapp) -> None:
     worker.deleteLater()
 
 
+def test_batch_plot_worker_runs_saved_queue_and_failure_policy(qapp, monkeypatch) -> None:
+  from flowdesk_qt.main_window import _BatchPlotExportWorker
+
+  calls: list[tuple[object, ...]] = []
+
+  def fake_queue(project_path, export_ids, output_dir, **kwargs):
+    calls.append((project_path, tuple(export_ids), output_dir, kwargs["failure_policy"]))
+    return 0
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.batch_plot_queue_command", fake_queue)
+  worker = _BatchPlotExportWorker(
+    "project.flowdesk", None, "output", export_ids=("first", "second"),
+    failure_policy="continue",
+  )
+  try:
+    worker.run()
+    assert calls == [("project.flowdesk", ("first", "second"), "output", "continue")]
+    assert worker._status == 0
+  finally:
+    worker.request_cancel()
+    worker.deleteLater()
+
+
 def test_pipeline_worker_receives_runtime_execution_options(qapp) -> None:
   from flowdesk_qt.main_window import _PipelineWorker
 

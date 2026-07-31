@@ -973,6 +973,8 @@ output directoryはprojectには保存されず、アプリケーション設定
 
 `Run Export` はGUIを停止させずに実行されます。表示される `Batch Plot Export` progress windowには、準備・render・sidecar・manifestの段階と完了数が表示されます。source準備中は、準備済みsourceのIDと `prepared source n/total` も表示されます。この段階の表示は出力ファイルの完了数とは別であり、sourceの完了順は出力順や科学的結果を変更しません。`Cancel` はsource境界、256イベント単位の描画checkpoint、次の安全な出力境界で協調的に停止します。既に完了した画像とsidecarは保持され、未開始項目はmanifestで `not_started`、停止を受けた項目は `cancelled` と記録されます。cancel中でも、画像・sidecar・manifestが途中の内容で公開されることはありません。
 
+保存済み定義がある場合は、ダイアログの `Run Saved Queue` で定義を一覧の順番にまとめて実行できます。`Queue failure policy` は既定の `Fail fast`（最初の失敗で停止）と `Continue after failures`（失敗を記録して次へ進む）から選びます。各定義はoutput directory下の番号付きサブディレクトリへ出力され、全定義で同じキャンセル、thread/memory、density worker設定を共有します。キューは現在の編集内容を保存せず、保存済みproject定義だけを実行します。進捗windowの `Cancel` は現在の定義の安全な境界で停止し、完了済み定義の出力とmanifestを保持します。
+
 ダイアログの `Execution backend` は既定で `Sequential (recommended)` です。`Bounded threads (opt-in)` を選ぶと、保存済み定義には影響しないruntime-only設定として、サンプル単位のbounded thread renderingを使用します。`Max workers` は同時sample/view item数、`Memory budget` は準備済み配列とwriter一時領域の保守的な推定上限です。thread backendは速度向上が保証されず、メモリ使用量が増えることがあるため、代表データでparityとpeak RSSを確認した場合だけ使用してください。GUIでもQt/pyqtgraphオブジェクトはworker threadで操作しません。
 `Density workers` と `Density memory budget` はdensity colorのfixed-bin histogram計算だけに適用されるruntime-only設定です。既定は1 workerで、densityの色結果や保存済み定義は変更しません。大きなデータで使用する場合は、色parityとpeak RSSを確認してから増やしてください。
 密度色を含むbatch出力のsidecarには、要求worker数、実効worker数、memory budgetが記録されます。
@@ -986,12 +988,12 @@ collision、manifest順は並列化しても変わりません。GUIのBatch Exp
 runtime-onlyで指定できます。`--density-memory-budget-mib M`を併用すると、histogram working setの保守的な
 見積もりに基づいて同時density worker数を抑制します。既定は1 workerで、全FCS配列のRSSを保証する上限ではありません。CLI実行中にCtrl-Cを押すと協調キャンセルが要求され、完了済み出力を保持したcancelled manifestを作成して終了コード130を返します。実行中のnative数値処理を強制停止せず、安全なstage境界で停止します。
 大規模なdensity計算では、histogram chunkの完了時と平滑化処理の境界でもキャンセルを確認します。現在実行中のNumPy処理は安全に完了させます。
-複数の保存済み定義を順番に実行する場合は、`--queue-export-id <id>` を繰り返します。
+複数の保存済み定義をCLIで順番に実行する場合は、`--queue-export-id <id>` を繰り返します。
 queueでは定義ごとに `<output-dir>/001_<id>/` のような安全なサブディレクトリへ出力し、
 `--queue-failure-policy continue` を指定すると一つの定義が失敗しても次の定義を続行します。
 既定の `fail-fast` では最初の失敗で停止します。すべての定義は同じ cancellation token と
 runtime worker/memory設定を共有し、Ctrl-Cでは終了コード130を返します。`--export-id` と
-`--queue-export-id` は同時に指定できません。
+`--queue-export-id` は同時に指定できません。GUIの`Run Saved Queue`とCLI queueは同じ保存済み定義の順序・定義別出力・failure policyを使用します。
 ダイアログで`Bounded threads (opt-in)`を選んだ場合だけ同じruntime設定を使用し、
 batch manifestの`execution`には、実行単位（`prepared_output_item`）、計画数、投入数、完了数、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、

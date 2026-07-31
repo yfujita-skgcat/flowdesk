@@ -14,7 +14,7 @@ from copy import deepcopy
 from dataclasses import asdict, replace
 from pathlib import Path
 from queue import Empty, SimpleQueue
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -294,14 +294,17 @@ class _BatchPlotExportWorker(QThread):
     def __init__(
         self,
         project_path: str,
-        export_id: str,
+        export_id: str | None,
         output_dir: str,
         execution_options: ExecutionOptions | None = None,
         density_config: DensityColorConfig | None = None,
+        export_ids: Sequence[str] | None = None,
+        failure_policy: str = "fail-fast",
     ) -> None:
         super().__init__()
         self._project_path = project_path
-        self._export_id = export_id
+        self._export_ids = tuple(export_ids or ((export_id,) if export_id else ()))
+        self._failure_policy = failure_policy
         self._output_dir = output_dir
         self._density_config = density_config
         self._status: int | None = None
@@ -325,16 +328,29 @@ class _BatchPlotExportWorker(QThread):
 
     def run(self) -> None:
         try:
-            from flowdesk_cli.batch_plot import batch_plot_command
+            if len(self._export_ids) > 1:
+                from flowdesk_cli.batch_plot import batch_plot_queue_command
 
-            self._status = batch_plot_command(
-                self._project_path,
-                self._export_id,
-                self._output_dir,
-                renderer_backend="headless",
-                execution_control=self._execution_control,
-                density_config=self._density_config,
-            )
+                self._status = batch_plot_queue_command(
+                    self._project_path,
+                    self._export_ids,
+                    self._output_dir,
+                    failure_policy=self._failure_policy,
+                    execution_control=self._execution_control,
+                    execution_options=self._execution_control.options,
+                    density_config=self._density_config,
+                )
+            else:
+                from flowdesk_cli.batch_plot import batch_plot_command
+
+                self._status = batch_plot_command(
+                    self._project_path,
+                    self._export_ids[0],
+                    self._output_dir,
+                    renderer_backend="headless",
+                    execution_control=self._execution_control,
+                    density_config=self._density_config,
+                )
         except Exception as exc:
             self._error = exc
             logger.error("Batch Plot Export failed: %s", exc)
@@ -4120,6 +4136,28 @@ class MainWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         request = dialog.request()
+        if request.queue_export_ids:
+            self._start_batch_plot_queue_export(
+                request.queue_export_ids,
+                request.output_dir,
+                failure_policy=request.queue_failure_policy,
+                execution_options=ExecutionOptions(
+                    backend=("thread" if request.execution_backend == "thread" else "sequential"),
+                    max_workers=request.max_workers,
+                    memory_budget_bytes=(
+                        None if request.memory_budget_mib is None
+                        else request.memory_budget_mib * 1024 * 1024
+                    ),
+                ),
+                density_config=DensityColorConfig(
+                    histogram_workers=request.density_workers,
+                    histogram_memory_budget_bytes=(
+                        None if request.density_memory_budget_mib is None
+                        else request.density_memory_budget_mib * 1024 * 1024
+                    ),
+                ),
+            )
+            return
         if request.delete_definition_id:
             previous_definitions = deepcopy(self._batch_plot_exports)
             previous_dirty = self._project_dirty
@@ -4229,6 +4267,41 @@ class MainWindow(QMainWindow):
         self._batch_plot_worker.start()
         self._batch_plot_progress_timer.start()
         self._update_status("Batch plot export: preparing sources...")
+
+    def _start_batch_plot_queue_export(
+        self,
+        export_ids: Sequence[str],
+        output_dir: str,
+        *,
+        failure_policy: str = "fail-fast",
+        execution_options: ExecutionOptions | None = None,
+        density_config: DensityColorConfig | None = None,
+    ) -> None:
+        """Run saved Batch Export definitions in GUI-selected queue order."""
+        if self._project_path is None:
+            QMessageBox.warning(self, "Batch Plot Export", "Save the project before exporting.")
+            return
+        worker = self._batch_plot_worker
+        if worker is not None and worker.isRunning():
+            QMessageBox.information(
+                self, "Batch Plot Export", "A batch export is already in progress."
+            )
+            return
+        self._show_batch_plot_progress_dialog()
+        self.action_batch_plot_export.setEnabled(False)
+        self._batch_plot_worker = _BatchPlotExportWorker(
+            str(self._project_path),
+            None,
+            output_dir,
+            execution_options,
+            density_config,
+            export_ids=export_ids,
+            failure_policy=failure_policy,
+        )
+        self._batch_plot_worker.finished.connect(self._on_batch_plot_export_finished)
+        self._batch_plot_worker.start()
+        self._batch_plot_progress_timer.start()
+        self._update_status("Batch plot queue: preparing sources...")
 
     def _show_batch_plot_progress_dialog(self) -> None:
         dialog = QDialog(self)
