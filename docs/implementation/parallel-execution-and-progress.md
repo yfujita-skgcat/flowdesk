@@ -1002,19 +1002,20 @@ authoritative report, while the existing recoverable derived-parameter policy re
 
 The opt-in small benchmark on 2026-07-30 (100,000 events × 8, fallback-root
 population, one repeat) measured 3.37 ms sequential and 4.65 ms with two thread
-workers; the scientific report hashes matched.  This deliberately lightweight
-workload does not demonstrate a speedup, so the default remains sequential.
-Repeat the benchmark with representative compensation, derived-parameter, and
-gating workloads before exposing or recommending a thread setting to users.
+workers; the scientific report hashes matched. The `representative` profile now
+adds compensation, a derived ratio, a linear transform, a rectangle gate, and
+count/mean statistics; on 2026-07-31 it measured 86.7 ms sequential versus
+52.7 ms thread/2 with identical scientific hashes. These are diagnostic values,
+not CI thresholds, so the default remains sequential.
 
 The headless CLI exposes the runtime-only opt-in as `flowdesk run
 --execution-backend thread --max-workers N [--memory-budget-mib M]`.  These flags create
 an `ExecutionOptions` value for that invocation; they do not alter or serialize the
 project.  The CLI prints the report's resolved backend and effective/requested worker
-count after a full pipeline run.  No GUI preference is added in this increment: interactive
-sample display remains a separate one-sample scheduler/cache problem, and GUI `Run
-Pipeline` remains conservative until representative benchmark evidence justifies exposing
-the option there.
+count after a full pipeline run. GUI Analysis → `Pipeline Execution Settings...` exposes the
+same runtime-only controls, defaulting to sequential and requiring explicit thread opt-in.
+Interactive sample display remains a separate one-sample scheduler/cache problem; this GUI
+setting does not split events within one sample or alter the project definition.
 
 - Add explicit sequential/thread executor selection without project serialization.
 - Estimate canonical per-sample array and membership memory before submission.
