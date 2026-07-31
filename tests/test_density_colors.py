@@ -65,6 +65,15 @@ def test_chunked_histogram_matches_unchunked_density_result() -> None:
   )
   assert np.array_equal(unchunked.colors, parallel.colors)
   assert np.array_equal(unchunked.normalized_density, parallel.normalized_density)
+  budget_limited = estimate_density_colors(
+    x, y, query_x, query_y,
+    bounds=common["bounds"], logical_size=common["logical_size"],
+    config=DensityColorConfig(
+      histogram_chunk_size=257, histogram_workers=4, histogram_memory_budget_bytes=1,
+    ),
+  )
+  assert np.array_equal(unchunked.colors, budget_limited.colors)
+  assert np.array_equal(unchunked.normalized_density, budget_limited.normalized_density)
 
 
 def test_density_chunk_size_rejects_non_positive_values() -> None:
@@ -72,6 +81,8 @@ def test_density_chunk_size_rejects_non_positive_values() -> None:
     DensityColorConfig(histogram_chunk_size=0)
   with np.testing.assert_raises_regex(ValueError, "histogram_workers"):
     DensityColorConfig(histogram_workers=0)
+  with np.testing.assert_raises_regex(ValueError, "histogram_memory_budget_bytes"):
+    DensityColorConfig(histogram_memory_budget_bytes=0)
 
 
 def test_density_estimator_clips_viewport_and_rejects_invalid_contract() -> None:

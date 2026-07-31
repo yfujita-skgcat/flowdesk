@@ -1355,7 +1355,11 @@ colour mapping remain a single global step. The default is one worker and no GUI
 enables this automatically. On the same 1,000,000-event Linux diagnostic with 100,000-event
 chunks, worker 1/2/4 measured 198.4/143.3/110.4 ms and all color hashes matched. This is
 an indicative numeric-kernel result, not a default-setting justification; memory-budget
-integration, cross-platform packaging, and a GUI control remain future work.
+integration, cross-platform packaging, and a GUI control remain future work. The optional
+`histogram_memory_budget_bytes` limits active workers using a conservative per-worker
+float-grid plus int64-grid estimate; an undersized budget falls back to one worker and
+never changes colors. This bounds the chunk worker fan-out but does not cap the complete
+FCS/input or post-smoothing arrays, so it is not a process-wide RSS limit.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and

@@ -25,6 +25,7 @@ class DensityColorConfig:
   # temporary used by np.histogram2d for very large populations.
   histogram_chunk_size: int | None = 250_000
   histogram_workers: int = 1
+  histogram_memory_budget_bytes: int | None = None
 
   def __post_init__(self) -> None:
     if self.cells_per_logical_pixel <= 0:
@@ -39,6 +40,8 @@ class DensityColorConfig:
       raise ValueError("histogram_chunk_size must be positive when provided")
     if self.histogram_workers < 1:
       raise ValueError("histogram_workers must be positive")
+    if self.histogram_memory_budget_bytes is not None and self.histogram_memory_budget_bytes < 1:
+      raise ValueError("histogram_memory_budget_bytes must be positive when provided")
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,7 @@ def _estimate_density_colors(
     bounds=(x_min, x_max, y_min, y_max),
     chunk_size=config.histogram_chunk_size,
     workers=config.histogram_workers,
+    memory_budget_bytes=config.histogram_memory_budget_bytes,
   )
   sigma = (
     config.gaussian_sigma_pixels * shape[0] / height,
@@ -198,6 +202,7 @@ def _histogram2d(
   bounds: tuple[float, float, float, float],
   chunk_size: int | None,
   workers: int,
+  memory_budget_bytes: int | None,
 ) -> NDArray[np.float64]:
   """Build a deterministic histogram, optionally in bounded-memory chunks.
 
@@ -224,8 +229,15 @@ def _histogram2d(
     return np.rint(chunk).astype(np.int64)
 
   chunk_starts = tuple(starts)
-  if workers > 1 and len(chunk_starts) > 1:
-    with ThreadPoolExecutor(max_workers=min(workers, len(chunk_starts))) as executor:
+  effective_workers = min(workers, len(chunk_starts))
+  if memory_budget_bytes is not None:
+    # Each active worker owns np.histogram2d's float grid and an int64 copy.
+    per_worker_bytes = max(
+      1, 2 * int(np.prod(shape, dtype=np.int64)) * np.dtype(np.float64).itemsize,
+    )
+    effective_workers = min(effective_workers, max(1, memory_budget_bytes // per_worker_bytes))
+  if effective_workers > 1:
+    with ThreadPoolExecutor(max_workers=effective_workers) as executor:
       chunks = executor.map(make_chunk, chunk_starts)
       histogram = np.zeros(shape, dtype=np.int64)
       for chunk in chunks:

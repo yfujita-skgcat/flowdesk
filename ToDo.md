@@ -1518,7 +1518,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   coordinatorはchunk/input順にint64 countを合算し、global smoothing/normalizationは一度だけ行う。
   worker 1/2/4の色hash一致と1,000,000 eventの198.4/143.3/110.4 msを確認した。既定は1 workerで、
   GUI自動適用、任意event worker、Qt object操作は行わない。
-- [ ] **density workerの運用統合**: memory budget、GUI/CLI設定、Windows/PyInstaller lifecycle、
+- [x] **density chunk workerのメモリ予算制御**: `histogram_memory_budget_bytes`を追加し、
+  chunkごとのfloat/int histogram working setからactive worker数を保守的に制限する。予算が小さい
+  場合は1 workerへfallbackし、色結果を変えない。これは全FCS配列やRSSを制限するprocess-wide
+  budgetではない。
+- [ ] **density workerの運用統合**: GUI/CLI設定、Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
   FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
