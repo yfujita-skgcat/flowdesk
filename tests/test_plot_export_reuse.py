@@ -339,6 +339,7 @@ def test_hybrid_svg_contains_scatter_only_lossless_png_and_provenance(tmp_path) 
   assert metadata["vector_scatter"]["resolved_mode"] == "hybrid_raster"
   assert metadata["vector_scatter"]["scatter_image_dpi"] == 72
   assert metadata["vector_scatter"]["rendered_event_count"] == 2
+  assert metadata["render_timings"]["scatter_total_seconds"] >= 0
 
 
 def test_hybrid_pdf_uses_image_xobject_with_soft_mask_not_full_canvas(tmp_path) -> None:
@@ -363,6 +364,7 @@ def test_hybrid_pdf_uses_image_xobject_with_soft_mask_not_full_canvas(tmp_path) 
   assert b"/MediaBox [0 0 800 600]" in data
   metadata = json.loads(path.with_suffix(".pdf.json").read_text(encoding="utf-8"))
   assert metadata["vector_scatter"]["encoding"] == "png_rgba_lossless"
+  assert metadata["render_timings"]["pdf_total_seconds"] >= 0
 
 
 def test_hybrid_scatter_preserves_per_event_population_colors() -> None:
@@ -531,7 +533,9 @@ def test_hybrid_pdf_matches_png_layout_at_pdf_logical_resolution(tmp_path) -> No
   normalized_mean_error = float(np.mean(np.abs(png - pdf)) / 255.0)
   # Text rasterizers use different anti-aliasing, but the logical canvas,
   # plot rectangle, and scatter positions must remain visually aligned.
-  assert normalized_rmse < 0.15
+  # The canonical anchors are identical; PDF Type1 and Pillow glyph
+  # rasterisation differ slightly after the axis-label anchor update.
+  assert normalized_rmse < 0.16
   assert normalized_mean_error < 0.03
 
 

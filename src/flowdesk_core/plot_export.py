@@ -8,6 +8,7 @@ import json
 import math
 import re
 import struct
+import time
 import zlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
@@ -536,6 +537,7 @@ def write_plot_pdf(
   cancel_check: Callable[[], None] | None = None,
 ) -> None:
   """Write a minimal vector PDF using the same prepared layers and styles."""
+  pdf_started = time.perf_counter()
   if width < 1 or height < 1 or not prepared.source_order:
     raise PlotExportError("PDF dimensions and visible sources are required")
   width, height = _dimensions(width, height, options)
@@ -557,14 +559,19 @@ def write_plot_pdf(
   compact_vector = options is not None and options.vector_scatter_mode == "compact_vector"
   hybrid_raster = options is not None and options.vector_scatter_mode == "hybrid_raster"
   vector_cache = render_cache
+  cache_started = time.perf_counter()
   if vector_cache is None and (compact_vector or hybrid_raster):
     vector_cache = prepare_vector_render_cache(
       prepared, selected, layers, options=options, event_colors=event_colors,
       cancel_check=cancel_check,
     )
+  cache_seconds = time.perf_counter() - cache_started
   hybrid_info: dict[str, Any] | None = None
   if hybrid_raster:
     hybrid_info = dict((vector_cache.hybrid_info if vector_cache else None) or {})
+    hybrid_info.setdefault("timings", {})
+    hybrid_info["timings"]["pdf_scatter_cache_seconds"] = cache_seconds
+  command_started = time.perf_counter()
   cached_layers_by_id = (
     {layer.source_id: layer for layer in vector_cache.layers}
     if vector_cache is not None and not event_colors else {}
@@ -788,9 +795,18 @@ def write_plot_pdf(
       f"startxref\n{xref}\n%%EOF\n"
     ).encode("ascii")
   )
+  command_seconds = time.perf_counter() - command_started
   out_path = Path(path)
   out_path.parent.mkdir(parents=True, exist_ok=True)
+  publish_started = time.perf_counter()
   out_path.write_bytes(bytes(pdf))
+  publish_seconds = time.perf_counter() - publish_started
+  if hybrid_info is not None:
+    hybrid_info.setdefault("timings", {}).update({
+      "pdf_command_seconds": command_seconds,
+      "pdf_publish_seconds": publish_seconds,
+      "pdf_total_seconds": time.perf_counter() - pdf_started,
+    })
   out_path.with_suffix(out_path.suffix + ".json").write_text(
     json.dumps(_export_metadata(prepared, options, hybrid_info, selected), indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
@@ -873,6 +889,8 @@ def _export_metadata(
       "point_plan_hash": vector_scatter["point_plan_hash"],
       "encoding": "png_rgba_lossless",
     })
+    if isinstance(vector_scatter.get("timings"), Mapping):
+      metadata["render_timings"] = dict(vector_scatter["timings"])
   return metadata
 
 
@@ -922,27 +940,27 @@ def _svg_scene_axes(
           continue
         if horizontal:
           elements.append(
-            f'<text x="{x:g}" y="{bottom + selected.tick_font.size + 9:g}" '
+            f'<text x="{x:g}" y="{layout.x_tick_label_y:g}" '
             f'text-anchor="middle" fill="{axis_color}" '
             f'font-size="{selected.tick_font.size:g}">{escape(label)}</text>'
           )
         else:
           elements.append(
-            f'<text x="{left - selected.tick_font.size * 0.8:g}" y="{y + selected.tick_font.size * 0.35:g}" '
+            f'<text x="{layout.y_tick_label_x:g}" y="{y + selected.tick_font.size * 0.35:g}" '
             f'text-anchor="end" fill="{axis_color}" '
             f'font-size="{selected.tick_font.size:g}">{escape(label)}</text>'
           )
   if selected.x_axis_display_label:
     elements.append(
-      f'<text x="{left + width / 2:g}" y="{bottom + selected.axis_label_font.size * 2.4:g}" '
+      f'<text x="{layout.x_axis_label_anchor[0]:g}" y="{layout.x_axis_label_anchor[1]:g}" '
       f'text-anchor="middle" fill="{axis_color}" '
       f'font-size="{selected.axis_label_font.size:g}">{escape(selected.x_axis_display_label)}</text>'
     )
   if selected.y_axis_display_label:
-    y_center = top + height / 2
+    x_anchor, y_center = layout.y_axis_label_anchor
     elements.append(
-      f'<text x="{left - selected.tick_font.size * 3.2:g}" y="{y_center:g}" '
-      f'text-anchor="middle" transform="rotate(-90 {left - selected.tick_font.size * 3.2:g} {y_center:g})" '
+      f'<text x="{x_anchor:g}" y="{y_center:g}" '
+      f'text-anchor="middle" transform="rotate(-90 {x_anchor:g} {y_center:g})" '
       f'fill="{axis_color}" font-size="{selected.axis_label_font.size:g}">'
       f'{escape(selected.y_axis_display_label)}</text>'
     )
@@ -1342,22 +1360,25 @@ def _draw_raster_text(
           continue
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
         if horizontal:
-          _draw_centered(draw, round(origin + position * extent), top + plot_height + 9 * scale,
+          _draw_centered(draw, round(origin + position * extent), round(layout.x_tick_label_y * scale),
                          label, tick_font, foreground)
         else:
           bbox = draw.textbbox((0, 0), label, font=tick_font)
-          x = left - 9 * scale - (bbox[2] - bbox[0])
+          x = round(layout.y_tick_label_x * scale) - (bbox[2] - bbox[0])
           y = round(origin - position * extent) - (bbox[3] - bbox[1]) // 2
           draw.text((x, y), label, font=tick_font, fill=foreground)
   if options is None or options.include_axis_labels:
     axis_font = _font(selected.axis_label_font.size * scale,
                       bold=selected.axis_label_font.weight == "bold")
-    _draw_centered(draw, left + plot_width // 2, height - 27 * scale,
+    _draw_centered(
+      draw, round(layout.x_axis_label_anchor[0] * scale),
+      round(layout.x_axis_label_anchor[1] * scale),
                    selected.x_axis_display_label or "", axis_font, foreground)
     label = selected.y_axis_display_label or ""
     if label:
       _draw_vertical(
-        draw, 18 * scale, top + plot_height // 2, label, axis_font,
+        draw, round(layout.y_axis_label_anchor[0] * scale),
+        round(layout.y_axis_label_anchor[1] * scale), label, axis_font,
         foreground,
       )
 
@@ -1508,21 +1529,23 @@ def _pdf_scene_text(
         size = selected.tick_font.size
         if horizontal:
           x = left + position * width - _pdf_tick_label_width(label, size) / 2
-          y = page_height - (top + plot_height + 9 + size)
+          y = page_height - layout.x_tick_label_y
         else:
-          x = left - 10 - _pdf_tick_label_width(label, size)
+          x = layout.y_tick_label_x - _pdf_tick_label_width(label, size)
           y = page_height - (top + plot_height - position * plot_height) - size * 0.35
         commands.extend(_pdf_tick_label_commands(label, x, y, size, red, green, blue))
   if options is None or options.include_axis_labels:
     size = selected.axis_label_font.size
     x_label = _pdf_text(selected.x_axis_display_label or "")
     if x_label:
-      x = left + width / 2 - len(x_label) * size * 0.28
-      commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} 11 Td ({x_label}) Tj ET")
+      x = layout.x_axis_label_anchor[0] - len(x_label) * size * 0.28
+      y = page_height - layout.x_axis_label_anchor[1]
+      commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} {y:g} Td ({x_label}) Tj ET")
     y_label = _pdf_text(selected.y_axis_display_label or "")
     if y_label:
-      y = page_height - (top + plot_height / 2 + len(y_label) * size * 0.28)
-      commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg 0 1 -1 0 20 {y:g} Tm ({y_label}) Tj ET")
+      x_anchor, y_anchor = layout.y_axis_label_anchor
+      y = page_height - y_anchor + len(y_label) * size * 0.28
+      commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg 0 1 -1 0 {x_anchor:g} {y:g} Tm ({y_label}) Tj ET")
   return commands
 
 
@@ -1703,6 +1726,7 @@ def _hybrid_scatter_raster(
   point_hasher = hashlib.sha256()
   rendered_event_count = 0
   rgb_cache: dict[str, tuple[int, int, int]] = {}
+  composite_started = time.perf_counter()
 
   def blend_opaque_row(
     pixel_y: int,
@@ -1905,6 +1929,8 @@ def _hybrid_scatter_raster(
     if cancel_check is not None:
       cancel_check()
 
+  composite_seconds = time.perf_counter() - composite_started
+  encoding_started = time.perf_counter()
   raw_rows = b"".join(
     b"\x00" + bytes(pixels[row * raster_width * 4:(row + 1) * raster_width * 4])
     for row in range(raster_height)
@@ -1915,6 +1941,7 @@ def _hybrid_scatter_raster(
     + _png_chunk(b"IDAT", zlib.compress(raw_rows, 6))
     + _png_chunk(b"IEND", b"")
   )
+  encoding_seconds = time.perf_counter() - encoding_started
   point_hasher.update(struct.pack(">III", dpi, raster_width, raster_height))
   point_hasher.update(b"hybrid_scatter_raster.v2\0")
   point_hasher.update("\0".join(prepared.source_order).encode("utf-8"))
@@ -1925,4 +1952,9 @@ def _hybrid_scatter_raster(
     "rendered_event_count": rendered_event_count,
     "point_plan_hash": point_hasher.hexdigest(),
     "algorithm_version": "hybrid_scatter_raster.v2",
+    "timings": {
+      "scatter_composite_seconds": composite_seconds,
+      "scatter_png_encode_seconds": encoding_seconds,
+      "scatter_total_seconds": composite_seconds + encoding_seconds,
+    },
   }

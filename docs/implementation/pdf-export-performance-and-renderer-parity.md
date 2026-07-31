@@ -1,6 +1,6 @@
 # PDF export performance and renderer parity
 
-Status: Increment 2 implemented; remaining increments planned
+Status: Increments 1-2 implemented; remaining increments planned
 
 This guide is the implementation contract for the remaining PDF batch-export
 latency and GUI/export visual-parity defects. It is deliberately separate from
@@ -98,6 +98,18 @@ The acceptance decision is evidence-based: identify whether the dominant PDF
 cost is source-over scatter compositing, PNG/alpha compression, PDF stream
 construction, or filesystem I/O. Do not choose a worker/backend change before
 this report exists.
+
+### Baseline implementation evidence
+
+The current sidecar records `scatter_composite_seconds`,
+`scatter_png_encode_seconds`, `pdf_scatter_cache_seconds`,
+`pdf_command_seconds`, `pdf_publish_seconds`, and `pdf_total_seconds` for
+hybrid PDF output. `tools/benchmark_batch_plot.py` aggregates these values by
+format and run. A Linux synthetic run with 10,000 events, a 640×480 logical
+canvas, and 300-DPI hybrid scatter measured approximately 3.0 seconds in
+scatter cache preparation and 0.06 seconds in PDF command/write work. This is
+diagnostic evidence only; it is not a universal performance threshold and must
+be repeated for the user's real FCS workload.
 
 ## 4. Increment 1: canonical logical text and plot layout
 

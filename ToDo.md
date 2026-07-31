@@ -809,9 +809,13 @@ commitを完了してから停止する。後続incrementを同じ実行で開�
 GUI/exportの視覚的齟齬を、scientific resultやdisplay-event selectionを変えずに解消する。
 一回のLLM実行では下記incrementを一つだけ実装し、テスト、user manual、ToDo更新、commitを完了して停止する。
 
-- [ ] Increment 1: format別・stage別のPDF benchmark/provenanceを追加し、requested/effective workers、
+- [x] Increment 1: format別・stage別のPDF benchmark/provenanceを追加し、requested/effective workers、
   event数、hybrid DPI、rasterisation/compression/PDF write時間、RSS、hashを記録する。PNG/JPEG/PDF、
   vector mode、worker数を同一sceneで比較し、実FCSは手順だけを記録してFCSをcommitしない。
+  hybrid scatter/PDF cache、PNG encode、PDF command、publishのtimingをsidecarへ保存し、
+  `tools/benchmark_batch_plot.py`がsidecar timingを集計する。10,000 events、640×480、300 DPIの
+  synthetic PDFではscatter cacheが約3.0秒、PDF command/writeが約0.06秒となり、PDF構文より
+  hybrid scatter合成が支配的であることを確認した。
 - [x] Increment 2: typed renderer-neutral `PlotLayoutSpec`（plot rectangle、title block/line anchor、
   axis/tick/legend band、visibility）をcoreに追加する。GUIはこのlayoutを使ってtitle row/ViewBoxを
   配置し、batch itemごとにtitle行数を含むlayoutを解決する。固定margin snapshotだけに依存しない。

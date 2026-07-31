@@ -46,6 +46,7 @@ class _RunResult(TypedDict):
   execution: Mapping[str, Any] | None
   peak_rss_bytes: int | None
   open_file_count_after: int | None
+  render_timing_summary: Mapping[str, Any]
 
 
 class _ProjectRunResult(TypedDict):
@@ -59,6 +60,7 @@ class _ProjectRunResult(TypedDict):
   peak_rss_bytes: int | None
   open_file_count_after: int | None
   stderr_tail: str
+  render_timing_summary: Mapping[str, Any]
 
 
 def _peak_rss_bytes() -> int | None:
@@ -102,6 +104,28 @@ def _output_hashes(
     hashes[name] = hashlib.sha256(data).hexdigest()
     output_bytes += len(data)
   return hashes, output_bytes
+
+
+def _render_timing_summary(
+  output_dir: Path, *, recursive: bool = False,
+) -> dict[str, Any]:
+  """Aggregate renderer stage timings from published sidecars."""
+  paths = output_dir.rglob("*.json") if recursive else output_dir.glob("*.json")
+  totals: dict[str, float] = {}
+  count = 0
+  for path in sorted(paths):
+    try:
+      value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+      continue
+    timings = value.get("render_timings")
+    if not isinstance(timings, Mapping):
+      continue
+    count += 1
+    for key, raw in timings.items():
+      if isinstance(raw, (int, float)):
+        totals[str(key)] = totals.get(str(key), 0.0) + float(raw)
+  return {"sidecar_count": count, "sum_seconds": totals}
 
 
 def _prepare_representative_project(project: Path, destination_root: Path) -> Path:
@@ -289,6 +313,7 @@ raise SystemExit(status)
     "peak_rss_bytes": child_result.get("peak_rss_bytes"),
     "open_file_count_after": child_result.get("open_file_count_after"),
     "stderr_tail": stderr[-2000:],
+    "render_timing_summary": _render_timing_summary(output_dir),
   }
 
 
@@ -385,6 +410,7 @@ raise SystemExit(status)
     "peak_rss_bytes": child_result.get("peak_rss_bytes"),
     "open_file_count_after": child_result.get("open_file_count_after"),
     "stderr_tail": stderr[-2000:],
+    "render_timing_summary": _render_timing_summary(output_dir, recursive=True),
   }
 
 
@@ -600,6 +626,7 @@ def run_batch_plot_benchmark(
         "execution": report.execution_provenance,
         "peak_rss_bytes": _peak_rss_bytes(),
         "open_file_count_after": _open_file_count(),
+        "render_timing_summary": _render_timing_summary(output_dir),
       }
 
   serial = run("sequential")
