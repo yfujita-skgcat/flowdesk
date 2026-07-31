@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import RLock
@@ -238,10 +239,17 @@ def _histogram2d(
     effective_workers = min(effective_workers, max(1, memory_budget_bytes // per_worker_bytes))
   if effective_workers > 1:
     with ThreadPoolExecutor(max_workers=effective_workers) as executor:
-      chunks = executor.map(make_chunk, chunk_starts)
       histogram = np.zeros(shape, dtype=np.int64)
-      for chunk in chunks:
-        histogram += chunk
+      pending = deque(
+        executor.submit(make_chunk, start) for start in chunk_starts[:effective_workers]
+      )
+      next_index = effective_workers
+      while pending:
+        future = pending.popleft()
+        histogram += future.result()
+        if next_index < len(chunk_starts):
+          pending.append(executor.submit(make_chunk, chunk_starts[next_index]))
+          next_index += 1
   else:
     histogram = np.zeros(shape, dtype=np.int64)
     for start in chunk_starts:

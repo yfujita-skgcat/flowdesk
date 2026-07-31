@@ -1360,6 +1360,9 @@ integration, cross-platform packaging, and a GUI control remain future work. The
 float-grid plus int64-grid estimate; an undersized budget falls back to one worker and
 never changes colors. This bounds the chunk worker fan-out but does not cap the complete
 FCS/input or post-smoothing arrays, so it is not a process-wide RSS limit.
+Submission uses an ordered in-flight window equal to the effective worker count rather
+than unbounded `Executor.map` submission, so completed chunk arrays are released as they
+are merged and memory budget accounting remains meaningful.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and
