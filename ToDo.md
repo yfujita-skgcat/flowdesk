@@ -1522,6 +1522,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   chunkごとのfloat/int histogram working setからactive worker数を保守的に制限する。予算が小さい
   場合は1 workerへfallbackし、色結果を変えない。これは全FCS配列やRSSを制限するprocess-wide
   budgetではない。
+- [x] **density入力一時コピーの削減**: chunking時に元の変換済み配列を直接分割し、各chunk内で
+  visibility maskを適用することで、全visibleイベントの`x[visible]`/`y[visible]`一括コピーを避ける。
+  小さいvisible populationは従来のsingle-histogram fast pathを維持する。
 - [x] **headless density runtime controls**: `batch-plot` CLIへ`--density-workers`と
   `--density-memory-budget-mib`を追加し、保存済みBatch Export定義へ書き込まずdensity色準備だけへ
   適用する。CLI parserと`DensityColorConfig`の受け渡しをテストした。

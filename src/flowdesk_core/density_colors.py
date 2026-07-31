@@ -119,7 +119,7 @@ def _estimate_density_colors(
   finite = np.isfinite(x) & np.isfinite(y)
   visible = finite & (x >= x_min) & (x <= x_max) & (y >= y_min) & (y <= y_max)
   histogram, effective_histogram_workers = _histogram2d(
-    y[visible], x[visible], shape=shape,
+    y, x, visibility=visible, shape=shape,
     bounds=(x_min, x_max, y_min, y_max),
     chunk_size=config.histogram_chunk_size,
     workers=config.histogram_workers,
@@ -204,6 +204,7 @@ def _histogram2d(
   y_values: NDArray[np.float64],
   x_values: NDArray[np.float64],
   *,
+  visibility: NDArray[np.bool_] | None = None,
   shape: tuple[int, int],
   bounds: tuple[float, float, float, float],
   chunk_size: int | None,
@@ -218,7 +219,11 @@ def _histogram2d(
   percentile normalization, and query interpolation happen only after the full
   histogram has been assembled; this is not arbitrary per-event colour work.
   """
-  if chunk_size is None or len(x_values) <= chunk_size:
+  visible_count = len(x_values) if visibility is None else int(np.count_nonzero(visibility))
+  if chunk_size is None or visible_count <= chunk_size:
+    if visibility is not None:
+      x_values = x_values[visibility]
+      y_values = y_values[visibility]
     histogram, _, _ = np.histogram2d(
       y_values, x_values, bins=shape,
       range=((bounds[2], bounds[3]), (bounds[0], bounds[1])),
@@ -228,8 +233,14 @@ def _histogram2d(
 
   def make_chunk(start: int) -> NDArray[np.int64]:
     stop = min(start + chunk_size, len(x_values))
+    chunk_x = x_values[start:stop]
+    chunk_y = y_values[start:stop]
+    if visibility is not None:
+      chunk_visible = visibility[start:stop]
+      chunk_x = chunk_x[chunk_visible]
+      chunk_y = chunk_y[chunk_visible]
     chunk, _, _ = np.histogram2d(
-      y_values[start:stop], x_values[start:stop], bins=shape,
+      chunk_y, chunk_x, bins=shape,
       range=((bounds[2], bounds[3]), (bounds[0], bounds[1])),
     )
     return np.rint(chunk).astype(np.int64)

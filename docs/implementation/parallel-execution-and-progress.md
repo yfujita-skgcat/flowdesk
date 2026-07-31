@@ -1363,6 +1363,10 @@ FCS/input or post-smoothing arrays, so it is not a process-wide RSS limit.
 Submission uses an ordered in-flight window equal to the effective worker count rather
 than unbounded `Executor.map` submission, so completed chunk arrays are released as they
 are merged and memory budget accounting remains meaningful.
+When chunking is active, the estimator slices the original transformed arrays and applies
+the visibility mask inside each chunk instead of first materializing full `x[visible]` and
+`y[visible]` copies. Small visible populations still use the single-histogram fast path.
+This reduces temporary peak memory without changing the selected event set or result order.
 The headless `batch-plot` CLI exposes these as runtime-only `--density-workers` and
 `--density-memory-budget-mib` options. The GUI Batch Plot Export dialog exposes the same
 two runtime-only values and passes them to the same headless runner; neither path writes
