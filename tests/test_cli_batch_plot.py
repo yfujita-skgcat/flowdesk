@@ -117,7 +117,7 @@ def test_batch_plot_queue_all_uses_snapshot_declaration_order(
   )
 
   def fake_batch(_project, export_id, _output_dir, **kwargs):
-    calls.append((export_id, kwargs["_project_snapshot"]))
+    calls.append((export_id, kwargs["_project_snapshot"], kwargs["_definition_snapshot"]))
     return 0
 
   monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
@@ -127,6 +127,8 @@ def test_batch_plot_queue_all_uses_snapshot_declaration_order(
   assert loads == ["project.flowdesk"]
   assert [item[0] for item in calls] == ["second", "first"]
   assert calls[0][1] is calls[1][1] is snapshot
+  assert calls[0][2] is snapshot["batch_plot_exports"][0]
+  assert calls[1][2] is snapshot["batch_plot_exports"][1]
 
 
 def test_batch_plot_queue_emits_definition_progress(

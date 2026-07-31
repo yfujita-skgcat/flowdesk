@@ -52,6 +52,9 @@ The queue loads the project bundle once (including when `--queue-all` enumerates
 the immutable mapping snapshot to each definition invocation. It does not share raw FCS arrays, transformed layers, density fields, or
 mutable renderer caches across definitions; those remain definition-scoped to preserve output
 isolation and bounded memory behavior.
+It also builds one definition-ID index at queue start, so each queued invocation avoids a repeated
+linear scan of the saved definition list while preserving declaration order and unknown-ID
+validation behavior.
 The queue also atomically updates `batch-queue-manifest.json` after each definition boundary.
 The manifest is an audit index only: it records ordered definition IDs, output directories,
 failure/cancellation status, and result codes without replacing per-definition manifests.

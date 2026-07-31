@@ -71,6 +71,7 @@ def batch_plot_command(
   execution_options: ExecutionOptions | None = None,
   density_config: DensityColorConfig | None = None,
   _project_snapshot: Mapping[str, Any] | None = None,
+  _definition_snapshot: Mapping[str, Any] | None = None,
 ) -> int:
   try:
     if execution_control is None and execution_options is not None:
@@ -80,10 +81,12 @@ def batch_plot_command(
       if _project_snapshot is not None
       else load_project(project_path)
     )
-    raw = next(
-      item for item in project.get("batch_plot_exports", [])
-      if str(item.get("id")) == export_id
-    )
+    raw = _definition_snapshot
+    if raw is None:
+      raw = next(
+        item for item in project.get("batch_plot_exports", [])
+        if str(item.get("id")) == export_id
+      )
     spec = batch_plot_export_spec_from_mapping(raw)
     samples = resolve_sample_paths(project, Path(project_path))
     annotations = project.get("annotations", [])
@@ -892,6 +895,11 @@ def batch_plot_queue_command(
   if not queue:
     print("Error: project has no saved batch plot definitions")
     return 1
+  definition_index = {
+    str(item["id"]): item
+    for item in project_snapshot.get("batch_plot_exports", ())
+    if isinstance(item, Mapping) and item.get("id")
+  }
   root = Path(output_dir)
   root.mkdir(parents=True, exist_ok=True)
   queue_manifest_path = root / "batch-queue-manifest.json"
@@ -943,6 +951,7 @@ def batch_plot_queue_command(
         execution_options=execution_options,
         density_config=density_config,
         _project_snapshot=project_snapshot,
+        _definition_snapshot=definition_index.get(export_id),
       )
     except ExecutionCancelled:
       result = 130
