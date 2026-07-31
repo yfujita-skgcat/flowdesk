@@ -1059,7 +1059,17 @@ def _svg_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,
       for index, (x, y) in enumerate(points)
     ) + " Z"
     color = escape(str(gate.get("color", "#ffffff")))
-    elements.append(f'<path d="{path}" fill="none" stroke="{color}" stroke-width="2"/>')
+    stroke_width = float(gate.get("width", 2.0))
+    style = str(gate.get("style", "solid"))
+    dash = {
+      "dashed": ' stroke-dasharray="6,4"',
+      "dotted": ' stroke-dasharray="1,3"',
+      "dashdot": ' stroke-dasharray="6,3,1,3"',
+    }.get(style, "")
+    elements.append(
+      f'<path d="{path}" fill="none" stroke="{color}" '
+      f'stroke-width="{stroke_width:g}"{dash}/>'
+    )
   return elements
 
 
@@ -1329,10 +1339,11 @@ def _draw_raster_gates(
       for x, y in points
     ]
     mapped.append(mapped[0])
+    line_width = max(1, round(float(gate.get("width", 1.5)) * scale))
     draw.line(
       mapped,
       fill=_rgb(str(gate.get("color", "#ffffff"))) + (255,),
-      width=max(1, round(float(gate.get("width", 1.5)) * scale)),
+      width=line_width,
       joint="curve",
     )
 
@@ -1690,7 +1701,20 @@ def _pdf_gates(gates: tuple[dict[str, Any], ...], left: int, top: int,
     if len(points) < 2:
       continue
     color = _rgb(str(gate.get("color", "#ffffff")))
-    commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} RG 2 w")
+    line_width = float(gate.get("width", 2.0))
+    commands.append(
+      f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} "
+      f"RG {line_width:g} w"
+    )
+    style = str(gate.get("style", "solid"))
+    if style == "dashed":
+      commands.append("[6 4] 0 d")
+    elif style == "dotted":
+      commands.append("[1 3] 0 d")
+    elif style == "dashdot":
+      commands.append("[6 3 1 3] 0 d")
+    else:
+      commands.append("[] 0 d")
     transformed = [
       _pdf_normalized_point(x, y, left, top, width, plot_height, height)
       for x, y in points
@@ -1834,32 +1858,59 @@ def _hybrid_scatter_raster(
     """
     extent = max(1, math.ceil(radius + 1.0))
     counts = np.zeros((raster_height, raster_width), dtype=np.int32)
-    x_all = np.asarray(x_values, dtype=np.float64) * (raster_width - 1)
-    y_all = (1.0 - np.asarray(y_values, dtype=np.float64)) * (raster_height - 1)
     x = np.asarray(x_values, dtype=np.float64) * (raster_width - 1)
     y = (1.0 - np.asarray(y_values, dtype=np.float64)) * (raster_height - 1)
-    base_x = np.floor(x).astype(np.int64)
-    base_y = np.floor(y).astype(np.int64)
-    frac_x = x - base_x
-    frac_y = y - base_y
-    for offset_y in range(-extent, extent + 1):
-      pixel_y = base_y + offset_y
-      valid_y = (pixel_y >= 0) & (pixel_y < raster_height)
-      if not np.any(valid_y):
-        continue
-      dy = offset_y + 0.5 - frac_y
-      for offset_x in range(-extent, extent + 1):
-        pixel_x = base_x + offset_x
-        valid = valid_y & (pixel_x >= 0) & (pixel_x < raster_width)
-        if shape == "circle":
-          valid &= (offset_x + 0.5 - frac_x) ** 2 + dy ** 2 <= radius * radius
-        else:
-          valid &= np.abs(offset_x + 0.5 - frac_x) <= radius
-          valid &= np.abs(dy) <= radius
-        if np.any(valid):
-          np.add.at(counts, (pixel_y[valid], pixel_x[valid]), 1)
-      if cancel_check is not None:
-        cancel_check()
+
+    # For a small/medium raster, accumulate flat pixel indices in C with
+    # bincount.  The operation is exactly equivalent to the old add.at loop:
+    # each event contributes one count to every pixel satisfying the same
+    # pixel-center predicate.  Keep a bounded chunk size and a raster-size
+    # guard so high-DPI exports do not allocate a second full-sized count
+    # array.  The fallback below is intentionally retained for that case.
+    # Combining repeated source-over operations is algebraically exact on a
+    # transparent destination.  On an already populated destination, the
+    # legacy event-by-event path is required because it rounds to 8-bit after
+    # every event; collapsing those rounded intermediates can change a pixel
+    # by one.  This preserves multi-source z-order and byte-level parity.
+    fast_path = counts.size <= 4_000_000 and not np.any(rgba[:, :, 3])
+    chunk_size = 100_000
+    for chunk_start in range(0, len(x), chunk_size):
+      chunk_end = min(len(x), chunk_start + chunk_size)
+      chunk_x = x[chunk_start:chunk_end]
+      chunk_y = y[chunk_start:chunk_end]
+      base_x = np.floor(chunk_x).astype(np.int64)
+      base_y = np.floor(chunk_y).astype(np.int64)
+      frac_x = chunk_x - base_x
+      frac_y = chunk_y - base_y
+      if fast_path:
+        targets: list[np.ndarray] = []
+      for offset_y in range(-extent, extent + 1):
+        pixel_y = base_y + offset_y
+        valid_y = (pixel_y >= 0) & (pixel_y < raster_height)
+        if not np.any(valid_y):
+          continue
+        dy = offset_y + 0.5 - frac_y
+        for offset_x in range(-extent, extent + 1):
+          pixel_x = base_x + offset_x
+          valid = valid_y & (pixel_x >= 0) & (pixel_x < raster_width)
+          if shape == "circle":
+            valid &= (offset_x + 0.5 - frac_x) ** 2 + dy ** 2 <= radius * radius
+          else:
+            valid &= np.abs(offset_x + 0.5 - frac_x) <= radius
+            valid &= np.abs(dy) <= radius
+          if not np.any(valid):
+            continue
+          if fast_path:
+            targets.append(pixel_y[valid] * raster_width + pixel_x[valid])
+          else:
+            np.add.at(counts, (pixel_y[valid], pixel_x[valid]), 1)
+        if cancel_check is not None:
+          cancel_check()
+      if fast_path and targets:
+        flat_targets = np.concatenate(targets)
+        counts.flat += np.bincount(
+          flat_targets, minlength=counts.size,
+        ).astype(np.int32, copy=False)
     pixel_y, pixel_x = np.nonzero(counts)
     if not len(pixel_x):
       return
@@ -1961,7 +2012,7 @@ def _hybrid_scatter_raster(
   )
   encoding_seconds = time.perf_counter() - encoding_started
   point_hasher.update(struct.pack(">III", dpi, raster_width, raster_height))
-  point_hasher.update(b"hybrid_scatter_raster.v2\0")
+  point_hasher.update(b"hybrid_scatter_raster.v3\0")
   point_hasher.update("\0".join(prepared.source_order).encode("utf-8"))
   return {
     "png": png, "rgb": bytes(value for index, value in enumerate(pixels) if index % 4 != 3),
@@ -1969,7 +2020,7 @@ def _hybrid_scatter_raster(
     "width": raster_width, "height": raster_height, "dpi": dpi,
     "rendered_event_count": rendered_event_count,
     "point_plan_hash": point_hasher.hexdigest(),
-    "algorithm_version": "hybrid_scatter_raster.v2",
+    "algorithm_version": "hybrid_scatter_raster.v3",
     "timings": {
       "scatter_composite_seconds": composite_seconds,
       "scatter_png_encode_seconds": encoding_seconds,

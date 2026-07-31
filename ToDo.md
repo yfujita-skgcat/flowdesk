@@ -825,11 +825,15 @@ GUI/exportの視覚的齟齬を、scientific resultやdisplay-event selectionを
 - [x] Increment 3: PNG/JPEG/SVG/PDFのtitle/axis/tick/gate/legendを同一layout draw recordから出力する。
   typed `PlotLayoutSpec`のtitle/axis anchorを全writerで共有し、SVGの旧固定座標とdeadな
   `renderer_backend` APIを削除した。複数行タイトル時のSVG凡例もtitle band内へ配置し、plot areaとの
-  重なりを防止した。Qt widgetをbatch workerから描画してbackend統一したことにはしていない。
-- [ ] Increment 4: profileで選んだPDF hybrid最適化を一件だけ実装する。まず同一style/sourceの
-  source-overを数学的に同値なtiled/vectorised処理へ置換できるか評価し、異なる色/alpha/z-order/
-  density colorは絶対にmerge/reorderしない。process backendはshared-memory、Windows spawn、cancel、
-  aggregate memory、parityを証明できる場合だけ別incrementとして採用する。
+  重なりを防止した。toolbarの単一plot exportも確定済みGUI表示配列をcore adapterへ渡す経路へ変更し、
+  一時Qt widgetをbatch workerから描画する旧経路も削除した。live GUIはQt preview、exportはcoreの
+  独立physical adapterという境界を維持する。GUI自動tick levelsとgateのcolor/width/styleも
+  sceneへ保存し、grid/tick/gateの既定値漂移を防止した。
+- [x] Increment 4: profileで選んだPDF hybrid最適化を一件だけ実装する。透明な初段の同一色・同一alpha
+  sourceだけをbounded `np.bincount`へ置換し、異なる色/alpha/z-order/density color、後段sourceは
+  従来のイベント順処理を維持する。大きなrasterはメモリ保護のためfallbackし、algorithm versionと
+  before/after計測を記録した。process backendはshared-memory、Windows spawn、cancel、aggregate
+  memory、parityを証明できる場合だけ別incrementとして採用する。
 - [ ] Increment 5: GUI screenshot、PNG、SVG、PDF rasterisationを同一sceneで比較するvisual parity
   regressionを追加する。long/multiline title、overlay色、density、gate、save/reload、別active sampleを
   含め、titleとplot rectangleの重なり、label/color/geometry driftをfailにする。font anti-aliasing差だけは

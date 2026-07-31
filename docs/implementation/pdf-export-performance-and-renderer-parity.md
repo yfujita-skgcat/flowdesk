@@ -177,9 +177,14 @@ Required tests:
   documented layout contract version.
 
 Implementation status: the typed layout, shared title/axis anchors, SVG scene
-axes, and dynamic legend placement are implemented. The old renderer selector
-and fixed SVG title/axis coordinates are removed. Remaining work is the
-cross-backend visual fixture and any measured hybrid-raster optimization.
+axes, persisted GUI tick levels, dynamic legend placement, measured first-layer hybrid-raster
+optimization, and the single-plot core export route are implemented. The old
+renderer selector, fixed SVG title/axis coordinates, and temporary Qt batch
+export widget route are removed from supported entry points. Remaining work is
+the cross-backend offscreen GUI visual fixture and final real-FCS verification
+recipe. GUI-derived tick levels and gate color/width/style are now included in
+the canonical scene before single export, preventing the earlier missing-grid
+and default-gate-color drift.
 
 ## 6. Increment 3: PDF hybrid-raster performance work
 
@@ -200,6 +205,23 @@ work is ordered as follows:
    memory-mapped immutable arrays, bounded memory, deterministic ordering,
    cancellation, and native Windows `spawn` behaviour. Threads remain
    appropriate only where the measured native work releases the GIL.
+
+Implemented optimization: uniform-color/uniform-alpha events in the first
+transparent source layer now use a bounded `np.bincount` flat-pixel count
+accumulator. The final alpha is `1 - (1 - alpha) ** count`, exactly matching
+source-over composition for an initially transparent destination. The fast
+path uses 100,000-event chunks and is limited to rasters of at most 4,000,000
+pixels. Later source layers, per-event colors (population/density), mixed
+alpha, and all order-dependent paths retain event-by-event composition because
+8-bit rounding after each event is part of the established output contract.
+Larger rasters use the bounded-memory fallback. The provenance algorithm
+version is `hybrid_scatter_raster.v3`.
+
+On the deterministic Linux benchmark (640×480 logical canvas, hybrid scatter
+DPI 300, one uniform-alpha source), the 10,000-event scatter-composite stage
+decreased from approximately 1.9 s to 0.14 s; total cache preparation
+decreased from approximately 3.0 s to 1.2 s on the same runner. These values
+are recorded evidence, not universal CI thresholds.
 
 Expose sub-stages in progress: `rasterising scatter`, `compressing scatter`,
 `writing PDF`, and `publishing`. Keep completed-file count truthful, but show

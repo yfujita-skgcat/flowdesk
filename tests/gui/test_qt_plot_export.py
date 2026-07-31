@@ -9,6 +9,7 @@ import pytest
 from PIL import Image
 
 from flowdesk_core.models import BatchPlotExportSpec
+from flowdesk_core.plot_scene import PlotScene, resolve_plot_layout
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 
@@ -41,6 +42,69 @@ def test_qt_batch_renderer_writes_the_shared_scene_and_image(qapp, tmp_path) -> 
   metadata = json.loads(path.with_suffix(".png.json").read_text(encoding="utf-8"))
   assert metadata["scene_hash"] == "test-scene"
   assert metadata["display_state"]["displayed_event_count"] == 2
+
+
+def test_live_gui_and_core_export_resolve_the_same_layout(qapp, tmp_path) -> None:
+  widget = PlotWidget()
+  try:
+    widget.resize(400, 300)
+    widget.show()
+    widget.plot_events(
+      np.array([1.0, 10.0, 5.0]), np.array([2.0, 20.0, 8.0]),
+      x_label="X", y_label="Y",
+    )
+    widget.set_manual_view_range((1.0, 10.0), (2.0, 20.0))
+    widget.set_presentation({
+      "title": "Line one\nLine two", "x_axis_display_label": "X",
+      "y_axis_display_label": "Y",
+    })
+    qapp.processEvents()
+    gui_path = tmp_path / "gui.png"
+    assert widget.grab().save(str(gui_path))
+    width, height = widget.canvas_size()
+    margins = widget.plot_area_margins()
+    assert widget.scene_ticks()["x_ticks"]
+    assert widget.scene_ticks()["y_ticks"]
+    scene = PlotScene.from_mapping({
+      "plot_area": margins, "title_lines": ["Line one", "Line two"],
+      "title_colors": ["#000000", "#000000"],
+      "x_axis_label": "X", "y_axis_label": "Y", "source_order": ["s1"],
+    })
+    gui_layout = resolve_plot_layout(
+      scene, {"title_font": {"size": 14}, "tick_font": {"size": 10},
+              "axis_label_font": {"size": 14}}, width=width, height=height,
+    ).to_mapping()
+  finally:
+    widget.close()
+    widget.deleteLater()
+  path = tmp_path / "core.png"
+  render_batch_plot_qt(
+    path,
+    raw_layers={"s1": (np.array([1.0, 10.0, 5.0]), np.array([2.0, 20.0, 8.0]))},
+    source_ids=("s1",), source_styles={"s1": {"color": "#000000", "alpha": 0.6}},
+    presentation={"background_color": "#ffffff", "x_axis_display_label": "X",
+                  "y_axis_display_label": "Y"},
+    x_parameter="x", y_parameter="y", title_lines=("Line one", "Line two"),
+    title_colors=("#000000", "#000000"), x_transform=None, y_transform=None,
+    x_range=(1.0, 10.0), y_range=(2.0, 20.0), gates=(), width=width, height=height,
+    options=BatchPlotExportSpec(
+      id="layout", name="Layout", width=width, height=height,
+      include_title=True, include_axis_labels=True, include_ticks=True,
+    ),
+    plot_area=margins,
+  )
+  export_layout = json.loads(
+    path.with_suffix(path.suffix + ".json").read_text()
+  )["plot_layout"]
+  assert export_layout["plot_rect"] == gui_layout["plot_rect"]
+  assert export_layout["title_baselines"] == gui_layout["title_baselines"]
+  with Image.open(gui_path) as gui_image, Image.open(path) as export_image:
+    gui_pixels = np.asarray(gui_image.convert("RGB"), dtype=np.float64)
+    export_pixels = np.asarray(export_image.convert("RGB"), dtype=np.float64)
+  normalized_rmse = float(
+    np.sqrt(np.mean(np.square(gui_pixels - export_pixels))) / 255.0
+  )
+  assert normalized_rmse < 0.22
 
 
 def test_plot_widget_uses_the_presentation_axis_label_font(qapp) -> None:
@@ -132,7 +196,17 @@ def test_qt_pdf_uses_the_same_logical_canvas_as_png(qapp, tmp_path) -> None:
     png = np.asarray(png_image.convert("RGB"), dtype=np.float64)
     pdf = np.asarray(pdf_image.convert("RGB"), dtype=np.float64)
   normalized_rmse = float(np.sqrt(np.mean(np.square(png - pdf))) / 255.0)
-  assert normalized_rmse < 0.06
+  # The compatibility entry point now uses the core Pillow/PDF adapters.
+  # Type1 glyph rasterisation differs from PNG, but the logical layout is
+  # required to be identical and the bounded image difference must remain.
+  assert normalized_rmse < 0.16
+  png_layout = json.loads(
+    png_path.with_suffix(png_path.suffix + ".json").read_text()
+  )["plot_layout"]
+  pdf_layout = json.loads(
+    pdf_path.with_suffix(pdf_path.suffix + ".json").read_text()
+  )["plot_layout"]
+  assert png_layout == pdf_layout
 
 
 def test_qt_batch_dpi_changes_sharpness_without_changing_layout(qapp, tmp_path) -> None:

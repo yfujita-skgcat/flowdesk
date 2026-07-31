@@ -162,6 +162,10 @@ class PlotWidget(QWidget):
         self._is_histogram_mode: bool = False
         self._histogram_item: Any | None = None
         self._overlay_scatter_items: list[Any] = []
+        # Renderer-neutral overlay payload retained for the canonical export
+        # route.  The Qt graphics items remain display-only and are never
+        # inspected by an exporter.
+        self._export_overlay_layers: list[tuple[np.ndarray, np.ndarray, dict[str, Any]]] = []
         self._histogram_bins: int = 60
         self._excluded_event_count: int = 0
         # Marginal histogram state (display-only).
@@ -488,6 +492,49 @@ class PlotWidget(QWidget):
             return self._x_ticks
         return self._y_ticks
 
+    def scene_ticks(self) -> dict[str, list[dict[str, object]]]:
+        """Return the visible pyqtgraph tick levels in normalized scene space.
+
+        Core transform ticks are preferred when available, but linear axes use
+        pyqtgraph's automatic tick generator.  Export must receive those
+        display ticks explicitly; otherwise a core writer would draw a frame
+        without the labels visible in the live GUI.
+        """
+        view_range = self.view_range()
+        if view_range is None:
+            return {"x_ticks": [], "y_ticks": []}
+        result: dict[str, list[dict[str, object]]] = {}
+        for axis_name, axis_key, axis_range in (
+            ("bottom", "x_ticks", view_range[0]),
+            ("left", "y_ticks", view_range[1]),
+        ):
+            axis = self._plot_item.getAxis(axis_name)
+            try:
+                geometry = axis.geometry()
+                pixel_length = geometry.width() if axis_name == "bottom" else geometry.height()
+                levels = axis.tickValues(
+                    axis_range[0], axis_range[1], max(1, int(pixel_length))
+                )
+            except (AttributeError, TypeError, ValueError):
+                levels = []
+            span = axis_range[1] - axis_range[0]
+            ticks: list[dict[str, object]] = []
+            for level_index, (spacing, values) in enumerate(levels):
+                try:
+                    labels = axis.tickStrings(values, 1.0, spacing)
+                except (TypeError, ValueError):
+                    labels = [str(value) for value in values]
+                for value, label in zip(values, labels, strict=False):
+                    position = (float(value) - axis_range[0]) / span
+                    if 0.0 <= position <= 1.0:
+                        ticks.append({
+                            "position": position,
+                            "label": str(label),
+                            "major": level_index == 0,
+                        })
+            result[axis_key] = ticks
+        return result
+
     def tick_policy(self) -> TickPolicy:
         return self._tick_policy
 
@@ -528,6 +575,25 @@ class PlotWidget(QWidget):
             "display_max_points": self._max_display_points,
             "display_sampling_active": self._display_sampling_active,
         }
+
+    def export_data_layers(self) -> dict[str, Any]:
+        """Return immutable display arrays for the canonical export adapter.
+
+        Values are already in the same transformed display coordinate system
+        used by the live plot.  This is presentation state only; raw FCS data
+        and analytical membership are not exposed or modified.
+        """
+        active_x = self._rendered_x
+        active_y = self._rendered_y
+        layers: list[tuple[np.ndarray, np.ndarray, dict[str, Any]]] = []
+        if active_x is not None and active_y is not None:
+            layers.append((active_x.copy(), active_y.copy(), {}))
+        layers.extend(
+            (x.copy(), y.copy(), dict(style))
+            for x, y, style in self._export_overlay_layers
+        )
+        event_colors = None if self._event_colors is None else self._event_colors.copy()
+        return {"layers": layers, "event_colors": event_colors}
 
     def has_rendered_data(self) -> bool:
         """Return whether a committed event rendering is currently visible."""
@@ -745,6 +811,7 @@ class PlotWidget(QWidget):
         self._clear_marginal_histograms()
         self._clear_gates()
         self.clear_overlay_layers()
+        self._export_overlay_layers.clear()
         self._clear_preview()
         self._x_label = ""
         self._y_label = ""
@@ -796,10 +863,14 @@ class PlotWidget(QWidget):
     def plot_overlay_layers(self, layers: list[Any] | tuple[Any, ...]) -> None:
         """Display prepared core overlay layers with persisted styles."""
         self.clear_overlay_layers()
+        self._export_overlay_layers.clear()
         for layer in layers:
             style = dict(getattr(layer, "style", {}))
             x_values = np.asarray(layer.x)
             y_values = np.asarray(layer.y)
+            export_x = x_values.copy()
+            export_y = y_values.copy()
+            export_style = dict(style)
             sample_indices = self._display_sample_indices(
                 len(x_values), self._max_display_points
             )
@@ -820,6 +891,7 @@ class PlotWidget(QWidget):
                 ),
             )
             self._overlay_scatter_items.append(item)
+            self._export_overlay_layers.append((export_x, export_y, export_style))
 
     def clear_overlay_layers(self) -> None:
         """Remove display-only overlay layers without changing analysis state."""

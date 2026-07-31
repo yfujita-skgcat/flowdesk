@@ -536,6 +536,70 @@ def test_hybrid_opaque_fast_path_matches_pixel_center_coverage() -> None:
   )
 
 
+def test_hybrid_uniform_alpha_accumulation_matches_source_over() -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),),
+    view_presentation={
+      "source_styles": [{
+        "source_id": "s1", "color": "#ff0000", "alpha": 0.5,
+        "marker_size": 1.0,
+      }],
+    },
+  )
+  raster = _hybrid_scatter_raster(
+    prepared, prepared.resolved_presentation.presentation,
+    {"s1": ((0.5, 0.5), (0.5, 0.5))}, plot_width=8, plot_height=8, dpi=96,
+  )
+  # Both events cover the same center pixel. Two source-over operations with
+  # alpha .5 are equivalent to one operation with alpha .75.
+  center = (3 * 8 + 3) * 4
+  assert raster["alpha"][center // 4] == round(0.75 * 255)
+  rgb = raster["rgb"][(center // 4) * 3:(center // 4 + 1) * 3]
+  assert rgb == bytes((255, 0, 0))
+
+
+def test_hybrid_later_uniform_layer_keeps_event_rounding_parity() -> None:
+  sources = tuple({
+    "source_id": source_id, "sample_id": source_id, "population_id": "all",
+    "display_name": source_id, "visible": True, "order": index,
+  } for index, source_id in enumerate(("s1", "s2")))
+  prepared = prepare_plot_export(
+    "view", "scatter", sources,
+    tuple(OverlaySourceResolution(source_id, "compatible") for source_id in ("s1", "s2")),
+    view_presentation={
+      "source_styles": [
+        {"source_id": "s1", "color": "#336699", "alpha": 0.37, "marker_size": 1.0},
+        {"source_id": "s2", "color": "#cc3311", "alpha": 0.37, "marker_size": 1.0},
+      ],
+    },
+  )
+  raster = _hybrid_scatter_raster(
+    prepared, prepared.resolved_presentation.presentation,
+    {"s1": ((0.5,), (0.5,)), "s2": ((0.5,), (0.5,))},
+    plot_width=8, plot_height=8, dpi=96,
+  )
+  # The second layer is composited event-by-event over the first.  This is
+  # intentionally checked against the 8-bit rounded source-over recurrence.
+  destination = np.array([0.0, 0.0, 0.0, 0.0])
+  for color in ((51.0, 102.0, 153.0), (204.0, 51.0, 17.0)):
+    source_alpha = 0.37
+    destination_alpha = destination[3] / 255.0
+    output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha)
+    output_rgb = (
+      np.asarray(color) * source_alpha
+      + destination[:3] * destination_alpha * (1.0 - source_alpha)
+    ) / output_alpha
+    destination[:3] = np.rint(output_rgb)
+    destination[3] = np.rint(output_alpha * 255.0)
+  center = (3 * 8 + 3)
+  assert raster["alpha"][center] == int(destination[3])
+  assert raster["rgb"][center * 3:(center + 1) * 3] == bytes(destination[:3].astype(np.uint8))
+
+
 def test_hybrid_pdf_matches_png_layout_at_pdf_logical_resolution(tmp_path) -> None:
   """PDF at 72 DPI has the same logical canvas as the PNG export."""
   if shutil.which("pdftoppm") is None:

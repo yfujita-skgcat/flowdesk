@@ -60,6 +60,7 @@ from flowdesk_core.gate_transform_migration import preview_gate_transform_migrat
 from flowdesk_core.integrated_overlay import resolve_overlay_style
 from flowdesk_core.models import (
     AnnotationSpec,
+    BatchPlotExportSpec,
     ChannelSpec,
     CompensationMatrixSpec,
     OverlaySourceSpec,
@@ -117,7 +118,8 @@ from flowdesk_qt.pipeline_execution_dialog import (
     PipelineExecutionDialog,
     PipelineExecutionRequest,
 )
-from flowdesk_qt.plot_export_dialog import PlotExportDialog
+from flowdesk_qt.plot_export_dialog import PlotExportDialog, PlotExportRequest
+from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
@@ -3158,6 +3160,7 @@ class MainWindow(QMainWindow):
         overlay_state = self._sample_browser.overlay_state()
         x_label, y_label = self._plot_widget.axis_display_labels()
         view_range = self._plot_widget.view_range()
+        scene_tick_values = self._plot_widget.scene_ticks()
         view.update({
             "population_id": self._display_population_id or "all_events",
             "x_parameter": x_parameter or "",
@@ -3180,6 +3183,8 @@ class MainWindow(QMainWindow):
                 "y_axis_label": y_label,
                 "view_range": view_range,
                 "plot_area": list(self._plot_widget.plot_area_margins()),
+                "x_ticks": scene_tick_values.get("x_ticks", []),
+                "y_ticks": scene_tick_values.get("y_ticks", []),
                 "x_tick_policy": self._plot_widget.tick_policy(),
                 "y_tick_policy": self._plot_widget.tick_policy(),
             },
@@ -5410,6 +5415,86 @@ class MainWindow(QMainWindow):
         self._plot_widget.set_interaction_mode(mode)  # type: ignore[arg-type]
         self._update_status(f"Plot interaction mode: {mode}")
 
+    def _export_current_plot_core(
+        self, path: str | Path, request: Any,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Route single-plot export through the canonical core adapters.
+
+        The live PlotWidget remains the interactive preview.  Export receives
+        its committed display arrays and persisted presentation/scene metadata
+        through the Qt compatibility adapter, so single export and batch/CLI
+        export no longer use separate QPainter geometry paths.
+        """
+        payload = self._plot_widget.export_data_layers()
+        source_ids = tuple(metadata.get("ordered_source_ids", ()))
+        if not source_ids or not payload["layers"]:
+            raise ValueError("no rendered plot data available for export")
+        layers = payload["layers"]
+        if len(layers) != len(source_ids):
+            raise ValueError(
+                "rendered source count does not match export scene: "
+                f"{len(layers)} != {len(source_ids)}"
+            )
+        source_styles = {
+            str(style.get("source_id")): dict(style)
+            for style in metadata.get("presentation", {}).get("source_styles", ())
+            if isinstance(style, dict) and style.get("source_id")
+        }
+        presentation = dict(metadata.get("presentation", {}))
+        if len(source_ids) == 1 and not source_styles.get(source_ids[0], {}).get("color"):
+            source_styles[source_ids[0]] = {
+                **source_styles.get(source_ids[0], {}),
+                "source_id": source_ids[0],
+                "color": presentation.get("single_color", "#000000"),
+                "marker_size": presentation.get("single_dot_size", 1.5),
+            }
+        view_range = self._plot_widget.view_range()
+        if view_range is None:
+            raise ValueError("plot view range is unavailable")
+        scene = metadata.get("scene", {})
+        render_batch_plot_qt(
+            path,
+            raw_layers={
+                source_id: (layers[index][0], layers[index][1])
+                for index, source_id in enumerate(source_ids)
+            },
+            event_colors=(
+                {source_ids[0]: payload["event_colors"]}
+                if payload.get("event_colors") is not None else None
+            ),
+            source_ids=source_ids,
+            source_styles=source_styles,
+            presentation=presentation,
+            x_parameter=str(scene.get("x_parameter", "")),
+            y_parameter=str(scene.get("y_parameter", "")),
+            title_lines=tuple(scene.get("title_lines", ())),
+            title_colors=tuple(scene.get("title_colors", ())),
+            x_transform=None,
+            y_transform=None,
+            x_range=tuple(view_range[0]),
+            y_range=tuple(view_range[1]),
+            gates=tuple(scene.get("gates", ())),
+            width=int(request.width or self._plot_widget.canvas_size()[0]),
+            height=int(request.height or self._plot_widget.canvas_size()[1]),
+            options=BatchPlotExportSpec(
+                id="single-export", name="Single plot export",
+                formats=(Path(path).suffix.lower().lstrip("."),),
+                width=int(request.width or self._plot_widget.canvas_size()[0]),
+                height=int(request.height or self._plot_widget.canvas_size()[1]),
+                aspect_1_to_1=bool(request.aspect_1_to_1),
+                include_title=bool(request.include_title),
+                include_axis_labels=bool(request.include_axis_labels),
+                include_ticks=bool(request.include_ticks),
+                include_gates=bool(request.include_gates),
+                include_legend=bool(request.include_legend),
+                include_status_banner=bool(request.include_status_banner),
+            ),
+            plot_area=self._plot_widget.plot_area_margins(),
+            scene_metadata=scene,
+            export_metadata=metadata,
+        )
+
     def _on_export_request(self, format_name: str) -> None:
         """Handle toolbar and plot-context export requests through one builder."""
         if format_name == "BATCH":
@@ -5434,22 +5519,7 @@ class MainWindow(QMainWindow):
             metadata = self._current_plot_export_metadata()
             metadata["export_options"] = request.metadata()
             self._plot_widget.set_export_metadata(metadata)
-            if request.format_name == "PNG":
-                self._plot_widget.export_png(
-                    path, request.width, request.height, request.aspect_1_to_1,
-                    request.metadata(),
-                )
-            elif request.format_name == "JPEG":
-                self._plot_widget.export_jpg(
-                    path, request.width, request.height, request.aspect_1_to_1,
-                    request.metadata(),
-                )
-            else:
-                self._plot_widget.export_vector(
-                    path, request.format_name,
-                    request.aspect_1_to_1, request.width, request.height,
-                    request.metadata(),
-                )
+            self._export_current_plot_core(path, request, metadata)
             self._update_status(f"Plot exported to {path}")
         except Exception as exc:
             logger.error("%s export failed: %s", request.format_name, exc)
@@ -5466,11 +5536,14 @@ class MainWindow(QMainWindow):
         if not path_str:
             return
         try:
-            self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
-            self._plot_widget.export_png(
-                path_str,
+            metadata = self._current_plot_export_metadata()
+            self._plot_widget.set_export_metadata(metadata)
+            request = PlotExportRequest(
+                "PNG", width=self._plot_widget.canvas_size()[0],
+                height=self._plot_widget.canvas_size()[1],
                 aspect_1_to_1=self._plot_toolbar.export_aspect_1_to_1(),
             )
+            self._export_current_plot_core(path_str, request, metadata)
             self._update_status(f"Plot exported to {path_str}")
         except Exception as exc:
             logger.error("PNG export failed: %s", exc)
@@ -5481,11 +5554,14 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
-            self._plot_widget.export_vector(
-                path, "SVG",
+            metadata = self._current_plot_export_metadata()
+            self._plot_widget.set_export_metadata(metadata)
+            request = PlotExportRequest(
+                "SVG", width=self._plot_widget.canvas_size()[0],
+                height=self._plot_widget.canvas_size()[1],
                 aspect_1_to_1=self._plot_toolbar.export_aspect_1_to_1(),
             )
+            self._export_current_plot_core(path, request, metadata)
             self._update_status(f"Plot exported to {path}")
         except Exception as exc:
             logger.error("SVG export failed: %s", exc)
@@ -5496,11 +5572,14 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            self._plot_widget.set_export_metadata(self._current_plot_export_metadata())
-            self._plot_widget.export_vector(
-                path, "PDF",
+            metadata = self._current_plot_export_metadata()
+            self._plot_widget.set_export_metadata(metadata)
+            request = PlotExportRequest(
+                "PDF", width=self._plot_widget.canvas_size()[0],
+                height=self._plot_widget.canvas_size()[1],
                 aspect_1_to_1=self._plot_toolbar.export_aspect_1_to_1(),
             )
+            self._export_current_plot_core(path, request, metadata)
             self._update_status(f"Plot exported to {path}")
         except Exception as exc:
             logger.error("PDF export failed: %s", exc)
@@ -5544,6 +5623,16 @@ class MainWindow(QMainWindow):
             resolved.presentation, self._current_plot_sample_titles()
         )
         display_scene = view.get("display_scene", {})
+        gate_mappings = []
+        for gate in self._gate_editor.gates():
+            gate_mapping = asdict(gate)
+            gate_mapping["color"] = (
+                self._gate_editor.population_outline_color(gate.id)
+                or resolved.presentation.gate_outline_color
+            )
+            gate_mapping["width"] = resolved.presentation.gate_outline_width
+            gate_mapping["style"] = resolved.presentation.gate_outline_style
+            gate_mappings.append(gate_mapping)
         scene = PlotScene.from_mapping({
             "x_parameter": view.get("x_parameter", ""),
             "y_parameter": view.get("y_parameter"),
@@ -5555,10 +5644,12 @@ class MainWindow(QMainWindow):
             "x_axis_label": display_scene.get("x_axis_label", ""),
             "y_axis_label": display_scene.get("y_axis_label", ""),
             "source_order": source_ids,
+            "gates": gate_mappings,
             "title_lines": resolved_presentation["title"].splitlines(),
             "title_colors": [
                 next((style.color for style in resolved.presentation.source_styles
-                      if style.source_id == source_id and style.color), "#000000")
+                      if style.source_id == source_id and style.color),
+                      resolved.presentation.single_color)
                 for source_id in source_ids
             ],
         })

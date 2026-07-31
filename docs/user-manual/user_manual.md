@@ -1032,7 +1032,7 @@ Batch 定義には PNG/JPG/SVG/PDF、DPI、1:1 aspect、タイトル・軸ラベ
 
 既定のtitleとX/Y axis labelはともに14 pt・boldである。Plot Styleから個別に変更でき、ライブGUIとbatch exportは同じ保存済みpresentation指定を使う。`Definition`の一覧を整理するには、対象を選んで **Delete Definition** を押し、確認ダイアログで承認する。削除はprojectへ保存され、出力済みファイルは削除しない。
 
-GUIとheadless exportは、X/Y parameter、transform ID、viewport、tick、title/source色、gate geometry、clip、z-orderを含む共通のrenderer-neutral `PlotScene`を使用する。sidecarにはsceneの決定的hashも記録される。作成中gateのpreviewや編集用handleはsceneに含まれないため、exportへ混入しない。OSやフォントbackendが異なる場合はpixel完全一致ではなく、scene値と幾何・色・文字配置の許容差を再現性の基準とする。
+GUIとheadless exportは、X/Y parameter、transform ID、viewport、GUIで確定したtick levels、title/source色、gate geometry・色・線幅・線種、clip、z-orderを含む共通のrenderer-neutral `PlotScene`を使用する。toolbarの単一plot exportも、確定済みGUI表示配列を同じcore PNG/JPEG/SVG/PDF adapterへ渡すため、旧QPainter固定座標経路は使用しない。sidecarにはsceneの決定的hashも記録される。作成中gateのpreviewや編集用handleはsceneに含まれないため、exportへ混入しない。OSやフォントbackendが異なる場合はpixel完全一致ではなく、scene値と幾何・色・文字配置の許容差を再現性の基準とする。
 
  GUIから実行する`Batch Plot Export`もCLIと同じrenderer-neutral core rendererを使います。これにより、PNG/JPEG/SVG/PDFの表示範囲、点の順序と色、axis、tick、gate、title、軸ラベルは同じ`PlotScene`と`PlotLayoutSpec`から出力されます。複数行タイトルの下へ凡例を配置するため、タイトルがplot areaへ重なることはありません。ライブ画面は引き続きQt/pyqtgraph、出力はPillow/SVG/PDFの独立adapterで描画されるため、OSやフォントbackendによるアンチエイリアス差はあり得ますが、論理座標・文字列・色・表示範囲は一致します。
 
