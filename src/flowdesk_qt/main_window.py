@@ -10,11 +10,12 @@ import logging
 import os
 import uuid
 from collections import OrderedDict
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import asdict, replace
 from pathlib import Path
 from queue import Empty, SimpleQueue
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -467,6 +468,9 @@ class MainWindow(QMainWindow):
         self._display_population_id: str = "all_events"
         self._plot_transform_overrides: dict[str, str | None] = {}
         self._display_transform_overrides: dict[str, str] = {}
+        self._pending_view_range_restore: tuple[
+            tuple[float, float], tuple[float, float]
+        ] | None = None
         self._selected_gate_id: str | None = None
         self._pending_gate_geometry_updates: dict[str, Any] = {}
         self._preview_revision = PreviewRevisionState()
@@ -2148,6 +2152,34 @@ class MainWindow(QMainWindow):
         )
         if self._results_stale and not self._old_membership_banner:
             self._refresh_override_statuses()
+        self._restore_pending_view_range()
+
+    @staticmethod
+    def _parse_saved_view_range(
+        value: object,
+    ) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """Validate a persisted display range without affecting analysis data."""
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            return None
+        try:
+            x_range = tuple(float(item) for item in value[0])
+            y_range = tuple(float(item) for item in value[1])
+        except (TypeError, ValueError):
+            return None
+        if len(x_range) != 2 or len(y_range) != 2:
+            return None
+        if not all(np.isfinite(item) for item in (*x_range, *y_range)):
+            return None
+        if x_range[0] >= x_range[1] or y_range[0] >= y_range[1]:
+            return None
+        return (x_range, y_range)
+
+    def _restore_pending_view_range(self) -> None:
+        """Apply a saved range after the current plot has real display data."""
+        if self._pending_view_range_restore is None:
+            return
+        self._plot_widget.set_manual_view_range(*self._pending_view_range_restore)
+        self._pending_view_range_restore = None
 
     def _get_channel_index(self, channel_id: str) -> int:
         """Get a column index by stable ID for the current sample."""
@@ -3619,6 +3651,16 @@ class MainWindow(QMainWindow):
         self._overlay_undo_stack = UndoStack(
             {"plot_views": deepcopy(self._plot_views)},
             on_changed=self._on_overlay_state_changed,
+        )
+        saved_view = next(
+            (item for item in self._plot_views
+             if item.get("id") == self._overlay_view_id()),
+            {},
+        )
+        saved_scene = saved_view.get("display_scene", {})
+        self._pending_view_range_restore = self._parse_saved_view_range(
+            saved_scene.get("view_range")
+            if isinstance(saved_scene, dict) else None
         )
         self._backgating_specs = deepcopy(manifest.get("backgating_specs", []))
         self._auto_gate_templates = deepcopy(manifest.get("auto_gate_templates", []))

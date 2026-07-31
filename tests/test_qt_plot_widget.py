@@ -2580,6 +2580,8 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
       "source": "workspace",
     }]
     window._channel_selector._display_max_points_spin.setValue(12_345)
+    saved_viewport = ((0.5, 2.5), (0.25, 1.75))
+    window._plot_widget.set_manual_view_range(*saved_viewport)
     assert not window.action_advanced_groups.isChecked()
     assert window._group_panel.isHidden()
     window.action_advanced_groups.setChecked(True)
@@ -2606,13 +2608,22 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     assert saved["plot_views"][0]["rendering_downsample"] == {
       "max_points": 12_345
     }
+    assert saved["plot_views"][0]["display_scene"]["view_range"] == [
+      list(saved_viewport[0]), list(saved_viewport[1]),
+    ]
     assert isinstance(
       saved["gating_strategies_data"]["default_strategy"]["gates"][0], dict
     )
 
     reloaded_window._load_project_from_path(project_path)
+    for _ in range(20):
+      app.processEvents()
+      if np.allclose(reloaded_window._plot_widget.view_range(), saved_viewport):
+        break
+      QTest.qWait(20)
     assert reloaded_window._channel_selector.display_max_points() == 12_345
     assert reloaded_window._plot_widget.max_display_points() == 12_345
+    assert np.allclose(reloaded_window._plot_widget.view_range(), saved_viewport)
     assert reloaded_window.action_advanced_groups.isChecked()
     assert not reloaded_window._group_panel.isHidden()
     reloaded_window.action_advanced_groups.setChecked(False)

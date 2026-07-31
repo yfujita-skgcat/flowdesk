@@ -888,7 +888,7 @@ Title font、Axis label font、Tick font、Legend font のそれぞれに `famil
 
 ### 15.1 project save
 
-`.flowdesk` は単一ファイルではなく directory bundle である。**Save Project As...** ではファイル名ではなくproject名を入力し、例えば `experiment-260724` と入力すると `experiment-260724.flowdesk/` ディレクトリが作成される。保存済みprojectで **Save Project**（Ctrl+S）を実行すると、この現在のbundleへ上書き保存される。保存対象には sample reference、fingerprint、gates、compensation、derived parameters、transforms、statistics、groups、annotations、overlays、plot presentation などが含まれる。raw event array 自体を project に埋め込む前提ではない。FCS の参照は保存先 bundle からの相対パスに変換されるため、例えば `project.flowdesk/` と `260724_apoptosis/` が同じ親ディレクトリにある場合、親ディレクトリごと移動しても再読込できる。FCS が project と別の場所にあり、移動後に見つからない場合は Samples の `Reconnect…` を使う。保存先と FCS の異なる Windows ドライブ間など、相対化できない場合は絶対パスを保持する。
+`.flowdesk` は単一ファイルではなく directory bundle である。**Save Project As...** ではファイル名ではなくproject名を入力し、例えば `experiment-260724` と入力すると `experiment-260724.flowdesk/` ディレクトリが作成される。保存済みprojectで **Save Project**（Ctrl+S）を実行すると、この現在のbundleへ上書き保存される。保存対象には sample reference、fingerprint、gates、compensation、derived parameters、transforms、statistics、groups、annotations、overlays、plot presentation、現在のplotの表示範囲（zoom/panしたX/Y viewport）などが含まれる。projectをOpen Projectで開くと、データ読み込み後に保存時の表示範囲が復元される。raw event array 自体を project に埋め込む前提ではない。FCS の参照は保存先 bundle からの相対パスに変換されるため、例えば `project.flowdesk/` と `260724_apoptosis/` が同じ親ディレクトリにある場合、親ディレクトリごと移動しても再読込できる。FCS が project と別の場所にあり、移動後に見つからない場合は Samples の `Reconnect…` を使う。保存先と FCS の異なる Windows ドライブ間など、相対化できない場合は絶対パスを保持する。
 
 ### 15.2 analysis settings save/load
 

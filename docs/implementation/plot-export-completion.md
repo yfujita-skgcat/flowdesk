@@ -234,6 +234,11 @@ and Cancel buttons remain outside the scroll area so they remain reachable at
 small monitor heights. The scroll area must not implement export logic; it only
 changes presentation and preserves the existing object names and signal paths.
 
+The persisted plot view's `display_scene.view_range` is display state, not
+scientific input. On project load, validate this range and apply it once after
+the canonical processed display has been plotted. Invalid or absent ranges are
+ignored so legacy projects retain their normal auto-range behavior.
+
 The dialog contains:
 
 - a saved-definition selector, `New`, and definition name. Existing projects
