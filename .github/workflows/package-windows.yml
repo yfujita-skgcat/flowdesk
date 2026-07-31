@@ -59,7 +59,12 @@ jobs:
 
       - name: Run packaged smoke test
         shell: pwsh
-        run: python tools/package.py smoke
+        run: >-
+          python tools/package.py smoke
+          --project data/analysis.flowdesk
+          --fcs data/1_A1.fcs
+          --batch-export-id batch-export-2c72921e28a9
+          --timeout 300
 
       - name: Write build manifest
         shell: pwsh

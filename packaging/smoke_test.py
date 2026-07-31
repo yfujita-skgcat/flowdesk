@@ -42,6 +42,7 @@ def run_smoke(
   output_dir: Path,
   timeout: int = 60,
   qt_platform: str | None = None,
+  batch_export_id: str | None = None,
 ) -> None:
   """Validate GUI startup and optional headless package operations."""
   output_dir.mkdir(parents=True, exist_ok=True)
@@ -93,6 +94,32 @@ def run_smoke(
   if not result_path.is_file() or result_path.stat().st_size == 0:
     raise RuntimeError(f"package pipeline did not create a non-empty result: {result_path}")
 
+  if batch_export_id is None:
+    return
+  batch_output = output_dir / "batch-export"
+  _run(
+    [
+      str(cli_executable),
+      "batch-plot",
+      str(project),
+      "--export-id",
+      batch_export_id,
+      "--output-dir",
+      str(batch_output),
+    ],
+    timeout=timeout,
+    env=env,
+  )
+  manifest = batch_output / f"{batch_export_id}.batch.json"
+  if not manifest.is_file() or manifest.stat().st_size == 0:
+    raise RuntimeError(f"package batch export did not create a non-empty manifest: {manifest}")
+  output_files = [
+    path for path in batch_output.iterdir()
+    if path.is_file() and path.name != manifest.name and path.stat().st_size > 0
+  ]
+  if not output_files:
+    raise RuntimeError(f"package batch export did not create non-empty outputs: {batch_output}")
+
 
 def main() -> int:
   parser = argparse.ArgumentParser(description=__doc__)
@@ -103,6 +130,7 @@ def main() -> int:
   parser.add_argument("--output-dir", type=Path, required=True)
   parser.add_argument("--timeout", type=int, default=60)
   parser.add_argument("--qt-platform", default=None)
+  parser.add_argument("--batch-export-id")
   args = parser.parse_args()
 
   try:
@@ -114,6 +142,7 @@ def main() -> int:
       args.output_dir,
       args.timeout,
       args.qt_platform,
+      args.batch_export_id,
     )
   except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
     print(f"package smoke test failed: {exc}", file=sys.stderr)

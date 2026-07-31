@@ -17,6 +17,8 @@ Phase 1の配布準備は実装済みである。
 - PyInstallerの標準hookを優先し、collectorではpyqtgraphのデータだけを追加収集する。
 - GUI specはQt Widgets/SVGと2D plotに不要なQt optional modules、OpenGL、テストモジュールを除外する。
 - package workflowはNode.js警告を避けるため、checkout、setup-python、upload-artifactの現行majorを使用する。
+- package workflowのPyInstaller smokeは、native CLI実行ファイルで保存済みBatch Plot Export定義を
+  実行し、4サンプルのPNG/PDF、sidecar、batch manifestが非空で生成されることまで確認する。
 
 次のPhase 2以降は未実装であり、PyInstaller specやOS installerを追加する前に、各Phaseを個別に完了させる。
 
@@ -66,6 +68,28 @@ Python未導入のclean環境で、少なくとも次を確認する。
 - CSV、TSV、PNG、SVG、PDFを出力できる。
 - autosave/recovery、ログ、debug artifactをユーザー書込み可能領域へ保存する。
 - 終了時にQThreadが残らない。
+
+### Batch Plot Export smoke contract
+
+`packaging/smoke_test.py` は `--batch-export-id` が指定された場合、Python interpreterではなく
+PyInstallerで生成した `flowdesk-cli` executableへ次のコマンドを渡す。
+
+```text
+flowdesk-cli batch-plot <project> --export-id <id> --output-dir <smoke-output>/batch-export
+```
+
+検証対象は科学的な数値再計算ではなく、配布物の実行経路である。少なくとも次を確認する。
+
+- FCS pathをproject bundleから解決できる。
+- PNG/PDF writerと必要なnative/runtime dependencyをimportできる。
+- `<export-id>.batch.json` が非空で、出力ファイルが1つ以上非空である。
+- 既存のpipeline `results.tsv` smokeと同じprojectを使い、project変更やraw FCS変更を行わない。
+
+Windows、macOS、Linux workflowは追跡済みの`data/analysis.flowdesk`と
+`batch-export-2c72921e28a9`を使う。timeoutは300秒とし、失敗時はpackage artifactを成功扱いで
+公開しない。このsmokeはGUI操作、Qt thread affinity、PyInstaller終了後のQThread残留、
+batch thread backendのreentrancyを証明しないため、それらは別のnative/clean-environment testで
+検証する。
 
 開発環境でのpytest成功だけではpackage smoke testの代替にならない。package後の実行ログとversionをartifactへ保存する。
 

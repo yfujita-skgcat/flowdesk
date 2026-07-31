@@ -42,6 +42,9 @@ def test_smoke_runs_gui_and_cli_contracts(tmp_path: Path) -> None:
     cli_body = (
       "@echo off\n"
       "if \"%~1\"==\"inspect\" exit /b 0\n"
+      "if \"%~1\"==\"batch-plot\" (mkdir \"%~6\" 2>nul & "
+      "echo batch > \"%~6\\batch.png\" & "
+      "echo {} > \"%~6\\batch-export-id.batch.json\" & exit /b 0)\n"
       "(echo sample,count) > \"%~4\"\n"
     )
   else:
@@ -58,6 +61,9 @@ def test_smoke_runs_gui_and_cli_contracts(tmp_path: Path) -> None:
     cli_body = (
       "#!/bin/sh\n"
       "if [ \"$1\" = \"inspect\" ]; then exit 0; fi\n"
+      "if [ \"$1\" = \"batch-plot\" ]; then mkdir -p \"$6\"; "
+      "echo batch > \"$6/batch.png\"; "
+      "echo '{}' > \"$6/batch-export-id.batch.json\"; exit 0; fi\n"
       "echo 'sample,count' > \"$4\"\n"
     )
   gui = _write_executable(
@@ -73,8 +79,9 @@ def test_smoke_runs_gui_and_cli_contracts(tmp_path: Path) -> None:
   fcs = tmp_path / "sample.fcs"
   fcs.write_bytes(b"synthetic")
 
-  run_smoke(gui, cli, project, fcs, tmp_path / "out")
+  run_smoke(gui, cli, project, fcs, tmp_path / "out", batch_export_id="batch-export-id")
   assert (tmp_path / "out" / "results.tsv").is_file()
+  assert (tmp_path / "out" / "batch-export" / "batch.png").is_file()
 
 
 def test_smoke_requires_project_for_cli(tmp_path: Path) -> None:

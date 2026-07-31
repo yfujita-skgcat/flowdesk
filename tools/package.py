@@ -46,8 +46,11 @@ def smoke(
   fcs_file: Path | None = None,
   qt_platform: str | None = None,
   output_dir: Path | None = None,
+  batch_export_id: str | None = None,
 ) -> None:
   """Run package smoke checks without rebuilding artifacts."""
+  if batch_export_id is not None and project is None:
+    raise ValueError("--batch-export-id requires --project")
   gui = _executable("flowdesk")
   cli = _executable("flowdesk-cli")
   if not gui.exists():
@@ -59,6 +62,8 @@ def smoke(
     command.extend(["--cli", str(cli), "--project", str(project)])
     if fcs_file is not None:
       command.extend(["--fcs", str(fcs_file)])
+    if batch_export_id is not None:
+      command.extend(["--batch-export-id", batch_export_id])
   if qt_platform is not None:
     command.extend(["--qt-platform", qt_platform])
   command.extend(["--output-dir", str(output_dir or ROOT / "artifacts" / "package-smoke")])
@@ -124,6 +129,7 @@ def main() -> int:
   smoke_parser.add_argument("--fcs", type=Path)
   smoke_parser.add_argument("--qt-platform")
   smoke_parser.add_argument("--output-dir", type=Path)
+  smoke_parser.add_argument("--batch-export-id")
   manifest_parser = subparsers.add_parser("manifest")
   manifest_parser.add_argument("--output", type=Path, required=True)
   subparsers.add_parser("check")
@@ -132,7 +138,7 @@ def main() -> int:
   if args.command == "build":
     build()
   elif args.command == "smoke":
-    smoke(args.project, args.fcs, args.qt_platform, args.output_dir)
+    smoke(args.project, args.fcs, args.qt_platform, args.output_dir, args.batch_export_id)
   elif args.command == "manifest":
     manifest(args.output)
   else:

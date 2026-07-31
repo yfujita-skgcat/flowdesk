@@ -47,7 +47,12 @@ jobs:
         run: python tools/package.py build
 
       - name: Run packaged smoke test
-        run: python tools/package.py smoke
+        run: >-
+          python tools/package.py smoke
+          --project data/analysis.flowdesk
+          --fcs data/1_A1.fcs
+          --batch-export-id batch-export-2c72921e28a9
+          --timeout 300
 
       - name: Write build manifest
         run: >-

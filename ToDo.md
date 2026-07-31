@@ -1751,6 +1751,10 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [ ] `docs/implementation/packaging-and-release.md`を読み、PyInstallerの対象module、Qt plugin、NumPy/flowioのnative library、metadata収集方針を確定する。
 - [ ] `packaging/flowdesk.spec`を追加し、PyInstaller `onedir` buildをLinux、Windows、macOSで再現できるようにする。
 - [ ] PyInstaller成果物をPython未導入のclean環境で起動するpackage smoke testを追加する。GUI起動、FCS読込、Pipeline、project save/load、TSV/CSV/PNG/SVG/PDF exportを確認する。
+- [x] PyInstaller package smokeへ、native `flowdesk-cli` executableによる保存済みBatch Plot Export
+  の実行を追加した。3 OS workflowで`data/analysis.flowdesk`の4 samplesを実行し、非空PNG/PDF、
+  sidecar、batch manifestを確認する。これはclean環境でのGUI操作、QThread終了、batch thread
+  backendのreentrancyを代替しない。
 - [ ] Windows向けにInno Setupまたは同等のinstallerを追加する。ユーザー領域へのインストール、Start Menu、uninstaller、upgrade、必要なら`.fcs`関連付けを確認する。
 - [ ] macOS向けに`.app`とDMGを追加する。arm64を先行対象とし、必要に応じてx86_64またはuniversal buildを定義する。
 - [ ] macOSのDeveloper ID code signing、Hardened Runtime、notarization、ticket stapleをCIで実行できるようにする。秘密情報がない場合は署名工程を安全にskipして理由を記録する。
