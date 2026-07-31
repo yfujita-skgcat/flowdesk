@@ -1408,6 +1408,9 @@ thread backend（Increment 8）とは別の計画である。
   sourceごとに浅いcopyして再利用する。normalized layer cacheは
   source数に応じた最大256 entryかつ推定128 MiBのLRUとしてboundedに保持し、単一payloadが
   上限を超える場合はcacheしない。
+- [x] 同一source/boundsを複数render workerが同時に要求した場合のnormalized layer重複計算を
+  per-key single-flightで抑制する。計算中のkeyは待機eventを共有し、結果のcache、LRU byte accounting、
+  source順は従来どおりcoordinator-ownedで管理する。
 - [x] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
   `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、
   `batchPlotProgressCurrentItem`、`batchPlotProgressCancelButton`、

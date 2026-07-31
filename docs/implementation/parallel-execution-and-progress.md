@@ -1155,6 +1155,11 @@ This applies to both `shared_ranges` and `current_view`: targets with different 
 view ranges receive separate entries, while identical ranges reuse the immutable layer.
 The cache is renderer-neutral and is released with the batch operation; it does not share
 mutable Qt objects or alter source order.
+Normalized-layer misses use a per-key single-flight event. If two render workers request
+the same `(source_id, actual_bounds)` concurrently, one computes the read-only NumPy
+payload while the other waits and reuses the result. This removes duplicate normalization
+work without holding the global cache lock during NumPy computation; failures release the
+waiter so a later attempt can report the original error or retry deterministically.
 
 Gate geometry is cached in the same coordinator-owned lifetime using
 `(x_parameter, y_parameter, actual_bounds, x_transform, y_transform, outline_color)`.

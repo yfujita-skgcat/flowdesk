@@ -8,7 +8,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
-from threading import Lock, local
+from threading import Event, Lock, local
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -197,6 +197,9 @@ def batch_plot_command(
     normalized_cache_bytes = 0
     normalized_cache_sizes: dict[
       tuple[str, tuple[tuple[float, float], tuple[float, float]]], int
+    ] = {}
+    normalized_cache_inflight: dict[
+      tuple[str, tuple[tuple[float, float], tuple[float, float]]], Event
     ] = {}
     gate_overlay_cache: OrderedDict[
       tuple[object, ...], tuple[dict[str, Any], ...]
@@ -451,6 +454,74 @@ def batch_plot_command(
         prepared_render_cache.pop(sample_id, None)
         rendered_format_counts.pop(sample_id, None)
 
+    def normalized_payload_for(
+      source_id: str,
+      active_bounds: tuple[tuple[float, float], tuple[float, float]],
+    ) -> NormalizedPayload:
+      """Return one normalized source payload with per-key single-flight."""
+      nonlocal normalized_cache_bytes
+      normalized_key = (source_id, active_bounds)
+      while True:
+        with render_cache_lock:
+          cached = normalized_layer_cache.get(normalized_key)
+          if cached is not None:
+            normalized_layer_cache.move_to_end(normalized_key)
+            return cached
+          waiter = normalized_cache_inflight.get(normalized_key)
+          if waiter is None:
+            waiter = Event()
+            normalized_cache_inflight[normalized_key] = waiter
+            owner = True
+          else:
+            owner = False
+        if not owner:
+          waiter.wait()
+          continue
+        try:
+          source_x, source_y = prepared_layers[source_id]
+          normalized_x = _normalize(source_x, active_bounds[0])
+          normalized_y = _normalize(source_y, active_bounds[1])
+          visible = (
+            (normalized_x >= 0.0) & (normalized_x <= 1.0)
+            & (normalized_y >= 0.0) & (normalized_y <= 1.0)
+          )
+          visible.setflags(write=False)
+          normalized_x_visible = np.asarray(normalized_x[visible], dtype=np.float64)
+          normalized_y_visible = np.asarray(normalized_y[visible], dtype=np.float64)
+          normalized_x_visible.setflags(write=False)
+          normalized_y_visible.setflags(write=False)
+          colors = layer_event_colors.get(source_id)
+          normalized_colors = None
+          if colors is not None:
+            normalized_colors = np.asarray(colors[visible])
+            normalized_colors.setflags(write=False)
+          payload = cast(NormalizedPayload, (
+            (normalized_x_visible, normalized_y_visible),
+            visible,
+            normalized_colors,
+          ))
+          with render_cache_lock:
+            normalized_layer_cache[normalized_key] = payload
+            normalized_layer_cache.move_to_end(normalized_key)
+            payload_bytes = _estimate_normalized_layer_bytes(payload)
+            if payload_bytes > normalized_cache_max_bytes:
+              normalized_layer_cache.pop(normalized_key, None)
+            else:
+              previous_bytes = normalized_cache_sizes.pop(normalized_key, 0)
+              normalized_cache_sizes[normalized_key] = payload_bytes
+              normalized_cache_bytes += payload_bytes - previous_bytes
+              while (
+                len(normalized_layer_cache) > normalized_cache_max_entries
+                or normalized_cache_bytes > normalized_cache_max_bytes
+              ):
+                evicted_key, _ = normalized_layer_cache.popitem(last=False)
+                normalized_cache_bytes -= normalized_cache_sizes.pop(evicted_key, 0)
+          return payload
+        finally:
+          with render_cache_lock:
+            normalized_cache_inflight.pop(normalized_key, None)
+            waiter.set()
+
     def render_one(
       sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
     ) -> None:
@@ -501,56 +572,7 @@ def batch_plot_command(
       for order, source_id in enumerate(source_ids):
         source_sample = sample_by_id[source_id]
         source_metadata = layer_metadata[source_id]
-        source_x, source_y = prepared_layers[source_id]
-        normalized_key = (source_id, active_bounds)
-        normalized_payload: NormalizedPayload | None = None
-        # The cache key contains the actual bounds, so it is safe for both
-        # shared ranges and current-view exports.  Different persisted view
-        # ranges naturally produce different entries; identical ranges across
-        # targets reuse the immutable normalized layer.
-        with render_cache_lock:
-          normalized_payload = normalized_layer_cache.get(normalized_key)
-          if normalized_payload is not None:
-            normalized_layer_cache.move_to_end(normalized_key)
-        if normalized_payload is None:
-          normalized_x = _normalize(source_x, active_bounds[0])
-          normalized_y = _normalize(source_y, active_bounds[1])
-          visible = (
-            (normalized_x >= 0.0) & (normalized_x <= 1.0)
-            & (normalized_y >= 0.0) & (normalized_y <= 1.0)
-          )
-          visible.setflags(write=False)
-          normalized_x_visible = np.asarray(normalized_x[visible], dtype=np.float64)
-          normalized_y_visible = np.asarray(normalized_y[visible], dtype=np.float64)
-          normalized_x_visible.setflags(write=False)
-          normalized_y_visible.setflags(write=False)
-          colors = layer_event_colors.get(source_id)
-          normalized_colors = None
-          if colors is not None:
-            normalized_colors = np.asarray(colors[visible])
-            normalized_colors.setflags(write=False)
-          normalized_payload = cast(NormalizedPayload, (
-            (normalized_x_visible, normalized_y_visible),
-            visible,
-            normalized_colors,
-          ))
-          with render_cache_lock:
-            normalized_layer_cache[normalized_key] = normalized_payload
-            normalized_layer_cache.move_to_end(normalized_key)
-            payload_bytes = _estimate_normalized_layer_bytes(normalized_payload)
-            if payload_bytes > normalized_cache_max_bytes:
-              normalized_layer_cache.pop(normalized_key, None)
-            else:
-              previous_bytes = normalized_cache_sizes.pop(normalized_key, 0)
-              normalized_cache_sizes[normalized_key] = payload_bytes
-              normalized_cache_bytes += payload_bytes - previous_bytes
-              while (
-                len(normalized_layer_cache) > normalized_cache_max_entries
-                or normalized_cache_bytes > normalized_cache_max_bytes
-              ):
-                evicted_key, _ = normalized_layer_cache.popitem(last=False)
-                normalized_cache_bytes -= normalized_cache_sizes.pop(evicted_key, 0)
-        assert normalized_payload is not None
+        normalized_payload = normalized_payload_for(source_id, active_bounds)
         normalized_points, visible, normalized_colors = normalized_payload
         visible_masks[source_id] = visible
         layers[source_id] = normalized_points
