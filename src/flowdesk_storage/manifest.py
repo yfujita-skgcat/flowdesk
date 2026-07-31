@@ -11,6 +11,7 @@ from typing import Any
 
 from flowdesk_core.errors import FlowdeskError
 from flowdesk_core.models import TransformSpec, validate_gate_name
+from flowdesk_core.tables import table_definition_from_mapping
 from flowdesk_core.transforms import TransformError, validate_transform
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION, migrate_manifest
 
@@ -55,6 +56,8 @@ def validate_manifest(data: dict[str, Any]) -> None:
   # of the manifest still requires migration.
   if "statistics" in data:
     _validate_current_statistics(data.get("statistics"), None)
+  if "table_definitions" in data:
+    _validate_current_table_definitions(data.get("table_definitions"))
 
   if "advanced_groups_enabled" in data and not isinstance(
     data["advanced_groups_enabled"], bool
@@ -95,6 +98,25 @@ def validate_manifest(data: dict[str, Any]) -> None:
     _validate_current_gate_overrides(data, gate_ids)
     _validate_current_plot_definitions(data)
     _validate_current_integrated_overlay(data)
+
+
+def _validate_current_table_definitions(value: Any) -> None:
+  """Validate persisted table definitions without executing their sources."""
+  if not isinstance(value, list):
+    raise ManifestValidationError("table_definitions must be an array")
+  definition_ids: set[str] = set()
+  for index, definition in enumerate(value):
+    if not isinstance(definition, dict):
+      raise ManifestValidationError(f"table_definitions[{index}] must be an object")
+    try:
+      parsed = table_definition_from_mapping(definition)
+    except (TypeError, ValueError) as exc:
+      raise ManifestValidationError(
+        f"invalid table_definitions[{index}]: {exc}"
+      ) from exc
+    if parsed.id in definition_ids:
+      raise ManifestValidationError(f"duplicate table definition ID {parsed.id!r}")
+    definition_ids.add(parsed.id)
 
 
 def _validate_current_plot_definitions(data: Mapping[str, Any]) -> None:

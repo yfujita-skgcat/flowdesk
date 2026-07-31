@@ -27,7 +27,11 @@ safe formula, or constant. Core values and display formatting remain separate.
 
 ## Increments
 
-1. Add definition/result row types and schema round-trip.
+1. Add definition/result row types and schema round-trip. **Implemented:**
+   `flowdesk_core.tables` provides strict Qt-independent `TableDefinitionSpec`,
+   `TableColumnSpec`, `TableCell`, `TableResultRow`, and `TableResult` mappings;
+   current project manifests validate optional `table_definitions` without executing
+   expressions or reading GUI cells. Runner, iteration, and export remain later increments.
 2. Implement keyword and statistic columns for explicit sample iteration.
 3. Add group/population-path iteration and deterministic row order.
 4. Add safe formula dependency ordering; reject cycles and arbitrary Python.
@@ -55,4 +59,3 @@ safe formula, or constant. Core values and display formatting remain separate.
 pytest -q tests/test_population_statistics.py tests/test_export.py tests/test_pipeline_runner.py
 ./tools/run-gui-tests.sh -q
 ```
-

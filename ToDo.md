@@ -1056,8 +1056,8 @@ incrementでは両者を一つの authoritative report から統合し、GUI・C
 
 ### Phase C1: Table Editor [S12]
 
-- [ ] `docs/implementation/table-editor.md`を全文読み、今回追加するcolumn sourceまたはiterator contractを追記する。
-- [ ] `TableDefinitionSpec`と`TableColumnSpec`をmodel/schemaへ追加する。
+- [x] `docs/implementation/table-editor.md`を全文読み、column sourceとiterator contractを追記する。
+- [x] `TableDefinitionSpec`、`TableColumnSpec`、typed result row/cellをcore/schemaへ追加する。runnerとGUIは後続increment。
 - [ ] keyword、StatisticSpec、platform result、constant、安全なformula列を実装する。
 - [ ] sample/Group/Population path/plate well iterationをcore table runnerへ実装する。
 - [ ] column reorder、rename、number format、hidden、sort、filterをGUIへ追加する。

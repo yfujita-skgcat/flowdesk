@@ -33,6 +33,13 @@ from flowdesk_core.preview import (
   PreviewRevisionState,
 )
 from flowdesk_core.sample import SampleData
+from flowdesk_core.tables import (
+  TableCell,
+  TableColumnSpec,
+  TableDefinitionSpec,
+  TableResult,
+  TableResultRow,
+)
 
 __all__ = [
   "ChannelSpec",
@@ -62,4 +69,9 @@ __all__ = [
   "SampleData",
   "SourceStyleSpec",
   "TransformSpec",
+  "TableCell",
+  "TableColumnSpec",
+  "TableDefinitionSpec",
+  "TableResult",
+  "TableResultRow",
 ]
