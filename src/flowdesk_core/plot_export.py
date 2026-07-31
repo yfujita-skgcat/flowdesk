@@ -1816,14 +1816,16 @@ def _hybrid_scatter_raster(
     ``np.add.at`` removes the per-event Pillow/NumPy allocation while keeping
     overlap density and source z-order intact.
     """
+    extent = max(1, math.ceil(radius + 1.0))
+    counts = np.zeros((raster_height, raster_width), dtype=np.int32)
+    x_all = np.asarray(x_values, dtype=np.float64) * (raster_width - 1)
+    y_all = (1.0 - np.asarray(y_values, dtype=np.float64)) * (raster_height - 1)
     x = np.asarray(x_values, dtype=np.float64) * (raster_width - 1)
     y = (1.0 - np.asarray(y_values, dtype=np.float64)) * (raster_height - 1)
     base_x = np.floor(x).astype(np.int64)
     base_y = np.floor(y).astype(np.int64)
     frac_x = x - base_x
     frac_y = y - base_y
-    extent = max(1, math.ceil(radius + 1.0))
-    counts = np.zeros((raster_height, raster_width), dtype=np.int32)
     for offset_y in range(-extent, extent + 1):
       pixel_y = base_y + offset_y
       valid_y = (pixel_y >= 0) & (pixel_y < raster_height)

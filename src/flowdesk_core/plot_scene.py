@@ -136,11 +136,20 @@ class PlotLayoutSpec:
   title_block: tuple[float, float, float, float]
   title_baselines: tuple[float, ...]
   title_line_height: float
+  x_tick_label_y: float
+  y_tick_label_x: float
+  x_axis_label_anchor: tuple[float, float]
+  y_axis_label_anchor: tuple[float, float]
 
   def __post_init__(self) -> None:
     if self.canvas_width < 1 or self.canvas_height < 1:
       raise ValueError("plot layout canvas must be positive")
-    if len(self.margins) != 4 or len(self.plot_rect) != 4 or len(self.title_block) != 4:
+    if (
+      len(self.margins) != 4 or len(self.plot_rect) != 4
+      or len(self.title_block) != 4
+      or len(self.x_axis_label_anchor) != 2
+      or len(self.y_axis_label_anchor) != 2
+    ):
       raise ValueError("plot layout rectangles must contain four values")
     if self.title_line_height <= 0:
       raise ValueError("plot layout title line height must be positive")
@@ -161,6 +170,10 @@ class PlotLayoutSpec:
       "title_block": list(self.title_block),
       "title_baselines": list(self.title_baselines),
       "title_line_height": self.title_line_height,
+      "x_tick_label_y": self.x_tick_label_y,
+      "y_tick_label_x": self.y_tick_label_x,
+      "x_axis_label_anchor": list(self.x_axis_label_anchor),
+      "y_axis_label_anchor": list(self.y_axis_label_anchor),
     }
 
 
@@ -203,6 +216,8 @@ def resolve_plot_layout(
   lines = tuple(line for line in scene.title_lines if str(line))
   font_size = _font_size(presentation)
   line_height = max(18.0, font_size * 1.45)
+  tick_size = _font_size({"title_font": (presentation or {}).get("tick_font", {})})
+  axis_size = _font_size({"title_font": (presentation or {}).get("axis_label_font", {})})
   title_height = (line_height * len(lines) + 8.0) if include_title and lines else 0.0
   title_top_padding = 4.0 if title_height else 0.0
   top = max(0.0, float(raw_top))
@@ -219,6 +234,16 @@ def resolve_plot_layout(
     title_block_height - line_height * (len(lines) - index - 0.35)
     for index in range(len(lines))
   )
+  x_tick_label_y = top + plot_height + tick_size + 9.0
+  y_tick_label_x = left - 9.0
+  x_axis_label_anchor = (
+    left + plot_width / 2.0,
+    top + plot_height + tick_size + axis_size * 2.4,
+  )
+  y_axis_label_anchor = (
+    left - tick_size * 3.2,
+    top + plot_height / 2.0,
+  )
   return PlotLayoutSpec(
     canvas_width=int(width), canvas_height=int(height),
     margins=(left, top, right, bottom),
@@ -226,4 +251,8 @@ def resolve_plot_layout(
     title_block=title_block,
     title_baselines=title_baselines,
     title_line_height=line_height,
+    x_tick_label_y=x_tick_label_y,
+    y_tick_label_x=y_tick_label_x,
+    x_axis_label_anchor=x_axis_label_anchor,
+    y_axis_label_anchor=y_axis_label_anchor,
   )
