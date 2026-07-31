@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from flowdesk_core.models import AnnotationSpec, StatisticResult
@@ -20,6 +20,7 @@ def run_table_definition(
   sample_ids: Sequence[str],
   annotations: Iterable[AnnotationSpec] = (),
   statistic_results: Iterable[StatisticResult] = (),
+  group_members: Mapping[str, Sequence[str]] | None = None,
 ) -> TableResult:
   """Resolve keyword/statistic columns for explicit sample rows.
 
@@ -28,11 +29,14 @@ def run_table_definition(
   definition column even when a source is missing or ambiguous.
   """
   available_ids = tuple(str(value) for value in sample_ids)
-  rows = (
-    available_ids
-    if definition.row_iterator == "samples"
-    else definition.sample_ids
-  )
+  if definition.row_iterator == "samples":
+    rows = available_ids
+  elif definition.row_iterator == "explicit_samples":
+    rows = definition.sample_ids
+  else:
+    if group_members is None or definition.group_id not in group_members:
+      raise ValueError(f"table group {definition.group_id!r} is not resolved")
+    rows = tuple(str(value) for value in group_members[definition.group_id])
   annotation_values = _annotation_values(annotations)
   statistic_values = _statistic_values(statistic_results)
   result_rows = tuple(
@@ -105,4 +109,3 @@ def _resolve_cell(
       )
     return TableCell(None, status="error", reason="statistic_error")
   return TableCell(None, status="error", reason="unsupported_column_source")
-

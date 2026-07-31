@@ -37,7 +37,9 @@ safe formula, or constant. Core values and display formatting remain separate.
    preserves declared row/column order, applies annotation source precedence, and returns
    explicit `missing_*`, `ambiguous_statistic`, and statistic undefined/error statuses. It does
    not read raw FCS or display-downsampled values.
-3. Add group/population-path iteration and deterministic row order.
+3. Add group/population-path iteration and deterministic row order. **Partially implemented:**
+   `row_iterator="group"` accepts a pre-resolved, ordered group member mapping; unresolved
+   groups fail explicitly. Population paths and direct group-rule resolution remain later work.
 4. Add safe formula dependency ordering; reject cycles and arbitrary Python.
 5. Add filters/sort and undefined/error propagation.
 6. Build Qt editor for column add/reorder/rename/hide/format and preview.

@@ -1061,7 +1061,8 @@ incrementでは両者を一つの authoritative report から統合し、GUI・C
 - [x] keyword、StatisticSpec、constant列をexplicit sample runnerへ実装する。
 - [ ] platform result、安全なformula列を実装する。
 - [x] explicit sample iterationでkeyword/statistic columnをcore table runnerへ実装する。missing、
-  ambiguous、undefined/error statusを列ずれなく返す。Group/Population path/plate well iterationは後続。
+  ambiguous、undefined/error statusを列ずれなく返す。`row_iterator=group`のresolved member
+  mappingも実装する。Population path/plate well iterationは後続。
 - [ ] column reorder、rename、number format、hidden、sort、filterをGUIへ追加する。
 - [ ] conditional formattingはdisplay definitionとして保存し、数値を変更しない。
 - [ ] previewとbatch exportで同じcore runnerを使う。

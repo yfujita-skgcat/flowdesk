@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-TableRowIterator = Literal["samples", "explicit_samples"]
+TableRowIterator = Literal["samples", "explicit_samples", "group"]
 TableColumnSource = Literal[
   "keyword", "statistic", "platform_result", "formula", "constant"
 ]
@@ -90,6 +90,7 @@ class TableDefinitionSpec:
   name: str
   row_iterator: TableRowIterator = "samples"
   sample_ids: tuple[str, ...] = field(default_factory=tuple)
+  group_id: str | None = None
   columns: tuple[TableColumnSpec, ...] = field(default_factory=tuple)
   filter_expression: str | None = None
   sort_column_id: str | None = None
@@ -98,11 +99,15 @@ class TableDefinitionSpec:
   def __post_init__(self) -> None:
     _non_empty(self.id, "definition id")
     _non_empty(self.name, "definition name")
-    if self.row_iterator not in {"samples", "explicit_samples"}:
+    if self.row_iterator not in {"samples", "explicit_samples", "group"}:
       raise ValueError(f"invalid table row iterator: {self.row_iterator!r}")
     sample_ids = _unique_strings(self.sample_ids, "sample IDs")
     if self.row_iterator == "explicit_samples" and not sample_ids:
       raise ValueError("explicit_samples table iterator requires sample IDs")
+    if self.row_iterator == "group" and not self.group_id:
+      raise ValueError("group table iterator requires group_id")
+    if self.row_iterator != "group" and self.group_id is not None:
+      raise ValueError("group_id is only valid for the group table iterator")
     if not self.columns:
       raise ValueError("table definition requires at least one column")
     column_ids = _unique_strings(tuple(column.id for column in self.columns), "column IDs")
@@ -118,6 +123,7 @@ class TableDefinitionSpec:
       "name": self.name,
       "row_iterator": self.row_iterator,
       "sample_ids": list(self.sample_ids),
+      "group_id": self.group_id,
       "columns": [column.to_mapping() for column in self.columns],
       "filter_expression": self.filter_expression,
       "sort_column_id": self.sort_column_id,
@@ -202,9 +208,9 @@ def table_definition_from_mapping(value: Mapping[str, Any]) -> TableDefinitionSp
     name=str(value.get("name", "")),
     row_iterator=value.get("row_iterator", "samples"),
     sample_ids=tuple(value.get("sample_ids", ())),
+    group_id=value.get("group_id"),
     columns=tuple(table_column_from_mapping(column) for column in columns),
     filter_expression=value.get("filter_expression"),
     sort_column_id=value.get("sort_column_id"),
     sort_descending=value.get("sort_descending", False),
   )
-

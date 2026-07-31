@@ -126,3 +126,23 @@ def test_table_runner_reports_missing_and_ambiguous_sources_without_shifting_col
   assert [cell.reason for cell in result.rows[0].values] == [
     "missing_keyword", "ambiguous_statistic",
   ]
+
+
+def test_table_runner_uses_resolved_group_members_in_declared_order() -> None:
+  definition = TableDefinitionSpec(
+    id="table", name="Group table", row_iterator="group", group_id="g1",
+    columns=(TableColumnSpec(id="x", name="X", source="constant", constant=1),),
+  )
+  result = run_table_definition(
+    definition, ("s1", "s2", "s3"), group_members={"g1": ("s3", "s1")},
+  )
+  assert [row.row_key for row in result.rows] == ["s3", "s1"]
+
+
+def test_group_table_requires_resolved_members() -> None:
+  definition = TableDefinitionSpec(
+    id="table", name="Group table", row_iterator="group", group_id="missing",
+    columns=(TableColumnSpec(id="x", name="X", source="constant", constant=1),),
+  )
+  with pytest.raises(ValueError, match="not resolved"):
+    run_table_definition(definition, (), group_members={})
