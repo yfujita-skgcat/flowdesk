@@ -1519,7 +1519,7 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   worker 1/2/4の色hash一致と1,000,000 eventの198.4/143.3/110.4 msを確認した。既定は1 workerで、
   GUI自動適用、任意event worker、Qt object操作は行わない。
 - [x] **density chunk workerのメモリ予算制御**: `histogram_memory_budget_bytes`を追加し、
-  chunkごとのfloat/int histogram working setからactive worker数を保守的に制限する。予算が小さい
+  chunkごとのfloat/int histogramとmasked x/y/boolean slice working setからactive worker数を保守的に制限する。予算が小さい
   場合は1 workerへfallbackし、色結果を変えない。これは全FCS配列やRSSを制限するprocess-wide
   budgetではない。
 - [x] **density入力一時コピーの削減**: chunking時に元の変換済み配列を直接分割し、各chunk内で

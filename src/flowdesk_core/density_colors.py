@@ -248,9 +248,15 @@ def _histogram2d(
   chunk_starts = tuple(starts)
   effective_workers = min(workers, len(chunk_starts))
   if memory_budget_bytes is not None:
-    # Each active worker owns np.histogram2d's float grid and an int64 copy.
+    # Each active worker owns histogram grids plus masked chunk x/y arrays and
+    # a boolean visibility slice. This is deliberately conservative; it does
+    # not pretend to be a process-wide RSS limit.
+    chunk_events = min(chunk_size, len(x_values))
+    input_chunk_bytes = (2 * chunk_events * np.dtype(np.float64).itemsize) + chunk_events
     per_worker_bytes = max(
-      1, 2 * int(np.prod(shape, dtype=np.int64)) * np.dtype(np.float64).itemsize,
+      1,
+      2 * int(np.prod(shape, dtype=np.int64)) * np.dtype(np.float64).itemsize
+      + input_chunk_bytes,
     )
     effective_workers = min(effective_workers, max(1, memory_budget_bytes // per_worker_bytes))
   if effective_workers > 1:

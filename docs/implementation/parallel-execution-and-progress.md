@@ -1357,7 +1357,7 @@ chunks, worker 1/2/4 measured 198.4/143.3/110.4 ms and all color hashes matched.
 an indicative numeric-kernel result, not a default-setting justification; memory-budget
 integration, cross-platform packaging, and a GUI control remain future work. The optional
 `histogram_memory_budget_bytes` limits active workers using a conservative per-worker
-float-grid plus int64-grid estimate; an undersized budget falls back to one worker and
+float-grid, int64-grid, and masked chunk x/y/boolean-slice estimate; an undersized budget falls back to one worker and
 never changes colors. This bounds the chunk worker fan-out but does not cap the complete
 FCS/input or post-smoothing arrays, so it is not a process-wide RSS limit.
 Submission uses an ordered in-flight window equal to the effective worker count rather
