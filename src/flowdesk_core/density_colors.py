@@ -68,6 +68,7 @@ class DensityColorResult:
 _PALETTE_STOPS = np.asarray((
   (31, 60, 255), (0, 200, 255), (0, 189, 69), (255, 230, 0), (237, 28, 36),
 ), dtype=np.float64)
+_HEX_DIGITS = np.asarray(tuple("0123456789abcdef"), dtype="<U1")
 _DEFAULT_CONFIG = DensityColorConfig()
 _ESTIMATOR_LOCK = RLock()
 
@@ -328,4 +329,9 @@ def _palette(values: NDArray[np.float64]) -> NDArray[np.str_]:
   rgb = np.rint(
     _PALETTE_STOPS[low] * (1 - fraction) + _PALETTE_STOPS[high] * fraction
   ).astype(np.uint8)
-  return np.asarray([f"#{red:02x}{green:02x}{blue:02x}" for red, green, blue in rgb], dtype="<U7")
+  chars = np.empty((len(rgb), 7), dtype="<U1")
+  chars[:, 0] = "#"
+  for column, channel in enumerate(rgb.T, start=1):
+    chars[:, column * 2 - 1] = _HEX_DIGITS[channel >> 4]
+    chars[:, column * 2] = _HEX_DIGITS[channel & 0x0F]
+  return chars.view("<U7").reshape(-1)

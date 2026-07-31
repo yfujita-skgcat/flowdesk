@@ -813,6 +813,12 @@ field.  A 20,000-event, five-repeat diagnostic on Linux/NumPy 2.5.1 measured a
 71.9 ms median for the numeric density phase.  This is a local diagnostic, not a CI
 performance threshold or an analytical speedup claim.
 
+Density palette conversion now builds `#rrggbb` strings with a vectorized NumPy character
+buffer instead of one Python f-string per event. A 1,000,000-colour local comparison
+produced byte-identical strings and measured 98.2 ms versus 3,108.5 ms for the former
+list-comprehension conversion. The comparison is a kernel diagnostic, not a GUI end-to-end
+threshold; the palette and event order are unchanged.
+
 - Split density work into a renderer-neutral numeric result and GUI presentation.
   Numeric histogram/smoothing/normalization/color-index arrays may run in an owned worker;
   `QBrush`, pyqtgraph items, and widget mutation remain on the GUI thread.

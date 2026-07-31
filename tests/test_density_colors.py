@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from flowdesk_core.density_colors import DensityColorConfig, estimate_density_colors
+from flowdesk_core.density_colors import (
+  DensityColorConfig,
+  density_event_colors,
+  estimate_density_colors,
+)
 
 
 def test_smooth_density_is_deterministic_continuous_and_warmer_at_cluster_centre() -> None:
@@ -88,6 +92,11 @@ def test_density_chunk_size_rejects_non_positive_values() -> None:
     DensityColorConfig(histogram_workers=0)
   with np.testing.assert_raises_regex(ValueError, "histogram_memory_budget_bytes"):
     DensityColorConfig(histogram_memory_budget_bytes=0)
+
+
+def test_density_palette_preserves_canonical_hex_colors() -> None:
+  colors = density_event_colors(np.array([1.0, 1.0]), np.array([2.0, 2.0]))
+  assert np.array_equal(colors, np.array(["#ed1c24", "#ed1c24"], dtype="<U7"))
 
 
 def test_density_estimator_clips_viewport_and_rejects_invalid_contract() -> None:

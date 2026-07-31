@@ -1525,6 +1525,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **density入力一時コピーの削減**: chunking時に元の変換済み配列を直接分割し、各chunk内で
   visibility maskを適用することで、全visibleイベントの`x[visible]`/`y[visible]`一括コピーを避ける。
   小さいvisible populationは従来のsingle-histogram fast pathを維持する。
+- [x] **density palette変換のベクトル化**: eventごとのPython f-string list comprehensionをNumPy
+  character bufferへ置換し、1,000,000色の文字列が完全一致することと98.2 ms（新）/3,108.5 ms（旧）を
+  確認した。palette、hex表現、event順は変更しない。
 - [x] **headless density runtime controls**: `batch-plot` CLIへ`--density-workers`と
   `--density-memory-budget-mib`を追加し、保存済みBatch Export定義へ書き込まずdensity色準備だけへ
   適用する。CLI parserと`DensityColorConfig`の受け渡しをテストした。
