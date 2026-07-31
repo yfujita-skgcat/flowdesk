@@ -14,6 +14,7 @@ from flowdesk_cli.batch_plot import (
   _estimate_batch_render_bytes,
   _gate_overlays,
   _layer_bounds,
+  _ProcessedDisplayCache,
   _RawSampleCache,
   _shared_layer_bounds,
   _shared_layer_bounds_from_ranges,
@@ -28,6 +29,7 @@ from flowdesk_core.models import BatchPlotExportSpec, ChannelSpec
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import VectorRenderCache, prepare_plot_export
 from flowdesk_core.plot_presentation import OverlaySourceResolution
+from flowdesk_core.processed_display import ProcessedDisplayLayer
 from flowdesk_core.sample import SampleData
 from flowdesk_storage.migrations import CURRENT_PROJECT_VERSION
 from flowdesk_storage.project import save_project
@@ -208,9 +210,11 @@ def test_batch_plot_queue_shares_one_raw_cache_between_definitions(
 ) -> None:
   monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
   caches = []
+  display_caches = []
 
   def fake_batch(*_args, **kwargs) -> int:
     caches.append(kwargs["_raw_sample_cache"])
+    display_caches.append(kwargs["_processed_display_cache"])
     return 0
 
   monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
@@ -220,6 +224,62 @@ def test_batch_plot_queue_shares_one_raw_cache_between_definitions(
   assert len(caches) == 2
   assert caches[0] is caches[1]
   assert isinstance(caches[0], _RawSampleCache)
+  assert display_caches[0] is display_caches[1]
+  assert isinstance(display_caches[0], _ProcessedDisplayCache)
+
+
+def _display_layer(event_count: int = 2) -> ProcessedDisplayLayer:
+  return ProcessedDisplayLayer(
+    sample_id="sample",
+    population_id="all_events",
+    x_parameter_id="x",
+    y_parameter_id="y",
+    x_transform_id=None,
+    y_transform_id=None,
+    plot_type="scatter",
+    display_max_points=20_000,
+    events=np.zeros((event_count, 2), dtype=np.float64),
+    channels=(ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y")),
+    display_mask=np.ones(event_count, dtype=bool),
+  )
+
+
+def test_processed_display_cache_is_bounded_lru() -> None:
+  first = _display_layer(2)
+  second = _display_layer(2)
+  cache = _ProcessedDisplayCache(first.events.nbytes + first.display_mask.nbytes)
+  assert cache.get_or_load(("first",), lambda: first) is first
+  assert cache.get_or_load(("second",), lambda: second) is second
+  assert cache.stats()["retained_layers"] == 1
+  assert cache.stats()["evictions"] == 1
+  assert cache.get_or_load(("first",), lambda: first) is first
+  assert cache.stats()["misses"] == 3
+
+
+def test_processed_display_cache_zero_budget_does_not_retain() -> None:
+  cache = _ProcessedDisplayCache(0)
+  calls = 0
+
+  def load() -> ProcessedDisplayLayer:
+    nonlocal calls
+    calls += 1
+    return _display_layer()
+
+  cache.get_or_load(("same",), load)
+  cache.get_or_load(("same",), load)
+  assert calls == 2
+  assert cache.stats()["retained_layers"] == 0
+  assert cache.stats()["retained_bytes"] == 0
+
+
+def test_processed_display_cache_keeps_distinct_requests_separate() -> None:
+  cache = _ProcessedDisplayCache(1024 * 1024)
+  first = _display_layer()
+  second = _display_layer()
+  assert cache.get_or_load(("view", "all_events", "x", "y"), lambda: first) is first
+  assert cache.get_or_load(("view", "all_events", "x", "z"), lambda: second) is second
+  assert cache.stats()["retained_layers"] == 2
+  assert cache.stats()["hits"] == 0
 
 
 def test_batch_plot_queue_supports_explicit_definition_parallelism(
@@ -273,6 +333,7 @@ def test_batch_plot_queue_supports_explicit_definition_parallelism(
   assert manifest["queue_execution"]["peak_in_flight_definitions"] == 2
   assert manifest["raw_sample_cache"]["enabled"] is True
   assert manifest["raw_sample_cache"]["hits"] >= 1
+  assert manifest["processed_display_cache"]["retained_layers"] == 0
   assert [item["status"] for item in manifest["definitions"]] == [
     "success", "success", "success",
   ]
@@ -679,6 +740,7 @@ def test_batch_plot_command_reuses_queue_raw_sample_cache(
     lambda *_args: [{"id": "s1", "name": "Sample", "path": "sample.fcs"}],
   )
   reads = 0
+  display_preparations = 0
 
   def read_sample(*_args):
     nonlocal reads
@@ -686,17 +748,32 @@ def test_batch_plot_command_reuses_queue_raw_sample_cache(
     return None, sample
 
   monkeypatch.setattr("flowdesk_cli.batch_plot.read_fcs_sample", read_sample)
+  original_prepare = PipelineRunner.prepare_display_layer
+
+  def count_display_preparation(self, *args, **kwargs):
+    nonlocal display_preparations
+    display_preparations += 1
+    return original_prepare(self, *args, **kwargs)
+
+  monkeypatch.setattr(
+    PipelineRunner, "prepare_display_layer", count_display_preparation,
+  )
   cache = _RawSampleCache(1024)
+  display_cache = _ProcessedDisplayCache(1024 * 1024)
   assert batch_plot_command(
     str(project_path), "export", str(tmp_path / "first"),
     _raw_sample_cache=cache,
+    _processed_display_cache=display_cache,
   ) == 0
   assert batch_plot_command(
     str(project_path), "export", str(tmp_path / "second"),
     _raw_sample_cache=cache,
+    _processed_display_cache=display_cache,
   ) == 0
   assert reads == 1
   assert cache.stats()["hits"] == 1
+  assert display_preparations == 1
+  assert display_cache.stats()["hits"] == 1
 
 
 def test_batch_plot_command_maps_cancellation_to_sigint_exit_code(

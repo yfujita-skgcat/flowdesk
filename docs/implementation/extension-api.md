@@ -49,9 +49,12 @@ The queue emits `batch_plot_queue` progress events for `definition_started` and
 `definition_completed`, with deterministic `completed_units`/`total_units` and the definition ID
 in `sample_id`. Nested `batch_plot_export` events remain available for source/render detail.
 The queue loads the project bundle once (including when `--queue-all` enumerates IDs) and passes
-the immutable mapping snapshot to each definition invocation. It does not share raw FCS arrays, transformed layers, density fields, or
-mutable renderer caches across definitions; those remain definition-scoped to preserve output
-isolation and bounded memory behavior.
+the immutable mapping snapshot to each definition invocation. Raw FCS arrays use a bounded
+fingerprint-scoped cache. When the effective queue backend is sequential, an additional bounded
+processed-display cache may reuse an exact request keyed by sample fingerprint, population, axes,
+transforms, plot type, display limit, and preview requirement. Definition-parallel workers do not
+retain processed-display entries, and density fields, renderer objects, and mutable caches remain
+definition-scoped to preserve output isolation.
 It also builds one definition-ID index at queue start, so each queued invocation avoids a repeated
 linear scan of the saved definition list while preserving declaration order and unknown-ID
 validation behavior.

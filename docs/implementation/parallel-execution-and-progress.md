@@ -1321,12 +1321,16 @@ with a lock, so concurrent readers do not mutate a scientific input. The coordin
 `estimated_definition_bytes * effective_workers` before assigning any cache capacity; under an
 explicit budget only the residual is available to the raw cache (up to 256 MiB). With no
 residual budget, workers receive no cache and the manifest records
-`reason=no_residual_memory_budget`. The cache never contains transformed layers, masks,
-density colours, renderer objects, or authoritative results. This reduces duplicate FCS I/O
-without changing event identity, output order, cancellation, or the sequential default. The
-queue manifest refreshes cache `hits`, `misses`, `evictions`, `retained_bytes`, and the reserved
-worker bytes after all active futures finish, including failure and cancellation paths, so a
-reported cache benefit is auditable rather than inferred from the initial configuration.
+`reason=no_residual_memory_budget`. Definition-parallel workers never retain processed display
+layers, masks, density colours, renderer objects, or authoritative results in this shared cache.
+When the effective queue backend is sequential, the residual budget may also retain an exact
+processed-display request keyed by sample fingerprint, population, axes, transforms, plot type,
+display limit, and preview requirement. This second LRU is bounded, never crosses request keys,
+and is disabled when no residual budget remains. Both caches reduce repeat preparation without
+changing event identity, output order, cancellation, or the sequential default. The queue
+manifest refreshes cache `hits`, `misses`, `evictions`, and `retained_bytes` after every
+definition boundary and at shutdown, so a reported cache benefit is auditable rather than
+inferred from the initial configuration.
 
 When an explicit memory budget resolves the queue to one effective worker, the coordinator
 uses the sequential loop directly instead of constructing a one-thread `ThreadPoolExecutor`.

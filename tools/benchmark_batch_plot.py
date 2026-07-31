@@ -369,6 +369,9 @@ raise SystemExit(status)
       cache = manifest.get("raw_sample_cache")
       if isinstance(cache, Mapping):
         execution["raw_sample_cache"] = dict(cache)
+      display_cache = manifest.get("processed_display_cache")
+      if isinstance(display_cache, Mapping):
+        execution["processed_display_cache"] = dict(display_cache)
   hashes, output_bytes = _output_hashes(output_dir, recursive=True)
   stderr = timeout_stderr if timed_out else (completed.stderr if completed else "")
   return {

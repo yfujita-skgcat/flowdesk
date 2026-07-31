@@ -47,7 +47,7 @@ from flowdesk_core.plot_export import (
   write_plot_svg,
 )
 from flowdesk_core.plot_presentation import OverlaySourceResolution
-from flowdesk_core.processed_display import ProcessedDisplayRequest
+from flowdesk_core.processed_display import ProcessedDisplayLayer, ProcessedDisplayRequest
 from flowdesk_core.transforms import apply_transform, generate_transform_ticks
 from flowdesk_core.vector_scatter import preflight_vector_scatter_export
 from flowdesk_storage.manifest import ManifestValidationError
@@ -143,6 +143,88 @@ class _RawSampleCache:
       }
 
 
+class _ProcessedDisplayCache:
+  """Bounded cache for immutable display-stage results within one queue."""
+
+  def __init__(self, max_bytes: int) -> None:
+    self._max_bytes = max(0, int(max_bytes))
+    self._items: OrderedDict[
+      tuple[object, ...], tuple[ProcessedDisplayLayer, int]
+    ] = OrderedDict()
+    self._bytes = 0
+    self.hits = 0
+    self.misses = 0
+    self.evictions = 0
+    self._lock = Lock()
+    self._inflight: dict[tuple[object, ...], Event] = {}
+
+  @staticmethod
+  def _size(layer: ProcessedDisplayLayer) -> int:
+    size = int(layer.events.nbytes + layer.display_mask.nbytes)
+    report = layer.preview_report
+    if report is not None:
+      size += sum(
+        int(membership.mask.nbytes)
+        for membership in report.population_membership
+      )
+    return size
+
+  def get_or_load(
+    self,
+    key: tuple[object, ...],
+    loader: Callable[[], ProcessedDisplayLayer],
+  ) -> ProcessedDisplayLayer:
+    """Return a cached layer, coalescing concurrent preparation misses."""
+    while True:
+      with self._lock:
+        cached = self._items.get(key)
+        if cached is not None:
+          self._items.move_to_end(key)
+          self.hits += 1
+          return cached[0]
+        self.misses += 1
+        waiter = self._inflight.get(key)
+        if waiter is None:
+          waiter = Event()
+          self._inflight[key] = waiter
+          owner = True
+        else:
+          owner = False
+      if not owner:
+        waiter.wait()
+        continue
+      try:
+        layer = loader()
+        size = self._size(layer)
+        if size <= self._max_bytes:
+          with self._lock:
+            previous = self._items.pop(key, None)
+            if previous is not None:
+              self._bytes -= previous[1]
+            self._items[key] = (layer, size)
+            self._bytes += size
+            while self._bytes > self._max_bytes and self._items:
+              _, (_, evicted_size) = self._items.popitem(last=False)
+              self._bytes -= evicted_size
+              self.evictions += 1
+        return layer
+      finally:
+        with self._lock:
+          self._inflight.pop(key, None)
+          waiter.set()
+
+  def stats(self) -> dict[str, int]:
+    with self._lock:
+      return {
+        "max_bytes": self._max_bytes,
+        "retained_bytes": self._bytes,
+        "retained_layers": len(self._items),
+        "hits": self.hits,
+        "misses": self.misses,
+        "evictions": self.evictions,
+      }
+
+
 def _raw_sample_cache_key(sample: Mapping[str, Any]) -> tuple[str, str, str]:
   """Include the persisted fingerprint so a changed file is never reused."""
   fingerprint = json.dumps(
@@ -175,6 +257,7 @@ def batch_plot_command(
   _definition_snapshot: Mapping[str, Any] | None = None,
   _samples_snapshot: Sequence[Mapping[str, Any]] | None = None,
   _raw_sample_cache: _RawSampleCache | None = None,
+  _processed_display_cache: _ProcessedDisplayCache | None = None,
 ) -> int:
   try:
     if execution_control is None and execution_options is not None:
@@ -369,7 +452,10 @@ def batch_plot_command(
         plot_type=cast(PlotType, str(view.get("plot_type", "scatter"))),
         rendering_downsample=cast(dict[str, Any], view.get("rendering_downsample", {})),
       )
-      processed = runner_for_current_thread().prepare_display_layer(ProcessedDisplayRequest(
+      display_max_points = int(
+        view_spec.rendering_downsample.get("max_points", 20_000)
+      )
+      display_request = ProcessedDisplayRequest(
         revision=0,
         sample=sample_data,
         population_id=view_spec.population_id,
@@ -377,8 +463,30 @@ def batch_plot_command(
         y_parameter_id=y_id,
         x_transform_id=view.get("x_transform_id"),
         y_transform_id=view.get("y_transform_id"),
-        display_max_points=int(view_spec.rendering_downsample.get("max_points", 20_000)),
-      ), require_preview=population_colors_configured)
+        display_max_points=display_max_points,
+      )
+      display_cache_key = (
+        *_raw_sample_cache_key(sample),
+        view_spec.population_id,
+        x_id,
+        y_id,
+        view.get("x_transform_id"),
+        view.get("y_transform_id"),
+        view_spec.plot_type,
+        display_max_points,
+        "preview" if population_colors_configured else "layer",
+      )
+      if _processed_display_cache is None:
+        processed = runner_for_current_thread().prepare_display_layer(
+          display_request, require_preview=population_colors_configured,
+        )
+      else:
+        processed = _processed_display_cache.get_or_load(
+          display_cache_key,
+          lambda: runner_for_current_thread().prepare_display_layer(
+            display_request, require_preview=population_colors_configured,
+          ),
+        )
       processed_ids = {channel.id for channel in processed.channels}
       if x_id not in processed_ids or y_id not in processed_ids:
         raise ValueError(
@@ -1097,8 +1205,9 @@ def batch_plot_queue_command(
   }
   _write_queue_manifest(queue_manifest_path, queue_manifest)
   # Raw FCS arrays are immutable inputs and can safely be shared between
-  # sequential definitions. Definition-scoped transformed/display layers are
-  # still rebuilt because their views, gates, and presentation may differ.
+  # definitions. The optional processed-display cache below reuses only an
+  # exact, immutable request key; views, gates, and presentation remain
+  # definition-scoped.
   requested_cache_budget = base_options.memory_budget_bytes
   raw_cache_budget = 256 * 1024 * 1024
   if requested_cache_budget is not None:
@@ -1115,7 +1224,22 @@ def batch_plot_queue_command(
     else:
       raw_cache_budget = min(raw_cache_budget, max(0, requested_cache_budget // 2))
   raw_sample_cache = _RawSampleCache(raw_cache_budget)
+  processed_display_cache_budget = 0
+  if effective_queue_workers == 1:
+    # A sequential queue can safely reuse immutable processed layers between
+    # definitions. Keep this cache separate from the raw cache and bounded so
+    # the optimization never consumes the definition working-set reserve.
+    if requested_cache_budget is None:
+      processed_display_cache_budget = 64 * 1024 * 1024
+    else:
+      reserved_definition_bytes = estimated_queue_definition_bytes
+      processed_display_cache_budget = min(
+        64 * 1024 * 1024,
+        max(0, requested_cache_budget - reserved_definition_bytes - raw_cache_budget),
+      )
+  processed_display_cache = _ProcessedDisplayCache(processed_display_cache_budget)
   queue_manifest["raw_sample_cache"] = raw_sample_cache.stats()
+  queue_manifest["processed_display_cache"] = processed_display_cache.stats()
   _write_queue_manifest(queue_manifest_path, queue_manifest)
   results_by_index: dict[int, int] = {}
 
@@ -1150,6 +1274,7 @@ def batch_plot_queue_command(
         _definition_snapshot=definition_index.get(export_id),
         _samples_snapshot=resolved_samples,
         _raw_sample_cache=cache,
+        _processed_display_cache=processed_display_cache,
       )
     except ExecutionCancelled:
       result = 130
@@ -1183,6 +1308,7 @@ def batch_plot_queue_command(
         }
       else:
         queue_manifest["raw_sample_cache"] = cache_stats
+      queue_manifest["processed_display_cache"] = processed_display_cache.stats()
     if execution_control is not None:
       execution_control.emit_progress(ProgressEvent(
         operation_id="batch_plot_queue",
@@ -1243,6 +1369,7 @@ def batch_plot_queue_command(
         "reason": "no_residual_memory_budget",
       }),
     }
+    queue_manifest["processed_display_cache"] = processed_display_cache.stats()
     _write_queue_manifest(queue_manifest_path, queue_manifest)
     effective_workers = effective_queue_workers
     executor = ThreadPoolExecutor(
@@ -1324,6 +1451,7 @@ def batch_plot_queue_command(
           "reason": "no_residual_memory_budget",
         }),
       }
+      queue_manifest["processed_display_cache"] = processed_display_cache.stats()
     if queue_manifest["status"] == "cancelled":
       for item in queue_items:
         if item["status"] == "running":

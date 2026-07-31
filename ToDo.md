@@ -1209,8 +1209,10 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
   定義例外をfailedへ正規化し、cancelledとは区別する。`--queue-all`は同じproject snapshotで
   保存順の定義を列挙し、定義ID indexを再利用する。
   - [x] queue内の同一FCS再読込を、fingerprint付き・最大256 MiB（memory budget指定時はその半分）の
-    raw sample LRUで削減する。変換済みlayer、population mask、density、renderer cacheは定義ごとに
-    分離し、cache hit/miss/eviction/保持bytesを`batch-queue-manifest.json`へ記録する。
+    raw sample LRUで削減する。定義並列時の変換済みlayer、population mask、density、renderer cacheは
+    定義ごとに分離する。実効逐次queueに限り、sample fingerprint、population、軸、transform、plot type、
+    display limit、preview requirementが完全一致するimmutable processed-display layerだけを、残余予算内の
+    bounded LRUで再利用する。raw/processed cacheのhit/miss/eviction/保持bytesを`batch-queue-manifest.json`へ記録する。
   - [x] CLI-only `--queue-workers N`による定義単位bounded並列を追加する。各定義のinner backendを
     sequentialへ固定し、shared cancellation、宣言順manifest merge、fail-fast/continue、active writerの
     協調終了を維持する。`--memory-budget-mib`はFCS file sizeからqueue worker数も制限し、
@@ -1490,6 +1492,15 @@ thread backend（Increment 8）とは別の計画である。
 Increment 8の実装時点で、次の境界を明記しておく。ここに記載した保留事項が解消されるまでは、
 thread backendを既定値にしたり、GUI描画へ自動適用したりしない。
 
+#### Windows/PyInstaller検証の扱い（2026-07-31）
+
+Windows実機またはWindows/PyInstaller専用CI runnerを現在利用できないため、workerの
+終了処理、Qt backendの長時間再入性、実FCSのcancel/closeをこの環境では検証できない。
+これはLinux版の開発・テスト・リリースをブロックしない延期項目として扱う。ただし、
+検証済みとは報告せず、Windows向けworker設定をGUIの既定値へ変更しない。将来Windows
+runnerまたは実機を利用できるようになった時点で、package smoke、worker終了、Ctrl-C、
+例外伝播、ログ/provenance、GUI closeをまとめて確認する。
+
 - [x] **適用範囲**: `thread` backendはheadlessのauthoritative `Run Pipeline`におけるsample間の
   並列化だけを対象とする。メインウィンドウのactive sample切替、Qt/pyqtgraph描画、density colorの
   計算をこのworkerへ移してはいけない。
@@ -1571,8 +1582,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   manifestへrequested `backend`とresolved `resolved_backend`を分離して記録し、worker数制限理由と
   raw cacheの残余予算を保持する。definition順、progress、cancel、failure policy、出力は従来と同じで、
   memory制限下のfuture管理オーバーヘッドだけを除去した。
-- [ ] **Batch Plot Export並列化の残りの検証**: rendererのreentrancy、共有mutable state、Qt backend、
-  overlayのshared range barrier、Windows/PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、
+- [ ] **Batch Plot Export並列化の残りの検証（延期・非ブロッカー）**: rendererのreentrancy、共有mutable state、Qt backend、
+  overlayのshared range barrier、Windows/PyInstaller終了処理を、対応runnerまたは実機が利用可能になった時点で検証する。
+  検証完了前にthread backendを既定値へ変更したり、
   GUIへ自動適用したりしない。代表FCSでの出力parityとpeak RSSの測定は実施済みだが、
   `--scientific-stages`でcompensation/derived/gate/statisticsを追加したworkloadもLinuxで測定済みである。
   同一process内のPNG/SVG/PDF再実行parity smoke testは追加済みだが、native Windows/PyInstaller終了処理は未検証。
@@ -1652,8 +1664,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   Windows/PyInstallerのworker終了、native Qt backendの長時間再入性、4 MiB以上の実FCS prefetchを
   完了扱いにしない。full GUI suiteの断続的なQt/pyqtgraph終了時segmentation faultは既知の残課題として
   記録し、再現条件なしにschedulerやworkerの既定値を変更しない。
-- [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
-  大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
+- [ ] **density workerの運用統合（延期・非ブロッカー）**: Windows/PyInstaller lifecycle、
+  大規模実FCSでのpeak RSSとcancel/closeは、Windows runnerまたは実機が利用可能になった時点で
+  検証する。現時点では既定値を変更せず、GUI worker設定を無効化したまま維持する。
 - [x] **hybrid rasterの小配列ベクトル化を不採用とする記録**: alpha<1 markerの内側pixel
   ループを行単位NumPy配列へ置換する試行は、`data/analysis.flowdesk`（4 samples、PNG/PDF）で
   出力SHA-256を維持したものの、sequential renderが約21.2秒から約53.8秒へ悪化した。
@@ -1677,9 +1690,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
   FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
   Increment 11のdecision recordで採否を決定する。
-- [ ] **GUI/配布環境の確認**: GUIはQt thread affinityとshutdown時のworker未残留を守る。CLI flagsは
-  opt-inのままとし、Windows/PyInstallerでworker終了、Ctrl-C、例外伝播、ログとresolved provenanceを
-  確認する。
+- [ ] **GUI/配布環境の確認（延期・非ブロッカー）**: GUIはQt thread affinityとshutdown時のworker未残留を
+  守る。CLI flagsはopt-inのままとし、Windows/PyInstallerでのworker終了、Ctrl-C、例外伝播、ログと
+  resolved provenanceの確認は、対応runnerまたは実機が利用可能になった時点で実施する。
 - [x] Qt batch rendererが作るunparented `PlotWidget`をexport直後に`deleteLater()`し、GUI eventを
   処理してから次のworker-backed Qt操作へ進むcleanupを追加した。長いGUI test/processでの
   `QThreadPool` teardown raceを減らすLinux回帰testを確認した。Windows/PyInstaller lifecycleの

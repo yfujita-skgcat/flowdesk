@@ -1005,7 +1005,7 @@ queueでは定義ごとに `<output-dir>/001_<id>/` のような安全なサブ�
 runtime worker/memory設定を共有し、Ctrl-Cでは終了コード130を返します。`--export-id` と
 `--queue-all` と `--queue-export-id` は同時に指定できず、`--export-id`とも併用できません。GUIの`Run Saved Queue`とCLI queueは同じ保存済み定義の順序・定義別出力・failure policyを使用します。
 CLIでは`--queue-workers N`を明示すると、保存定義単位のbounded並列実行を有効にできます。各定義の出力先・manifestは独立し、定義内部は逐次backendへ固定して二重並列を防ぎます。`--memory-budget-mib`を指定した場合は、各定義のtarget/overlay sourceに必要なFCS file sizeとPNG/JPEG/hybrid PDFの出力canvas working setから保守的にqueue worker数も制限され、queue内最大の見積もり・制限要因・予算がqueue manifestへ記録されます。定義を安全に解決できない場合はproject内全FCSを見積もり対象にします。queue manifestには計画・投入・完了した定義数と実測最大同時実行数も記録されます。fail-fastで開始前に取り消された定義は`not_started`となり、完了数には含まれません。実行中の定義は協調的に終了して実際の結果が記録されます。`--queue-workers`は`--execution-backend thread`とは併用できません。既定値は1（逐次）で、GUIには未検証のため表示しません。
-queue内で同じFCSを複数定義が参照する場合、fingerprintを含むraw sampleだけを最大256 MiB（runtime memory budget指定時はその半分まで）のLRUで再利用します。変換済みlayer、gate/population mask、density色、renderer cacheは定義ごとに分離されます。cacheのbudget、hit/miss、eviction、保持bytesは`batch-queue-manifest.json`へ記録されます。
+queue内で同じFCSを複数定義が参照する場合、fingerprintを含むraw sampleだけを最大256 MiB（runtime memory budget指定時はその半分まで）のLRUで再利用します。さらに、実効queue workerが1の場合に限り、sample fingerprint、population、軸、transform、plot type、表示点数、preview要求が完全一致するprocessed display layerを、残余メモリ内のbounded LRUで再利用します。異なる表示要求や定義並列実行では共有せず、gate/statisticsなどのauthoritative結果も変更しません。raw/processed display cacheのbudget、hit/miss、eviction、保持bytesは`batch-queue-manifest.json`へ記録されます。
 ダイアログで`Bounded threads (opt-in)`を選んだ場合だけ同じruntime設定を使用し、
 batch manifestの`execution`には、実行単位（`prepared_output_item`）、計画数、投入数、完了数、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、
