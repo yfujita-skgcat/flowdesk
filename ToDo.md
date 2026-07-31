@@ -1475,9 +1475,12 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **provenance**: resolved backend、worker数、memory budget等は`ExecutionReport`のruntime
   provenanceであり、projectのscientific definitionへ保存しない。runtimeが異なってもscientific
   result hashの比較対象からprovenanceを除外する。
-- [ ] **代表 workloadの性能ゲート**: compensation、derived parameters、複数gate、statisticsを
-  含む実データ相当のprofileを追加し、sequential/threadのwall time、peak RSS、CPU oversubscriptionを
-  測定する。speedupが再現しない場合はthread backendを実験機能のまま維持する。
+- [x] **代表 workloadの性能ゲート**: `pipeline_benchmark --profile representative`へidentity
+  compensation、derived ratio、transform、rectangle gate、count/mean statisticsを含む8 sample ×
+  100,000 eventのdeterministic profileを追加し、sequential/threadのwall time、peak RSS、report hash、
+  inner-thread解決を測定した。2026-07-31のLinux測定はsequential 86.7 ms/84,776 KiB、thread/2
+  52.7 ms/103,440 KiB、hash一致だった。これは診断値であり、real instrument dataとWindows/PyInstaller
+  検証は未完了なのでthread backendは明示opt-inのまま維持する。
 - [x] `tools/benchmark_batch_plot.py`へ`--project`/`--export-id`を追加し、保存済みBatch Exportを
   sequential/threadの別processで実行してmanifest phase、出力SHA-256、output bytes、peak RSS、open-file数を
   JSONへ記録する。実FCSの8出力はbyte parityを確認できるが、thread/2は2026-07-31に約1.06倍の速度と

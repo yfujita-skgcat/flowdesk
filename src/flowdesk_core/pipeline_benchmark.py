@@ -41,6 +41,7 @@ class PipelineBenchmarkProfile:
   events_per_sample: int
   sample_count: int
   channel_count: int = 4
+  scientific_stages: bool = False
 
   def __post_init__(self) -> None:
     if self.events_per_sample < 1:
@@ -55,6 +56,9 @@ PIPELINE_BENCHMARK_PROFILES: dict[str, PipelineBenchmarkProfile] = {
   "small": PipelineBenchmarkProfile("small", 100_000, 8),
   "medium": PipelineBenchmarkProfile("medium", 1_000_000, 8),
   "large": PipelineBenchmarkProfile("large", 10_000_000, 2),
+  "representative": PipelineBenchmarkProfile(
+    "representative", 100_000, 8, scientific_stages=True,
+  ),
 }
 
 
@@ -90,9 +94,11 @@ def deterministic_pipeline_samples(
   return tuple(samples)
 
 
-def pipeline_benchmark_project(samples: Sequence[SampleData]) -> dict[str, Any]:
+def pipeline_benchmark_project(
+  samples: Sequence[SampleData], *, scientific_stages: bool = False,
+) -> dict[str, Any]:
   """Return the minimal canonical project for the supplied sample IDs."""
-  return {
+  project: dict[str, Any] = {
     "project_id": "pipeline-benchmark",
     "pipeline_version": "benchmark.v1",
     "samples": [{"id": sample.sample_id} for sample in samples],
@@ -102,6 +108,72 @@ def pipeline_benchmark_project(samples: Sequence[SampleData]) -> dict[str, Any]:
       "gating_strategy_id": None,
     }],
   }
+  if not scientific_stages:
+    return project
+  strategy_id = "representative_strategy"
+  project["execution_profiles"] = [{
+    "id": "default",
+    "sample_selector": "all",
+    "gating_strategy_id": strategy_id,
+  }]
+  project["compensation_matrices"] = [{
+    "id": "representative_identity",
+    "name": "Representative identity compensation",
+    "source": "user_defined",
+    "channels": ("channel_1", "channel_2"),
+    "matrix": ((1.0, 0.0), (0.0, 1.0)),
+  }]
+  project["default_compensation_matrix_id"] = "representative_identity"
+  project["derived_parameters"] = [{
+    "id": "channel_ratio",
+    "output_channel_id": "channel_ratio",
+    "name": "Channel 1 / Channel 2",
+    "expression": "channel_1 / channel_2",
+    "source_stage": "compensated",
+    "input_parameters": ("channel_1", "channel_2"),
+  }]
+  project["transforms"] = [{
+    "id": "ratio_scale",
+    "name": "Ratio scale",
+    "transform_type": "linear",
+    "parameter": "channel_ratio",
+    "settings": {"scale": 1.0, "offset": 0.0},
+  }]
+  project["gating_strategies_data"] = {strategy_id: {
+    "id": strategy_id,
+    "name": "Representative strategy",
+    "gates": [{
+      "id": "ratio_population",
+      "name": "Ratio population",
+      "gate_type": "rectangle",
+      "parent_population_id": "all_events",
+      "x_parameter": "channel_ratio",
+      "y_parameter": "channel_2",
+      "x_transform_id": "ratio_scale",
+      "thresholds": {
+        "x_min": 0.5,
+        "x_max": 2.0,
+        "y_min": 0.0,
+        "y_max": 1_000_000_000.0,
+      },
+    }],
+  }}
+  project["statistics"] = [
+    {
+      "id": "ratio_count",
+      "name": "Ratio population count",
+      "population_id": "ratio_population",
+      "metric": "count",
+    },
+    {
+      "id": "ratio_mean",
+      "name": "Ratio population mean",
+      "population_id": "ratio_population",
+      "parameter_id": "channel_ratio",
+      "metric": "mean",
+    },
+  ]
+  return project
 
 
 def pipeline_input_fingerprint(samples: Sequence[SampleData]) -> str:
@@ -161,7 +233,9 @@ def run_pipeline_benchmark(
   started = time.perf_counter()
   samples = deterministic_pipeline_samples(profile, seed=seed)
   fixture_ms = (time.perf_counter() - started) * 1000.0
-  project = pipeline_benchmark_project(samples)
+  project = pipeline_benchmark_project(
+    samples, scientific_stages=profile.scientific_stages,
+  )
   input_fingerprint = pipeline_input_fingerprint(samples)
   expected_root_counts = {
     sample.sample_id: profile.events_per_sample for sample in samples

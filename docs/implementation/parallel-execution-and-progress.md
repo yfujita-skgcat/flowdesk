@@ -949,6 +949,15 @@ The GUI exposes the same backend, worker, and memory-budget controls through
 are never written into the project scientific definition. GUI defaults to sequential and
 uses the thread backend only after an explicit opt-in.
 
+The `representative` pipeline benchmark profile now includes an identity compensation
+matrix, a compensated derived ratio, a linear transform, a rectangle population gate,
+and count/mean statistics across eight deterministic 100,000-event samples. On the
+2026-07-31 Linux benchmark host, sequential execution took 86.7 ms with 84,776 KiB
+peak RSS and bounded thread/2 took 52.7 ms with 103,440 KiB peak RSS; the scientific
+report hash was identical (`ace9338a...`). These are diagnostic measurements rather
+than CI thresholds. They justify retaining thread as explicit opt-in until equivalent
+Windows/PyInstaller and real instrument-data measurements are available.
+
 ### Decision record: why independent FCS files do not imply one-thread-per-file
 
 Batch export has a useful independence boundary, but it is narrower than the input-file

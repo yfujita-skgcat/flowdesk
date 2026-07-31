@@ -5,8 +5,10 @@ from __future__ import annotations
 from flowdesk_core.execution_context import ExecutionContext
 from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
 from flowdesk_core.pipeline_benchmark import (
+  PIPELINE_BENCHMARK_PROFILES,
   PipelineBenchmarkProfile,
   deterministic_pipeline_samples,
+  pipeline_benchmark_project,
   pipeline_input_fingerprint,
   pipeline_scientific_report_hash,
   run_pipeline_benchmark,
@@ -72,3 +74,29 @@ def test_pipeline_scientific_hash_excludes_runtime_worker_provenance() -> None:
   )
 
   assert pipeline_scientific_report_hash(sequential) == pipeline_scientific_report_hash(threaded)
+
+
+def test_representative_profile_exercises_scientific_stages_and_keeps_parity() -> None:
+  profile = PipelineBenchmarkProfile(
+    "representative-test", events_per_sample=24, sample_count=2,
+    scientific_stages=True,
+  )
+  samples = deterministic_pipeline_samples(profile, seed=7)
+  project = pipeline_benchmark_project(samples, scientific_stages=True)
+  sequential = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_control=ExecutionControl()), samples
+  )
+  threaded = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_control=ExecutionControl(options=ExecutionOptions(
+      backend="thread", max_workers=2,
+    ))),
+    samples,
+  )
+
+  assert sequential.status == threaded.status == "success"
+  assert sequential.population_results == threaded.population_results
+  assert sequential.statistic_results == threaded.statistic_results
+  assert pipeline_scientific_report_hash(sequential) == pipeline_scientific_report_hash(threaded)
+  assert len(sequential.population_results) == 4
+  assert len(sequential.statistic_results) == 4
+  assert PIPELINE_BENCHMARK_PROFILES["representative"].scientific_stages is True
