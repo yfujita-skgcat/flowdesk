@@ -138,6 +138,14 @@ Tests and benchmarks:
   and output paths remain definition-scoped; queue-level parallelism must not be inferred
   from raw-input reuse. Cache budget, hits, misses, evictions, and retained bytes are
   recorded in `batch-queue-manifest.json`.
+- CLI-only `--queue-workers N` provides explicit definition-level bounded parallelism.
+  When enabled, each definition receives a shared cancellation token but its own
+  coordinator/provenance and a sequential inner backend; combining queue workers with
+  per-definition sample threads is rejected to prevent nested oversubscription. Output
+  directories and definition manifests are independent, completion results are merged in
+  declaration order, and fail-fast/cancel stops submitting new definitions without
+  force-terminating active writers. GUI queue controls remain sequential/disabled until
+  native Windows/PyInstaller and peak-memory/reentrancy measurements justify exposure.
 
 ## Non-goals
 

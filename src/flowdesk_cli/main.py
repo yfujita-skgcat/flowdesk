@@ -174,6 +174,15 @@ def main() -> int:
     "--queue-failure-policy", choices=("fail-fast", "continue"), default="fail-fast",
     help="Queue behavior after one definition fails (default: fail-fast).",
   )
+  plot_parser.add_argument(
+    "--queue-workers",
+    type=_positive_integer,
+    default=1,
+    help=(
+      "Concurrent saved definitions for explicit queue parallelism "
+      "(default: 1; cannot combine with --execution-backend thread)."
+    ),
+  )
   plot_parser.add_argument("--output-dir", required=True, help="Output directory.")
   plot_parser.add_argument(
     "--execution-backend",
@@ -264,6 +273,7 @@ def main() -> int:
           queue_all=args.queue_all,
           execution_control=control,
           execution_options=options,
+          queue_workers=args.queue_workers,
           density_config=DensityColorConfig(
             histogram_workers=args.density_workers,
             histogram_memory_budget_bytes=(

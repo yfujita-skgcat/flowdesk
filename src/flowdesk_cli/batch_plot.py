@@ -951,10 +951,22 @@ def batch_plot_queue_command(
   execution_control: ExecutionControl | None = None,
   execution_options: ExecutionOptions | None = None,
   density_config: DensityColorConfig | None = None,
+  queue_workers: int = 1,
 ) -> int:
   """Run several saved plot definitions with one cooperative queue control."""
   if failure_policy not in {"continue", "fail-fast"}:
     raise ValueError("failure_policy must be 'continue' or 'fail-fast'")
+  if queue_workers < 1:
+    raise ValueError("queue_workers must be positive")
+  base_options = (
+    execution_options
+    if execution_options is not None
+    else execution_control.options if execution_control is not None else ExecutionOptions()
+  )
+  if queue_workers > 1 and base_options.backend == "thread":
+    raise ValueError(
+      "queue_workers cannot be combined with the per-definition thread backend"
+    )
   try:
     project_snapshot = load_project(project_path)
   except (FileNotFoundError, KeyError, ValueError, ManifestValidationError) as exc:
@@ -993,86 +1005,204 @@ def batch_plot_queue_command(
     "schema_version": 1,
     "status": "running",
     "failure_policy": failure_policy,
+    "queue_execution": {
+      "backend": "sequential" if queue_workers == 1 else "thread",
+      "requested_workers": queue_workers,
+      "effective_workers": min(queue_workers, len(queue)),
+      "nested_definition_backend": (
+        "sequential" if queue_workers > 1 else (
+      base_options.backend
+        )
+      ),
+    },
     "definitions": queue_items,
   }
   _write_queue_manifest(queue_manifest_path, queue_manifest)
   # Raw FCS arrays are immutable inputs and can safely be shared between
   # sequential definitions. Definition-scoped transformed/display layers are
   # still rebuilt because their views, gates, and presentation may differ.
-  requested_cache_budget = (
-    None if execution_options is None
-    else execution_options.memory_budget_bytes
-  )
+  requested_cache_budget = base_options.memory_budget_bytes
   raw_cache_budget = 256 * 1024 * 1024
   if requested_cache_budget is not None:
     raw_cache_budget = min(raw_cache_budget, max(0, requested_cache_budget // 2))
   raw_sample_cache = _RawSampleCache(raw_cache_budget)
   queue_manifest["raw_sample_cache"] = raw_sample_cache.stats()
   _write_queue_manifest(queue_manifest_path, queue_manifest)
-  results: list[tuple[str, int]] = []
-  for index, export_id in enumerate(queue, start=1):
-    queue_item = queue_items[index - 1]
-    if execution_control is not None:
-      try:
-        execution_control.cancellation_token.raise_if_cancelled()
-      except ExecutionCancelled:
-        queue_item["status"] = "cancelled"
-        queue_manifest["status"] = "cancelled"
-        _write_queue_manifest(queue_manifest_path, queue_manifest)
-        return 130
-    queue_item["status"] = "running"
-    _write_queue_manifest(queue_manifest_path, queue_manifest)
-    if execution_control is not None:
-      execution_control.emit_progress(ProgressEvent(
-        operation_id="batch_plot_queue",
-        operation="batch_plot_queue",
-        phase="definition_started",
-        completed_units=index - 1,
-        total_units=len(queue),
-        sample_id=export_id,
-        message=f"definition {index}/{len(queue)}: {export_id}",
-      ))
+  results_by_index: dict[int, int] = {}
+
+  def run_definition(index: int, export_id: str) -> tuple[int, int]:
     definition_dir = root / f"{index:03d}_{_queue_slug(export_id)}"
+    child_control = execution_control
+    child_options = execution_options
+    cache = raw_sample_cache
+    if queue_workers > 1:
+      # Definition-level workers must not recursively create sample-level
+      # workers. Each child retains the shared cancellation token but has no
+      # progress sink; the queue coordinator owns ordered progress events.
+      child_options = ExecutionOptions(
+        backend="sequential", max_workers=1,
+        memory_budget_bytes=base_options.memory_budget_bytes,
+      )
+      child_control = (
+        None if execution_control is None else ExecutionControl(
+          options=child_options,
+          cancellation_token=execution_control.cancellation_token,
+        )
+      )
+      cache = None
     try:
       result = batch_plot_command(
         project_path, export_id, str(definition_dir),
-        execution_control=execution_control,
-        execution_options=execution_options,
+        execution_control=child_control,
+        execution_options=child_options,
         density_config=density_config,
         _project_snapshot=project_snapshot,
         _definition_snapshot=definition_index.get(export_id),
-        _raw_sample_cache=raw_sample_cache,
+        _raw_sample_cache=cache,
       )
     except ExecutionCancelled:
       result = 130
     except Exception as exc:
       print(f"Error: batch plot definition {export_id!r} raised: {exc}")
       result = 1
-    results.append((export_id, result))
+    return index, result
+
+  def record_definition(index: int, result: int, completed: int) -> None:
+    export_id = queue[index - 1]
+    queue_item = queue_items[index - 1]
+    results_by_index[index] = result
     queue_item["status"] = (
       "success" if result == 0 else "cancelled" if result == 130 else "failed"
     )
     queue_item["result_code"] = result
-    queue_item["raw_sample_cache"] = raw_sample_cache.stats()
-    queue_manifest["raw_sample_cache"] = raw_sample_cache.stats()
+    if queue_workers == 1:
+      queue_item["raw_sample_cache"] = raw_sample_cache.stats()
+      queue_manifest["raw_sample_cache"] = raw_sample_cache.stats()
     if execution_control is not None:
       execution_control.emit_progress(ProgressEvent(
         operation_id="batch_plot_queue",
         operation="batch_plot_queue",
         phase="definition_completed",
-        completed_units=index,
+        completed_units=completed,
         total_units=len(queue),
         sample_id=export_id,
         message=f"definition {index}/{len(queue)} completed with status {result}",
       ))
-    if result == 130:
+
+  if queue_workers == 1:
+    for index, export_id in enumerate(queue, start=1):
+      queue_item = queue_items[index - 1]
+      if execution_control is not None:
+        try:
+          execution_control.cancellation_token.raise_if_cancelled()
+        except ExecutionCancelled:
+          queue_item["status"] = "cancelled"
+          queue_manifest["status"] = "cancelled"
+          _write_queue_manifest(queue_manifest_path, queue_manifest)
+          return 130
+      queue_item["status"] = "running"
+      _write_queue_manifest(queue_manifest_path, queue_manifest)
+      if execution_control is not None:
+        execution_control.emit_progress(ProgressEvent(
+          operation_id="batch_plot_queue",
+          operation="batch_plot_queue",
+          phase="definition_started",
+          completed_units=index - 1,
+          total_units=len(queue),
+          sample_id=export_id,
+          message=f"definition {index}/{len(queue)}: {export_id}",
+        ))
+      _, result = run_definition(index, export_id)
+      record_definition(index, result, index)
+      _write_queue_manifest(queue_manifest_path, queue_manifest)
+      if result == 130:
+        queue_manifest["status"] = "cancelled"
+        _write_queue_manifest(queue_manifest_path, queue_manifest)
+        return 130
+      if result != 0 and failure_policy == "fail-fast":
+        queue_manifest["status"] = "failed"
+        _write_queue_manifest(queue_manifest_path, queue_manifest)
+        return result
+  else:
+    queue_manifest["raw_sample_cache"] = {
+      "enabled": False, "reason": "definition_parallelism",
+    }
+    _write_queue_manifest(queue_manifest_path, queue_manifest)
+    effective_workers = min(queue_workers, len(queue))
+    executor = ThreadPoolExecutor(
+      max_workers=effective_workers, thread_name_prefix="flowdesk-batch-queue",
+    )
+    pending: dict[Any, int] = {}
+    next_index = 1
+    completed = 0
+    stop_submitting = False
+    try:
+      while pending or next_index <= len(queue):
+        while (
+          not stop_submitting
+          and len(pending) < effective_workers
+          and next_index <= len(queue)
+        ):
+          if execution_control is not None:
+            execution_control.cancellation_token.raise_if_cancelled()
+          queue_items[next_index - 1]["status"] = "running"
+          export_id = queue[next_index - 1]
+          if execution_control is not None:
+            execution_control.emit_progress(ProgressEvent(
+              operation_id="batch_plot_queue",
+              operation="batch_plot_queue",
+              phase="definition_started",
+              completed_units=completed,
+              total_units=len(queue), sample_id=export_id,
+              message=f"definition {next_index}/{len(queue)}: {export_id}",
+            ))
+          pending[executor.submit(run_definition, next_index, export_id)] = next_index
+          next_index += 1
+        if not pending:
+          break
+        done, _ = wait(tuple(pending), return_when=FIRST_COMPLETED)
+        for future in sorted(done, key=lambda value: pending[value]):
+          index = pending.pop(future)
+          try:
+            _, result = future.result()
+          except Exception as exc:
+            print(f"Error: batch plot definition {queue[index - 1]!r} raised: {exc}")
+            result = 1
+          completed += 1
+          record_definition(index, result, completed)
+          if result == 130 or (result != 0 and failure_policy == "fail-fast"):
+            stop_submitting = True
+            if result == 130:
+              queue_manifest["status"] = "cancelled"
+            elif failure_policy == "fail-fast":
+              queue_manifest["status"] = "failed"
+          _write_queue_manifest(queue_manifest_path, queue_manifest)
+        if stop_submitting:
+          for future in pending:
+            future.cancel()
+    except ExecutionCancelled:
       queue_manifest["status"] = "cancelled"
+      for future in pending:
+        future.cancel()
+    finally:
+      executor.shutdown(wait=True, cancel_futures=True)
+    if queue_manifest["status"] == "cancelled":
+      for item in queue_items:
+        if item["status"] == "running":
+          item["status"] = "cancelled"
       _write_queue_manifest(queue_manifest_path, queue_manifest)
       return 130
-    if result != 0 and failure_policy == "fail-fast":
-      queue_manifest["status"] = "failed"
+    if queue_manifest["status"] == "failed" and failure_policy == "fail-fast":
+      for item in queue_items:
+        if item["status"] == "running":
+          item["status"] = "not_started"
       _write_queue_manifest(queue_manifest_path, queue_manifest)
-      return result
+      return next((code for code in results_by_index.values() if code != 0), 1)
+  results = [
+    (export_id, results_by_index[index])
+    for index, export_id in enumerate(queue, start=1)
+    if index in results_by_index
+  ]
   succeeded = sum(result == 0 for _export_id, result in results)
   queue_manifest["status"] = "success" if succeeded == len(results) else "partial_failure"
   _write_queue_manifest(queue_manifest_path, queue_manifest)

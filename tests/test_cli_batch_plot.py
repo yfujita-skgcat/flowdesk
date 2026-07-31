@@ -199,6 +199,51 @@ def test_batch_plot_queue_shares_one_raw_cache_between_definitions(
   assert isinstance(caches[0], _RawSampleCache)
 
 
+def test_batch_plot_queue_supports_explicit_definition_parallelism(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
+  lock = threading.Lock()
+  active = 0
+  peak = 0
+
+  def fake_batch(*_args, **_kwargs) -> int:
+    nonlocal active, peak
+    with lock:
+      active += 1
+      peak = max(peak, active)
+    import time
+    time.sleep(0.03)
+    with lock:
+      active -= 1
+    return 0
+
+  monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("first", "second", "third"), str(tmp_path),
+    queue_workers=2,
+  ) == 0
+  assert peak == 2
+  manifest = json.loads(
+    (tmp_path / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )
+  assert manifest["status"] == "success"
+  assert manifest["queue_execution"]["effective_workers"] == 2
+  assert manifest["queue_execution"]["nested_definition_backend"] == "sequential"
+  assert [item["status"] for item in manifest["definitions"]] == [
+    "success", "success", "success",
+  ]
+
+
+def test_batch_plot_queue_rejects_nested_thread_backends(tmp_path: Path) -> None:
+  with pytest.raises(ValueError, match="cannot be combined"):
+    batch_plot_queue_command(
+      "project.flowdesk", ("first", "second"), str(tmp_path),
+      queue_workers=2,
+      execution_options=ExecutionOptions(backend="thread", max_workers=2),
+    )
+
+
 def test_raw_sample_cache_is_bounded_and_tracks_fingerprint_hits() -> None:
   cache = _RawSampleCache(32)
   sample = SampleData(
