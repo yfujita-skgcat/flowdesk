@@ -1281,6 +1281,13 @@ queue manifest refreshes cache `hits`, `misses`, `evictions`, `retained_bytes`, 
 worker bytes after all active futures finish, including failure and cancellation paths, so a
 reported cache benefit is auditable rather than inferred from the initial configuration.
 
+When an explicit memory budget resolves the queue to one effective worker, the coordinator
+uses the sequential loop directly instead of constructing a one-thread `ThreadPoolExecutor`.
+The manifest keeps the requested `backend` for compatibility and adds `resolved_backend` so
+the actual scheduling path is explicit. Definition order, progress events, cancellation,
+failure policy, raw-cache accounting, and output bytes are unchanged; only executor/future
+management overhead is removed from the memory-limited case.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become

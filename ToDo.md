@@ -1551,6 +1551,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   cacheはraw eventだけを保持し、変換済み配列、gate membership、density、renderer objectは共有しない。
   worker間cache共有のunit test、memory-bound回帰test、実行後manifest hit/miss provenanceを追加したが、
   実FCS I/O speedupとWindows/PyInstaller lifecycleは未検証であり、thread backendの既定値・GUI自動適用は変更しない。
+- [x] **memory-limited queueの逐次fast path**: requested worker数が2以上でもmemory budgetで
+  `effective_workers=1`になった場合は`ThreadPoolExecutor(1)`を生成せず、逐次coordinatorを使う。
+  manifestへrequested `backend`とresolved `resolved_backend`を分離して記録し、worker数制限理由と
+  raw cacheの残余予算を保持する。definition順、progress、cancel、failure policy、出力は従来と同じで、
+  memory制限下のfuture管理オーバーヘッドだけを除去した。
 - [ ] **Batch Plot Export並列化の残りの検証**: rendererのreentrancy、共有mutable state、Qt backend、
   overlayのshared range barrier、Windows/PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、
   GUIへ自動適用したりしない。代表FCSでの出力parityとpeak RSSの測定は実施済みだが、

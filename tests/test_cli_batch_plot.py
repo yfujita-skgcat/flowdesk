@@ -243,6 +243,7 @@ def test_batch_plot_queue_supports_explicit_definition_parallelism(
   )
   assert manifest["status"] == "success"
   assert manifest["queue_execution"]["effective_workers"] == 2
+  assert manifest["queue_execution"]["resolved_backend"] == "thread"
   assert manifest["queue_execution"]["nested_definition_backend"] == "sequential"
   assert manifest["queue_execution"]["planned_definitions"] == 3
   assert manifest["queue_execution"]["submitted_definitions"] == 3
@@ -324,6 +325,7 @@ def test_batch_plot_queue_applies_memory_budget_to_queue_workers(
     (tmp_path / "out" / "batch-queue-manifest.json").read_text(encoding="utf-8")
   )
   assert manifest["queue_execution"]["effective_workers"] == 1
+  assert manifest["queue_execution"]["resolved_backend"] == "sequential"
   assert "memory_budget" in manifest["queue_execution"]["limiting_factors"]
   assert manifest["queue_execution"]["planned_definitions"] == 2
   assert manifest["queue_execution"]["submitted_definitions"] == 2

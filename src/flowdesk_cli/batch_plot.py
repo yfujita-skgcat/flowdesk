@@ -1061,6 +1061,9 @@ def batch_plot_queue_command(
     "failure_policy": failure_policy,
     "queue_execution": {
       "backend": "sequential" if queue_workers == 1 else "thread",
+      "resolved_backend": (
+        "sequential" if effective_queue_workers == 1 else "thread"
+      ),
       "requested_workers": queue_workers,
       "effective_workers": effective_queue_workers,
       "planned_definitions": len(queue),
@@ -1148,9 +1151,23 @@ def batch_plot_queue_command(
       "success" if result == 0 else "cancelled" if result == 130 else "failed"
     )
     queue_item["result_code"] = result
-    if queue_workers == 1:
-      queue_item["raw_sample_cache"] = raw_sample_cache.stats()
-      queue_manifest["raw_sample_cache"] = raw_sample_cache.stats()
+    if effective_queue_workers == 1:
+      cache_stats = raw_sample_cache.stats()
+      queue_item["raw_sample_cache"] = cache_stats
+      if queue_workers > 1:
+        queue_manifest["raw_sample_cache"] = {
+          **cache_stats,
+          "enabled": raw_cache_budget > 0,
+          "scope": "effective_single_worker",
+          "reserved_worker_bytes": (
+            estimated_queue_definition_bytes * effective_queue_workers
+          ),
+          **({} if raw_cache_budget > 0 else {
+            "reason": "no_residual_memory_budget",
+          }),
+        }
+      else:
+        queue_manifest["raw_sample_cache"] = cache_stats
     if execution_control is not None:
       execution_control.emit_progress(ProgressEvent(
         operation_id="batch_plot_queue",
@@ -1162,7 +1179,7 @@ def batch_plot_queue_command(
         message=f"definition {index}/{len(queue)} completed with status {result}",
       ))
 
-  if queue_workers == 1:
+  if effective_queue_workers == 1:
     for index, export_id in enumerate(queue, start=1):
       queue_item = queue_items[index - 1]
       if execution_control is not None:
