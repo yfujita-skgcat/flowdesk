@@ -161,11 +161,16 @@ def test_batch_plot_queue_loads_project_snapshot_once(
   tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   loads: list[str] = []
+  path_resolutions: list[str] = []
   calls: list[object] = []
 
   monkeypatch.setattr(
     batch_plot_module, "load_project",
     lambda path: loads.append(str(path)) or {"batch_plot_exports": []},
+  )
+  monkeypatch.setattr(
+    batch_plot_module, "resolve_sample_paths",
+    lambda manifest, path: path_resolutions.append(str(path)) or [],
   )
 
   def fake_batch(*_args, **kwargs) -> int:
@@ -177,8 +182,25 @@ def test_batch_plot_queue_loads_project_snapshot_once(
     "project.flowdesk", ("first", "second"), str(tmp_path),
   ) == 0
   assert loads == ["project.flowdesk"]
+  assert path_resolutions == ["project.flowdesk"]
   assert len(calls) == 2
   assert calls[0] is calls[1]
+
+
+def test_batch_plot_queue_reports_sample_path_resolution_failure(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+  monkeypatch.setattr(
+    batch_plot_module, "load_project", lambda _path: {"batch_plot_exports": []},
+  )
+  monkeypatch.setattr(
+    batch_plot_module, "resolve_sample_paths",
+    lambda *_args: (_ for _ in ()).throw(ValueError("bad sample path")),
+  )
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("first",), str(tmp_path),
+  ) == 1
+  assert "sample path resolution failed" in capsys.readouterr().out
 
 
 def test_batch_plot_queue_shares_one_raw_cache_between_definitions(

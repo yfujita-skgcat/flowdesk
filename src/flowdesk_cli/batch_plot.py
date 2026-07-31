@@ -173,6 +173,7 @@ def batch_plot_command(
   density_config: DensityColorConfig | None = None,
   _project_snapshot: Mapping[str, Any] | None = None,
   _definition_snapshot: Mapping[str, Any] | None = None,
+  _samples_snapshot: Sequence[Mapping[str, Any]] | None = None,
   _raw_sample_cache: _RawSampleCache | None = None,
 ) -> int:
   try:
@@ -190,7 +191,13 @@ def batch_plot_command(
         if str(item.get("id")) == export_id
       )
     spec = batch_plot_export_spec_from_mapping(raw)
-    samples = resolve_sample_paths(project, Path(project_path))
+    # Queue callers provide a coordinator-owned immutable tuple so path
+    # normalization and list construction are not repeated per definition.
+    samples = (
+      _samples_snapshot
+      if _samples_snapshot is not None
+      else resolve_sample_paths(project, Path(project_path))
+    )
     annotations = project.get("annotations", [])
     runner_local = local()
 
@@ -1009,6 +1016,13 @@ def batch_plot_queue_command(
   except (FileNotFoundError, KeyError, ValueError, ManifestValidationError) as exc:
     print(f"Error: batch plot queue project load failed: {exc}")
     return 1
+  try:
+    resolved_samples = tuple(
+      resolve_sample_paths(project_snapshot, Path(project_path))
+    )
+  except (FileNotFoundError, KeyError, ValueError, ManifestValidationError) as exc:
+    print(f"Error: batch plot queue sample path resolution failed: {exc}")
+    return 1
   if queue_all:
     queue = tuple(
       str(item["id"])
@@ -1134,6 +1148,7 @@ def batch_plot_queue_command(
         density_config=density_config,
         _project_snapshot=project_snapshot,
         _definition_snapshot=definition_index.get(export_id),
+        _samples_snapshot=resolved_samples,
         _raw_sample_cache=cache,
       )
     except ExecutionCancelled:

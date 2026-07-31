@@ -1152,6 +1152,13 @@ uses the maximum event count of one planned output item rather than summing unre
 batch items. This source-scope optimization is covered by a group/overlay test and
 must preserve the existing unknown-source validation.
 
+The queue coordinator also resolves `resolve_sample_paths()` once and passes the resulting
+immutable sample mapping snapshot to every definition. This removes repeated relative-path
+normalization and mapping construction when many saved definitions share a project. A path
+resolution failure is reported before any definition starts; the per-definition fallback is
+not used for this coordinator-level failure. Event arrays, fingerprints, scientific stages,
+output bytes, definition order, and cancellation semantics are unchanged.
+
 When source preparation uses the opt-in thread backend, the coordinator submits at most
 the resolved worker count at a time and replenishes the pending set as futures complete.
 Completion results are still merged by candidate/source order, not completion order.

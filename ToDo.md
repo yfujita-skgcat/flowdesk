@@ -1747,6 +1747,9 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [x] 「1 FCS = 1 worker」とは定義しない。FCSはsource/dependencyの単位であり、overlay出力は
   複数FCSへ依存し、1 FCSから複数view/formatが生成され得る。全source準備、overlay dependency、
   `shared_ranges`を解決した後のimmutable `prepared output item`をexecutorの最小仕事単位とする。
+- [x] queue coordinatorで`resolve_sample_paths()`を一度だけ実行し、immutable resolved sample
+  snapshotを全definitionへ渡す。定義ごとの相対path解決とmapping生成を重複させず、解決失敗はqueue開始前の
+  明示的errorとして返す。raw FCS、fingerprint、科学的stage、出力bytesは変更せず、解決回数とfailureの回帰testを追加した。
 - [x] 明示的thread backendでは、target/overlay依存sourceのFCS読込・display準備もbounded workerで
   実行する。完了順によらずsource順にmergeしてからshared rangeをreduceし、worker数・推定source
   working set・制限要因をmanifestへ記録する。既定逐次、GUIは明示opt-in、Qt object操作なしを維持する。
