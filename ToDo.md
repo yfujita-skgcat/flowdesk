@@ -1208,6 +1208,9 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
   nested source/render progressを区別し、`batch-queue-manifest.json`へ定義別状態をatomicに記録する。
   定義例外をfailedへ正規化し、cancelledとは区別する。`--queue-all`は同じproject snapshotで
   保存順の定義を列挙し、定義ID indexを再利用する。
+  - [x] queue内の同一FCS再読込を、fingerprint付き・最大256 MiB（memory budget指定時はその半分）の
+    raw sample LRUで削減する。変換済みlayer、population mask、density、renderer cacheは定義ごとに
+    分離し、cache hit/miss/eviction/保持bytesを`batch-queue-manifest.json`へ記録する。
   plugin queue、definition間の並列実行は未実装。
 - [ ] crashed/timeout/malformed pluginがprojectを破損しないtestを追加する。
 

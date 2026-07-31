@@ -13,6 +13,7 @@ from flowdesk_cli.batch_plot import (
   _estimate_batch_render_bytes,
   _gate_overlays,
   _layer_bounds,
+  _RawSampleCache,
   _shared_layer_bounds,
   _shared_layer_bounds_from_ranges,
   _write_render_payload,
@@ -179,6 +180,40 @@ def test_batch_plot_queue_loads_project_snapshot_once(
   assert calls[0] is calls[1]
 
 
+def test_batch_plot_queue_shares_one_raw_cache_between_definitions(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
+  caches = []
+
+  def fake_batch(*_args, **kwargs) -> int:
+    caches.append(kwargs["_raw_sample_cache"])
+    return 0
+
+  monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("first", "second"), str(tmp_path),
+  ) == 0
+  assert len(caches) == 2
+  assert caches[0] is caches[1]
+  assert isinstance(caches[0], _RawSampleCache)
+
+
+def test_raw_sample_cache_is_bounded_and_tracks_fingerprint_hits() -> None:
+  cache = _RawSampleCache(32)
+  sample = SampleData(
+    "s1", np.zeros((2, 2), dtype=np.float64),
+    (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y")),
+  )
+  key = ("s1", "sample.fcs", "fingerprint-a")
+  cache.put(key, "info", sample)
+  assert cache.get(key) == ("info", sample)
+  assert cache.stats()["hits"] == 1
+  assert cache.get(("s1", "sample.fcs", "fingerprint-b")) is None
+  assert cache.stats()["misses"] == 1
+  assert cache.stats()["retained_samples"] == 1
+
+
 def test_overlay_dependency_graph_is_deterministic_and_deduplicated() -> None:
   graph = _build_overlay_dependency_graph(
     ("s1", "s2"),
@@ -341,6 +376,56 @@ def test_batch_plot_uses_canonical_derived_display_data(
   assert density["requested_histogram_workers"] == 2
   assert density["effective_histogram_workers"] == 1
   assert density["histogram_memory_budget_bytes"] == 1
+
+
+def test_batch_plot_command_reuses_queue_raw_sample_cache(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  project = {
+    "project_id": "cache-project",
+    "project_version": CURRENT_PROJECT_VERSION,
+    "pipeline_version": "0.1",
+    "samples": [{
+      "id": "s1", "name": "Sample", "path": "sample.fcs", "channels": [],
+    }],
+    "plot_views": [{
+      "id": "view", "plot_type": "scatter", "population_id": "all_events",
+      "x_parameter": "x", "y_parameter": "y", "presentation": {},
+    }],
+    "batch_plot_exports": [{
+      "id": "export", "name": "Export", "plot_view_id": "view", "target": "all",
+      "formats": ["svg"],
+    }],
+  }
+  project_path = tmp_path / "cache.flowdesk"
+  save_project(project_path, project)
+  sample = SampleData(
+    "s1", np.array([[1.0, 2.0], [2.0, 3.0]], dtype=np.float64),
+    (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y")),
+  )
+  monkeypatch.setattr(
+    "flowdesk_cli.batch_plot.resolve_sample_paths",
+    lambda *_args: [{"id": "s1", "name": "Sample", "path": "sample.fcs"}],
+  )
+  reads = 0
+
+  def read_sample(*_args):
+    nonlocal reads
+    reads += 1
+    return None, sample
+
+  monkeypatch.setattr("flowdesk_cli.batch_plot.read_fcs_sample", read_sample)
+  cache = _RawSampleCache(1024)
+  assert batch_plot_command(
+    str(project_path), "export", str(tmp_path / "first"),
+    _raw_sample_cache=cache,
+  ) == 0
+  assert batch_plot_command(
+    str(project_path), "export", str(tmp_path / "second"),
+    _raw_sample_cache=cache,
+  ) == 0
+  assert reads == 1
+  assert cache.stats()["hits"] == 1
 
 
 def test_batch_plot_command_maps_cancellation_to_sigint_exit_code(

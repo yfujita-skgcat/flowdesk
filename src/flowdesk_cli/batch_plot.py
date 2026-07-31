@@ -44,11 +44,76 @@ from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.processed_display import ProcessedDisplayRequest
 from flowdesk_core.transforms import apply_transform, generate_transform_ticks
 from flowdesk_core.vector_scatter import preflight_vector_scatter_export
-from flowdesk_storage.project import load_project, resolve_sample_paths
 from flowdesk_storage.manifest import ManifestValidationError
+from flowdesk_storage.project import load_project, resolve_sample_paths
 from flowdesk_storage.serialization import atomic_write_json
 
 NormalizedPayload = tuple[LayerValues, np.ndarray, np.ndarray | None]
+
+
+class _RawSampleCache:
+  """Bounded queue-scoped cache for immutable raw FCS sample objects."""
+
+  def __init__(self, max_bytes: int) -> None:
+    self._max_bytes = max(0, int(max_bytes))
+    self._items: OrderedDict[
+      tuple[str, str, str], tuple[Any, Any, int]
+    ] = OrderedDict()
+    self._bytes = 0
+    self.hits = 0
+    self.misses = 0
+    self.evictions = 0
+    self._lock = Lock()
+
+  @staticmethod
+  def _size(sample_data: Any) -> int:
+    events = getattr(sample_data, "events", None)
+    return max(0, int(getattr(events, "nbytes", 0)))
+
+  def get(self, key: tuple[str, str, str]) -> tuple[Any, Any] | None:
+    with self._lock:
+      value = self._items.get(key)
+      if value is None:
+        self.misses += 1
+        return None
+      self._items.move_to_end(key)
+      self.hits += 1
+      return value[:2]
+
+  def put(self, key: tuple[str, str, str], info: Any, sample_data: Any) -> None:
+    size = self._size(sample_data)
+    if size > self._max_bytes:
+      return
+    with self._lock:
+      previous = self._items.pop(key, None)
+      if previous is not None:
+        self._bytes -= previous[2]
+      self._items[key] = (info, sample_data, size)
+      self._bytes += size
+      while self._bytes > self._max_bytes and self._items:
+        _, (_, _, evicted_size) = self._items.popitem(last=False)
+        self._bytes -= evicted_size
+        self.evictions += 1
+
+  def stats(self) -> dict[str, int]:
+    with self._lock:
+      return {
+        "max_bytes": self._max_bytes,
+        "retained_bytes": self._bytes,
+        "retained_samples": len(self._items),
+        "hits": self.hits,
+        "misses": self.misses,
+        "evictions": self.evictions,
+      }
+
+
+def _raw_sample_cache_key(sample: Mapping[str, Any]) -> tuple[str, str, str]:
+  """Include the persisted fingerprint so a changed file is never reused."""
+  fingerprint = json.dumps(
+    sample.get("fingerprint", ""), sort_keys=True, separators=(",", ":"),
+    ensure_ascii=False, default=str,
+  )
+  return str(sample.get("id", "")), str(sample.get("path", "")), fingerprint
 
 
 def batch_plot_definition_ids(project_path: str) -> tuple[str, ...]:
@@ -72,6 +137,7 @@ def batch_plot_command(
   density_config: DensityColorConfig | None = None,
   _project_snapshot: Mapping[str, Any] | None = None,
   _definition_snapshot: Mapping[str, Any] | None = None,
+  _raw_sample_cache: _RawSampleCache | None = None,
 ) -> int:
   try:
     if execution_control is None and execution_options is not None:
@@ -235,7 +301,17 @@ def batch_plot_command(
     render_cache_lock = Lock()
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-      _info, sample_data = read_fcs_sample(sample["path"], str(sample["id"]))
+      cache_key = _raw_sample_cache_key(sample)
+      cached_raw = None if _raw_sample_cache is None else _raw_sample_cache.get(cache_key)
+      if cached_raw is None:
+        _info, sample_data = read_fcs_sample(sample["path"], str(sample["id"]))
+        if _raw_sample_cache is not None:
+          # The cache is queue-scoped and only retains the immutable raw sample
+          # object. All transformed layers, masks, colours, and renderer caches
+          # remain definition-scoped below this boundary.
+          _raw_sample_cache.put(cache_key, _info, sample_data)
+      else:
+        _info, sample_data = cached_raw
       names = [channel.id for channel in sample_data.channels]
       if len(names) < 2:
         raise ValueError("plot requires at least two channels")
@@ -920,6 +996,19 @@ def batch_plot_queue_command(
     "definitions": queue_items,
   }
   _write_queue_manifest(queue_manifest_path, queue_manifest)
+  # Raw FCS arrays are immutable inputs and can safely be shared between
+  # sequential definitions. Definition-scoped transformed/display layers are
+  # still rebuilt because their views, gates, and presentation may differ.
+  requested_cache_budget = (
+    None if execution_options is None
+    else execution_options.memory_budget_bytes
+  )
+  raw_cache_budget = 256 * 1024 * 1024
+  if requested_cache_budget is not None:
+    raw_cache_budget = min(raw_cache_budget, max(0, requested_cache_budget // 2))
+  raw_sample_cache = _RawSampleCache(raw_cache_budget)
+  queue_manifest["raw_sample_cache"] = raw_sample_cache.stats()
+  _write_queue_manifest(queue_manifest_path, queue_manifest)
   results: list[tuple[str, int]] = []
   for index, export_id in enumerate(queue, start=1):
     queue_item = queue_items[index - 1]
@@ -952,6 +1041,7 @@ def batch_plot_queue_command(
         density_config=density_config,
         _project_snapshot=project_snapshot,
         _definition_snapshot=definition_index.get(export_id),
+        _raw_sample_cache=raw_sample_cache,
       )
     except ExecutionCancelled:
       result = 130
@@ -963,6 +1053,8 @@ def batch_plot_queue_command(
       "success" if result == 0 else "cancelled" if result == 130 else "failed"
     )
     queue_item["result_code"] = result
+    queue_item["raw_sample_cache"] = raw_sample_cache.stats()
+    queue_manifest["raw_sample_cache"] = raw_sample_cache.stats()
     if execution_control is not None:
       execution_control.emit_progress(ProgressEvent(
         operation_id="batch_plot_queue",

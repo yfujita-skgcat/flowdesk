@@ -132,10 +132,12 @@ Tests and benchmarks:
 - `shared_ranges` requires a barrier after all required source ranges are known. Overlay
   outputs may share source samples, so output items are not independent during source
   preparation even when their final files are independent.
-- A definition queue may load one immutable project snapshot at queue start and pass it to
-  each definition. This optimization is limited to project metadata and saved definitions;
-  raw FCS arrays, transformed layers, density fields, renderer caches, and output paths remain
-  definition-scoped. Queue-level parallelism must not be inferred from this snapshot sharing.
+- A definition queue loads one immutable project snapshot at queue start and passes it to
+  each definition. The queue also uses a bounded, fingerprint-scoped LRU for immutable raw
+  FCS sample objects. Transformed layers, population masks, density fields, renderer caches,
+  and output paths remain definition-scoped; queue-level parallelism must not be inferred
+  from raw-input reuse. Cache budget, hits, misses, evictions, and retained bytes are
+  recorded in `batch-queue-manifest.json`.
 
 ## Non-goals
 
