@@ -1402,7 +1402,13 @@ The Windows packaging workflow now runs the same 1,000,000-event density runtime
 with four workers and a 64 MiB budget before building the package, and uploads its JSON
 report. This catches import, worker completion, and runtime-setting regressions on the
 native Windows runner; it does not replace full GUI interaction or PyInstaller close/error
-tests.
+tests. The workflow also runs a representative `batch-plot` smoke against the tracked
+`data/analysis.flowdesk` bundle and `batch-export-2c72921e28a9` definition, using sequential
+sample scheduling with explicit density worker/budget settings. It uploads the four-sample
+PNG/PDF outputs and sidecars so native Windows path resolution, FCS loading, writer import,
+manifest generation, and non-empty output can be inspected. This smoke intentionally does
+not enable the opt-in batch thread backend and does not claim PyInstaller executable
+shutdown, GUI interaction, or renderer reentrancy coverage.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and

@@ -44,6 +44,15 @@ jobs:
           --density-memory-budget-mib 64
           --output artifacts/density-runtime-benchmark.json
 
+      - name: Run representative batch export smoke
+        shell: pwsh
+        run: >-
+          python -m flowdesk_cli.main batch-plot data/analysis.flowdesk
+          --export-id batch-export-2c72921e28a9
+          --output-dir artifacts/batch-runtime-smoke
+          --density-workers 2
+          --density-memory-budget-mib 64
+
       - name: Build native packages
         shell: pwsh
         run: python tools/package.py build
@@ -73,4 +82,5 @@ jobs:
             Flowdesk-Windows-x64.zip
             artifacts/package-smoke/
             artifacts/density-runtime-benchmark.json
+            artifacts/batch-runtime-smoke/
           if-no-files-found: error

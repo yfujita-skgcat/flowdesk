@@ -1549,6 +1549,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **Windows density runtime smoke**: Windows package workflowへ同じ1,000,000 event density
   benchmarkを追加し、effective workersとpeak RSSのJSONをartifactへ保存する。native GUI操作と
   PyInstaller close/error検証は別の残課題として維持する。
+- [x] **Windows representative batch export smoke**: Windows package workflowで追跡済みの
+  `data/analysis.flowdesk` と `batch-export-2c72921e28a9` を使い、4 samples・保存済み定義の
+  PNG/PDF batch exportを実行する。density runtime controlsも明示して、native Windowsでの
+  FCS path解決、writer import、sidecar/manifest生成、非ゼロ出力を確認し、成果物をartifactへ
+  保存する。これはPyInstaller化された実行ファイルのshutdownやGUI操作の検証ではない。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
