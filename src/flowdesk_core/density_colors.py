@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import RLock
 
@@ -23,6 +24,7 @@ class DensityColorConfig:
   # Keep small plots on the fast single-call path while bounding the input
   # temporary used by np.histogram2d for very large populations.
   histogram_chunk_size: int | None = 250_000
+  histogram_workers: int = 1
 
   def __post_init__(self) -> None:
     if self.cells_per_logical_pixel <= 0:
@@ -35,6 +37,8 @@ class DensityColorConfig:
       raise ValueError("density normalization percentiles must be ordered percentages")
     if self.histogram_chunk_size is not None and self.histogram_chunk_size < 1:
       raise ValueError("histogram_chunk_size must be positive when provided")
+    if self.histogram_workers < 1:
+      raise ValueError("histogram_workers must be positive")
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,7 @@ def _estimate_density_colors(
     y[visible], x[visible], shape=shape,
     bounds=(x_min, x_max, y_min, y_max),
     chunk_size=config.histogram_chunk_size,
+    workers=config.histogram_workers,
   )
   sigma = (
     config.gaussian_sigma_pixels * shape[0] / height,
@@ -192,6 +197,7 @@ def _histogram2d(
   shape: tuple[int, int],
   bounds: tuple[float, float, float, float],
   chunk_size: int | None,
+  workers: int,
 ) -> NDArray[np.float64]:
   """Build a deterministic histogram, optionally in bounded-memory chunks.
 
@@ -207,14 +213,27 @@ def _histogram2d(
       range=((bounds[2], bounds[3]), (bounds[0], bounds[1])),
     )
     return histogram
-  histogram = np.zeros(shape, dtype=np.int64)
-  for start in range(0, len(x_values), chunk_size):
+  starts = range(0, len(x_values), chunk_size)
+
+  def make_chunk(start: int) -> NDArray[np.int64]:
     stop = min(start + chunk_size, len(x_values))
     chunk, _, _ = np.histogram2d(
       y_values[start:stop], x_values[start:stop], bins=shape,
       range=((bounds[2], bounds[3]), (bounds[0], bounds[1])),
     )
-    histogram += np.rint(chunk).astype(np.int64)
+    return np.rint(chunk).astype(np.int64)
+
+  chunk_starts = tuple(starts)
+  if workers > 1 and len(chunk_starts) > 1:
+    with ThreadPoolExecutor(max_workers=min(workers, len(chunk_starts))) as executor:
+      chunks = executor.map(make_chunk, chunk_starts)
+      histogram = np.zeros(shape, dtype=np.int64)
+      for chunk in chunks:
+        histogram += chunk
+  else:
+    histogram = np.zeros(shape, dtype=np.int64)
+    for start in chunk_starts:
+      histogram += make_chunk(start)
   return histogram.astype(np.float64)
 
 

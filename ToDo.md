@@ -1513,9 +1513,13 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   normalizationを行う経路を追加した。既定色、query順、viewport不変性、uncached結果は従来と一致し、
   1,000,000 event診断で色とmetadataが一致した。これは逐次のメモリ境界であり、任意のevent chunk
   worker、densityのworker間並列化、GUI thread外のQt object操作ではない。
-- [ ] **density histogram/chunk並列化**: fixed-bin chunkの複数worker合算、memory budget、
-  複数worker間の再現性は未実装。任意のevent chunk workerやGUI thread外のQt object操作は行わず、
-  Increment 11の数学的merge・速度・メモリ測定を満たすまで並列化しない。
+- [x] **density histogram/chunkの限定的並列化**: `DensityColorConfig.histogram_workers`を
+  明示指定した場合だけ、独立fixed-bin chunkのヒストグラム計算をbounded thread poolで実行する。
+  coordinatorはchunk/input順にint64 countを合算し、global smoothing/normalizationは一度だけ行う。
+  worker 1/2/4の色hash一致と1,000,000 eventの198.4/143.3/110.4 msを確認した。既定は1 workerで、
+  GUI自動適用、任意event worker、Qt object操作は行わない。
+- [ ] **density workerの運用統合**: memory budget、GUI/CLI設定、Windows/PyInstaller lifecycle、
+  大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
   FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
   Increment 11のdecision recordで採否を決定する。

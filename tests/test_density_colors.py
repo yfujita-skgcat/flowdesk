@@ -58,11 +58,20 @@ def test_chunked_histogram_matches_unchunked_density_result() -> None:
   assert np.array_equal(unchunked.colors, chunked.colors)
   assert np.array_equal(unchunked.normalized_density, chunked.normalized_density)
   assert chunked.metadata.valid_input_count == unchunked.metadata.valid_input_count
+  parallel = estimate_density_colors(
+    x, y, query_x, query_y,
+    bounds=common["bounds"], logical_size=common["logical_size"],
+    config=DensityColorConfig(histogram_chunk_size=257, histogram_workers=2),
+  )
+  assert np.array_equal(unchunked.colors, parallel.colors)
+  assert np.array_equal(unchunked.normalized_density, parallel.normalized_density)
 
 
 def test_density_chunk_size_rejects_non_positive_values() -> None:
   with np.testing.assert_raises_regex(ValueError, "histogram_chunk_size"):
     DensityColorConfig(histogram_chunk_size=0)
+  with np.testing.assert_raises_regex(ValueError, "histogram_workers"):
+    DensityColorConfig(histogram_workers=0)
 
 
 def test_density_estimator_clips_viewport_and_rejects_invalid_contract() -> None:

@@ -1348,6 +1348,15 @@ unchunked path in that run. The measurement is workload/environment evidence rat
 a CI threshold. Integer accumulation is limited by the practical `int64` count range;
 the arbitrary event-chunk and process-backend decisions remain deferred.
 
+An explicit `DensityColorConfig.histogram_workers` opt-in now parallelizes only the
+independent fixed-bin chunk histograms with a bounded `ThreadPoolExecutor`. Results are
+consumed and summed in chunk/input order; smoothing, percentile normalization, and query
+colour mapping remain a single global step. The default is one worker and no GUI setting
+enables this automatically. On the same 1,000,000-event Linux diagnostic with 100,000-event
+chunks, worker 1/2/4 measured 198.4/143.3/110.4 ms and all color hashes matched. This is
+an indicative numeric-kernel result, not a default-setting justification; memory-budget
+integration, cross-platform packaging, and a GUI control remain future work.
+
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and
 Linux/macOS/Windows package tests.
