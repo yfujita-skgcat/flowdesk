@@ -78,6 +78,33 @@ def test_batch_plot_queue_manifest_preserves_not_started_items_on_fail_fast(
   ]
 
 
+def test_batch_plot_queue_normalizes_definition_exception_for_continue(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
+  calls: list[str] = []
+
+  def fake_batch(_project, export_id, _output_dir, **_kwargs):
+    calls.append(export_id)
+    if export_id == "raises":
+      raise RuntimeError("writer crashed")
+    return 0
+
+  monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("raises", "last"), str(tmp_path),
+    failure_policy="continue",
+  ) == 1
+  assert calls == ["raises", "last"]
+  manifest = json.loads(
+    (tmp_path / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )
+  assert manifest["status"] == "partial_failure"
+  assert [item["status"] for item in manifest["definitions"]] == [
+    "failed", "success",
+  ]
+
+
 def test_batch_plot_queue_emits_definition_progress(
   tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

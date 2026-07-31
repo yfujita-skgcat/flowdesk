@@ -1202,6 +1202,7 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
   `fail-fast`/`continue` policyを使用する。GUIの`Run Saved Queue`も同じheadless adapter、
   progress、cancel、runtime-only設定で実行する。definition開始/完了のqueue progress eventと
   nested source/render progressを区別し、`batch-queue-manifest.json`へ定義別状態をatomicに記録する。
+  定義例外をfailedへ正規化し、cancelledとは区別する。
   plugin queue、definition間の並列実行は未実装。
 - [ ] crashed/timeout/malformed pluginがprojectを破損しないtestを追加する。
 

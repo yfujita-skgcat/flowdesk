@@ -917,13 +917,19 @@ def batch_plot_queue_command(
         message=f"definition {index}/{len(queue)}: {export_id}",
       ))
     definition_dir = root / f"{index:03d}_{_queue_slug(export_id)}"
-    result = batch_plot_command(
-      project_path, export_id, str(definition_dir),
-      execution_control=execution_control,
-      execution_options=execution_options,
-      density_config=density_config,
-      _project_snapshot=project_snapshot,
-    )
+    try:
+      result = batch_plot_command(
+        project_path, export_id, str(definition_dir),
+        execution_control=execution_control,
+        execution_options=execution_options,
+        density_config=density_config,
+        _project_snapshot=project_snapshot,
+      )
+    except ExecutionCancelled:
+      result = 130
+    except Exception as exc:
+      print(f"Error: batch plot definition {export_id!r} raised: {exc}")
+      result = 1
     results.append((export_id, result))
     queue_item["status"] = (
       "success" if result == 0 else "cancelled" if result == 130 else "failed"

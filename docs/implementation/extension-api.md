@@ -55,6 +55,9 @@ isolation and bounded memory behavior.
 The queue also atomically updates `batch-queue-manifest.json` after each definition boundary.
 The manifest is an audit index only: it records ordered definition IDs, output directories,
 failure/cancellation status, and result codes without replacing per-definition manifests.
+An exception escaping one definition is normalized to failed status and result code 1; the
+configured `continue` policy then controls whether later definitions run. Cooperative
+`ExecutionCancelled` remains result code 130 and is never converted to an ordinary failure.
 The queue still deliberately leaves plugin subprocess isolation, queue-level parallelism, and
 cross-definition cache sharing for later increments. The existing per-definition manifest and
 atomic output rules remain authoritative.

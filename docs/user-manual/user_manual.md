@@ -977,6 +977,8 @@ output directoryはprojectには保存されず、アプリケーション設定
 
 キューのoutput directoryには `batch-queue-manifest.json` もatomicに更新されます。各定義のID、番号付きoutput directory、`not_started` / `running` / `success` / `failed` / `cancelled` 状態、終了コードを記録します。キュー全体の状態は `running`、`success`、`partial_failure`、`failed`、`cancelled` のいずれかです。これは実行監査用であり、個別定義の既存sidecar/manifestを置き換えません。
 
+定義実行中に予期せぬ例外が発生した場合も、その定義は`failed`（終了コード1）としてmanifestへ記録されます。`Continue after failures`では後続定義を続け、`Fail fast`では後続を`not_started`として停止します。キャンセル例外は失敗ではなく`cancelled`として扱われます。
+
 キュー実行中は、定義開始・定義完了の進捗も表示されます。定義内部のsource準備・render進捗と定義単位の進捗は別の段階として扱われ、定義の完了順ではなく宣言順の定義番号で表示されます。
 
 キューではproject定義を開始時に一度だけ読み込み、各定義へ同じsnapshotを渡します。FCSのイベント配列や表示準備結果を定義間で共有するものではなく、定義ごとのtarget、overlay、range、色、出力は従来どおり独立して解決されます。
