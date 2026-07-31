@@ -1700,6 +1700,13 @@ def test_plot_widget_formats_exponent_ticks_and_applies_readable_tick_style() ->
       '<span style="color:#ffff00">B</span>'
     )
     assert widget._plot_item.titleLabel.maximumHeight() > 30
+    widget.plot_events(
+      np.array([1.0, 2.0]), np.array([2.0, 3.0]),
+      x_label="FSC-A", y_label="SSC-A",
+    )
+    assert widget.axis_display_labels() == ("FSC-A", "SSC-A")
+    assert widget._plot_item.getAxis("bottom").label.isVisible()
+    assert widget._plot_item.getAxis("left").label.isVisible()
   finally:
     widget.close()
     widget.deleteLater()

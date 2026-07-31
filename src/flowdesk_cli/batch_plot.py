@@ -260,8 +260,6 @@ def batch_plot_command(
   _processed_display_cache: _ProcessedDisplayCache | None = None,
 ) -> int:
   try:
-    if execution_control is None and execution_options is not None:
-      execution_control = ExecutionControl(options=execution_options)
     project = (
       _project_snapshot
       if _project_snapshot is not None
@@ -274,6 +272,25 @@ def batch_plot_command(
         if str(item.get("id")) == export_id
       )
     spec = batch_plot_export_spec_from_mapping(raw)
+    if execution_control is None and execution_options is None:
+      execution_options = ExecutionOptions(
+        backend=("thread" if spec.max_workers != 1 else "sequential"),
+        max_workers=spec.max_workers,
+        memory_budget_bytes=(
+          None if spec.memory_budget_mib is None
+          else spec.memory_budget_mib * 1024 * 1024
+        ),
+      )
+    if execution_control is None and execution_options is not None:
+      execution_control = ExecutionControl(options=execution_options)
+    if density_config is None:
+      density_config = DensityColorConfig(
+        histogram_workers=spec.density_workers,
+        histogram_memory_budget_bytes=(
+          None if spec.density_memory_budget_mib is None
+          else spec.density_memory_budget_mib * 1024 * 1024
+        ),
+      )
     # Queue callers provide a coordinator-owned immutable tuple so path
     # normalization and list construction are not repeated per definition.
     samples = (

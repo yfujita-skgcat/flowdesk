@@ -12,6 +12,7 @@ from flowdesk_core.execution_control import (
   ExecutionControl,
   ExecutionOptions,
   ProgressEvent,
+  automatic_worker_count,
   numeric_library_inner_thread_count,
   resolve_execution_workers,
 )
@@ -36,7 +37,6 @@ def test_sequential_options_preserve_requested_worker_provenance() -> None:
   ("kwargs", "message"),
   [
     ({"backend": "process"}, "backend"),
-    ({"max_workers": 0}, "max_workers"),
     ({"memory_budget_bytes": 0}, "memory_budget_bytes"),
   ],
 )
@@ -109,6 +109,20 @@ def test_thread_worker_resolution_is_bounded_by_all_runtime_limits() -> None:
     "memory_budget", "numeric_inner_threads",
   }
   assert resolution.to_mapping()["estimated_sample_bytes"] == 200
+
+
+def test_zero_workers_use_three_quarters_of_available_cpus() -> None:
+  assert automatic_worker_count(8) == 6
+  resolution = resolve_execution_workers(
+    ExecutionOptions(backend="thread", max_workers=0),
+    selected_sample_count=8,
+    estimated_sample_bytes=0,
+    available_cpu_count=8,
+    numeric_inner_threads=1,
+  )
+  assert resolution.requested_max_workers == 0
+  assert resolution.effective_max_workers == 6
+  assert "automatic_cpu_fraction" in resolution.limiting_factors
 
 
 def test_sequential_worker_resolution_remains_one_even_when_requested_higher() -> None:

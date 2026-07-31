@@ -28,11 +28,11 @@ from PySide6.QtWidgets import (
 
 from flowdesk_core.plot_export import resolve_export_canvas
 
-# The experimental worker controls remain available to the headless CLI for
-# measured opt-in runs, but GUI/packaged lifecycle validation is incomplete.
-# Keep these controls visible for discoverability while preventing accidental
-# use until the Windows/PyInstaller and renderer shutdown checks are complete.
-BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE = False
+# Windows/PyInstaller lifecycle validation is deferred in the current
+# Linux-first release. These controls are explicit opt-in settings stored on a
+# reusable batch-export definition; sequential execution remains the default
+# for new and legacy definitions.
+BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE = True
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,6 @@ class BatchPlotExportRequest:
   output_dir: str
   run: bool
   delete_definition_id: str | None = None
-  execution_backend: str = "sequential"
   max_workers: int = 1
   memory_budget_mib: int | None = None
   density_workers: int = 1
@@ -172,11 +171,7 @@ class BatchPlotExportDialog(QDialog):
     self._layout_policy.setObjectName("batchPlotLayoutPolicyCombo")
     self._layout_policy.addItem("Current view", "current_view")
     self._layout_policy.addItem("Shared ranges", "shared_ranges")
-    self._execution_backend = QComboBox()
-    self._execution_backend.setObjectName("batchPlotExecutionBackendCombo")
-    self._execution_backend.addItem("Sequential (recommended)", "sequential")
-    self._execution_backend.addItem("Bounded threads (opt-in)", "thread")
-    self._max_workers = self._spin("batchPlotMaxWorkersSpinBox", 1, 64, 2)
+    self._max_workers = self._spin("batchPlotMaxWorkersSpinBox", 0, 64, 1)
     self._memory_budget_mib = self._spin(
       "batchPlotMemoryBudgetMiBSpinBox", 0, 1_048_576, 0
     )
@@ -185,14 +180,14 @@ class BatchPlotExportDialog(QDialog):
       "batchPlotDensityMemoryBudgetMiBSpinBox", 0, 1_048_576, 0
     )
     self._experimental_workers_status = QLabel(
-      "Experimental worker controls are disabled in the GUI until "
-      "Windows/PyInstaller lifecycle validation is complete."
+      "Worker controls are opt-in and saved with this export definition. "
+      "Sequential execution remains the recommended default; "
+      "Windows/PyInstaller lifecycle is not validated in this release."
     )
     self._experimental_workers_status.setObjectName(
       "batchPlotExperimentalWorkersStatusLabel"
     )
     self._experimental_workers_status.setWordWrap(True)
-    self._execution_backend.setEnabled(BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
     self._max_workers.setEnabled(BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
     self._memory_budget_mib.setEnabled(BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
     self._density_workers.setEnabled(BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
@@ -250,10 +245,9 @@ class BatchPlotExportDialog(QDialog):
     form.addRow("Effective output", self._resolution_preview)
     form.addRow("Aspect", self._aspect)
     form.addRow("Layout", self._layout_policy)
-    form.addRow("Execution backend", self._execution_backend)
-    form.addRow("Max workers", self._max_workers)
+    form.addRow("Max workers (0 = automatic)", self._max_workers)
     form.addRow("Memory budget (MiB, 0 = automatic)", self._memory_budget_mib)
-    form.addRow("Density workers (1 = sequential)", self._density_workers)
+    form.addRow("Density workers (0 = automatic, 1 = sequential)", self._density_workers)
     form.addRow(
       "Density memory budget (MiB, 0 = automatic)", self._density_memory_budget_mib,
     )
@@ -364,6 +358,10 @@ class BatchPlotExportDialog(QDialog):
       "raster_resolution_mode": "dpi_scaled",
       "vector_scatter_mode": "hybrid_raster",
       "hybrid_scatter_dpi": 600,
+      "max_workers": 1,
+      "memory_budget_mib": None,
+      "density_workers": 1,
+      "density_memory_budget_mib": None,
       "aspect_1_to_1": False,
       "layout_policy": "current_view",
       "include_title": True,
@@ -405,6 +403,12 @@ class BatchPlotExportDialog(QDialog):
     self._width.setValue(int(defaults["width"]))
     self._height.setValue(int(defaults["height"]))
     self._dpi.setValue(int(defaults["dpi"]))
+    self._max_workers.setValue(max(0, int(defaults["max_workers"])))
+    self._memory_budget_mib.setValue(max(0, int(defaults["memory_budget_mib"] or 0)))
+    self._density_workers.setValue(max(1, int(defaults["density_workers"])))
+    self._density_memory_budget_mib.setValue(
+      max(0, int(defaults["density_memory_budget_mib"] or 0))
+    )
     resolution_index = self._resolution_mode.findData(defaults["raster_resolution_mode"])
     self._resolution_mode.setCurrentIndex(max(0, resolution_index))
     self._aspect.setChecked(bool(defaults["aspect_1_to_1"]))
@@ -540,7 +544,6 @@ class BatchPlotExportDialog(QDialog):
       settings.sync()
     return BatchPlotExportRequest(
       self.definition_mapping(), output_dir, self._run, self._delete_definition_id,
-      str(self._execution_backend.currentData() or "sequential"),
       self._max_workers.value(),
       (self._memory_budget_mib.value() or None),
       self._density_workers.value(),
@@ -566,6 +569,10 @@ class BatchPlotExportDialog(QDialog):
       "raster_resolution_mode": self._resolution_mode.currentData(),
       "vector_scatter_mode": str(self._scatter_mode.currentData()),
       "hybrid_scatter_dpi": self._hybrid_scatter_dpi_spin.value(),
+      "max_workers": self._max_workers.value(),
+      "memory_budget_mib": self._memory_budget_mib.value() or None,
+      "density_workers": self._density_workers.value(),
+      "density_memory_budget_mib": self._density_memory_budget_mib.value() or None,
       "aspect_1_to_1": self._aspect.isChecked(),
       "layout_policy": self._layout_policy.currentData(),
       **{key: check.isChecked() for key, check in self._visibility.items()},

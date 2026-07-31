@@ -45,6 +45,17 @@ def _positive_integer(value: str) -> int:
   return parsed
 
 
+def _nonnegative_integer(value: str) -> int:
+  """Parse a worker count where zero means automatic sizing."""
+  try:
+    parsed = int(value)
+  except ValueError as exc:
+    raise argparse.ArgumentTypeError("must be an integer") from exc
+  if parsed < 0:
+    raise argparse.ArgumentTypeError("must not be negative")
+  return parsed
+
+
 def main() -> int:
   """Run the Flowdesk CLI."""
 
@@ -192,9 +203,9 @@ def main() -> int:
   )
   plot_parser.add_argument(
     "--max-workers",
-    type=_positive_integer,
+    type=_nonnegative_integer,
     default=1,
-    help="Maximum concurrent batch items for --execution-backend thread.",
+    help="Maximum batch workers (0 = automatic, 1 = sequential).",
   )
   plot_parser.add_argument(
     "--memory-budget-mib",
@@ -204,9 +215,9 @@ def main() -> int:
   )
   plot_parser.add_argument(
     "--density-workers",
-    type=_positive_integer,
+    type=_nonnegative_integer,
     default=1,
-    help="Workers for density histogram chunks (default: 1).",
+    help="Density histogram workers (0 = automatic, 1 = sequential).",
   )
   plot_parser.add_argument(
     "--density-memory-budget-mib",
@@ -251,7 +262,7 @@ def main() -> int:
     )
   if args.command == "batch-plot":
     options = ExecutionOptions(
-      backend=args.execution_backend,
+      backend=("thread" if args.max_workers != 1 else "sequential"),
       max_workers=args.max_workers,
       memory_budget_bytes=(
         None if args.memory_budget_mib is None

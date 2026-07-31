@@ -29,7 +29,11 @@ class ExecutionCancelled(FlowdeskError):
 
 @dataclass(frozen=True)
 class ExecutionOptions:
-  """Non-persisted executor and memory policy for one operation."""
+  """Non-persisted executor and memory policy for one operation.
+
+  ``max_workers=0`` requests automatic sizing (three quarters of the logical
+  CPUs, bounded by the selected work and memory budget).
+  """
 
   backend: ExecutionBackend = "sequential"
   max_workers: int = 1
@@ -38,8 +42,8 @@ class ExecutionOptions:
   def __post_init__(self) -> None:
     if self.backend not in ("sequential", "thread"):
       raise ValueError("backend must be 'sequential' or 'thread'")
-    if self.max_workers < 1:
-      raise ValueError("max_workers must be positive")
+    if self.max_workers < 0:
+      raise ValueError("max_workers must be non-negative")
     if self.memory_budget_bytes is not None and self.memory_budget_bytes < 1:
       raise ValueError("memory_budget_bytes must be positive when set")
 
@@ -144,12 +148,17 @@ def resolve_execution_workers(
       limiting_factors=tuple(factors),
     )
 
-  limits = [options.max_workers, sample_bound, cpu_count]
-  if options.max_workers <= min(sample_bound, cpu_count):
+  requested_limit = (
+    automatic_worker_count(cpu_count) if options.max_workers == 0 else options.max_workers
+  )
+  if options.max_workers == 0:
+    factors.append("automatic_cpu_fraction")
+  limits = [requested_limit, sample_bound, cpu_count]
+  if options.max_workers > 0 and options.max_workers <= min(sample_bound, cpu_count):
     factors.append("requested_max_workers")
-  if sample_bound <= min(options.max_workers, cpu_count):
+  if sample_bound <= min(requested_limit, cpu_count):
     factors.append("selected_sample_count")
-  if cpu_count <= min(options.max_workers, sample_bound):
+  if cpu_count <= min(requested_limit, sample_bound):
     factors.append("available_cpu_count")
   if inner_threads > 1:
     outer_thread_limit = max(1, cpu_count // inner_threads)
@@ -173,6 +182,12 @@ def resolve_execution_workers(
     numeric_inner_threads=inner_threads,
     limiting_factors=tuple(dict.fromkeys(factors)),
   )
+
+
+def automatic_worker_count(cpu_count: int | None = None) -> int:
+  """Return the default bounded worker count for an automatic request."""
+  available = max(1, cpu_count or os.cpu_count() or 1)
+  return max(1, (available * 3) // 4)
 
 
 class CancellationToken:

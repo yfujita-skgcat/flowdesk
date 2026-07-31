@@ -68,9 +68,12 @@ def _wait_for_worker(window: MainWindow) -> None:
     pass
 
 
-def _wait_for_scatter(window: MainWindow) -> None:
+def _wait_for_scatter(window: MainWindow, sample_id: str | None = None) -> None:
   for _ in range(200):
-    if window._plot_widget._scatter is not None:
+    if (
+      window._plot_widget._scatter is not None
+      and (sample_id is None or window._displayed_sample_id == sample_id)
+    ):
       return
     QTest.qWait(5)
   assert window._plot_widget._scatter is not None
@@ -581,7 +584,7 @@ def test_switching_real_fcs_samples_updates_xy_ranges(
       assert window._current_sample_id == sample.id
       assert window._channel_selector.x_channel() == "FSC-A"
       assert window._channel_selector.y_channel() == "SSC-A"
-      _wait_for_scatter(window)
+      _wait_for_scatter(window, sample.id)
       data = window._event_data[sample.id]
       assert data.flags.writeable is False
 

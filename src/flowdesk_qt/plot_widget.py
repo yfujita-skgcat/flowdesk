@@ -362,6 +362,12 @@ class PlotWidget(QWidget):
         except Exception:
             return self._x_label, self._y_label
 
+    def set_axis_labels(self, x_label: str, y_label: str) -> None:
+        """Update labels without replacing the current event rendering."""
+        self._x_label = str(x_label)
+        self._y_label = str(y_label)
+        self._update_labels()
+
     def axis_range_input_hint(self, axis: Literal["x", "y"]) -> str:
         """Describe the numeric coordinate system used by range entry."""
         transform = self._x_transform if axis == "x" else self._y_transform
@@ -473,6 +479,10 @@ class PlotWidget(QWidget):
             "display_max_points": self._max_display_points,
             "display_sampling_active": self._display_sampling_active,
         }
+
+    def has_rendered_data(self) -> bool:
+        """Return whether a committed event rendering is currently visible."""
+        return self._rendered_x is not None and self._rendered_y is not None
 
     def plot_events(
         self,
@@ -2141,12 +2151,21 @@ class PlotWidget(QWidget):
 
     def _set_axis_labels(self, x_label: str, y_label: str) -> None:
         """Set axis labels while retaining the resolved presentation font."""
+        label_color = self._foreground_color(self._style.background_color)
         self._plot_item.setLabel(
-            "bottom", x_label, **self._axis_label_text_style,
+            "bottom", x_label, color=label_color, **self._axis_label_text_style,
         )
         self._plot_item.setLabel(
-            "left", y_label, **self._axis_label_text_style,
+            "left", y_label, color=label_color, **self._axis_label_text_style,
         )
+        # Keep labels visible after pyqtgraph recalculates the layout.  Some
+        # style/range updates can otherwise leave the text item hidden even
+        # though ``labelText`` still contains the correct channel name.
+        for axis_name, label in (("bottom", x_label), ("left", y_label)):
+            axis = self._plot_item.getAxis(axis_name)
+            axis.showLabel(bool(label))
+            if getattr(axis, "label", None) is not None:
+                axis.label.setVisible(bool(label))
 
     def _robust_range(self, data: NDArray[np.float64]) -> tuple[float, float]:
         """Compute a robust display range using percentiles.

@@ -27,6 +27,7 @@ BatchPlotCollisionPolicy = Literal["fail", "replace", "suffix"]
 BatchPlotLayoutPolicy = Literal["current_view", "shared_ranges"]
 BatchPlotRasterResolutionMode = Literal["legacy_pixel_dimensions", "dpi_scaled"]
 VectorScatterMode = Literal["full_vector", "compact_vector", "hybrid_raster"]
+BatchPlotExecutionBackend = Literal["sequential", "thread"]
 InteractionMode = Literal["pan", "select", "gate"]
 OverlayMode = Literal["manual_only", "manual_plus_comparison", "comparison_only"]
 ComparisonRole = Literal[
@@ -120,6 +121,11 @@ class BatchPlotExportSpec:
   raster_resolution_mode: BatchPlotRasterResolutionMode = "legacy_pixel_dimensions"
   vector_scatter_mode: VectorScatterMode = "hybrid_raster"
   hybrid_scatter_dpi: int = 600
+  execution_backend: BatchPlotExecutionBackend = "sequential"
+  max_workers: int = 1
+  memory_budget_mib: int | None = None
+  density_workers: int = 1
+  density_memory_budget_mib: int | None = None
   aspect_1_to_1: bool = False
   layout_policy: BatchPlotLayoutPolicy = "current_view"
   include_title: bool = True
@@ -155,6 +161,16 @@ class BatchPlotExportSpec:
       raise ValueError(f"invalid vector scatter mode {self.vector_scatter_mode!r}")
     if not 72 <= self.hybrid_scatter_dpi <= 2400:
       raise ValueError("hybrid scatter dpi must be between 72 and 2400")
+    if self.execution_backend not in {"sequential", "thread"}:
+      raise ValueError(
+        f"invalid batch plot execution backend {self.execution_backend!r}"
+      )
+    if self.max_workers < 0 or self.density_workers < 0:
+      raise ValueError("batch plot worker counts must be non-negative")
+    if self.memory_budget_mib is not None and self.memory_budget_mib < 1:
+      raise ValueError("memory_budget_mib must be positive when set")
+    if self.density_memory_budget_mib is not None and self.density_memory_budget_mib < 1:
+      raise ValueError("density_memory_budget_mib must be positive when set")
     if self.layout_policy not in {"current_view", "shared_ranges"}:
       raise ValueError(f"invalid batch plot layout policy {self.layout_policy!r}")
     if self.collision_policy not in {"fail", "replace", "suffix"}:

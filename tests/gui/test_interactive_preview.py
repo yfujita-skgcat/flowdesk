@@ -312,6 +312,7 @@ def test_main_window_uses_background_sample_load_for_large_input(
     _wait_until(qapp, lambda: sample.id in window._sample_data)
     _wait_until(qapp, lambda: window._plot_widget._rendered_x is not None)
     np.testing.assert_allclose(window._plot_widget._rendered_x, events[:, 0])
+    assert window._plot_widget.axis_display_labels() == ("X", "Y")
   finally:
     window.close()
     window.deleteLater()

@@ -155,7 +155,7 @@ def test_batch_run_prepares_once_and_reports_each_written_format(tmp_path) -> No
   assert report.status == "success"
   assert prepared == ["once"]
   rendering = [event for event in events if event.phase == "rendering"]
-  assert [event.completed_units for event in rendering] == [1, 2, 3, 4]
+  assert [event.completed_units for event in rendering] == [0, 1, 2, 3, 4]
   assert {event.total_units for event in events} == {4}
   assert (tmp_path / "Control_s1_main-view.svg").read_text(encoding="utf-8") == "s1"
   assert not list(tmp_path.glob(".*.flowdesk-*"))
@@ -467,3 +467,25 @@ def test_batch_spec_mapping_normalizes_json_lists() -> None:
   assert spec.raster_resolution_mode == "legacy_pixel_dimensions"
   assert spec.aspect_1_to_1 is True
   assert spec.layout_policy == "shared_ranges"
+
+
+def test_batch_spec_mapping_defaults_execution_policy_for_legacy_definition() -> None:
+  spec = batch_plot_export_spec_from_mapping({"id": "legacy", "name": "Legacy"})
+  assert spec.execution_backend == "sequential"
+  assert spec.max_workers == 1
+  assert spec.memory_budget_mib is None
+  assert spec.density_workers == 1
+  assert spec.density_memory_budget_mib is None
+
+
+def test_batch_spec_mapping_preserves_saved_execution_policy() -> None:
+  spec = batch_plot_export_spec_from_mapping({
+    "id": "saved", "name": "Saved", "execution_backend": "thread",
+    "max_workers": 4, "memory_budget_mib": 256,
+    "density_workers": 3, "density_memory_budget_mib": 96,
+  })
+  assert spec.execution_backend == "thread"
+  assert spec.max_workers == 4
+  assert spec.memory_budget_mib == 256
+  assert spec.density_workers == 3
+  assert spec.density_memory_budget_mib == 96

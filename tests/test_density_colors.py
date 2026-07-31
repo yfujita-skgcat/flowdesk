@@ -88,8 +88,7 @@ def test_chunked_histogram_matches_unchunked_density_result() -> None:
 def test_density_chunk_size_rejects_non_positive_values() -> None:
   with np.testing.assert_raises_regex(ValueError, "histogram_chunk_size"):
     DensityColorConfig(histogram_chunk_size=0)
-  with np.testing.assert_raises_regex(ValueError, "histogram_workers"):
-    DensityColorConfig(histogram_workers=0)
+  assert DensityColorConfig(histogram_workers=0).histogram_workers == 0
   with np.testing.assert_raises_regex(ValueError, "histogram_memory_budget_bytes"):
     DensityColorConfig(histogram_memory_budget_bytes=0)
 

@@ -32,22 +32,18 @@ def test_batch_plot_dialog_creates_new_definition_with_explicit_samples(qapp, tm
     assert request.definition["hybrid_scatter_dpi"] == 600
     assert dialog._scatter_mode.currentData() == "hybrid_raster"
     assert request.output_dir == str(tmp_path)
-    assert request.execution_backend == "sequential"
-    assert request.max_workers == 2
+    assert request.max_workers == 1
     assert request.memory_budget_mib is None
     assert request.density_workers == 1
     assert request.density_memory_budget_mib is None
-    assert "execution_backend" not in request.definition
+    assert request.definition["max_workers"] == 1
   finally:
     dialog.deleteLater()
 
 
-def test_batch_plot_dialog_keeps_thread_settings_runtime_only(qapp, tmp_path) -> None:
+def test_batch_plot_dialog_persists_worker_settings_in_definition(qapp, tmp_path) -> None:
   dialog = BatchPlotExportDialog([], [], [], [], "main-view")
   try:
-    dialog._execution_backend.setCurrentIndex(
-      dialog._execution_backend.findData("thread")
-    )
     dialog._max_workers.setValue(3)
     dialog._memory_budget_mib.setValue(128)
     dialog._density_workers.setValue(4)
@@ -55,27 +51,48 @@ def test_batch_plot_dialog_keeps_thread_settings_runtime_only(qapp, tmp_path) ->
     dialog._output.setText(str(tmp_path))
     dialog._accept_run()
     request = dialog.request()
-    assert request.execution_backend == "thread"
     assert request.max_workers == 3
     assert request.memory_budget_mib == 128
     assert request.density_workers == 4
     assert request.density_memory_budget_mib == 64
-    assert "max_workers" not in request.definition
-    assert "memory_budget_mib" not in request.definition
-    assert "density_workers" not in request.definition
+    assert request.definition["max_workers"] == 3
+    assert request.definition["memory_budget_mib"] == 128
+    assert request.definition["density_workers"] == 4
+    assert request.definition["density_memory_budget_mib"] == 64
   finally:
     dialog.deleteLater()
 
 
-def test_batch_plot_dialog_disables_unverified_worker_controls(qapp) -> None:
+def test_batch_plot_dialog_reloads_saved_execution_settings(qapp) -> None:
+  dialog = BatchPlotExportDialog(
+    [{
+      "id": "saved",
+      "name": "Saved",
+      "max_workers": 4,
+      "memory_budget_mib": 256,
+      "density_workers": 3,
+      "density_memory_budget_mib": 96,
+    }], [], [], [], "main-view",
+  )
+  try:
+    dialog._definition.setCurrentIndex(dialog._definition.findData("saved"))
+    assert dialog._max_workers.value() == 4
+    assert dialog._memory_budget_mib.value() == 256
+    assert dialog._density_workers.value() == 3
+    assert dialog._density_memory_budget_mib.value() == 96
+  finally:
+    dialog.deleteLater()
+
+
+def test_batch_plot_dialog_exposes_opt_in_worker_controls(qapp) -> None:
   dialog = BatchPlotExportDialog([], [], [], [], "main-view")
   try:
-    assert dialog._execution_backend.isEnabled() is False
-    assert dialog._max_workers.isEnabled() is False
-    assert dialog._memory_budget_mib.isEnabled() is False
-    assert dialog._density_workers.isEnabled() is False
-    assert dialog._density_memory_budget_mib.isEnabled() is False
-    assert "disabled" in dialog._experimental_workers_status.text().lower()
+    assert dialog._max_workers.isEnabled() is True
+    assert dialog._memory_budget_mib.isEnabled() is True
+    assert dialog._density_workers.isEnabled() is True
+    assert dialog._density_memory_budget_mib.isEnabled() is True
+    assert "opt-in" in dialog._experimental_workers_status.text().lower()
+    assert "not validated" in dialog._experimental_workers_status.text().lower()
   finally:
     dialog.deleteLater()
 
@@ -107,7 +124,6 @@ def test_batch_plot_dialog_runs_saved_queue_with_shared_runtime_policy(qapp, tmp
     dialog._queue_failure_policy.setCurrentIndex(
       dialog._queue_failure_policy.findData("continue")
     )
-    dialog._execution_backend.setCurrentIndex(dialog._execution_backend.findData("thread"))
     dialog._max_workers.setValue(3)
     dialog._accept_queue()
     request = dialog.request()
@@ -115,7 +131,6 @@ def test_batch_plot_dialog_runs_saved_queue_with_shared_runtime_policy(qapp, tmp
     assert request.queue_export_ids == ("first", "second")
     assert request.queue_failure_policy == "continue"
     assert request.output_dir == str(tmp_path)
-    assert request.execution_backend == "thread"
     assert request.max_workers == 3
   finally:
     dialog.deleteLater()

@@ -481,6 +481,7 @@ class MainWindow(QMainWindow):
         ] = OrderedDict()
         self._processed_display_cache_bytes = 0
         self._old_membership_banner = False
+        self._displayed_sample_id: str | None = None
         self._result_state = RuntimeResultState()
         self._preview_scheduler = PreviewScheduler(self)
         self._preview_scheduler.preview_ready.connect(self._on_preview_ready)
@@ -1352,7 +1353,20 @@ class MainWindow(QMainWindow):
         if sample.id not in self._sample_data:
             if self._should_load_sample_async(sample):
                 self._queue_sample_load(sample)
-                self._plot_widget.clear_plot()
+                # Keep the last committed rendering visible while the new
+                # sample is loading. Clearing here caused a transient empty
+                # ViewBox whose auto-range differed from the final rendering.
+                self._plot_widget.set_axis_labels(
+                    self._channel_selector.x_channel(),
+                    self._channel_selector.y_channel(),
+                )
+                if not self._plot_widget.has_rendered_data():
+                    self._plot_widget.clear_plot()
+                    self._plot_widget.set_axis_labels(
+                        self._channel_selector.x_channel(),
+                        self._channel_selector.y_channel(),
+                    )
+                self._plot_widget.set_status_banner(f"Loading {sample.name}…")
                 self._update_status(f"Loading {sample.name}…")
                 return
             self._load_sample_events(sample)
@@ -2019,7 +2033,14 @@ class MainWindow(QMainWindow):
                 self._queue_processed_display(request)
                 processed = self._get_processed_display_cache(key)
                 if processed is None:
-                    self._plot_widget.clear_plot()
+                    # A sample can be loaded before its processed display
+                    # layer is ready. Keep the last committed scene instead
+                    # of exposing an empty, auto-ranged ViewBox. This also
+                    # keeps channel labels visible during the async gap.
+                    self._plot_widget.set_axis_labels(x_name, y_name)
+                    if not self._plot_widget.has_rendered_data():
+                        self._plot_widget.clear_plot()
+                        self._plot_widget.set_axis_labels(x_name, y_name)
                     if self._results_stale:
                         self._refresh_override_statuses()
                     else:
@@ -2028,6 +2049,8 @@ class MainWindow(QMainWindow):
                         )
                     return
         data = processed.events
+        self._displayed_sample_id = self._current_sample_id
+        self._plot_widget.set_status_banner("")
 
         try:
             x_idx = processed.channel_index(x_id)
@@ -4184,7 +4207,7 @@ class MainWindow(QMainWindow):
                 request.output_dir,
                 failure_policy=request.queue_failure_policy,
                 execution_options=ExecutionOptions(
-                    backend=("thread" if request.execution_backend == "thread" else "sequential"),
+                    backend=("thread" if request.max_workers != 1 else "sequential"),
                     max_workers=request.max_workers,
                     memory_budget_bytes=(
                         None if request.memory_budget_mib is None
@@ -4266,7 +4289,7 @@ class MainWindow(QMainWindow):
             export_id,
             request.output_dir,
             execution_options=ExecutionOptions(
-                backend=("thread" if request.execution_backend == "thread" else "sequential"),
+                backend=("thread" if request.max_workers != 1 else "sequential"),
                 max_workers=request.max_workers,
                 memory_budget_bytes=(
                     None if request.memory_budget_mib is None

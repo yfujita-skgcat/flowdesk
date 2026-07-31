@@ -24,29 +24,21 @@ This guide deliberately separates three different problems:
 
 ## GUI capability gate for unfinished worker backends
 
-The core and CLI retain explicit `thread`/density-worker options for benchmark and
-diagnostic runs, but the Qt Batch Plot Export dialog must not expose them as executable
-controls while the operational checks below remain open:
+The core and CLI retain explicit `thread`/density-worker options. The Qt Batch Plot Export
+dialog exposes them as explicit opt-in runtime controls even while the operational checks
+below remain open; sequential execution remains the default:
 
 - native Windows and PyInstaller worker shutdown/close/error propagation;
 - renderer reentrancy and Qt-backend isolation under concurrent output items;
 - large real-FCS peak RSS and cancellation behavior for density workers.
 
-Until all three are verified, the dialog shows `Sequential (recommended)` but disables
-the execution-backend selector, max-worker and memory-budget spin boxes, and density
-worker controls. This is a presentation/runtime safety gate only: it does not remove
-the headless implementation or change project definitions. Re-enabling the controls
-requires updating the capability constant in `batch_plot_export_dialog.py`, adding
-focused GUI coverage, rerunning the Windows/PyInstaller smoke tests, and documenting
-the measured parity, shutdown, and memory results in `ToDo.md`.
-
-The 2026-07-31 safety-gate re-audit confirmed that
-`BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=False` and
-`PIPELINE_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=False`; both dialogs keep the unfinished
-worker controls disabled. The focused dialog tests passed (11 tests). This is only
-UI-gating evidence: it does not count as evidence for Windows/PyInstaller lifecycle,
-renderer reentrancy, or real-FCS density-worker operation, so the CLI remains the only
-explicit opt-in surface until those checks are completed.
+The controls are stored on reusable Batch Plot Export definitions when the user chooses
+Save Definition or Run Export. They remain runtime execution policy rather than scientific
+pipeline parameters; old definitions receive conservative sequential defaults. The dialog
+shows a warning that Windows/PyInstaller lifecycle and renderer reentrancy are not validated
+in this release. This is an explicit opt-in surface, not evidence that those platform checks
+passed. `PipelineExecutionDialog` remains disabled until its separate lifecycle checks are
+completed. The default and recommended backend remain sequential.
 
 Implement only one numbered increment per LLM run. Complete the interactive hot-path
 Increments 1–3 before the general progress/parallelism increments unless a new profile
@@ -994,18 +986,20 @@ statistics equal the original serial implementation.
 
 ### Increment 8: Bounded thread sample-level pipeline parallelism
 
-Status (2026-07-31): complete. `ExecutionOptions` remains runtime-only and defaults to
-the compatible sequential backend.  An explicit `thread` backend runs only complete,
+Status (2026-07-31): complete. `ExecutionOptions` remains an in-memory runtime object.
+Batch worker counts use `0=automatic`, `1=sequential`, and `2+=bounded threads`; automatic
+sizing targets three quarters of logical CPUs before sample, numeric-thread, and memory
+limits. The default is one worker. It still supports the legacy explicit `thread` backend
+the compatible sequential backend by default. An explicit `thread` backend runs only complete,
 immutable `SampleExecutionResult` jobs after the serial shared preparation barrier.
 `ExecutionResolution` bounds requested workers by selected samples, logical CPUs, an
 optional memory budget, conservative worst-sample in-flight bytes, and declared
 OpenMP/BLAS/NumExpr inner-thread environment settings; it never enables all CPUs by
 default.  The full resolution is recorded in `ExecutionReport.execution_provenance`.
 The headless CLI exposes the same backend, worker, and memory-budget controls. The GUI
-dialog retains the controls for discoverability but disables them behind a capability
-gate until Windows/PyInstaller lifecycle and worker shutdown validation is complete;
-only sequential execution can currently be selected in the GUI. The controls remain
-runtime-only and are never written into the project scientific definition.
+dialog exposes them as explicit opt-in fields on reusable Batch Plot Export definitions;
+when a definition runs, the fields are converted to in-memory runtime controls and do not
+enter the scientific pipeline definition.
 
 The `representative` pipeline benchmark profile now includes an identity compensation
 matrix, a compensated derived ratio, a linear transform, a rectangle population gate,
@@ -1034,7 +1028,7 @@ format bytes/metadata. A format bundle reuses its prepared scene and colour mapp
 PNG, SVG, and PDF do not reload or transform the same FCS independently.
 
 This backend remains opt-in in both CLI and GUI. GUI uses it only when the dialog
-explicitly selects `Bounded threads`; the default remains sequential until representative
+sets Max workers to `0` or at least `2`; the default remains sequential until representative
 compensation/derived/gating FCS measurements demonstrate acceptable wall time, peak RSS,
 open-file count, writer reentrancy, and Windows/PyInstaller shutdown behavior. The
 backend must never be reused for active-sample GUI switching: that request concerns one
@@ -1073,11 +1067,17 @@ The headless CLI exposes the runtime-only opt-in as `flowdesk run
 --execution-backend thread --max-workers N [--memory-budget-mib M]`.  These flags create
 an `ExecutionOptions` value for that invocation; they do not alter or serialize the
 project.  The CLI prints the report's resolved backend and effective/requested worker
-count after a full pipeline run. GUI Analysis → `Pipeline Execution Settings...` shows the
-same runtime-only controls, but keeps the experimental thread controls disabled until the
-capability gate is cleared.
+count after a full pipeline run. GUI Analysis → `Pipeline Execution Settings...` continues
+to keep the experimental thread controls disabled until the capability gate is cleared.
+Batch Plot Export is separate: its worker and density values are saved on the reusable
+export definition and passed to the same headless runner when that definition is executed.
 Interactive sample display remains a separate one-sample scheduler/cache problem; this GUI
 setting does not split events within one sample or alter the project definition.
+During asynchronous FCS acquisition for a newly selected sample, the GUI keeps the last
+committed rendering instead of clearing the ViewBox. It updates channel labels immediately,
+then replaces points, ranges, gates, and presentation together after the processed display
+layer is ready. This prevents a transient empty auto-ranged frame from being mistaken for
+the new sample and keeps FSC-A/SSC-A (or other channel) labels visible while loading.
 
 The CLI entry point installs a temporary SIGINT handler for both `run` and `batch-plot`.
 The first Ctrl-C sets the shared `CancellationToken` instead of forcefully interrupting a
@@ -1100,11 +1100,10 @@ Status (2026-07-30): bounded executors are implemented. The runtime resolves tar
 and overlay dependencies in the coordinator, optionally prepares independent required
 sources with bounded threads, merges them in source order, then resolves shared ranges
 and optionally renders one sample/view format bundle per thread after an immutable
-prepared-data barrier. Both thread phases require `--execution-backend thread`; the
-default execution remains sequential. The GUI Batch Plot Export dialog exposes the
-same backend, max-worker, and optional memory-budget controls as runtime-only request
-fields; its default remains sequential and these values are never persisted in the
-scientific export definition. Preparation and render worker resolutions
+prepared-data barrier. Both thread phases use a worker count of at least two; one is
+sequential. The GUI Batch Plot Export dialog exposes max-worker and optional memory-budget
+controls as persisted export-definition fields; its default remains one worker. Preparation
+and render worker resolutions
 are written to the batch manifest, and staged output,
 sidecar, plan-order manifest, cooperative cancellation, and memory-bound resolution
 are retained. The real core PNG/SVG/PDF writer parity test and a CLI overlay plus
@@ -1157,8 +1156,9 @@ The first multi-definition real-FCS measurement used `--queue-repeat 2` on
 queue took 30.588 s with 315,359 KiB peak RSS; thread/2 took 32.353 s with 563,352 KiB RSS
 (speed ratio 0.945, RSS about 1.79x). All output hashes matched, and the shared raw cache
 reported four hits and eight misses. This demonstrates cache reuse and deterministic parity,
-but not a useful speedup; the default remains sequential and GUI worker controls remain
-disabled until platform and representative-workload evidence changes.
+but not a useful speedup; the default remains sequential and Batch Plot Export worker
+controls remain explicit opt-in. Platform and representative-workload evidence is still
+pending.
 
 The first real-FCS queue smoke on 2026-07-31 used `data/analysis.flowdesk` (one saved
 definition, four samples, PNG/PDF). Sequential queue took 15.656 s with 314,110 KiB peak
@@ -1565,11 +1565,12 @@ When chunking is active, the estimator slices the original transformed arrays an
 the visibility mask inside each chunk instead of first materializing full `x[visible]` and
 `y[visible]` copies. Small visible populations still use the single-histogram fast path.
 This reduces temporary peak memory without changing the selected event set or result order.
-The headless `batch-plot` CLI exposes these as runtime-only `--density-workers` and
+The headless `batch-plot` CLI exposes these as runtime `--density-workers` and
 `--density-memory-budget-mib` options. The GUI Batch Plot Export dialog exposes the same
-two runtime-only values and passes them to the same headless runner; neither path writes
-them to the persisted export definition. GUI defaults remain one density worker until
-Windows/PyInstaller lifecycle and platform-specific controls are validated.
+two values and persists them in the reusable export definition. Zero requests the same
+three-quarter CPU heuristic, one is sequential, and larger values are bounded workers.
+GUI defaults remain one density worker; Windows/
+PyInstaller lifecycle and platform-specific controls are still not validated.
 Density metadata records requested/effective histogram workers and the configured budget;
 batch sidecars therefore expose whether the budget reduced concurrency without changing
 the density field.

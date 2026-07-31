@@ -45,6 +45,13 @@ def batch_plot_export_spec_from_mapping(value: Mapping[str, Any]) -> BatchPlotEx
   # historical one-object-per-event SVG/PDF representation.
   data.setdefault("vector_scatter_mode", "full_vector")
   data.setdefault("hybrid_scatter_dpi", 600)
+  # Execution controls were added after the original definition format.  Keep
+  # old projects deterministic and conservative when these keys are absent.
+  data.setdefault("execution_backend", "sequential")
+  data.setdefault("max_workers", 1)
+  data.setdefault("memory_budget_mib", None)
+  data.setdefault("density_workers", 1)
+  data.setdefault("density_memory_budget_mib", None)
   return BatchPlotExportSpec(**data)
 
 
@@ -320,6 +327,10 @@ def run_batch_plot_export(
 
   if preparation_error is None and not cancelled:
     render_started = time.perf_counter()
+    # Signal the phase transition before the first output finishes. Without
+    # this event the GUI remains on ``preparing_sources`` while the renderer
+    # spends seconds producing the first PNG/PDF.
+    progress("rendering", message="Rendering prepared outputs")
     if (
       execution_control is not None
       and execution_control.cancellation_token.is_cancelled()

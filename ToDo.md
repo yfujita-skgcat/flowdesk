@@ -1478,8 +1478,8 @@ thread backend（Increment 8）とは別の計画である。
   raw eventsがsequentialと一致するtestを追加する。通常CIに絶対時間thresholdを置かない。
   2026-07-30のopt-in small benchmark（100,000 events × 8、fallback root population）では
   sequential中央値3.37 ms、thread/2 workers中央値4.65 ms、scientific report hash一致だった。
-  この軽量workloadでspeedupは得られなかったため、thread backendは明示指定時のみとし、defaultを
-  sequentialから変更しない。headless CLIは`--execution-backend thread`、`--max-workers`、
+  この軽量workloadでspeedupは得られなかったため、thread backendはworker数`0`または`2以上`の
+  明示指定時のみとし、defaultをsequentialから変更しない。headless CLIは`--max-workers`、
   `--memory-budget-mib`でこのruntime optionを明示指定でき、resolved worker数を表示する。
   代表的なcompensation/derived/gating workloadで再計測する。
 - [x] GUIのAnalysis → `Pipeline Execution Settings...`にruntime optionの表示を追加した。
@@ -1553,7 +1553,8 @@ runnerまたは実機を利用できるようになった時点で、package smo
 - [x] **2026-07-31 queue-repeat 2実FCS測定**: `data/analysis.flowdesk --queue --queue-repeat 2 --max-workers 2`
   で2 definitions・4 samples・PNG/PDF 16出力を比較した。出力 hashは完全一致し、parallel raw cacheは
   hit=4/miss=8だった。sequential 30.588 s / 315,359 KiB、thread/2 32.353 s / 563,352 KiBで
-  speed ratioは0.945、RSSは約1.79倍だった。thread backendの既定化根拠にはならず、GUI worker controlsは無効のまま維持する。
+  speed ratioは0.945、RSSは約1.79倍だった。thread backendの既定化根拠にはならないため、GUIは逐次を既定値とし、
+  Batch Plot Exportのworker controlsだけを明示opt-inで利用可能にする。
 - [x] **2026-07-31 queue smoke**: `data/analysis.flowdesk --queue --max-workers 2`を実FCSで実行し、
   4 samples・PNG/PDF 8出力のrecursive hash parityを確認した。sequential 15.656 s / 314,110 KiB、
   queue指定 thread 15.484 s / 314,348 KiB（1.011x）で、cache provenanceとresolved backendも記録された。
@@ -1666,7 +1667,7 @@ runnerまたは実機を利用できるようになった時点で、package smo
   記録し、再現条件なしにschedulerやworkerの既定値を変更しない。
 - [ ] **density workerの運用統合（延期・非ブロッカー）**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeは、Windows runnerまたは実機が利用可能になった時点で
-  検証する。現時点では既定値を変更せず、GUI worker設定を無効化したまま維持する。
+  検証する。現時点では既定値を変更せず、GUIでは明示opt-in設定としてのみ利用する。
 - [x] **hybrid rasterの小配列ベクトル化を不採用とする記録**: alpha<1 markerの内側pixel
   ループを行単位NumPy配列へ置換する試行は、`data/analysis.flowdesk`（4 samples、PNG/PDF）で
   出力SHA-256を維持したものの、sequential renderが約21.2秒から約53.8秒へ悪化した。
@@ -1697,13 +1698,13 @@ runnerまたは実機を利用できるようになった時点で、package smo
   処理してから次のworker-backed Qt操作へ進むcleanupを追加した。長いGUI test/processでの
   `QThreadPool` teardown raceを減らすLinux回帰testを確認した。Windows/PyInstaller lifecycleの
   実機検証は引き続き未完了である。
-- [x] **未検証worker設定のGUI安全ゲート**: 上記のWindows/PyInstaller、renderer再入性、density
-  実FCS運用検証が完了するまで、Batch Plot Export GUIのbounded thread、max worker、memory budget、
-  density worker設定を無効化した。CLIの明示opt-inとcore実装は保持し、検証完了時にのみGUIを再有効化する。
-- [x] **2026-07-31 GUI安全ゲート再監査**: `BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=False` と
-  `PIPELINE_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=False`、および両ダイアログのworker controlsが
-  disabledであることを確認した。focused GUI test 11件は通過したため、Windows/PyInstallerの
-  lifecycle、renderer再入性、density実FCSの証跡が揃うまではdisabled状態とCLI明示opt-inを維持する。
+- [x] **未検証worker設定のGUI安全ゲートを明示opt-inへ変更**: Windows/PyInstaller、renderer再入性、
+  density実FCS運用は未検証のままだが、Batch Plot Export GUIのbounded thread、max worker、memory budget、
+  density worker設定をruntime-onlyの明示opt-inとして有効化した。既定値は逐次のまま維持し、Pipeline
+  Execution Settingsのworker controlsは別の安全ゲートで無効化する。
+- [x] **2026-07-31 GUI worker設定の再監査**: `BATCH_EXPERIMENTAL_WORKERS_GUI_AVAILABLE=True` とし、
+  Batch Plot Exportのworker controlsがenabled、明示opt-inで定義へ保存されることをfocused GUI testで確認した。
+  Windows/PyInstaller lifecycle、renderer再入性、density実FCSの証跡は未完了として残す。
 - [x] CLIの`run`/`batch-plot`へ一時的なSIGINT handlerを接続し、Ctrl-Cを共通`CancellationToken`へ
   伝達する。batchは完了済み出力とcancelled manifestを保持し、終了コード130を返す。handlerは終了時に復元する。
 
@@ -1727,10 +1728,11 @@ Qt/pyqtgraph object、共有mutable cacheもworker間で同時に触れてはな
   compensation/derived/gatingを含む代表workloadは未検証である。
 - [x] GUIのactive sample切替へこのbatch workerを流用しない。GUIは選択sampleだけをlatest-winsで
   処理し、Qt/pyqtgraph mutationはGUI threadに限定する。
-- [x] GUI Batch Exportダイアログへruntime-onlyの`Sequential`/`Bounded threads`、`Max workers`、
-  `Memory budget`を追加する。thread backendは明示選択時だけ有効で、worker数・memory budgetは
-  projectのBatch Plot Export定義へ保存しない。既定sequential、Qt object操作なし、manifest provenanceと
-  sequential/thread parityを維持する。
+- [x] GUI Batch Exportダイアログへ`Max workers`、`Memory budget`、density worker設定を追加し、
+  Save Definition/Run Export時に再利用可能なBatch Plot Export定義へ保存する。worker数は
+  `0=自動`、`1=逐次`、`2以上=bounded threads`とし、未指定・旧定義は逐次実行とする。これらは
+  科学的な解析定義ではなく実行ポリシーであり、manifest provenance、sequential/thread parity、
+  Windows/PyInstaller未検証の注意書きを維持する。
 
 #### Increment 9: bounded Batch Export parallel rendering
 

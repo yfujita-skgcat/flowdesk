@@ -132,9 +132,10 @@ cleanup changes:
 These results validate deterministic output/manifest behavior, bounded queue bookkeeping,
 density worker controls, and the tested Qt export lifecycle on Linux. They do not close the
 remaining Windows/PyInstaller lifecycle, native Qt long-run reentrancy, or large real-FCS
-prefetch measurements. The GUI worker controls therefore remain opt-in/disabled by the
-safety gate, and intermittent suite-level Qt/pyqtgraph shutdown segmentation faults must be
-reproduced before changing scheduler ownership or default worker counts.
+prefetch measurements. The Pipeline Execution GUI worker controls therefore remain disabled,
+while Batch Plot Export worker controls are explicit opt-in only. Intermittent suite-level
+Qt/pyqtgraph shutdown segmentation faults must be reproduced before changing scheduler
+ownership or default worker counts.
 
 ## Required tests
 

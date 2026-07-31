@@ -11,6 +11,8 @@ from threading import RLock
 import numpy as np
 from numpy.typing import NDArray
 
+from flowdesk_core.execution_control import automatic_worker_count
+
 
 @dataclass(frozen=True)
 class DensityColorConfig:
@@ -40,8 +42,8 @@ class DensityColorConfig:
       raise ValueError("density normalization percentiles must be ordered percentages")
     if self.histogram_chunk_size is not None and self.histogram_chunk_size < 1:
       raise ValueError("histogram_chunk_size must be positive when provided")
-    if self.histogram_workers < 1:
-      raise ValueError("histogram_workers must be positive")
+    if self.histogram_workers < 0:
+      raise ValueError("histogram_workers must be non-negative")
     if self.histogram_memory_budget_bytes is not None and self.histogram_memory_budget_bytes < 1:
       raise ValueError("histogram_memory_budget_bytes must be positive when provided")
 
@@ -263,7 +265,10 @@ def _histogram2d(
     return np.rint(chunk).astype(np.int64)
 
   chunk_starts = tuple(starts)
-  effective_workers = min(workers, len(chunk_starts))
+  requested_workers = (
+    automatic_worker_count() if workers == 0 else workers
+  )
+  effective_workers = min(requested_workers, len(chunk_starts))
   if memory_budget_bytes is not None:
     # Each active worker owns histogram grids plus masked chunk x/y arrays and
     # a boolean visibility slice. This is deliberately conservative; it does

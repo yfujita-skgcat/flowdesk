@@ -114,9 +114,10 @@ OSごとのユーザー書込み可能なアプリケーションデータ領域
 10. **Save Project**（Ctrl+S）で現在のprojectへ上書き保存する。未保存projectの場合は保存名を入力し、その名前の `.flowdesk` directory bundle として保存する。別名で保存する場合は **Save Project As...** を使う。
 
 Analysis → **Pipeline Execution Settings...** では、次回のRun Pipelineだけに適用するruntime設定を確認できる。
-既定は`Sequential (recommended)`です。`Bounded threads (opt-in)`はCLIの明示指定でのみ利用できます。GUIのPipeline Execution SettingsとBatch Plot Exportダイアログでは、Windows/PyInstallerのworker終了処理とrenderer再入性の検証が完了するまで、実験的なworker backend、worker数、memory budget、density worker設定を無効化しています。
+既定は`Max workers = 1`（Sequential）です。Batch Plot Exportダイアログでは、Max workers、Memory budget、Density workers、Density memory budgetを明示指定できます。Max workers/Density workersは`0=自動（論理CPUの3/4を目安）`、`1=逐次`、`2以上=bounded threads`です。これらの値は**Save Definition**で再利用可能なBatch Plot Export定義へ保存され、次回選択時に復元されます。未指定の古い定義は従来どおり逐次実行として扱います。Windows/PyInstallerのworker終了処理とrenderer再入性は本リリースでは検証していないため、長時間・大規模データでは逐次実行を推奨します。Pipeline Execution Settingsのworker controlsは、別途検証が完了するまで無効です。
 `Max workers`は同時sample数、`Memory budget`はcompensated/derived/transformed配列とmembershipを含む保守的な上限である。
-これらの値はprojectへ保存されず、GUIのactive sample表示やsample内event分割には使用されない。thread実行は速度向上を保証しないため、代表データで結果一致とpeak memoryを確認した場合だけ使用する。
+これらの値は科学的な解析結果やGUIのactive sample表示、sample内event分割を変更しない。thread実行は速度向上を保証せず、メモリ使用量が増える場合があるため、代表データで結果一致とpeak memoryを確認した場合だけ保存・使用する。
+Bounded threadsを既定にしないのは、処理がPython描画・ファイル出力・NumPy処理の混在であり、サンプル数やデータサイズによってはGIL、I/O、メモリ帯域が律速となって逐次より遅くなり、同時配列の保持でpeak memoryも増えるためです。明示的に選んだ定義だけで再利用できるようにし、既存定義と新規定義の安全な既定値は逐次のままにしています。
 
 ### 3.1 CLIでResultsを出力する
 
@@ -985,12 +986,13 @@ output directoryはprojectには保存されず、アプリケーション設定
 
 キュー開始時には保存済み定義のID indexも作成されるため、定義数が多い場合でも各定義のlookupを繰り返しません。これはメタデータlookupの最適化であり、FCS読込・変換・density計算の結果を定義間で共有するものではありません。
 
-ダイアログの `Execution backend` は `Sequential (recommended)` に固定されています。`Bounded threads (opt-in)`、`Max workers`、`Memory budget`、density worker設定は、Windows/PyInstallerのworker終了処理とrenderer再入性の検証が完了するまでGUIでは選択できません。検証済みの実験を行う場合はCLIで明示指定します。これらは保存済み定義に影響しないruntime-only設定です。thread backendは速度向上が保証されず、メモリ使用量が増えることがあるため、代表データでparityとpeak RSSを確認した場合だけ使用してください。
-`Density workers` と `Density memory budget` はdensity colorのfixed-bin histogram計算だけに適用されるruntime-only設定です。既定は1 workerで、densityの色結果や保存済み定義は変更しません。大きなデータで使用する場合は、色parityとpeak RSSを確認してから増やしてください。
+`Max workers`、`Memory budget`、density worker設定を変更して **Save Definition** または **Run Export** を行うと、その値も定義へ保存されます。次回定義を選ぶと設定が復元されます。`Max workers = 1`は逐次、`2以上`はbounded threads、`0`は自動設定です。速度向上は保証されず、メモリ使用量が増えることがあるため、代表データでparityとpeak RSSを確認した場合だけ使用してください。Windows/PyInstallerのworker終了処理とrenderer再入性は未検証です。
+`Density workers` と `Density memory budget` はdensity colorのfixed-bin histogram計算だけに適用されます。既定は1 workerです。大きなデータで保存・使用する場合は、色parityとpeak RSSを確認してから増やしてください。
+大きなFCSを初めて選択した場合、読み込み中は直前に確定したプロットを保持し、`Loading ...`を表示します。新しいイベント配列の準備完了後にドット、範囲、ゲート、軸ラベルを一括更新するため、読み込み途中の空プロットや一時的に異なる枠線を解析結果として解釈する必要はありません。
 密度色を含むbatch出力のsidecarには、要求worker数、実効worker数、memory budgetが記録されます。
 
 CLIで実行する場合は、`flowdesk batch-plot <project> --export-id <id> --output-dir <dir>` に
-`--execution-backend thread --max-workers N` を追加すると、target/overlayに必要なFCSの読み込み・display
+`--max-workers N`（0=自動、1=逐次）を追加すると、target/overlayに必要なFCSの読み込み・display
 準備と、source準備完了後の独立したsample/view出力をbounded threadで並列化できます。既定値は`sequential`です。`--memory-budget-mib M`
 を指定すると、準備済み配列の保守的な推定量に基づいて同時worker数を抑制します。overlay、共通軸範囲、
 collision、manifest順は並列化しても変わりません。GUIのBatch Exportも既定は逐次renderですが、
@@ -1006,7 +1008,7 @@ runtime worker/memory設定を共有し、Ctrl-Cでは終了コード130を返�
 `--queue-all` と `--queue-export-id` は同時に指定できず、`--export-id`とも併用できません。GUIの`Run Saved Queue`とCLI queueは同じ保存済み定義の順序・定義別出力・failure policyを使用します。
 CLIでは`--queue-workers N`を明示すると、保存定義単位のbounded並列実行を有効にできます。各定義の出力先・manifestは独立し、定義内部は逐次backendへ固定して二重並列を防ぎます。`--memory-budget-mib`を指定した場合は、各定義のtarget/overlay sourceに必要なFCS file sizeとPNG/JPEG/hybrid PDFの出力canvas working setから保守的にqueue worker数も制限され、queue内最大の見積もり・制限要因・予算がqueue manifestへ記録されます。定義を安全に解決できない場合はproject内全FCSを見積もり対象にします。queue manifestには計画・投入・完了した定義数と実測最大同時実行数も記録されます。fail-fastで開始前に取り消された定義は`not_started`となり、完了数には含まれません。実行中の定義は協調的に終了して実際の結果が記録されます。`--queue-workers`は`--execution-backend thread`とは併用できません。既定値は1（逐次）で、GUIには未検証のため表示しません。
 queue内で同じFCSを複数定義が参照する場合、fingerprintを含むraw sampleだけを最大256 MiB（runtime memory budget指定時はその半分まで）のLRUで再利用します。さらに、実効queue workerが1の場合に限り、sample fingerprint、population、軸、transform、plot type、表示点数、preview要求が完全一致するprocessed display layerを、残余メモリ内のbounded LRUで再利用します。異なる表示要求や定義並列実行では共有せず、gate/statisticsなどのauthoritative結果も変更しません。raw/processed display cacheのbudget、hit/miss、eviction、保持bytesは`batch-queue-manifest.json`へ記録されます。
-ダイアログで`Bounded threads (opt-in)`を選んだ場合だけ同じruntime設定を使用し、
+Max workersを`2以上`または`0`にした場合だけbounded worker設定を使用し、
 batch manifestの`execution`には、実行単位（`prepared_output_item`）、計画数、投入数、完了数、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、
 科学的な結果やproject定義を変更する設定ではありません。FCSごとに無制限にworkerを作るのではなく、
