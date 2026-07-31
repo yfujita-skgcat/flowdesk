@@ -1545,6 +1545,12 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   worker間で共有しないようにした。raw event、prepared array、source順のmerge契約は変更せず、並列準備回帰testで
   workerごとに別runnerが使われることを確認した。thread-local化後も実FCS出力のSHA-256は逐次と一致し、
   thread backendの速度を既定化する根拠にはしていない。
+- [x] **parallel queueのraw FCS cache共有**: 定義worker間でread-only `SampleData`を共有し、同じFCSを
+  定義ごとに再読込しないbounded cacheを追加した。memory budgetがある場合はresolved worker working setを
+  先に予約し、残余だけをcache上限にする。残余がない場合はcacheを無効化し、manifestへ理由を記録する。
+  cacheはraw eventだけを保持し、変換済み配列、gate membership、density、renderer objectは共有しない。
+  worker間cache共有のunit testとmemory-bound回帰testを追加したが、実FCS I/O speedupとWindows/PyInstaller
+  lifecycleは未検証であり、thread backendの既定値・GUI自動適用は変更しない。
 - [ ] **Batch Plot Export並列化の残りの検証**: rendererのreentrancy、共有mutable state、Qt backend、
   overlayのshared range barrier、Windows/PyInstaller終了処理を検証する。検証完了前にthread backendを既定値へ変更したり、
   GUIへ自動適用したりしない。代表FCSでの出力parityとpeak RSSの測定は実施済みだが、

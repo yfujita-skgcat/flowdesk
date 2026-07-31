@@ -70,6 +70,7 @@ class _RawSampleCache:
     self.misses = 0
     self.evictions = 0
     self._lock = Lock()
+    self._inflight: dict[tuple[str, str, str], Event] = {}
 
   @staticmethod
   def _size(sample_data: Any) -> int:
@@ -100,6 +101,35 @@ class _RawSampleCache:
         _, (_, _, evicted_size) = self._items.popitem(last=False)
         self._bytes -= evicted_size
         self.evictions += 1
+
+  def get_or_load(
+    self,
+    key: tuple[str, str, str],
+    loader: Callable[[], tuple[Any, Any]],
+  ) -> tuple[Any, Any]:
+    """Get a raw sample, coalescing concurrent misses for the same key."""
+    while True:
+      cached = self.get(key)
+      if cached is not None:
+        return cached
+      with self._lock:
+        event = self._inflight.get(key)
+        if event is None:
+          event = Event()
+          self._inflight[key] = event
+          owner = True
+        else:
+          owner = False
+      if owner:
+        try:
+          info, sample_data = loader()
+          self.put(key, info, sample_data)
+          return info, sample_data
+        finally:
+          with self._lock:
+            self._inflight.pop(key, None)
+            event.set()
+      event.wait()
 
   def stats(self) -> dict[str, int]:
     with self._lock:
@@ -308,16 +338,17 @@ def batch_plot_command(
 
     def extract_layer(sample: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
       cache_key = _raw_sample_cache_key(sample)
-      cached_raw = None if _raw_sample_cache is None else _raw_sample_cache.get(cache_key)
-      if cached_raw is None:
+      if _raw_sample_cache is None:
         _info, sample_data = read_fcs_sample(sample["path"], str(sample["id"]))
-        if _raw_sample_cache is not None:
-          # The cache is queue-scoped and only retains the immutable raw sample
-          # object. All transformed layers, masks, colours, and renderer caches
-          # remain definition-scoped below this boundary.
-          _raw_sample_cache.put(cache_key, _info, sample_data)
       else:
-        _info, sample_data = cached_raw
+        # The cache is queue-scoped and only retains the immutable raw sample
+        # object. All transformed layers, masks, colours, and renderer caches
+        # remain definition-scoped below this boundary. Concurrent misses for
+        # one source are coalesced so parallel definitions do not duplicate I/O.
+        _info, sample_data = _raw_sample_cache.get_or_load(
+          cache_key,
+          lambda: read_fcs_sample(sample["path"], str(sample["id"])),
+        )
       names = [channel.id for channel in sample_data.channels]
       if len(names) < 2:
         raise ValueError("plot requires at least two channels")
@@ -1054,7 +1085,18 @@ def batch_plot_queue_command(
   requested_cache_budget = base_options.memory_budget_bytes
   raw_cache_budget = 256 * 1024 * 1024
   if requested_cache_budget is not None:
-    raw_cache_budget = min(raw_cache_budget, max(0, requested_cache_budget // 2))
+    if queue_workers > 1:
+      # Reserve the resolved in-flight definition working sets first. Only
+      # residual budget may retain raw arrays shared by definition workers.
+      reserved_worker_bytes = (
+        estimated_queue_definition_bytes * effective_queue_workers
+      )
+      raw_cache_budget = min(
+        raw_cache_budget,
+        max(0, requested_cache_budget - reserved_worker_bytes),
+      )
+    else:
+      raw_cache_budget = min(raw_cache_budget, max(0, requested_cache_budget // 2))
   raw_sample_cache = _RawSampleCache(raw_cache_budget)
   queue_manifest["raw_sample_cache"] = raw_sample_cache.stats()
   _write_queue_manifest(queue_manifest_path, queue_manifest)
@@ -1079,7 +1121,8 @@ def batch_plot_queue_command(
           cancellation_token=execution_control.cancellation_token,
         )
       )
-      cache = None
+      if raw_cache_budget <= 0:
+        cache = None
     try:
       result = batch_plot_command(
         project_path, export_id, str(definition_dir),
@@ -1158,7 +1201,15 @@ def batch_plot_queue_command(
         return result
   else:
     queue_manifest["raw_sample_cache"] = {
-      "enabled": False, "reason": "definition_parallelism",
+      **raw_sample_cache.stats(),
+      "enabled": raw_cache_budget > 0,
+      "scope": "definition_parallelism",
+      "reserved_worker_bytes": (
+        estimated_queue_definition_bytes * effective_queue_workers
+      ),
+      **({} if raw_cache_budget > 0 else {
+        "reason": "no_residual_memory_budget",
+      }),
     }
     _write_queue_manifest(queue_manifest_path, queue_manifest)
     effective_workers = effective_queue_workers

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -203,12 +204,14 @@ def test_batch_plot_queue_supports_explicit_definition_parallelism(
   tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
+  caches = []
   lock = threading.Lock()
   active = 0
   peak = 0
 
-  def fake_batch(*_args, **_kwargs) -> int:
+  def fake_batch(*_args, **kwargs) -> int:
     nonlocal active, peak
+    caches.append(kwargs.get("_raw_sample_cache"))
     with lock:
       active += 1
       peak = max(peak, active)
@@ -224,6 +227,9 @@ def test_batch_plot_queue_supports_explicit_definition_parallelism(
     queue_workers=2,
   ) == 0
   assert peak == 2
+  assert len(caches) == 3
+  assert caches[0] is caches[1] is caches[2]
+  assert isinstance(caches[0], _RawSampleCache)
   manifest = json.loads(
     (tmp_path / "batch-queue-manifest.json").read_text(encoding="utf-8")
   )
@@ -292,8 +298,10 @@ def test_batch_plot_queue_applies_memory_budget_to_queue_workers(
     "batch_plot_exports": [],
   }
   monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: snapshot)
+  caches = []
   monkeypatch.setattr(
-    batch_plot_module, "batch_plot_command", lambda *_args, **_kwargs: 0,
+    batch_plot_module, "batch_plot_command",
+    lambda *_args, **kwargs: caches.append(kwargs.get("_raw_sample_cache")) or 0,
   )
   assert batch_plot_queue_command(
     "project.flowdesk", ("first", "second"), str(tmp_path / "out"),
@@ -311,6 +319,9 @@ def test_batch_plot_queue_applies_memory_budget_to_queue_workers(
   assert manifest["queue_execution"]["submitted_definitions"] == 2
   assert manifest["queue_execution"]["completed_definitions"] == 2
   assert manifest["queue_execution"]["peak_in_flight_definitions"] == 1
+  assert caches == [None, None]
+  assert manifest["raw_sample_cache"]["enabled"] is False
+  assert manifest["raw_sample_cache"]["reason"] == "no_residual_memory_budget"
 
 
 def test_batch_plot_queue_memory_estimate_uses_definition_sources(
@@ -408,6 +419,35 @@ def test_raw_sample_cache_is_bounded_and_tracks_fingerprint_hits() -> None:
   assert cache.stats()["hits"] == 1
   assert cache.get(("s1", "sample.fcs", "fingerprint-b")) is None
   assert cache.stats()["misses"] == 1
+  assert cache.stats()["retained_samples"] == 1
+
+
+def test_raw_sample_cache_coalesces_concurrent_misses() -> None:
+  cache = _RawSampleCache(1024)
+  sample = SampleData(
+    "s1", np.zeros((2, 2), dtype=np.float64),
+    (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y")),
+  )
+  started = threading.Event()
+  release = threading.Event()
+  reads = 0
+
+  def loader() -> tuple[str, SampleData]:
+    nonlocal reads
+    reads += 1
+    started.set()
+    assert release.wait(timeout=2)
+    return "info", sample
+
+  key = ("s1", "sample.fcs", "fingerprint-a")
+  with ThreadPoolExecutor(max_workers=2) as executor:
+    futures = [executor.submit(cache.get_or_load, key, loader) for _ in range(2)]
+    assert started.wait(timeout=2)
+    release.set()
+    assert [future.result(timeout=2) for future in futures] == [
+      ("info", sample), ("info", sample),
+    ]
+  assert reads == 1
   assert cache.stats()["retained_samples"] == 1
 
 

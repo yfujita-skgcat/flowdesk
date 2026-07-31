@@ -1268,6 +1268,16 @@ definition workers remain eligible. This changes only scheduling utilization und
 explicit runtime budget; it does not relax the per-definition estimate or alter raw events,
 output bytes, cancellation, or scientific results.
 
+Definition-parallel queue workers may share a queue-scoped raw FCS cache. `SampleData`
+constructors make the event matrix read-only, and `_RawSampleCache` protects its bounded LRU
+with a lock, so concurrent readers do not mutate a scientific input. The coordinator reserves
+`estimated_definition_bytes * effective_workers` before assigning any cache capacity; under an
+explicit budget only the residual is available to the raw cache (up to 256 MiB). With no
+residual budget, workers receive no cache and the manifest records
+`reason=no_residual_memory_budget`. The cache never contains transformed layers, masks,
+density colours, renderer objects, or authoritative results. This reduces duplicate FCS I/O
+without changing event identity, output order, cancellation, or the sequential default.
+
 Within one sample/view format bundle, the CLI now caches the immutable prepared scene,
 normalized layers, and event-color mapping between formats. The cache is protected for
 thread callbacks and is released after the bundle's last format, so it does not become
