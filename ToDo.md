@@ -1057,9 +1057,11 @@ incrementでは両者を一つの authoritative report から統合し、GUI・C
 ### Phase C1: Table Editor [S12]
 
 - [x] `docs/implementation/table-editor.md`を全文読み、column sourceとiterator contractを追記する。
-- [x] `TableDefinitionSpec`、`TableColumnSpec`、typed result row/cellをcore/schemaへ追加する。runnerとGUIは後続increment。
-- [ ] keyword、StatisticSpec、platform result、constant、安全なformula列を実装する。
-- [ ] sample/Group/Population path/plate well iterationをcore table runnerへ実装する。
+- [x] `TableDefinitionSpec`、`TableColumnSpec`、typed result row/cellをcore/schemaへ追加する。GUIは後続increment。
+- [x] keyword、StatisticSpec、constant列をexplicit sample runnerへ実装する。
+- [ ] platform result、安全なformula列を実装する。
+- [x] explicit sample iterationでkeyword/statistic columnをcore table runnerへ実装する。missing、
+  ambiguous、undefined/error statusを列ずれなく返す。Group/Population path/plate well iterationは後続。
 - [ ] column reorder、rename、number format、hidden、sort、filterをGUIへ追加する。
 - [ ] conditional formattingはdisplay definitionとして保存し、数値を変更しない。
 - [ ] previewとbatch exportで同じcore runnerを使う。

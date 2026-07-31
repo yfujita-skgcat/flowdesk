@@ -32,7 +32,11 @@ safe formula, or constant. Core values and display formatting remain separate.
    `TableColumnSpec`, `TableCell`, `TableResultRow`, and `TableResult` mappings;
    current project manifests validate optional `table_definitions` without executing
    expressions or reading GUI cells. Runner, iteration, and export remain later increments.
-2. Implement keyword and statistic columns for explicit sample iteration.
+2. Implement keyword and statistic columns for explicit sample iteration. **Implemented:**
+   `run_table_definition()` consumes authoritative annotations and `StatisticResult` values,
+   preserves declared row/column order, applies annotation source precedence, and returns
+   explicit `missing_*`, `ambiguous_statistic`, and statistic undefined/error statuses. It does
+   not read raw FCS or display-downsampled values.
 3. Add group/population-path iteration and deterministic row order.
 4. Add safe formula dependency ordering; reject cycles and arbitrary Python.
 5. Add filters/sort and undefined/error propagation.

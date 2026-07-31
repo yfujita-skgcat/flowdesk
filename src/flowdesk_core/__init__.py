@@ -40,6 +40,7 @@ from flowdesk_core.tables import (
   TableResult,
   TableResultRow,
 )
+from flowdesk_core.table_runner import run_table_definition
 
 __all__ = [
   "ChannelSpec",
@@ -74,4 +75,5 @@ __all__ = [
   "TableDefinitionSpec",
   "TableResult",
   "TableResultRow",
+  "run_table_definition",
 ]

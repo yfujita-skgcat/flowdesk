@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from flowdesk_core.models import AnnotationSpec, StatisticResult
+from flowdesk_core.table_runner import run_table_definition
 from flowdesk_core.tables import (
   TableCell,
   TableColumnSpec,
@@ -76,3 +78,51 @@ def test_manifest_validates_optional_table_definitions() -> None:
   manifest["table_definitions"][0]["columns"][0]["source"] = "unsafe"
   with pytest.raises(ManifestValidationError, match="table_definitions"):
     validate_manifest(manifest)
+
+
+def test_table_runner_resolves_keyword_and_statistic_columns_in_sample_order() -> None:
+  definition = TableDefinitionSpec(
+    id="table", name="Table", row_iterator="explicit_samples",
+    sample_ids=("s2", "s1"),
+    columns=(
+      TableColumnSpec(id="keyword", name="Condition", source="keyword", keyword="condition"),
+      TableColumnSpec(id="stat", name="Count", source="statistic", statistic_id="count"),
+    ),
+  )
+  result = run_table_definition(
+    definition,
+    ("s1", "s2"),
+    annotations=(
+      AnnotationSpec("s1", "condition", "old", "fcs"),
+      AnnotationSpec("s1", "condition", "new", "workspace"),
+    ),
+    statistic_results=(
+      StatisticResult("s1", "count", "all_events", "count", value=12),
+      StatisticResult("s2", "count", "all_events", "count", value=8),
+    ),
+  )
+  assert [row.row_key for row in result.rows] == ["s2", "s1"]
+  assert result.rows[0].values[0].status == "undefined"
+  assert result.rows[0].values[1].value == 8
+  assert result.rows[1].values[0].value == "new"
+  assert result.rows[1].values[1].value == 12
+
+
+def test_table_runner_reports_missing_and_ambiguous_sources_without_shifting_columns() -> None:
+  definition = TableDefinitionSpec(
+    id="table", name="Table", row_iterator="explicit_samples", sample_ids=("missing",),
+    columns=(
+      TableColumnSpec(id="keyword", name="Keyword", source="keyword", keyword="x"),
+      TableColumnSpec(id="stat", name="Stat", source="statistic", statistic_id="count"),
+    ),
+  )
+  result = run_table_definition(
+    definition, ("missing",),
+    statistic_results=(
+      StatisticResult("missing", "count", "p1", "count", value=1),
+      StatisticResult("missing", "count", "p2", "count", value=2),
+    ),
+  )
+  assert [cell.reason for cell in result.rows[0].values] == [
+    "missing_keyword", "ambiguous_statistic",
+  ]
