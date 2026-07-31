@@ -1594,6 +1594,11 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   出力SHA-256を維持したものの、sequential renderが約21.2秒から約53.8秒へ悪化した。
   小さな一時配列生成が支配的だったため実装を取り消した。今後は大きなbatch化またはC実装を、
   pixel-center判定・描画順・alpha合成のparityと実FCS benchmarkで確認するまで導入しない。
+- [x] **hybrid rasterのalpha合成をC実装へ移行する**: pixel-center maskは従来どおりNumPyで
+  決定し、marker単位のRGBA tileをPillow `alpha_composite`へ渡してPythonのpixel内側loopを除去した。
+  旧実装とのPDF raster比較（150/600 DPI）で4 samplesの画像が完全一致し、PDF単独実FCS exportは
+  約18.5秒から約13.1秒へ短縮した。Pillowがない場合は明示的なexport errorとし、alpha順序・透明背景・
+  source orderを変更しない。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
   FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
   Increment 11のdecision recordで採否を決定する。

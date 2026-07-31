@@ -1273,6 +1273,15 @@ small-array vectorization improves raster performance; any future large-batch or
 implementation must preserve pixel-center coverage, draw order, alpha compositing, and
 measured real-FCS parity before adoption.
 
+The accepted follow-up keeps the NumPy pixel-center mask but moves alpha compositing of
+each marker tile to Pillow's C implementation. The tile is transparent outside the exact
+mask and `alpha_composite` processes markers in source/event order, so the hybrid PNG
+payload remains lossless and renderer-neutral. On the same four-sample real-FCS PDF-only
+run, the old implementation took 18.5 s and the C-compositor path took 13.1 s. PDFs from
+the old and new implementations rasterized at both 150 and 600 DPI were pixel-identical;
+the Pillow dependency is required for this hybrid path and missing-package errors are
+reported explicitly.
+
 The bounded executor now also has regression coverage for threaded cancellation: each
 worker owns a unique staged output/sidecar, successful staged files are atomically
 published, pending work is marked `not_started`, and the final manifest remains in

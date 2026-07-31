@@ -1526,6 +1526,10 @@ def _hybrid_scatter_raster(
   """Render only scatter markers into a transparent lossless RGBA raster."""
   if dpi < 72 or dpi > 2400:
     raise PlotExportError("hybrid scatter dpi must be between 72 and 2400")
+  try:
+    from PIL import Image
+  except ImportError as exc:
+    raise PlotExportError("hybrid raster export requires the Pillow package") from exc
   raster_scale = dpi / 96.0
   raster_width = max(1, round(plot_width * raster_scale))
   raster_height = max(1, round(plot_height * raster_scale))
@@ -1536,19 +1540,7 @@ def _hybrid_scatter_raster(
   style_by_id = {style.source_id: style for style in selected.source_styles}
   point_records: list[dict[str, Any]] = []
   rgb_cache: dict[str, tuple[int, int, int]] = {}
-
-  def blend(index: int, color: tuple[int, int, int], alpha: float) -> None:
-    src_a = max(0.0, min(1.0, alpha))
-    if src_a <= 0:
-      return
-    dst_a = pixels[index + 3] / 255.0
-    out_a = src_a + dst_a * (1.0 - src_a)
-    if out_a <= 0:
-      return
-    for offset, channel in enumerate(color):
-      value = (channel * src_a + pixels[index + offset] * dst_a * (1.0 - src_a)) / out_a
-      pixels[index + offset] = max(0, min(255, round(value)))
-    pixels[index + 3] = max(0, min(255, round(out_a * 255)))
+  pillow_image: Any | None = None
 
   def blend_opaque_row(
     pixel_y: int,
@@ -1574,6 +1566,36 @@ def _hybrid_scatter_raster(
       rgba[pixel_y, min_x + positions, :3] = color
       rgba[pixel_y, min_x + positions, 3] = 255
 
+  def blend_alpha_marker(
+    image: Any,
+    min_x: int,
+    max_x: int,
+    min_y: int,
+    max_y: int,
+    center_x: float,
+    center_y: float,
+    radius: float,
+    shape: str,
+    color: tuple[int, int, int],
+    alpha: float,
+  ) -> None:
+    """Apply one exact pixel-center mask using Pillow's C alpha compositor."""
+    mask_width = max_x - min_x + 1
+    mask_height = max_y - min_y + 1
+    x_positions = np.arange(min_x, max_x + 1, dtype=np.float64) + 0.5 - center_x
+    y_positions = np.arange(min_y, max_y + 1, dtype=np.float64)[:, None] + 0.5 - center_y
+    if shape == "circle":
+      inside = x_positions[None, :] ** 2 + y_positions ** 2 <= radius * radius
+    else:
+      inside = (
+        np.abs(x_positions[None, :]) <= radius
+        ) & (np.abs(y_positions) <= radius)
+    alpha_value = round(255 * max(0.0, min(1.0, alpha)))
+    mask = Image.fromarray(np.where(inside, alpha_value, 0).astype(np.uint8), "L")
+    tile = Image.new("RGBA", (mask_width, mask_height), color + (alpha_value,))
+    tile.putalpha(mask)
+    image.alpha_composite(tile, (min_x, min_y))
+
   for z_index, source_id in enumerate(prepared.source_order):
     style = style_by_id.get(source_id)
     color_text = "#000000" if style is None or style.color is None else style.color
@@ -1583,6 +1605,9 @@ def _hybrid_scatter_raster(
     radius = marker_size * raster_scale / 2.0
     x_values, y_values = layers[source_id]
     colors = None if event_colors is None else event_colors.get(source_id)
+    if alpha >= 1.0 and pillow_image is not None:
+      pixels[:] = pillow_image.tobytes()
+      pillow_image = None
     for index, (x_value, y_value) in enumerate(zip(x_values, y_values, strict=False)):
       point_color_text = (
         color_text if colors is None or index >= len(colors) else colors[index]
@@ -1608,17 +1633,15 @@ def _hybrid_scatter_raster(
             pixel_y, min_x, max_x, x, y, radius, shape, point_color,
           )
       else:
-        for pixel_y in range(min_y, max_y + 1):
-          for pixel_x in range(min_x, max_x + 1):
-            dx = pixel_x + 0.5 - x
-            dy = pixel_y + 0.5 - y
-            inside = (
-              dx * dx + dy * dy <= radius * radius
-              if shape == "circle"
-              else abs(dx) <= radius and abs(dy) <= radius
-            )
-            if inside:
-              blend((pixel_y * raster_width + pixel_x) * 4, point_color, alpha)
+        if pillow_image is None:
+          pillow_image = Image.frombytes("RGBA", (raster_width, raster_height), pixels)
+        blend_alpha_marker(
+          pillow_image, min_x, max_x, min_y, max_y, x, y, radius, shape,
+          point_color, alpha,
+        )
+
+  if pillow_image is not None:
+    pixels[:] = pillow_image.tobytes()
 
   raw_rows = b"".join(
     b"\x00" + bytes(pixels[row * raster_width * 4:(row + 1) * raster_width * 4])
