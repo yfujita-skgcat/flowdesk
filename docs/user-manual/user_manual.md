@@ -985,6 +985,7 @@ collision、manifest順は並列化しても変わりません。GUIのBatch Exp
 密度色を使用するCLI batch exportでは、`--density-workers N`で固定bin density histogramのchunk計算worker数を
 runtime-onlyで指定できます。`--density-memory-budget-mib M`を併用すると、histogram working setの保守的な
 見積もりに基づいて同時density worker数を抑制します。既定は1 workerで、全FCS配列のRSSを保証する上限ではありません。CLI実行中にCtrl-Cを押すと協調キャンセルが要求され、完了済み出力を保持したcancelled manifestを作成して終了コード130を返します。実行中のnative数値処理を強制停止せず、安全なstage境界で停止します。
+大規模なdensity計算では、histogram chunkの完了時と平滑化処理の境界でもキャンセルを確認します。現在実行中のNumPy処理は安全に完了させます。
 ダイアログで`Bounded threads (opt-in)`を選んだ場合だけ同じruntime設定を使用し、
 batch manifestの`execution`には、実行単位（`prepared_output_item`）、計画数、投入数、完了数、
 実際の最大同時実行数（`peak_in_flight_items`）が記録されます。これは性能・メモリ検証用の実行履歴であり、

@@ -579,6 +579,10 @@ def batch_plot_command(
           full_x, full_y, full_x[visible], full_y[visible],
           bounds=density_bounds, logical_size=(512, 512),
           config=density_config or DensityColorConfig(),
+          cancel_check=(
+            None if execution_control is None
+            else execution_control.cancellation_token.raise_if_cancelled
+          ),
         )
         density_colors = np.asarray(density_result.colors)
         density_colors.setflags(write=False)

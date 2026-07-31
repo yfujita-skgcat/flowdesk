@@ -1385,6 +1385,11 @@ FCS/input or post-smoothing arrays, so it is not a process-wide RSS limit.
 Submission uses an ordered in-flight window equal to the effective worker count rather
 than unbounded `Executor.map` submission, so completed chunk arrays are released as they
 are merged and memory budget accounting remains meaningful.
+The density estimator also accepts an optional coordinator-owned cancellation callback.
+Batch export checks it before histogram work, between completed chunks, and between the
+global smoothing/query stages. This does not force-stop an active NumPy call, but avoids
+starting further chunks and lets the batch coordinator publish its cancellation manifest
+at the next safe boundary.
 When chunking is active, the estimator slices the original transformed arrays and applies
 the visibility mask inside each chunk instead of first materializing full `x[visible]` and
 `y[visible]` copies. Small visible populations still use the single-histogram fast path.

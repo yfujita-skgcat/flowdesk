@@ -94,6 +94,26 @@ def test_density_chunk_size_rejects_non_positive_values() -> None:
     DensityColorConfig(histogram_memory_budget_bytes=0)
 
 
+def test_density_cancel_check_stops_before_expensive_stages() -> None:
+  checks = 0
+
+  def cancel() -> None:
+    nonlocal checks
+    checks += 1
+    if checks >= 2:
+      raise RuntimeError("cancelled")
+
+  with np.testing.assert_raises_regex(RuntimeError, "cancelled"):
+    estimate_density_colors(
+      np.linspace(0.0, 1.0, 1000), np.linspace(0.0, 1.0, 1000),
+      np.array([0.5]), np.array([0.5]),
+      bounds=(0.0, 1.0, 0.0, 1.0), logical_size=(320, 240),
+      config=DensityColorConfig(histogram_chunk_size=100),
+      cancel_check=cancel,
+    )
+  assert checks == 2
+
+
 def test_density_palette_preserves_canonical_hex_colors() -> None:
   colors = density_event_colors(np.array([1.0, 1.0]), np.array([2.0, 2.0]))
   assert np.array_equal(colors, np.array(["#ed1c24", "#ed1c24"], dtype="<U7"))

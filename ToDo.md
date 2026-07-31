@@ -1538,6 +1538,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   chunkごとのfloat/int histogramとmasked x/y/boolean slice working setからactive worker数を保守的に制限する。予算が小さい
   場合は1 workerへfallbackし、色結果を変えない。これは全FCS配列やRSSを制限するprocess-wide
   budgetではない。
+- [x] **density batch cancellation checkpoint**: density estimatorへ任意のcoordinator-owned callbackを追加し、
+  batch exportでhistogram chunk完了間、global smoothing/query前後にcancelを確認する。active NumPy callを強制停止せず、
+  追加chunkを開始しない安全境界でcancelled manifestへ遷移する。
 - [x] **density入力一時コピーの削減**: chunking時に元の変換済み配列を直接分割し、各chunk内で
   visibility maskを適用することで、全visibleイベントの`x[visible]`/`y[visible]`一括コピーを避ける。
   小さいvisible populationは従来のsingle-histogram fast pathを維持する。

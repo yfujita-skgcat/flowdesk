@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import RLock
@@ -82,6 +83,7 @@ def estimate_density_colors(
   bounds: tuple[float, float, float, float],
   logical_size: tuple[int, int],
   config: DensityColorConfig = _DEFAULT_CONFIG,
+  cancel_check: Callable[[], None] | None = None,
 ) -> DensityColorResult:
   """Estimate a smooth field from full input and color separate display points."""
   # NumPy histogram/convolution implementations used below are not guaranteed
@@ -92,6 +94,7 @@ def estimate_density_colors(
     return _estimate_density_colors(
       input_x, input_y, query_x, query_y,
       bounds=bounds, logical_size=logical_size, config=config,
+      cancel_check=cancel_check,
     )
 
 
@@ -104,8 +107,11 @@ def _estimate_density_colors(
   bounds: tuple[float, float, float, float],
   logical_size: tuple[int, int],
   config: DensityColorConfig,
+  cancel_check: Callable[[], None] | None,
 ) -> DensityColorResult:
   """Unlocked implementation for the public density estimator."""
+  if cancel_check is not None:
+    cancel_check()
   x, y = _coordinates(input_x, input_y, "input")
   qx, qy = _coordinates(query_x, query_y, "query")
   x_min, x_max, y_min, y_max = bounds
@@ -125,12 +131,17 @@ def _estimate_density_colors(
     chunk_size=config.histogram_chunk_size,
     workers=config.histogram_workers,
     memory_budget_bytes=config.histogram_memory_budget_bytes,
+    cancel_check=cancel_check,
   )
+  if cancel_check is not None:
+    cancel_check()
   sigma = (
     config.gaussian_sigma_pixels * shape[0] / height,
     config.gaussian_sigma_pixels * shape[1] / width,
   )
   smoothed = _gaussian_smooth(histogram, sigma)
+  if cancel_check is not None:
+    cancel_check()
   positive = np.log1p(smoothed[smoothed > 0])
   if len(positive):
     low, high = np.percentile(positive, (
@@ -139,6 +150,8 @@ def _estimate_density_colors(
   else:
     low = high = 0.0
   sampled = _bilinear(smoothed, qx, qy, bounds)
+  if cancel_check is not None:
+    cancel_check()
   normalized = np.zeros(len(qx), dtype=np.float64)
   query_visible = (
     np.isfinite(qx) & np.isfinite(qy) & (qx >= x_min) & (qx <= x_max)
@@ -211,6 +224,7 @@ def _histogram2d(
   chunk_size: int | None,
   workers: int,
   memory_budget_bytes: int | None,
+  cancel_check: Callable[[], None] | None,
 ) -> tuple[NDArray[np.float64], int]:
   """Build a deterministic histogram, optionally in bounded-memory chunks.
 
@@ -220,6 +234,8 @@ def _histogram2d(
   percentile normalization, and query interpolation happen only after the full
   histogram has been assembled; this is not arbitrary per-event colour work.
   """
+  if cancel_check is not None:
+    cancel_check()
   visible_count = len(x_values) if visibility is None else int(np.count_nonzero(visibility))
   if chunk_size is None or visible_count <= chunk_size:
     if visibility is not None:
@@ -270,12 +286,16 @@ def _histogram2d(
       while pending:
         future = pending.popleft()
         histogram += future.result()
+        if cancel_check is not None:
+          cancel_check()
         if next_index < len(chunk_starts):
           pending.append(executor.submit(make_chunk, chunk_starts[next_index]))
           next_index += 1
   else:
     histogram = np.zeros(shape, dtype=np.int64)
     for start in chunk_starts:
+      if cancel_check is not None:
+        cancel_check()
       histogram += make_chunk(start)
   return histogram.astype(np.float64), effective_workers
 
