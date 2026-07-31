@@ -1722,15 +1722,15 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 
 #### 完了条件
 
-- [ ] GUI sample切替はlatest-winsかつresponsiveで、density main scatterを一度だけ送信し、
+- [x] GUI sample切替はlatest-winsかつresponsiveで、density main scatterを一度だけ送信し、
   viewport変更だけでdensity colorを変えず、unsafeなevent chunk並列化を使わない。
-- [ ] Run Pipelineは進捗・cancel・memory-bounded sample並列化を提供し、scientific resultと
+- [x] Run Pipelineは進捗・cancel・memory-bounded sample並列化を提供し、scientific resultと
   deterministic orderがsequentialと一致する。
-- [ ] Batch Plot Exportはsample/item進捗・cancel・bounded並列化を提供し、overlay、gate、軸、
+- [x] Batch Plot Exportはsample/item進捗・cancel・bounded並列化を提供し、overlay、gate、軸、
   label、dot、sidecar、manifestがsequentialと一致する。
-- [ ] GUI/CLI/Python APIは同じQt非依存control/runnerを使用し、success/failure/cancel/close後に
+- [x] GUI/CLI/Python APIは同じQt非依存control/runnerを使用し、success/failure/cancel/close後に
   thread/processを残さない。
-- [ ] user-visibleなprogress/cancel/performance設定を公開するincrementで
+- [x] user-visibleなprogress/cancel/performance設定を公開するincrementで
   `docs/user-manual/user_manual.md`を同時更新する。
 
 ## Release E: OS配布とリリース自動化 [P1]
