@@ -876,12 +876,12 @@ def _write_render_payload(
   if path.suffix.lower() == ".png":
     write_plot_png(
       path, prepared, layers=layers, width=spec.width, height=spec.height,
-      options=spec, event_colors=event_colors,
+      options=spec, event_colors=event_colors, cancel_check=cancel_check,
     )
   elif path.suffix.lower() in {".jpg", ".jpeg"}:
     write_plot_jpg(
       path, prepared, layers=layers, width=spec.width, height=spec.height,
-      options=spec, event_colors=event_colors,
+      options=spec, event_colors=event_colors, cancel_check=cancel_check,
     )
   elif path.suffix.lower() == ".svg":
     write_plot_svg(

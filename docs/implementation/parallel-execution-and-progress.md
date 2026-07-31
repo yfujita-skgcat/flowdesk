@@ -1286,6 +1286,10 @@ every 256 events and at each source boundary; an active Pillow/NumPy operation i
 finish, then `ExecutionCancelled` propagates before any incomplete PDF/SVG is published.
 The callback is optional for direct core API callers, and normal uncancelled output is
 unchanged.
+PNG and JPEG writers use the same callback contract. PNG checks during each source's marker
+loop and before the final save; JPEG propagates the callback through its temporary PNG. A
+cancellation exception therefore leaves neither a final raster nor a sidecar, while the
+uncancelled image bytes, DPI metadata, and event order remain unchanged.
 
 The bounded executor now also has regression coverage for threaded cancellation: each
 worker owns a unique staged output/sidecar, successful staged files are atomically

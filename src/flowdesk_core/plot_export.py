@@ -426,6 +426,7 @@ def write_plot_png(
   width: int = 800,
   height: int = 600,
   options: BatchPlotExportSpec | None = None,
+  cancel_check: Callable[[], None] | None = None,
 ) -> None:
   """Write an antialiased PNG from the prepared renderer-neutral scene."""
   if width < 1 or height < 1:
@@ -470,6 +471,8 @@ def write_plot_png(
     layer_draw = ImageDraw.Draw(layer)
     colors = None if event_colors is None else event_colors.get(source_id)
     for index, (x_value, y_value) in enumerate(zip(*layers[source_id], strict=False)):
+      if cancel_check is not None and index % 256 == 0:
+        cancel_check()
       color = _rgb(color_text if colors is None or index >= len(colors) else colors[index])
       x = round(left + float(x_value) * plot_width)
       y = round(top + (1.0 - float(y_value)) * plot_height)
@@ -478,6 +481,8 @@ def write_plot_png(
         fill=color + (round(255 * alpha),),
       )
     image.alpha_composite(layer)
+    if cancel_check is not None:
+      cancel_check()
   draw = ImageDraw.Draw(image)
   if options is None or options.include_gates:
     _draw_raster_gates(
@@ -765,6 +770,7 @@ def write_plot_jpg(
   width: int = 800,
   height: int = 600,
   options: BatchPlotExportSpec | None = None,
+  cancel_check: Callable[[], None] | None = None,
 ) -> None:
   """Write JPEG through Pillow without making Qt part of the core renderer."""
   try:
@@ -774,7 +780,7 @@ def write_plot_jpg(
   width, height = _dimensions(width, height, options)
   png_path = Path(path).with_suffix(".png.tmp")
   write_plot_png(png_path, prepared, presentation, layers, width=width, height=height,
-                 options=options, event_colors=event_colors)
+                 options=options, event_colors=event_colors, cancel_check=cancel_check)
   try:
     with Image.open(png_path) as image:
       image.convert("RGB").save(path, format="JPEG", dpi=(options.dpi, options.dpi)

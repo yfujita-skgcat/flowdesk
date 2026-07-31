@@ -412,6 +412,25 @@ def test_hybrid_scatter_honors_cooperative_cancellation() -> None:
   assert calls >= 2
 
 
+def test_png_export_honors_cooperative_cancellation_before_publish(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),),
+  )
+  values = np.linspace(0.0, 1.0, 2_048, dtype=np.float64)
+  output = tmp_path / "cancelled.png"
+
+  with pytest.raises(RuntimeError, match="cancelled"):
+    write_plot_png(
+      output, prepared, layers={"s1": (tuple(values), tuple(values[::-1]))},
+      cancel_check=lambda: (_ for _ in ()).throw(RuntimeError("cancelled")),
+    )
+  assert not output.exists()
+
+
 def test_hybrid_opaque_fast_path_matches_pixel_center_coverage() -> None:
   source = ({
     "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
