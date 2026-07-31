@@ -623,7 +623,7 @@ def test_gui_batch_plot_action_deletes_persisted_definition(qapp, monkeypatch, t
   monkeypatch.setattr("flowdesk_qt.main_window.BatchPlotExportDialog", AcceptedDialog)
   monkeypatch.setattr(
     "flowdesk_qt.main_window.MainWindow._save_project_to_path",
-    lambda path: saved.append(str(path)),
+    lambda _self, path: saved.append(str(path)),
   )
   try:
     window._on_batch_plot_export()

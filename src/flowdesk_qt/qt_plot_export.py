@@ -161,6 +161,11 @@ def render_batch_plot_qt(
   else:
     raise ValueError(f"Qt plot renderer does not support {suffix!r}")
   widget.close()
+  # Batch rendering creates an unparented PlotWidget. Dispose it before the
+  # next worker-backed Qt operation starts; leaving DeferredDelete events to a
+  # later test can race with QThreadPool teardown in long GUI test/process runs.
+  widget.deleteLater()
+  app.processEvents()
   if owns_app:
     app.processEvents()
 

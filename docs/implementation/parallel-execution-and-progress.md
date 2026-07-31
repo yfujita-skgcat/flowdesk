@@ -1367,6 +1367,11 @@ runtime telemetry, not scientific settings; they make the bounded-worker and can
 behavior auditable without inferring concurrency from wall time alone.  Regression tests
 assert that the observed peak never exceeds the resolved worker limit.
 
+The Qt batch adapter creates an unparented `PlotWidget` for each Qt-backed export. It must
+call `close()`, schedule `deleteLater()`, and process pending GUI events before returning;
+otherwise a later `QThreadPool` operation can race with deferred graphics-object teardown.
+This cleanup is a lifecycle guard, not a change to plot data or writer semantics.
+
 It also records `execution.phase_wall_seconds` for `planning`, `preparation`, `render`,
 and `total`. These are coordinator wall-clock measurements: `render` is the elapsed
 interval containing all bounded workers, not the sum of worker CPU times. They are

@@ -1642,6 +1642,10 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [ ] **GUI/配布環境の確認**: GUIはQt thread affinityとshutdown時のworker未残留を守る。CLI flagsは
   opt-inのままとし、Windows/PyInstallerでworker終了、Ctrl-C、例外伝播、ログとresolved provenanceを
   確認する。
+- [x] Qt batch rendererが作るunparented `PlotWidget`をexport直後に`deleteLater()`し、GUI eventを
+  処理してから次のworker-backed Qt操作へ進むcleanupを追加した。長いGUI test/processでの
+  `QThreadPool` teardown raceを減らすLinux回帰testを確認した。Windows/PyInstaller lifecycleの
+  実機検証は引き続き未完了である。
 - [x] **未検証worker設定のGUI安全ゲート**: 上記のWindows/PyInstaller、renderer再入性、density
   実FCS運用検証が完了するまで、Batch Plot Export GUIのbounded thread、max worker、memory budget、
   density worker設定を無効化した。CLIの明示opt-inとcore実装は保持し、検証完了時にのみGUIを再有効化する。
