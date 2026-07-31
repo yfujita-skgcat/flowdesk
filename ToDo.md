@@ -1546,6 +1546,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **density large-input profile**: 1,000,000 synthetic events、worker=4、64 MiB budgetで
   numeric median 215.4 ms、effective worker=4、peak RSS 324,712 KiBを確認した。synthetic診断値であり、
   default変更やplatform-wide RSS保証の根拠にはしない。
+- [x] **Windows density runtime smoke**: Windows package workflowへ同じ1,000,000 event density
+  benchmarkを追加し、effective workersとpeak RSSのJSONをartifactへ保存する。native GUI操作と
+  PyInstaller close/error検証は別の残課題として維持する。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、

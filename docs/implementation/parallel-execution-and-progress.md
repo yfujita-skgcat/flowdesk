@@ -1398,6 +1398,11 @@ histogram budget measured 215.4 ms numeric median, effective workers=4, and 324,
 process peak RSS. This confirms the large-input opt-in path is exercised; it is synthetic
 diagnostic evidence and does not justify changing the default or claim a platform-wide
 RSS bound.
+The Windows packaging workflow now runs the same 1,000,000-event density runtime smoke
+with four workers and a 64 MiB budget before building the package, and uploads its JSON
+report. This catches import, worker completion, and runtime-setting regressions on the
+native Windows runner; it does not replace full GUI interaction or PyInstaller close/error
+tests.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and

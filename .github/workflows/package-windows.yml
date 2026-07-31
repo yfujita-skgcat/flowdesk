@@ -34,6 +34,16 @@ jobs:
         shell: pwsh
         run: python -m pytest -m "not gui"
 
+      - name: Run density runtime smoke benchmark
+        shell: pwsh
+        run: >-
+          python tools/benchmark_density_plot.py
+          --points 1000000
+          --repeats 1
+          --density-workers 4
+          --density-memory-budget-mib 64
+          --output artifacts/density-runtime-benchmark.json
+
       - name: Build native packages
         shell: pwsh
         run: python tools/package.py build
@@ -62,4 +72,5 @@ jobs:
           path: |
             Flowdesk-Windows-x64.zip
             artifacts/package-smoke/
+            artifacts/density-runtime-benchmark.json
           if-no-files-found: error
