@@ -20,6 +20,9 @@ class DensityColorConfig:
   gaussian_sigma_pixels: float = 1.25
   normalization_low_percentile: float = 1.0
   normalization_high_percentile: float = 100.0
+  # Keep small plots on the fast single-call path while bounding the input
+  # temporary used by np.histogram2d for very large populations.
+  histogram_chunk_size: int | None = 250_000
 
   def __post_init__(self) -> None:
     if self.cells_per_logical_pixel <= 0:
@@ -30,6 +33,8 @@ class DensityColorConfig:
       raise ValueError("gaussian_sigma_pixels must be positive")
     if not 0 <= self.normalization_low_percentile < self.normalization_high_percentile <= 100:
       raise ValueError("density normalization percentiles must be ordered percentages")
+    if self.histogram_chunk_size is not None and self.histogram_chunk_size < 1:
+      raise ValueError("histogram_chunk_size must be positive when provided")
 
 
 @dataclass(frozen=True)
@@ -102,9 +107,10 @@ def _estimate_density_colors(
   shape = _grid_shape(width, height, config)
   finite = np.isfinite(x) & np.isfinite(y)
   visible = finite & (x >= x_min) & (x <= x_max) & (y >= y_min) & (y <= y_max)
-  histogram, _, _ = np.histogram2d(
-    y[visible], x[visible], bins=(shape[0], shape[1]),
-    range=((y_min, y_max), (x_min, x_max)),
+  histogram = _histogram2d(
+    y[visible], x[visible], shape=shape,
+    bounds=(x_min, x_max, y_min, y_max),
+    chunk_size=config.histogram_chunk_size,
   )
   sigma = (
     config.gaussian_sigma_pixels * shape[0] / height,
@@ -177,6 +183,39 @@ def _grid_shape(width: int, height: int, config: DensityColorConfig) -> tuple[in
       config.minimum_cells, round(width / config.cells_per_logical_pixel),
     )),
   )
+
+
+def _histogram2d(
+  y_values: NDArray[np.float64],
+  x_values: NDArray[np.float64],
+  *,
+  shape: tuple[int, int],
+  bounds: tuple[float, float, float, float],
+  chunk_size: int | None,
+) -> NDArray[np.float64]:
+  """Build a deterministic histogram, optionally in bounded-memory chunks.
+
+  ``np.histogram2d`` returns floating counts even though every bin contains an
+  integer number of events.  Each chunk is rounded back to exact integer counts
+  before accumulation, so chunking cannot change the global field.  Smoothing,
+  percentile normalization, and query interpolation happen only after the full
+  histogram has been assembled; this is not arbitrary per-event colour work.
+  """
+  if chunk_size is None or len(x_values) <= chunk_size:
+    histogram, _, _ = np.histogram2d(
+      y_values, x_values, bins=shape,
+      range=((bounds[2], bounds[3]), (bounds[0], bounds[1])),
+    )
+    return histogram
+  histogram = np.zeros(shape, dtype=np.int64)
+  for start in range(0, len(x_values), chunk_size):
+    stop = min(start + chunk_size, len(x_values))
+    chunk, _, _ = np.histogram2d(
+      y_values[start:stop], x_values[start:stop], bins=shape,
+      range=((bounds[2], bounds[3]), (bounds[0], bounds[1])),
+    )
+    histogram += np.rint(chunk).astype(np.int64)
+  return histogram.astype(np.float64)
 
 
 def _gaussian_smooth(

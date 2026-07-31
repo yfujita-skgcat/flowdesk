@@ -39,6 +39,32 @@ def test_density_normalization_does_not_clip_a_large_high_density_region() -> No
   assert np.count_nonzero(result.normalized_density == 1.0) < len(warm) * 0.1
 
 
+def test_chunked_histogram_matches_unchunked_density_result() -> None:
+  rng = np.random.default_rng(123)
+  x = np.concatenate((rng.normal(0.0, 0.2, 12_345), np.array([-1.0, 1.0, np.nan])))
+  y = np.concatenate((rng.normal(0.0, 0.15, 12_345), np.array([-1.0, 1.0, np.nan])))
+  query_x = np.linspace(-1.0, 1.0, 257)
+  query_y = np.sin(query_x)
+  common = dict(
+    bounds=(-1.0, 1.0, -1.0, 1.0), logical_size=(640, 480),
+    config=DensityColorConfig(histogram_chunk_size=None),
+  )
+  unchunked = estimate_density_colors(x, y, query_x, query_y, **common)
+  chunked = estimate_density_colors(
+    x, y, query_x, query_y,
+    bounds=common["bounds"], logical_size=common["logical_size"],
+    config=DensityColorConfig(histogram_chunk_size=257),
+  )
+  assert np.array_equal(unchunked.colors, chunked.colors)
+  assert np.array_equal(unchunked.normalized_density, chunked.normalized_density)
+  assert chunked.metadata.valid_input_count == unchunked.metadata.valid_input_count
+
+
+def test_density_chunk_size_rejects_non_positive_values() -> None:
+  with np.testing.assert_raises_regex(ValueError, "histogram_chunk_size"):
+    DensityColorConfig(histogram_chunk_size=0)
+
+
 def test_density_estimator_clips_viewport_and_rejects_invalid_contract() -> None:
   result = estimate_density_colors(
     np.array([0.0, 0.1, 20.0, np.nan]), np.array([0.0, 0.1, 20.0, 0.0]),

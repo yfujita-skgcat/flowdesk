@@ -1329,6 +1329,18 @@ and scientific preview results are identical.
   lifecycle surface without measured benefit. The existing CLI opt-in bounded thread
   backend and sequential default remain the supported choices.
 
+The density estimator now has a bounded-memory, serial fixed-bin accumulation path.
+Its default chunk size is 250,000 input events: each chunk produces an integer-valued
+`histogram2d` count, the counts are summed in deterministic input order, and only then
+does the estimator perform one global Gaussian smoothing, percentile normalization, and
+bilinear query. Inputs at or below the chunk size retain the original single-call path.
+This is deliberately not event-level parallelism and does not alter display order,
+normalization scope, or colors. A 1,000,000-event diagnostic on Linux produced identical
+colors and metadata; the chunked path measured 177.4 ms versus 270.7 ms for the
+unchunked path in that run. The measurement is workload/environment evidence rather than
+a CI threshold. Integer accumulation is limited by the practical `int64` count range;
+the arbitrary event-chunk and process-backend decisions remain deferred.
+
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and
 Linux/macOS/Windows package tests.

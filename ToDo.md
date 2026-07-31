@@ -1508,9 +1508,14 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   densityを解決してから描画し、MainWindow/PlotWidget close時にworkerを待つ。viewport不変性、cached/
   uncached parity、rapid replot、shutdownをfocused testで確認した。cold worker中は大きなplaceholder
   scatterを描かず、計算完了後に一度だけデータを送る。
-- [ ] **density histogram/chunk並列化**: fixed-bin integer histogramのchunk合算、global smoothing/
-  normalization、memory budget、複数worker間の再現性は未実装。任意のevent chunk workerやGUI thread外の
-  Qt object操作は行わず、Increment 11で必要性と数学的mergeを再評価する。
+- [x] **density histogramのbounded-memory合算**: 入力250,000 event単位のfixed-bin
+  `histogram2d`を決定的な順序でint64合算し、全chunkの合算後に一度だけglobal smoothing/
+  normalizationを行う経路を追加した。既定色、query順、viewport不変性、uncached結果は従来と一致し、
+  1,000,000 event診断で色とmetadataが一致した。これは逐次のメモリ境界であり、任意のevent chunk
+  worker、densityのworker間並列化、GUI thread外のQt object操作ではない。
+- [ ] **density histogram/chunk並列化**: fixed-bin chunkの複数worker合算、memory budget、
+  複数worker間の再現性は未実装。任意のevent chunk workerやGUI thread外のQt object操作は行わず、
+  Increment 11の数学的merge・速度・メモリ測定を満たすまで並列化しない。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
   FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
   Increment 11のdecision recordで採否を決定する。
