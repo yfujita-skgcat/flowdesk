@@ -3680,6 +3680,14 @@ class MainWindow(QMainWindow):
              if item.get("id") == self._overlay_view_id()),
             {},
         )
+        # Restore the display-only population selection together with the
+        # saved plot view. It is intentionally independent from analysis
+        # execution; a later current-report validation may fall back to
+        # All Events only if the saved population is genuinely unavailable.
+        saved_population_id = saved_view.get("population_id", "all_events")
+        self._display_population_id = (
+            str(saved_population_id) if saved_population_id else "all_events"
+        )
         saved_scene = saved_view.get("display_scene", {})
         self._pending_view_range_restore = self._parse_saved_view_range(
             saved_scene.get("view_range")

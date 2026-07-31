@@ -71,6 +71,23 @@ def _wait_for_marginals(window: MainWindow) -> None:
     assert window._plot_widget._marginal_x_plot is not None
 
 
+def test_project_round_trip_restores_saved_display_population(qapp, tmp_path) -> None:
+    project_path = tmp_path / "population-view.flowdesk"
+    first = MainWindow()
+    second = MainWindow()
+    try:
+        first._display_population_id = "saved_gate"
+        first._save_project_to_path(project_path)
+        second._load_project_from_path(project_path)
+        assert second.display_population_id == "saved_gate"
+    finally:
+        first.close()
+        first.deleteLater()
+        second.close()
+        second.deleteLater()
+        qapp.processEvents()
+
+
 # ---------------------------------------------------------------------------
 # 3-3a: Basic population filtering
 # ---------------------------------------------------------------------------

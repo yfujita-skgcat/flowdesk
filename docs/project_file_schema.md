@@ -37,3 +37,5 @@ when density coloring or an overlay source is active.
 `presentation.single_dot_size` stores the display-only base-layer marker size for
 single-sample scatter/dot views. Overlay source marker sizes remain in
 `presentation.source_styles`.
+The plot view `population_id` stores the display-only population filter and is
+restored when the project is opened; it does not change pipeline execution.

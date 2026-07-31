@@ -965,7 +965,11 @@ def batch_plot_command(
         style = source_styles.setdefault(source_id, {"source_id": source_id})
         manual_fields = set(style.get("manual_fields", ()))
         if not style.get("color"):
-          style["color"] = "#4c78a8"
+          style["color"] = (
+            str(presentation.get("single_color", "#000000"))
+            if source_id == source_ids[0]
+            else "#4c78a8"
+          )
         if "alpha" not in manual_fields:
           style["alpha"] = 0.60
         if "marker_shape" not in manual_fields:
