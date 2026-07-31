@@ -1047,8 +1047,9 @@ are retained. The real core PNG/SVG/PDF writer parity test and a CLI overlay plu
 `python tools/benchmark_batch_plot.py --samples 8 --events 5000 --max-workers 2`
 measured 1.833 s sequential versus 1.580 s thread/2 (1.16x) with identical
 18,317,448 output bytes on 2026-07-30. This uses prepared synthetic layers, not a
-full compensation/derived/gating FCS workload; repeat representative measurements
-before recommending this backend or enabling it by default.
+full compensation/derived/gating FCS workload; the separate `--scientific-stages`
+project benchmark below covers those stages on the repository's real FCS files.
+These measurements remain diagnostic and do not change the default backend.
 
 The writer parity test also repeats the bounded thread export in a fresh output
 directory and compares every PNG/SVG/PDF byte and sidecar. This is a deterministic
@@ -1066,8 +1067,8 @@ measurement produced identical eight output hashes and 5,561,109 output bytes;
 sequential was 23.19 s / 287,739,904 bytes RSS, while thread/2 was 21.89 s /
 500,174,848 bytes RSS (1.06x speed, 1.74x RSS). This is an auditable
 representative writer/gate workload, not evidence to change the default backend;
-a larger compensation/derived-parameter profile and Windows/PyInstaller run
-remain gates.
+the scientific-stages variant adds compensation, derived data, and gate statistics;
+Windows/PyInstaller shutdown remains a gate.
 
 The CLI preparation path now resolves the batch target and overlay dependency map
 before reading FCS files. An explicit or group target prepares only its target samples
