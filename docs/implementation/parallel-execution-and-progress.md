@@ -1171,6 +1171,11 @@ The same coordinator lifetime now caches normalized axis ticks by axis, bounds, 
 and tick policy. `current_view` targets with different ranges receive independent tick
 tuples, while identical ranges avoid repeated transform tick generation. The cached scene
 values are renderer-neutral and are released with the export operation.
+Gate and tick cache misses use per-key single-flight events as well. When concurrent render
+workers request the same immutable presentation key, one worker performs the geometry or tick
+calculation and the others wait without holding the global cache lock. The owner always releases
+waiters on success or exception; LRU eviction, gate order, tick values, and output parity remain
+unchanged.
 
 Source preparation also records finite X/Y extrema once per required source. `current_view`
 uses the active source's recorded range, `shared_ranges` reduces the recorded ranges, and

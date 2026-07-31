@@ -1411,6 +1411,9 @@ thread backend（Increment 8）とは別の計画である。
 - [x] 同一source/boundsを複数render workerが同時に要求した場合のnormalized layer重複計算を
   per-key single-flightで抑制する。計算中のkeyは待機eventを共有し、結果のcache、LRU byte accounting、
   source順は従来どおりcoordinator-ownedで管理する。
+- [x] 並列renderで同一sceneのgate geometryまたはaxis tickがcache missになる場合も、keyごとの
+  single-flight eventで一方だけが計算する。待機中にglobal cache lockを保持せず、例外時は待機workerを
+  解放し、LRU eviction、gate順、tick値、出力parityを維持する。
 - [x] Batch ExportをGUI threadから同期実行せずowned workerで実行し、
   `batchPlotProgressDialog`、`batchPlotProgressBar`、`batchPlotProgressSummary`、
   `batchPlotProgressCurrentItem`、`batchPlotProgressCancelButton`、

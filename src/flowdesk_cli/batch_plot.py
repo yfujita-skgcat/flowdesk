@@ -204,9 +204,11 @@ def batch_plot_command(
     gate_overlay_cache: OrderedDict[
       tuple[object, ...], tuple[dict[str, Any], ...]
     ] = OrderedDict()
+    gate_overlay_inflight: dict[tuple[object, ...], Event] = {}
     tick_cache: OrderedDict[
       tuple[object, ...], tuple[dict[str, object], ...]
     ] = OrderedDict()
+    tick_inflight: dict[tuple[object, ...], Event] = {}
     presentation_cache_max_entries = 256
     render_cache_lock = Lock()
 
@@ -522,6 +524,42 @@ def batch_plot_command(
             normalized_cache_inflight.pop(normalized_key, None)
             waiter.set()
 
+    def cached_presentation_value(
+      cache: OrderedDict,
+      inflight: dict[tuple[object, ...], Event],
+      key: tuple[object, ...],
+      factory: Callable[[], Any],
+    ) -> Any:
+      """Compute one presentation value once when render workers race."""
+      while True:
+        with render_cache_lock:
+          cached = cache.get(key)
+          if cached is not None:
+            cache.move_to_end(key)
+            return cached
+          waiter = inflight.get(key)
+          if waiter is None:
+            waiter = Event()
+            inflight[key] = waiter
+            owner = True
+          else:
+            owner = False
+        if not owner:
+          waiter.wait()
+          continue
+        try:
+          value = factory()
+          with render_cache_lock:
+            cache[key] = value
+            cache.move_to_end(key)
+            while len(cache) > presentation_cache_max_entries:
+              cache.popitem(last=False)
+          return value
+        finally:
+          with render_cache_lock:
+            inflight.pop(key, None)
+            waiter.set()
+
     def render_one(
       sample: Mapping[str, Any], path: Path, _spec: BatchPlotExportSpec
     ) -> None:
@@ -666,21 +704,14 @@ def batch_plot_command(
         x_id, y_id, active_bounds, view.get("x_transform_id"),
         view.get("y_transform_id"), gate_color,
       )
-      with render_cache_lock:
-        gate_overlays = gate_overlay_cache.get(gate_cache_key)
-        if gate_overlays is not None:
-          gate_overlay_cache.move_to_end(gate_cache_key)
-      if gate_overlays is None:
-        gate_overlays = _gate_overlays(
+      gate_overlays = cached_presentation_value(
+        gate_overlay_cache, gate_overlay_inflight, gate_cache_key,
+        lambda: _gate_overlays(
           project, x_id, y_id, active_bounds,
           view.get("x_transform_id"), view.get("y_transform_id"),
           default_color=gate_color,
-        )
-        with render_cache_lock:
-          gate_overlay_cache[gate_cache_key] = gate_overlays
-          gate_overlay_cache.move_to_end(gate_cache_key)
-          while len(gate_overlay_cache) > presentation_cache_max_entries:
-            gate_overlay_cache.popitem(last=False)
+        ),
+      )
       x_tick_key = (
         "x", active_bounds[0], view.get("x_transform_id"),
         str(display_scene.get("x_tick_policy", "auto")),
@@ -689,33 +720,20 @@ def batch_plot_command(
         "y", active_bounds[1], view.get("y_transform_id"),
         str(display_scene.get("y_tick_policy", "auto")),
       )
-      with render_cache_lock:
-        x_ticks = tick_cache.get(x_tick_key)
-        y_ticks = tick_cache.get(y_tick_key)
-        if x_ticks is not None:
-          tick_cache.move_to_end(x_tick_key)
-        if y_ticks is not None:
-          tick_cache.move_to_end(y_tick_key)
-      if x_ticks is None:
-        x_ticks = tuple(_normalized_ticks(
+      x_ticks = cached_presentation_value(
+        tick_cache, tick_inflight, x_tick_key,
+        lambda: tuple(_normalized_ticks(
           active_bounds[0], view.get("x_transform_id"), transform_by_id,
           str(display_scene.get("x_tick_policy", "auto")),
-        ))
-        with render_cache_lock:
-          tick_cache[x_tick_key] = x_ticks
-          tick_cache.move_to_end(x_tick_key)
-          while len(tick_cache) > presentation_cache_max_entries:
-            tick_cache.popitem(last=False)
-      if y_ticks is None:
-        y_ticks = tuple(_normalized_ticks(
+        )),
+      )
+      y_ticks = cached_presentation_value(
+        tick_cache, tick_inflight, y_tick_key,
+        lambda: tuple(_normalized_ticks(
           active_bounds[1], view.get("y_transform_id"), transform_by_id,
           str(display_scene.get("y_tick_policy", "auto")),
-        ))
-        with render_cache_lock:
-          tick_cache[y_tick_key] = y_ticks
-          tick_cache.move_to_end(y_tick_key)
-          while len(tick_cache) > presentation_cache_max_entries:
-            tick_cache.popitem(last=False)
+        )),
+      )
       scene = {
         "x_ticks": x_ticks,
         "y_ticks": y_ticks,
