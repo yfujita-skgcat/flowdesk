@@ -221,11 +221,11 @@ def test_batch_plot_cli_queue_all_uses_saved_definition_order(
 ) -> None:
   received: dict[str, object] = {}
 
-  monkeypatch.setattr(cli_main, "batch_plot_definition_ids", lambda _project: ("first", "second"))
   monkeypatch.setattr(
     cli_main, "batch_plot_queue_command",
     lambda project, export_ids, output_dir, **kwargs: (
       received.update({"project": project, "export_ids": export_ids, "output_dir": output_dir})
+      or received.update({"queue_all": kwargs["queue_all"]})
       or 0
     ),
   )
@@ -234,7 +234,8 @@ def test_batch_plot_cli_queue_all_uses_saved_definition_order(
   ])
 
   assert cli_main.main() == 0
-  assert received["export_ids"] == ["first", "second"]
+  assert received["export_ids"] == []
+  assert received["queue_all"] is True
 
 
 def test_batch_plot_cli_rejects_queue_all_with_explicit_queue(

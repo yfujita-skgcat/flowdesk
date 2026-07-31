@@ -868,6 +868,7 @@ def batch_plot_queue_command(
   output_dir: str,
   *,
   failure_policy: str = "fail-fast",
+  queue_all: bool = False,
   execution_control: ExecutionControl | None = None,
   execution_options: ExecutionOptions | None = None,
   density_config: DensityColorConfig | None = None,
@@ -875,13 +876,21 @@ def batch_plot_queue_command(
   """Run several saved plot definitions with one cooperative queue control."""
   if failure_policy not in {"continue", "fail-fast"}:
     raise ValueError("failure_policy must be 'continue' or 'fail-fast'")
-  queue = tuple(dict.fromkeys(str(value) for value in export_ids if str(value)))
-  if not queue:
-    raise ValueError("at least one export definition is required")
   try:
     project_snapshot = load_project(project_path)
   except (FileNotFoundError, KeyError, ValueError, ManifestValidationError) as exc:
     print(f"Error: batch plot queue project load failed: {exc}")
+    return 1
+  if queue_all:
+    queue = tuple(
+      str(item["id"])
+      for item in project_snapshot.get("batch_plot_exports", ())
+      if isinstance(item, Mapping) and item.get("id")
+    )
+  else:
+    queue = tuple(dict.fromkeys(str(value) for value in export_ids if str(value)))
+  if not queue:
+    print("Error: project has no saved batch plot definitions")
     return 1
   root = Path(output_dir)
   root.mkdir(parents=True, exist_ok=True)

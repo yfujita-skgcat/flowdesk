@@ -10,7 +10,6 @@ from contextlib import contextmanager
 from flowdesk_cli.batch_gate import batch_gate_command
 from flowdesk_cli.batch_plot import (
   batch_plot_command,
-  batch_plot_definition_ids,
   batch_plot_queue_command,
 )
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
@@ -257,21 +256,12 @@ def main() -> int:
           raise SystemExit("--export-id and queue options cannot be combined")
         if args.queue_export_id and args.queue_all:
           raise SystemExit("--queue-all and --queue-export-id cannot be combined")
-        queue_export_ids = args.queue_export_id
-        if args.queue_all:
-          try:
-            queue_export_ids = list(batch_plot_definition_ids(args.project))
-          except (FileNotFoundError, KeyError, ValueError) as exc:
-            print(f"Error: could not read batch plot definitions: {exc}")
-            return 1
-          if not queue_export_ids:
-            print("Error: project has no saved batch plot definitions")
-            return 1
         return batch_plot_queue_command(
           args.project,
-          queue_export_ids,
+          args.queue_export_id,
           args.output_dir,
           failure_policy=args.queue_failure_policy,
+          queue_all=args.queue_all,
           execution_control=control,
           execution_options=options,
           density_config=DensityColorConfig(

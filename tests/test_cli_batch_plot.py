@@ -105,6 +105,30 @@ def test_batch_plot_queue_normalizes_definition_exception_for_continue(
   ]
 
 
+def test_batch_plot_queue_all_uses_snapshot_declaration_order(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  snapshot = {"batch_plot_exports": [{"id": "second"}, {"id": "first"}]}
+  loads: list[str] = []
+  calls: list[tuple[str, object]] = []
+  monkeypatch.setattr(
+    batch_plot_module, "load_project",
+    lambda path: loads.append(str(path)) or snapshot,
+  )
+
+  def fake_batch(_project, export_id, _output_dir, **kwargs):
+    calls.append((export_id, kwargs["_project_snapshot"]))
+    return 0
+
+  monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  assert batch_plot_queue_command(
+    "project.flowdesk", (), str(tmp_path), queue_all=True,
+  ) == 0
+  assert loads == ["project.flowdesk"]
+  assert [item[0] for item in calls] == ["second", "first"]
+  assert calls[0][1] is calls[1][1] is snapshot
+
+
 def test_batch_plot_queue_emits_definition_progress(
   tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
