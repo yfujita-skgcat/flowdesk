@@ -1137,6 +1137,13 @@ FCS I/O reuse or cache benefit. Output hash parity remains mandatory, and the re
 diagnostic until representative multi-definition FCS and Windows/PyInstaller measurements are
 available.
 
+The first real-FCS queue smoke on 2026-07-31 used `data/analysis.flowdesk` (one saved
+definition, four samples, PNG/PDF). Sequential queue took 15.656 s with 314,110 KiB peak
+RSS; the queue command requested two workers but resolved to one and took 15.484 s with
+314,348 KiB RSS. All eight recursive output hashes matched and cache provenance was present.
+Because the project contains only one definition, this 1.011x ratio is not queue parallel
+speedup evidence; a multi-definition project is still required before changing defaults.
+
 The CLI preparation path now resolves the batch target and overlay dependency map
 before reading FCS files. An explicit or group target prepares only its target samples
 and required overlay sources; unrelated samples are not loaded or transformed. A
