@@ -2098,7 +2098,14 @@ class MainWindow(QMainWindow):
                 self._plot_widget.display_state()["hidden_gate_reasons"]
             )
             display_state = self._plot_widget.display_state()
-            if (
+            if display_state["display_sampling_active"]:
+                self._plot_widget.set_status_banner(
+                    "Display sampling is active: "
+                    f"showing {display_state['displayed_event_count']:,} of "
+                    f"{display_state['input_event_count']:,} events; "
+                    "gates and statistics use all events"
+                )
+            elif (
                 density_coloring
                 and display_state["display_max_points"] == 0
                 and display_state["displayed_event_count"] > 20_000

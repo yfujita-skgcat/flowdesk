@@ -1231,8 +1231,8 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
   statisticsはcacheせず、永続payload cacheとは別機能として扱う。
 - [ ] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。実装は下記の
   `Parallel execution and progress`を上から一incrementずつ行う。
-- [ ] scatter downsampling変更でscientific count/statisticsが変わらないことをtestする。
-- [ ] rare-event visibilityの限界をGUIへ表示する。
+- [x] scatter downsampling変更でscientific count/statisticsが変わらないことをGUI回帰testで確認する。
+- [x] rare-event visibilityの限界をGUI status bannerとuser manualへ表示する。
 
 ### Parallel execution and progress [docs/bug.md / S23]
 

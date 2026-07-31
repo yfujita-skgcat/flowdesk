@@ -122,7 +122,10 @@ only and cannot affect scientific results.
 - Every upstream edit invalidates exactly the documented downstream entries.
 - Cancellation returns explicit partial/cancelled status and no authoritative partial cache.
 - Display sampling seed/resolution does not change gate/statistic results.
-- Rare-event visibility limitation is reported in GUI when sampling may omit points.
+- Rare-event visibility limitation is reported in GUI when sampling may omit points. The
+  main-window status banner reports the rendered and input event counts and explicitly says
+  that gates and statistics still use all events; this warning is non-blocking and does not
+  change the sampling limit.
 
 ## Scientific review checklist
 

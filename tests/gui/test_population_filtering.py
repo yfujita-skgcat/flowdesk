@@ -815,6 +815,46 @@ def test_downsampling_does_not_change_headless_count(
         qapp.processEvents()
 
 
+def test_display_sampling_reports_scientific_scope(
+    qapp,
+    tmp_path: Path,
+    gui_artifact_widgets: list[object],
+) -> None:
+    """The plot reports display sampling without implying analytical sampling."""
+    fcs_path = tmp_path / "sampling-status.fcs"
+    events = np.column_stack([
+        np.arange(100, dtype=np.float64) + 1.0,
+        np.arange(100, dtype=np.float64) + 2.0,
+    ])
+    write_fcs_file(fcs_path, events, ["FSC", "SSC"])
+
+    window = MainWindow()
+    gui_artifact_widgets.append(window)
+    try:
+        window.show()
+        assert window._sample_browser.add_samples_from_paths([str(fcs_path)]) == 1
+        sample = window._sample_browser.samples()[0]
+        assert window._sample_browser.select_sample(sample.id)
+        window._on_run_pipeline()
+        _wait_for_worker(window)
+        qapp.processEvents()
+        window._channel_selector.set_display_max_points(10)
+        window._plot_widget.set_max_display_points(10)
+        window._replot()
+        _wait_for_scatter(window)
+        qapp.processEvents()
+
+        assert window._plot_widget.display_state()["display_sampling_active"] is True
+        assert window._plot_widget._status_banner.text() == (
+            "Display sampling is active: showing 10 of 100 events; "
+            "gates and statistics use all events"
+        )
+    finally:
+        window.close()
+        window.deleteLater()
+        qapp.processEvents()
+
+
 # ---------------------------------------------------------------------------
 # 3-3f: Real FCS multi-sample membership switching
 # ---------------------------------------------------------------------------
