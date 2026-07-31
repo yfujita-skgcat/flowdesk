@@ -1290,6 +1290,11 @@ PNG and JPEG writers use the same callback contract. PNG checks during each sour
 loop and before the final save; JPEG propagates the callback through its temporary PNG. A
 cancellation exception therefore leaves neither a final raster nor a sidecar, while the
 uncancelled image bytes, DPI metadata, and event order remain unchanged.
+The SVG/PDF vector adapters also check the callback at source boundaries and every 256 event
+placements (including full-vector and event-colour compact paths). Hybrid raster checks remain
+inside its raster loop. Cancellation is raised before command serialization, so no partial
+vector file or sidecar is published; uncancelled path order, gates, ticks, fonts, and byte
+parity are unchanged.
 
 The bounded executor now also has regression coverage for threaded cancellation: each
 worker owns a unique staged output/sidecar, successful staged files are atomically

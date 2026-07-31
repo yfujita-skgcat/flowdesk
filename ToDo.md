@@ -1606,6 +1606,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
 - [x] **PNG/JPEG描画の協調キャンセル**: per-sourceの256 event checkpointとsource完了境界を追加し、
   PNGの最終save前、JPEGのtemporary PNG変換中にcancelを伝播する。cancel時はfinal outputとsidecarを
   publishせず、成功時の画像、DPI metadata、event orderを変更しない。
+- [x] **SVG/PDF vector描画の協調キャンセル**: full-vector、compact-vector、hybrid以外のscatter
+  loopにもsource/256 event checkpointを追加する。cancel時はvector commandの構築途中で終了し、final
+  fileとsidecarをpublishせず、通常時のpath order、gate、tick、font、byte parityを維持する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
   FCS配列のpickle/コピー、メモリ倍増、診断・cancel・再現性の複雑化を含む実測と運用要件を確認し、
   Increment 11のdecision recordで採否を決定する。

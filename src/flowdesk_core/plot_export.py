@@ -335,6 +335,8 @@ def write_plot_svg(
                        f'<rect x="{left:g}" y="{top:g}" width="{plot_width:g}" '
                        f'height="{plot_height:g}"/></clipPath>']
     for index, source_id in enumerate(prepared.source_order):
+      if cancel_check is not None:
+        cancel_check()
       style = style_by_id.get(source_id)
       color = "#000000" if style is None or style.color is None else style.color
       alpha = 1.0 if style is None else style.alpha
@@ -368,6 +370,8 @@ def write_plot_svg(
     if not compact_vector and not hybrid_raster:
       colors = None if event_colors is None else event_colors.get(source_id)
       for point_index, (x_value, y_value) in enumerate(points):
+        if cancel_check is not None and point_index % 256 == 0:
+          cancel_check()
         x = left + float(x_value) * plot_width
         y = top + (1.0 - float(y_value)) * plot_height
         point_color = color if colors is None or point_index >= len(colors) else colors[point_index]
@@ -380,6 +384,8 @@ def write_plot_svg(
           ))
     if compact_vector:
       for batch in compact_batches:
+        if cancel_check is not None:
+          cancel_check()
         if batch.source_id != source_id:
           continue
         radius = batch.marker_size / 2
@@ -399,6 +405,8 @@ def write_plot_svg(
         f'<text x="{width - 180:g}" y="{55 + index * 20}" fill="{escape(color)}">'
         f"{escape(str(label))}</text>"
       )
+    if cancel_check is not None:
+      cancel_check()
   if full_vector:
     elements.append("</g>")
   if options is None or options.include_gates:
@@ -566,6 +574,8 @@ def write_plot_pdf(
         else len(layers[source_id][0])
       )
       for index in range(point_count):
+        if cancel_check is not None and index % 256 == 0:
+          cancel_check()
         color_text = default_color if colors is None or index >= len(colors) else colors[index]
         key = (source_id, color_text)
         if key not in marker_refs:
@@ -602,6 +612,8 @@ def write_plot_pdf(
         default_color = "#000000" if style is None or style.color is None else style.color
         colors = event_colors.get(source_id) if event_colors is not None else None
         for index, point in enumerate(zip(*layers[source_id], strict=False)):
+          if cancel_check is not None and index % 256 == 0:
+            cancel_check()
           color_text = default_color if colors is None or index >= len(colors) else colors[index]
           color = _rgb(color_text)
           commands.extend((f"/C{alpha_index[alpha]} gs",
@@ -612,6 +624,8 @@ def write_plot_pdf(
           ) + " f")
     else:
       for batch in compact_batches:
+        if cancel_check is not None:
+          cancel_check()
         color = _rgb(batch.color)
         commands.extend((f"/C{alpha_index[batch.alpha]} gs",
                          f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg"))
@@ -627,16 +641,22 @@ def write_plot_pdf(
                      "/ImScatter Do", "Q"))
   elif not full_vector:
     for source_id in prepared.source_order:
+      if cancel_check is not None:
+        cancel_check()
       style = style_by_id.get(source_id)
       color = _rgb("#4c78a8" if style is None or style.color is None else style.color)
       commands.append(f"{color[0] / 255:g} {color[1] / 255:g} {color[2] / 255:g} rg")
-      for x_value, y_value in zip(*layers[source_id], strict=False):
+      for index, (x_value, y_value) in enumerate(zip(*layers[source_id], strict=False)):
+        if cancel_check is not None and index % 256 == 0:
+          cancel_check()
         x, y = _pdf_normalized_point(
           float(x_value), float(y_value), left, top, plot_width, plot_height, height,
         )
         commands.append(f"{x:g} {y:g} 2 2 re f")
   elif full_vector:
     for source_id in prepared.source_order:
+      if cancel_check is not None:
+        cancel_check()
       style = style_by_id.get(source_id)
       default_color = "#4c78a8" if style is None or style.color is None else style.color
       colors = None if event_colors is None else event_colors.get(source_id)
@@ -647,6 +667,8 @@ def write_plot_pdf(
         else zip(*layers[source_id], strict=False)
       )
       for index, (x_value, y_value) in enumerate(points):
+        if cancel_check is not None and index % 256 == 0:
+          cancel_check()
         x, y = _pdf_normalized_point(
           float(x_value), float(y_value), left, top, plot_width, plot_height, height,
         )
@@ -654,6 +676,8 @@ def write_plot_pdf(
         color_text = default_color if colors is None or index >= len(colors) else colors[index]
         commands.extend(("q", f"{size:g} 0 0 {size:g} {x:g} {y:g} cm", f"/M{marker_refs[(source_id, color_text)]} Do", "Q"))
     commands.append("Q")
+  if cancel_check is not None:
+    cancel_check()
   # Place the opaque PDF image before the axes.  This also avoids Poppler
   # losing pre-image strokes when decoding an image soft mask.
   if options is None or options.include_ticks:
