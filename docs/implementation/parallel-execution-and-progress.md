@@ -1498,6 +1498,10 @@ PNG/PDF outputs and sidecars so native Windows path resolution, FCS loading, wri
 manifest generation, and non-empty output can be inspected. This smoke intentionally does
 not enable the opt-in batch thread backend and does not claim PyInstaller executable
 shutdown, GUI interaction, or renderer reentrancy coverage.
+The same Windows workflow runs `tools/benchmark_prefetch.py` with a temporary deterministic
+300,000-event FCS and uploads the event-count/hash, timing, and peak-RSS JSON. This verifies
+native Windows scheduler acquisition and cooperative teardown; it does not replace
+instrument-data GUI latency measurements or packaged GUI close/error validation.
 
 The batch render memory estimator also accounts for the density-only working set before
 resolving bounded render workers. A single-source density item includes the event-sized

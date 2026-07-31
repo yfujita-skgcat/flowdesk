@@ -1788,6 +1788,9 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
   2,248,944 bytes、32.7 ms（同期）/7.5 ms（scheduler）、event count/hash一致、peak RSS
   121,408 KiBだった（OS cache等の影響を受ける診断値）。
   ただし4 MiB閾値未満なのでこれはprefetch実パスの測定ではなく、scheduler経路の実FCS smokeである。
+  Windows package workflowへ300,000 eventの一時FCSを使うprefetch runtime smokeを追加し、event count/hash、
+  peak RSS、scheduler終了後のartifact保存をnative Windowsで確認する。これはinstrument dataのGUI latencyや
+  PyInstaller GUI closeを代替しないため、実FCS運用統合の残課題は維持する。
 
 #### Increment 11: event chunk/process backendの採否
 

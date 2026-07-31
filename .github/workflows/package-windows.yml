@@ -44,6 +44,14 @@ jobs:
           --density-memory-budget-mib 64
           --output artifacts/density-runtime-benchmark.json
 
+      - name: Run prefetch runtime smoke benchmark
+        shell: pwsh
+        run: >-
+          python tools/benchmark_prefetch.py
+          --events 300000
+          --seed 1729
+          --output artifacts/prefetch-runtime-benchmark.json
+
       - name: Run representative batch export smoke
         shell: pwsh
         run: >-
@@ -87,5 +95,6 @@ jobs:
             Flowdesk-Windows-x64.zip
             artifacts/package-smoke/
             artifacts/density-runtime-benchmark.json
+            artifacts/prefetch-runtime-benchmark.json
             artifacts/batch-runtime-smoke/
           if-no-files-found: error
