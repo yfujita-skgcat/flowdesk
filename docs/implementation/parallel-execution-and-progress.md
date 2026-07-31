@@ -1264,6 +1264,15 @@ sequential 21.96 s / 284,388 KB and thread/2 23.09 s / 497,968 KB. The eight PNG
 hashes remained identical. This confirms correctness and removes repeated vector
 preparation, but does not justify enabling thread rendering by default.
 
+A renderer experiment on 2026-07-31 replaced the alpha<1 hybrid-raster marker's
+pixel loop with a NumPy row operation. Sequential render increased from about
+21.2 s to 53.8 s on the same four-sample project, although sequential/thread output
+hashes still matched within that experiment. The small temporary arrays created for
+each point and row dominated the work, so the change was reverted. Do not infer that
+small-array vectorization improves raster performance; any future large-batch or C-level
+implementation must preserve pixel-center coverage, draw order, alpha compositing, and
+measured real-FCS parity before adoption.
+
 The bounded executor now also has regression coverage for threaded cancellation: each
 worker owns a unique staged output/sidecar, successful staged files are atomically
 published, pending work is marked `not_started`, and the final manifest remains in
