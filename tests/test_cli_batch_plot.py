@@ -358,6 +358,21 @@ def test_batch_plot_queue_memory_estimate_uses_definition_sources(
   assert execution["effective_workers"] == 2
   assert execution["estimated_definition_bytes"] == 64 * 1024 * 1024
 
+  snapshot["batch_plot_exports"][1]["formats"] = ["png"]
+  snapshot["batch_plot_exports"][1]["width"] = 4_000
+  snapshot["batch_plot_exports"][1]["height"] = 3_000
+  large_output_dir = tmp_path / "large-output"
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("small-a", "small-b"), str(large_output_dir),
+    queue_workers=2,
+    execution_options=ExecutionOptions(memory_budget_bytes=128 * 1024 * 1024),
+  ) == 0
+  large_execution = json.loads(
+    (large_output_dir / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )["queue_execution"]
+  assert large_execution["effective_workers"] == 1
+  assert large_execution["estimated_definition_bytes"] > 64 * 1024 * 1024
+
 
 def test_raw_sample_cache_is_bounded_and_tracks_fingerprint_hits() -> None:
   cache = _RawSampleCache(32)

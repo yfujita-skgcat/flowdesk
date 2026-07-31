@@ -40,6 +40,7 @@ from flowdesk_core.plot_export import (
   VectorRenderCache,
   prepare_plot_export,
   prepare_vector_render_cache,
+  resolve_export_canvas,
   write_plot_jpg,
   write_plot_pdf,
   write_plot_png,
@@ -1293,7 +1294,7 @@ def _estimate_queue_definition_bytes(
       return 0
 
   all_sample_bytes = sum(file_size(sample) for sample in sample_by_id.values())
-  definition_sets: list[tuple[str, ...]] = []
+  definition_sets: list[tuple[tuple[str, ...], int]] = []
   if definition_index and definition_ids:
     group_members: dict[str, tuple[str, ...]] = {}
     for group in project.get("sample_groups", ()):
@@ -1341,20 +1342,38 @@ def _estimate_queue_definition_bytes(
           required.update(overlay_ids.get(sample_id, ()))
         if any(sample_id not in sample_by_id for sample_id in required):
           raise ValueError("definition overlay references an unknown sample")
-        definition_sets.append(tuple(sorted(required)))
+        canvas = resolve_export_canvas(spec)
+        raster_jobs = sum(
+          format_name in {"png", "jpg"} for format_name in spec.formats
+        )
+        raster_bytes = (
+          canvas.raster_width * canvas.raster_height * 4 * raster_jobs
+        )
+        if (
+          spec.vector_scatter_mode == "hybrid_raster"
+          and any(format_name in {"svg", "pdf"} for format_name in spec.formats)
+        ):
+          hybrid_scale = spec.hybrid_scatter_dpi / 96.0
+          raster_bytes += (
+            round(canvas.logical_width * hybrid_scale)
+            * round(canvas.logical_height * hybrid_scale)
+            * 4
+          )
+        definition_sets.append((tuple(sorted(required)), raster_bytes))
       except (TypeError, ValueError, KeyError):
-        definition_sets.append(tuple(sample_by_id))
+        definition_sets.append((tuple(sample_by_id), 0))
   if not definition_sets:
-    definition_sets.append(tuple(sample_by_id))
+    definition_sets.append((tuple(sample_by_id), 0))
 
   estimated_definition_bytes = 0
-  for sample_ids in definition_sets:
+  for sample_ids, output_bytes in definition_sets:
     estimated_definition_bytes = max(
       estimated_definition_bytes,
-      sum(file_size(sample_by_id[sample_id]) for sample_id in sample_ids),
+      sum(file_size(sample_by_id[sample_id]) for sample_id in sample_ids) * 6
+      + output_bytes,
     )
   if estimated_definition_bytes <= 0:
-    estimated_definition_bytes = all_sample_bytes
+    estimated_definition_bytes = all_sample_bytes * 6
   if estimated_definition_bytes <= 0:
     return 0
   # FCS decode, processed arrays, normalized layers, and writer temporaries

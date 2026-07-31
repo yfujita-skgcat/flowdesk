@@ -1217,7 +1217,8 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
     見積もりとlimiting factorをmanifestへ記録する。planned/submitted/completed定義数と
     `peak_in_flight_definitions`も記録し、実際の同時実行上限を後から検証できるようにする。
     memory estimateは各定義のtarget/overlay sourceだけを対象にし、解決不能時は全project
-    samplesへ保守的にfallbackする。
+    samplesへ保守的にfallbackする。PNG/JPEG/hybrid PDFでは解決済みcanvas working setも加算し、
+    大きな出力設定による過大なqueue concurrencyを抑制する。
     fail-fastで開始前にcancelされたfutureは`not_started`としてcompleted数から除外し、実行中の
     definitionは協調的な完了結果を記録する。
     GUIには未検証のため公開しない。
