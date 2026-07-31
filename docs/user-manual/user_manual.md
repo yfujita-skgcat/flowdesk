@@ -968,7 +968,7 @@ structured failureとして出力を停止します。
 fixtureはseedとpoint hashを固定し、raw eventsや解析結果を変更しません。初期baselineでは
 回帰thresholdを自動設定せず、release時にCI環境で安定した指標だけを採用してください。
 
-`Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、Width/Height、DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。項目が画面に収まらない場合はダイアログをマウスでリサイズでき、中央の設定欄をスクロールして下部の保存・実行・キャンセルボタンへアクセスできる。Batch Exportは保存時点のactive plot view（X/Y channel、transform、population、overlay、presentation）を使用する。未保存projectでは、保存または実行時に通常のproject保存を行う。
+`Batch Plot Export...` は定義の新規作成・編集・選択と、保存のみ／保存して実行を行う。対象サンプル、plot view、形式、Canvas Width/Height、DPI、1:1、layout、表示要素、filename template、collision policy、strict mode、output directoryを指定できる。ダイアログを開いた直後のCanvas Width/Heightは、現在GUIに表示されているplot widgetのサイズから初期化される。保存済みDefinitionを選択しても、編集中のCanvas Width/Heightは変更されないため、Definitionの表示設定を読み込みながら同じ出力キャンバスを維持できる。`Aspect`（1:1）を有効にするとCanvas HeightはWidthと同じ値に自動追従し、Height欄は編集できなくなる。項目が画面に収まらない場合はダイアログをマウスでリサイズでき、中央の設定欄をスクロールして下部の保存・実行・キャンセルボタンへアクセスできる。Batch Exportは保存時点のactive plot view（X/Y channel、transform、population、overlay、presentation）を使用する。未保存projectでは、保存または実行時に通常のproject保存を行う。
 
 output directoryはprojectには保存されず、アプリケーション設定（`QSettings`）に最後に使用した値だけが保存される。次回ダイアログを開くと復元されるため、同じ場所へ繰り返し出力できる。projectを別のディレクトリへ移動しても、この設定はprojectとは独立している。
 

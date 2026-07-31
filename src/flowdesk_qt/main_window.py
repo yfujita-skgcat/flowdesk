@@ -4210,6 +4210,8 @@ class MainWindow(QMainWindow):
             views,
             self._overlay_view_id(),
             self,
+            canvas_width=max(1, self._plot_widget.width()),
+            canvas_height=max(1, self._plot_widget.height()),
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

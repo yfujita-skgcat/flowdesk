@@ -64,6 +64,9 @@ class BatchPlotExportDialog(QDialog):
     plot_views: Sequence[Mapping[str, Any]],
     current_view_id: str,
     parent: QWidget | None = None,
+    *,
+    canvas_width: int | None = None,
+    canvas_height: int | None = None,
   ) -> None:
     super().__init__(parent)
     self.setObjectName("batchPlotExportDialog")
@@ -167,6 +170,12 @@ class BatchPlotExportDialog(QDialog):
     for check in self._formats.values():
       check.toggled.connect(self._update_resolution_preview)
     self._aspect = self._check("1:1 aspect", "batchPlotAspectCheckBox")
+    self._aspect.toggled.connect(self._update_aspect_widgets)
+    self._width.valueChanged.connect(self._sync_aspect_height)
+    if canvas_width is not None:
+      self._width.setValue(max(1, int(canvas_width)))
+    if canvas_height is not None:
+      self._height.setValue(max(1, int(canvas_height)))
     self._layout_policy = QComboBox()
     self._layout_policy.setObjectName("batchPlotLayoutPolicyCombo")
     self._layout_policy.addItem("Current view", "current_view")
@@ -340,6 +349,12 @@ class BatchPlotExportDialog(QDialog):
     self._update_resolution_preview()
 
   def _load_selected_definition(self, _index: int) -> None:
+    # Canvas dimensions and aspect are session-level draft settings. Keep them
+    # when switching definitions so selecting an old definition cannot resize
+    # the dialog's output canvas unexpectedly.
+    canvas_width = self._width.value()
+    canvas_height = self._height.value()
+    aspect_1_to_1 = self._aspect.isChecked()
     definition_id = str(self._definition.currentData() or "")
     value = next(
       (item for item in self._definitions if str(item.get("id", "")) == definition_id),
@@ -400,8 +415,8 @@ class BatchPlotExportDialog(QDialog):
     formats = {str(item).lower() for item in defaults.get("formats", [])}
     for key, check in self._formats.items():
       check.setChecked(key in formats)
-    self._width.setValue(int(defaults["width"]))
-    self._height.setValue(int(defaults["height"]))
+    self._width.setValue(canvas_width)
+    self._height.setValue(canvas_height)
     self._dpi.setValue(int(defaults["dpi"]))
     self._max_workers.setValue(max(0, int(defaults["max_workers"])))
     self._memory_budget_mib.setValue(max(0, int(defaults["memory_budget_mib"] or 0)))
@@ -411,7 +426,7 @@ class BatchPlotExportDialog(QDialog):
     )
     resolution_index = self._resolution_mode.findData(defaults["raster_resolution_mode"])
     self._resolution_mode.setCurrentIndex(max(0, resolution_index))
-    self._aspect.setChecked(bool(defaults["aspect_1_to_1"]))
+    self._aspect.setChecked(aspect_1_to_1)
     layout_index = self._layout_policy.findData(defaults["layout_policy"])
     if layout_index >= 0:
       self._layout_policy.setCurrentIndex(layout_index)
@@ -423,6 +438,24 @@ class BatchPlotExportDialog(QDialog):
       self._collision.setCurrentIndex(collision_index)
     self._strict.setChecked(bool(defaults["strict"]))
     self._update_target_widgets()
+    self._update_aspect_widgets()
+    self._update_resolution_preview()
+
+  def _sync_aspect_height(self, value: int) -> None:
+    if not self._aspect.isChecked() or self._height.value() == value:
+      return
+    self._height.blockSignals(True)
+    self._height.setValue(value)
+    self._height.blockSignals(False)
+    self._update_resolution_preview()
+
+  def _update_aspect_widgets(self) -> None:
+    square = self._aspect.isChecked()
+    self._height.setEnabled(not square)
+    if square:
+      self._height.blockSignals(True)
+      self._height.setValue(self._width.value())
+      self._height.blockSignals(False)
     self._update_resolution_preview()
 
   def _update_delete_button(self) -> None:

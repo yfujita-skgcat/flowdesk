@@ -234,6 +234,26 @@ and Cancel buttons remain outside the scroll area so they remain reachable at
 small monitor heights. The scroll area must not implement export logic; it only
 changes presentation and preserves the existing object names and signal paths.
 
+#### Canvas sizing and definition switching
+
+- `MainWindow._on_batch_plot_export()` passes the current `PlotWidget.width()`
+  and `PlotWidget.height()` to the dialog as the initial logical Canvas Width
+  and Canvas Height. The values are widget dimensions, not the main-window
+  dimensions and not DPI-scaled raster pixels.
+- `BatchPlotExportDialog` treats Canvas Width, Canvas Height, and the 1:1
+  aspect toggle as the current dialog draft. Loading or switching a persisted
+  Definition must not overwrite those three draft values; other Definition
+  fields continue to reload normally.
+- With 1:1 enabled, Canvas Height is disabled and follows Canvas Width. The
+  saved `BatchPlotExportSpec` still contains both values and
+  `aspect_1_to_1=True`; `resolve_export_canvas()` remains the authoritative
+  core rule for the final square canvas.
+- This synchronizes the requested canvas size with the GUI widget, but does
+  not promise identical plot-area bounds: axis/title margins, font metrics,
+  device pixel ratio, and export visibility options can consume different
+  amounts of space. Exact display parity must be verified through the shared
+  renderer/export tests.
+
 The persisted plot view's `display_scene.view_range` is display state, not
 scientific input. On project load, validate this range and apply it once after
 the canonical processed display has been plotted. Invalid or absent ranges are

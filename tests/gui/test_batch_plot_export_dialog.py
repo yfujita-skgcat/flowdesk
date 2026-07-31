@@ -157,10 +157,41 @@ def test_batch_plot_dialog_loads_saved_definition(qapp) -> None:
     request = dialog.request()
     assert request.definition["id"] == "saved"
     assert request.definition["formats"] == ["pdf"]
-    assert request.definition["width"] == 1200
+    # Selecting a definition changes its export metadata but keeps the
+    # current Canvas draft dimensions.
+    assert request.definition["width"] == 800
+    assert request.definition["height"] == 600
     assert request.definition["raster_resolution_mode"] == "legacy_pixel_dimensions"
     assert request.definition["vector_scatter_mode"] == "full_vector"
     assert dialog._hybrid_scatter_dpi_spin.isEnabled() is False
+  finally:
+    dialog.deleteLater()
+
+
+def test_batch_plot_dialog_uses_gui_canvas_dimensions_and_preserves_them(qapp) -> None:
+  dialog = BatchPlotExportDialog(
+    [{"id": "saved", "name": "Saved", "width": 1200, "height": 900}],
+    [], [], [], "main-view", canvas_width=1100, canvas_height=740,
+  )
+  try:
+    assert dialog._width.value() == 1100
+    assert dialog._height.value() == 740
+    dialog._definition.setCurrentIndex(1)
+    assert dialog._width.value() == 1100
+    assert dialog._height.value() == 740
+  finally:
+    dialog.deleteLater()
+
+
+def test_batch_plot_dialog_aspect_disables_height_and_tracks_width(qapp) -> None:
+  dialog = BatchPlotExportDialog([], [], [], [], "main-view")
+  try:
+    dialog._aspect.setChecked(True)
+    assert dialog._height.isEnabled() is False
+    dialog._width.setValue(920)
+    assert dialog._height.value() == 920
+    dialog._aspect.setChecked(False)
+    assert dialog._height.isEnabled() is True
   finally:
     dialog.deleteLater()
 
