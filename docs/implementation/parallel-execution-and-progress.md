@@ -1371,6 +1371,13 @@ Windows/PyInstaller lifecycle and platform-specific controls are validated.
 Density metadata records requested/effective histogram workers and the configured budget;
 batch sidecars therefore expose whether the budget reduced concurrency without changing
 the density field.
+An end-to-end Linux run on 2026-07-31 using `data/analysis.flowdesk`, its density view,
+four samples, and PNG/PDF produced eight non-empty outputs. With
+`--density-workers 2 --density-memory-budget-mib 64`, every sidecar recorded requested=2,
+effective=1 (the populations were below the 250,000-event chunk threshold); a second
+run with the same worker request and no density budget produced byte-identical SHA-256
+values for all eight outputs. This validates the runtime controls and provenance path on
+the representative project, but not large real-FCS chunk parallelism or Windows packaging.
 
 Acceptance: no chunk/process backend is merged merely because CPU cores exist. Any
 implemented path passes scientific/color parity, memory, cancellation, cleanup, and

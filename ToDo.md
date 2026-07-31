@@ -1530,6 +1530,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   GUI object名、runtime-only保持、CLI/coreとの設定一致をテストした。
 - [x] **density execution provenance**: density metadataとbatch sidecarへrequested/effective
   histogram workersとmemory budgetを記録し、budgetによるworker削減を結果と区別して監査可能にした。
+- [x] **density batch E2E**: `data/analysis.flowdesk`のdensity viewを4 samples・PNG/PDFで実行し、
+  8出力のsidecar provenance、非空出力、budget有無のbyte/SHA-256一致を確認した。代表sampleは
+  chunk閾値未満のため実効workerは1であり、大規模real-FCSのchunk speedupやWindows検証とは区別する。
 - [ ] **density workerの運用統合**: Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
