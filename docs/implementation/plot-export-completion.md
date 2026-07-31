@@ -236,10 +236,20 @@ changes presentation and preserves the existing object names and signal paths.
 
 #### Canvas sizing and definition switching
 
-- `MainWindow._on_batch_plot_export()` passes the current `PlotWidget.width()`
-  and `PlotWidget.height()` to the dialog as the initial logical Canvas Width
-  and Canvas Height. The values are widget dimensions, not the main-window
-  dimensions and not DPI-scaled raster pixels.
+- `MainWindow._on_batch_plot_export()` passes `PlotWidget.canvas_size()` to the
+  dialog as the initial logical Canvas Width and Canvas Height. This is the
+  embedded `GraphicsLayoutWidget` size used by pyqtgraph, excluding an
+  optional status banner above it. The values are logical widget dimensions,
+  not main-window dimensions and not DPI-scaled raster pixels.
+- Before the dialog is opened, the active view stores
+  `PlotWidget.plot_area_margins()` in `display_scene.plot_area`. These margins
+  are measured from the live pyqtgraph ViewBox in Canvas coordinates and use
+  the order `(left, top, right, bottom)`. The CLI/core renderer consumes this
+  persisted geometry instead of re-estimating margins from font sizes.
+- A project created before `plot_area` existed uses the stable default
+  `(60, 50, 20, 60)`; loading such a project remains valid, but exact GUI
+  plot-rectangle parity requires opening/saving or exporting from the current
+  GUI so the live margins can be captured.
 - `BatchPlotExportDialog` treats Canvas Width, Canvas Height, and the 1:1
   aspect toggle as the current dialog draft. Loading or switching a persisted
   Definition must not overwrite those three draft values; other Definition

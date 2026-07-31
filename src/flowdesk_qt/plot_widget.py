@@ -198,6 +198,47 @@ class PlotWidget(QWidget):
     def max_display_points(self) -> int:
         return self._max_display_points
 
+    def canvas_size(self) -> tuple[int, int]:
+        """Return the logical size available to the plot layout.
+
+        ``PlotWidget`` may also contain a status banner above the plot.  Its
+        outer widget size therefore is not necessarily the size used by
+        pyqtgraph for axes, title, grid, and scatter items.  Batch export
+        should use the embedded ``GraphicsLayoutWidget`` dimensions so the
+        same layout receives the same logical canvas.
+        """
+        width = int(self._glw.width())
+        height = int(self._glw.height())
+        if width > 0 and height > 0:
+            return width, height
+        # A widget can be queried before its parent layout has been polished
+        # (notably during tests and initial window construction).  Preserve a
+        # useful fallback without exposing zero-sized export controls.
+        return max(1, int(self.width())), max(1, int(self.height()))
+
+    def plot_area_margins(self) -> tuple[float, float, float, float]:
+        """Return the ViewBox margins within the logical plot canvas.
+
+        The tuple is ``(left, top, right, bottom)`` in logical Qt pixels.  It
+        captures the space consumed by the live axis labels, tick labels,
+        title, and pyqtgraph layout.  Export scene metadata can reuse these
+        margins without depending on Qt at render time.
+        """
+        canvas_width, canvas_height = self.canvas_size()
+        try:
+            view_rect = self._plot_item.vb.sceneBoundingRect()
+            top_left = self._glw.mapFromScene(view_rect.topLeft())
+            bottom_right = self._glw.mapFromScene(view_rect.bottomRight())
+            left = max(0.0, float(top_left.x()))
+            top = max(0.0, float(top_left.y()))
+            right = max(0.0, float(canvas_width - bottom_right.x()))
+            bottom = max(0.0, float(canvas_height - bottom_right.y()))
+            if left + right < canvas_width and top + bottom < canvas_height:
+                return left, top, right, bottom
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            pass
+        return (60.0, 50.0, 20.0, 60.0)
+
     def set_interaction_mode(self, mode: InteractionMode) -> None:
         """Set mutually exclusive display interaction mode."""
         if mode not in {"pan", "select", "gate"}:

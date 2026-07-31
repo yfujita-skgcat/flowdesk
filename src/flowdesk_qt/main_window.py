@@ -3180,6 +3180,7 @@ class MainWindow(QMainWindow):
                 "x_axis_label": x_label,
                 "y_axis_label": y_label,
                 "view_range": view_range,
+                "plot_area": list(self._plot_widget.plot_area_margins()),
                 "x_tick_policy": self._plot_widget.tick_policy(),
                 "y_tick_policy": self._plot_widget.tick_policy(),
             },
@@ -4203,6 +4204,7 @@ class MainWindow(QMainWindow):
         views = deepcopy(self._plot_views)
         if not views:
             views = [{"id": self._overlay_view_id(), "name": "Current view"}]
+        canvas_width, canvas_height = self._plot_widget.canvas_size()
         dialog = BatchPlotExportDialog(
             self._batch_plot_exports,
             samples,
@@ -4210,8 +4212,8 @@ class MainWindow(QMainWindow):
             views,
             self._overlay_view_id(),
             self,
-            canvas_width=max(1, self._plot_widget.width()),
-            canvas_height=max(1, self._plot_widget.height()),
+            canvas_width=canvas_width,
+            canvas_height=canvas_height,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

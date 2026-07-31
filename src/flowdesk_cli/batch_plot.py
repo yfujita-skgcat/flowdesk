@@ -1015,6 +1015,9 @@ def batch_plot_command(
       scene = {
         "x_ticks": x_ticks,
         "y_ticks": y_ticks,
+        "plot_area": display_scene.get(
+          "plot_area", (60.0, 50.0, 20.0, 60.0)
+        ),
         "title_colors": [
           str(
               presentation.get("single_color", "#000000")

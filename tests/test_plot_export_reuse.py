@@ -758,6 +758,24 @@ def test_export_scene_uses_same_plot_area_for_axes_and_gate(tmp_path) -> None:
   assert prepared.metadata["plot_area"] == {"left": 60, "top": 50, "right": 20, "bottom": 60}
 
 
+def test_export_uses_captured_scene_plot_area_margins(tmp_path) -> None:
+  source = ({
+    "source_id": "s1", "sample_id": "sample-1", "population_id": "all",
+    "display_name": "Control", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", source, (OverlaySourceResolution("s1", "compatible"),),
+    scene={"plot_area": [11, 12, 13, 14]},
+  )
+  path = tmp_path / "captured-area.svg"
+  write_plot_svg(
+    path, prepared, layers={"s1": ((0.2,), (0.8,))},
+    options=BatchPlotExportSpec(id="export", name="Export", width=200, height=160),
+  )
+  text = path.read_text(encoding="utf-8")
+  assert 'x="11" y="12" width="176" height="134"' in text
+
+
 def test_plot_scene_round_trip_is_renderer_neutral_and_excludes_analysis_data() -> None:
   scene = PlotScene.from_mapping({
     "x_parameter": "x",

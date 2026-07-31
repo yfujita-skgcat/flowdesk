@@ -1001,7 +1001,22 @@ def _raster_layout(
   selected: PlotPresentationSpec,
   options: BatchPlotExportSpec | None,
 ) -> tuple[int, int, int, int]:
-  """Reserve text margins before rendering the normalized data rectangle."""
+  """Resolve the normalized data rectangle from scene or default margins."""
+  scene_left, scene_top, scene_right, scene_bottom = prepared.scene.plot_area
+  layout_matches_scene = options is None or (
+    options.include_title and options.include_axis_labels and options.include_ticks
+  )
+  if layout_matches_scene and all(value >= 0 for value in prepared.scene.plot_area):
+    left = round(scene_left)
+    top = round(scene_top)
+    right = round(scene_right)
+    bottom = round(scene_bottom)
+    plot_width = max(1, width - left - right)
+    plot_height = max(1, height - top - bottom)
+    return left, top, plot_width, plot_height
+
+  # Retain a defensive typography-based fallback for malformed scenes created
+  # by older callers. Valid PlotScene instances normally take the branch above.
   title_lines = _scene_lines(prepared)
   title_height = (
     max(38, round(selected.title_font.size * 1.8)) * max(1, len(title_lines)) + 10

@@ -61,6 +61,38 @@ def test_plot_widget_uses_the_presentation_axis_label_font(qapp) -> None:
     widget.deleteLater()
 
 
+def test_plot_widget_canvas_size_excludes_status_banner(qapp) -> None:
+  widget = PlotWidget()
+  try:
+    widget.resize(800, 600)
+    widget.set_status_banner("Preparing…")
+    widget.show()
+    qapp.processEvents()
+    assert widget.canvas_size() == (widget._glw.width(), widget._glw.height())
+    assert widget.canvas_size()[0] == widget.width()
+    assert widget.canvas_size()[1] < widget.height()
+  finally:
+    widget.close()
+    widget.deleteLater()
+
+
+def test_plot_widget_reports_viewbox_margins_in_canvas_coordinates(qapp) -> None:
+  widget = PlotWidget()
+  try:
+    widget.resize(800, 600)
+    widget.set_status_banner("Preparing…")
+    widget.show()
+    qapp.processEvents()
+    left, top, right, bottom = widget.plot_area_margins()
+    width, height = widget.canvas_size()
+    assert left >= 0 and top >= 0 and right >= 0 and bottom >= 0
+    assert left + right < width
+    assert top + bottom < height
+  finally:
+    widget.close()
+    widget.deleteLater()
+
+
 def test_qt_pdf_uses_the_same_logical_canvas_as_png(qapp, tmp_path) -> None:
   if shutil.which("pdftoppm") is None:
     pytest.skip("pdftoppm is required to rasterize PDF for this comparison")
