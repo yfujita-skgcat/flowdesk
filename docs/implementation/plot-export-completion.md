@@ -228,6 +228,12 @@ definition to the project first, then invokes `batch_plot_command()` with its
 stable ID. Cancel, validation failure, output-directory cancellation, and
 project-save failure leave project state unchanged.
 
+The dialog is resizable with a sensible minimum size. The definition form is
+inside a widget-resizable vertical `QScrollArea`, while the Save, Run, Queue,
+and Cancel buttons remain outside the scroll area so they remain reachable at
+small monitor heights. The scroll area must not implement export logic; it only
+changes presentation and preserves the existing object names and signal paths.
+
 The dialog contains:
 
 - a saved-definition selector, `New`, and definition name. Existing projects

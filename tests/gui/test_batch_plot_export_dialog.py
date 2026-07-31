@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import QSettings
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QPushButton, QScrollArea
 
 from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportDialog
 
@@ -76,6 +76,21 @@ def test_batch_plot_dialog_disables_unverified_worker_controls(qapp) -> None:
     assert dialog._density_workers.isEnabled() is False
     assert dialog._density_memory_budget_mib.isEnabled() is False
     assert "disabled" in dialog._experimental_workers_status.text().lower()
+  finally:
+    dialog.deleteLater()
+
+
+def test_batch_plot_dialog_is_resizable_with_scrollable_form(qapp) -> None:
+  dialog = BatchPlotExportDialog([], [], [], [], "main-view")
+  try:
+    assert dialog.isSizeGripEnabled() is True
+    assert dialog.minimumWidth() == 480
+    assert dialog.minimumHeight() == 360
+    assert isinstance(dialog._scroll_area, QScrollArea)
+    assert dialog._scroll_area.widgetResizable() is True
+    assert dialog._scroll_area.widget().objectName() == "batchPlotExportFormContainer"
+    assert dialog.findChild(QPushButton, "batchPlotSaveDefinitionButton").parentWidget() is dialog
+    assert dialog.findChild(QPushButton, "batchPlotCancelButton").parentWidget() is dialog
   finally:
     dialog.deleteLater()
 

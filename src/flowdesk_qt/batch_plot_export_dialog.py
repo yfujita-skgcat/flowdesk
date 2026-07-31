@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import (
   QCheckBox,
   QComboBox,
@@ -20,13 +20,13 @@ from PySide6.QtWidgets import (
   QListWidgetItem,
   QMessageBox,
   QPushButton,
+  QScrollArea,
   QSpinBox,
   QVBoxLayout,
   QWidget,
 )
 
 from flowdesk_core.plot_export import resolve_export_canvas
-
 
 # The experimental worker controls remain available to the headless CLI for
 # measured opt-in runs, but GUI/packaged lifecycle validation is incomplete.
@@ -69,7 +69,9 @@ class BatchPlotExportDialog(QDialog):
     super().__init__(parent)
     self.setObjectName("batchPlotExportDialog")
     self.setWindowTitle("Batch Plot Export")
-    self.resize(620, 760)
+    self.setMinimumSize(480, 360)
+    self.resize(700, 760)
+    self.setSizeGripEnabled(True)
     self._definitions = [dict(item) for item in definitions]
     self._samples = [dict(item) for item in samples]
     self._groups = [dict(item) for item in groups]
@@ -294,9 +296,19 @@ class BatchPlotExportDialog(QDialog):
     buttons.addWidget(cancel)
     form.addRow("Queue failure policy", self._queue_failure_policy)
 
+    form_container = QWidget()
+    form_container.setObjectName("batchPlotExportFormContainer")
+    form_container.setLayout(form)
+    scroll_area = QScrollArea()
+    scroll_area.setObjectName("batchPlotExportScrollArea")
+    scroll_area.setWidgetResizable(True)
+    scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll_area.setWidget(form_container)
+    self._scroll_area = scroll_area
+
     layout = QVBoxLayout(self)
     layout.addWidget(QLabel("Create or update a reusable export definition."))
-    layout.addLayout(form)
+    layout.addWidget(scroll_area, 1)
     layout.addLayout(buttons)
     self._load_selected_definition(0)
     self._update_delete_button()
