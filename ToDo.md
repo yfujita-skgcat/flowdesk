@@ -1437,6 +1437,9 @@ thread backend（Increment 8）とは別の計画である。
   sequentialから変更しない。headless CLIは`--execution-backend thread`、`--max-workers`、
   `--memory-budget-mib`でこのruntime optionを明示指定でき、resolved worker数を表示する。
   代表的なcompensation/derived/gating workloadで再計測する。
+- [x] GUIのAnalysis → `Pipeline Execution Settings...`から同じruntime optionを明示指定できる。
+  既定sequential、thread/max-workers/memory budgetはsession-onlyでproject定義へ保存せず、
+  `_PipelineWorker`へ同じ`ExecutionOptions`を渡す。GUI active sample切替やevent chunk分割には流用しない。
 
 #### 並列化の懸念・注意点・保留事項（2026-07-30）
 

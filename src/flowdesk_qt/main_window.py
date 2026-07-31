@@ -111,6 +111,10 @@ from flowdesk_qt.diagnostics_panel import DiagnosticsPanel
 from flowdesk_qt.gate_editor import GateEditor
 from flowdesk_qt.gate_override_editor import GateOverrideDialog
 from flowdesk_qt.group_panel import GroupPanel
+from flowdesk_qt.pipeline_execution_dialog import (
+    PipelineExecutionDialog,
+    PipelineExecutionRequest,
+)
 from flowdesk_qt.plot_export_dialog import PlotExportDialog
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
@@ -240,6 +244,7 @@ class _PipelineWorker(QThread):
         samples: tuple[SampleData, ...],
         profile_id: str = "default",
         revision: int = 0,
+        execution_options: ExecutionOptions | None = None,
     ) -> None:
         super().__init__()
         self._project = project
@@ -250,6 +255,7 @@ class _PipelineWorker(QThread):
         self._error: Exception | None = None
         self._progress_events: SimpleQueue[ProgressEvent] = SimpleQueue()
         self._execution_control = ExecutionControl(
+            options=execution_options or ExecutionOptions(),
             progress_sink=self._progress_events.put
         )
 
@@ -376,6 +382,7 @@ class MainWindow(QMainWindow):
         # definition being edited must not be inferred from one another.
         self._active_sample_id: str | None = None
         self._worker: _PipelineWorker | None = None
+        self._pipeline_execution_request = PipelineExecutionRequest()
         self._batch_plot_worker: _BatchPlotExportWorker | None = None
         self._batch_plot_progress_dialog: QDialog | None = None
         self._batch_plot_progress_bar: QProgressBar | None = None
@@ -753,6 +760,17 @@ class MainWindow(QMainWindow):
         self.action_cancel_pipeline.setEnabled(False)
         self.action_cancel_pipeline.triggered.connect(self._on_cancel_pipeline)
         analysis_menu.addAction(self.action_cancel_pipeline)
+
+        self.action_pipeline_execution_settings = QAction(
+            "Pipeline Execution Settings...", self
+        )
+        self.action_pipeline_execution_settings.setObjectName(
+            "actionPipelineExecutionSettings"
+        )
+        self.action_pipeline_execution_settings.triggered.connect(
+            self._on_pipeline_execution_settings
+        )
+        analysis_menu.addAction(self.action_pipeline_execution_settings)
 
         analysis_menu.addSeparator()
 
@@ -2754,6 +2772,14 @@ class MainWindow(QMainWindow):
 
     # -- pipeline execution --------------------------------------------------
 
+    def _on_pipeline_execution_settings(self) -> None:
+        """Edit runtime-only options used by the next Run Pipeline."""
+        dialog = PipelineExecutionDialog(self._pipeline_execution_request, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._pipeline_execution_request = dialog.request()
+        self._update_status("Pipeline execution settings updated (runtime only)")
+
     def _on_run_pipeline(self) -> None:
         """Run the analysis pipeline on loaded samples."""
         from flowdesk_qt.statistics_editor import repair_statistic_definitions
@@ -2793,6 +2819,19 @@ class MainWindow(QMainWindow):
             project,
             tuple(self._sample_data.values()),
             revision=self._preview_revision.analysis_revision,
+            execution_options=ExecutionOptions(
+                backend=(
+                    "thread"
+                    if self._pipeline_execution_request.execution_backend == "thread"
+                    else "sequential"
+                ),
+                max_workers=self._pipeline_execution_request.max_workers,
+                memory_budget_bytes=(
+                    None
+                    if self._pipeline_execution_request.memory_budget_mib is None
+                    else self._pipeline_execution_request.memory_budget_mib * 1024 * 1024
+                ),
+            ),
         )
         self._worker.finished.connect(self._on_pipeline_finished)
         self._worker.start()

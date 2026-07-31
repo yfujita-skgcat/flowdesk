@@ -937,13 +937,17 @@ statistics equal the original serial implementation.
 
 ### Increment 8: Bounded thread sample-level pipeline parallelism
 
-Status (2026-07-30): complete. `ExecutionOptions` remains runtime-only and defaults to
+Status (2026-07-31): complete. `ExecutionOptions` remains runtime-only and defaults to
 the compatible sequential backend.  An explicit `thread` backend runs only complete,
 immutable `SampleExecutionResult` jobs after the serial shared preparation barrier.
 `ExecutionResolution` bounds requested workers by selected samples, logical CPUs, an
 optional memory budget, conservative worst-sample in-flight bytes, and declared
 OpenMP/BLAS/NumExpr inner-thread environment settings; it never enables all CPUs by
 default.  The full resolution is recorded in `ExecutionReport.execution_provenance`.
+The GUI exposes the same backend, worker, and memory-budget controls through
+`Pipeline Execution Settings...`; these controls are held in session runtime state and
+are never written into the project scientific definition. GUI defaults to sequential and
+uses the thread backend only after an explicit opt-in.
 
 ### Decision record: why independent FCS files do not imply one-thread-per-file
 

@@ -111,6 +111,11 @@ OSごとのユーザー書込み可能なアプリケーションデータ領域
 9. **Export Results...**、またはプロットの PNG/SVG/PDF export を行う。
 10. **Save Project**（Ctrl+S）で現在のprojectへ上書き保存する。未保存projectの場合は保存名を入力し、その名前の `.flowdesk` directory bundle として保存する。別名で保存する場合は **Save Project As...** を使う。
 
+Analysis → **Pipeline Execution Settings...** では、次回のRun Pipelineだけに適用するruntime設定を選べる。
+既定は`Sequential (recommended)`で、`Bounded threads (opt-in)`を選ぶとsample単位のbounded thread実行を有効にする。
+`Max workers`は同時sample数、`Memory budget`はcompensated/derived/transformed配列とmembershipを含む保守的な上限である。
+これらの値はprojectへ保存されず、GUIのactive sample表示やsample内event分割には使用されない。thread実行は速度向上を保証しないため、代表データで結果一致とpeak memoryを確認した場合だけ使用する。
+
 ### 3.1 CLIでResultsを出力する
 
 保存済みprojectはGUIと同じcore pipeline・export writerを使って実行できる。
@@ -202,6 +207,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |---|---:|---|
 |Run Pipeline|Ctrl+R|読み込まれた全 sample を GUI-independent pipeline で再計算する。status barの進捗表示でphase/sample数を確認する。実行中は二重実行できない。|
 |Cancel Pipeline|—|現在のstageが終わった安全な境界でpipelineを協調的に停止する。途中Resultsは採用せず、以前のResultsがあればstaleとして残る。|
+|Pipeline Execution Settings...|—|次回Run Pipelineの逐次／bounded thread、最大worker数、memory budgetをruntime-onlyで設定する。既定は逐次で、project定義は変更しない。|
 |Derived Parameters...|—|式から derived parameter を定義、validate、preview する。|
 |Compensation...|—|compensation matrix と binding を定義・検証する。|
 |Compensation Calculations...|—|single-color control 等から matrix calculation を定義・実行し、matrix として保存する。|

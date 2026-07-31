@@ -51,6 +51,9 @@ def test_analysis_settings_actions_have_stable_names_and_apply(qapp) -> None:
     assert window.action_redo_analysis_settings.objectName() == (
       "actionRedoAnalysisSettings"
     )
+    assert window.action_pipeline_execution_settings.objectName() == (
+      "actionPipelineExecutionSettings"
+    )
     window._analysis_settings_undo_stack = UndoStack(
       window._build_project_manifest(),
       on_changed=window._on_analysis_settings_state_changed,

@@ -152,6 +152,20 @@ def test_batch_plot_worker_receives_runtime_execution_options(qapp) -> None:
     worker.deleteLater()
 
 
+def test_pipeline_worker_receives_runtime_execution_options(qapp) -> None:
+  from flowdesk_qt.main_window import _PipelineWorker
+
+  options = ExecutionOptions(
+    backend="thread", max_workers=3, memory_budget_bytes=256 * 1024 * 1024,
+  )
+  worker = _PipelineWorker({}, (), execution_options=options)
+  try:
+    assert worker._execution_control.options == options
+  finally:
+    worker.request_cancel()
+    worker.deleteLater()
+
+
 def test_batch_export_cancel_requests_core_cancellation(
   qapp, tmp_path: Path, gui_artifact_widgets: list[object], monkeypatch,
 ) -> None:
