@@ -13,6 +13,7 @@ import pytest
 import flowdesk_cli.main as cli_main
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
+from flowdesk_core.density_colors import DensityColorConfig
 from flowdesk_core.execution_control import ExecutionControl, ExecutionOptions
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.models import ChannelSpec
@@ -158,6 +159,27 @@ def test_run_cli_rejects_nonpositive_worker_limit(
 
   with pytest.raises(SystemExit):
     cli_main.main()
+
+
+def test_batch_plot_cli_parses_density_runtime_options(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  received: dict[str, object] = {}
+
+  def fake_batch(project: str, export_id: str, output_dir: str, **kwargs: object) -> int:
+    received.update(kwargs)
+    return 0
+
+  monkeypatch.setattr(cli_main, "batch_plot_command", fake_batch)
+  monkeypatch.setattr(sys, "argv", [
+    "flowdesk", "batch-plot", "example.flowdesk", "--export-id", "e1",
+    "--output-dir", "out", "--density-workers", "4", "--density-memory-budget-mib", "64",
+  ])
+
+  assert cli_main.main() == 0
+  assert received["density_config"] == DensityColorConfig(
+    histogram_workers=4, histogram_memory_budget_bytes=64 * 1024 * 1024,
+  )
 
 
 def test_run_project_with_output(tmp_path: Path) -> None:

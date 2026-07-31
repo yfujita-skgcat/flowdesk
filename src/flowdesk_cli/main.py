@@ -9,6 +9,7 @@ from flowdesk_cli.batch_plot import batch_plot_command
 from flowdesk_cli.inspect_fcs import inspect_fcs_command
 from flowdesk_cli.run_project import run_project_command
 from flowdesk_core.credits import credits_text
+from flowdesk_core.density_colors import DensityColorConfig
 from flowdesk_core.execution_control import ExecutionOptions
 
 
@@ -159,6 +160,18 @@ def main() -> int:
     default=None,
     help="Maximum estimated in-flight batch render memory in MiB.",
   )
+  plot_parser.add_argument(
+    "--density-workers",
+    type=_positive_integer,
+    default=1,
+    help="Workers for density histogram chunks (default: 1).",
+  )
+  plot_parser.add_argument(
+    "--density-memory-budget-mib",
+    type=_positive_integer,
+    default=None,
+    help="Memory budget for concurrent density histogram chunks in MiB.",
+  )
 
   args = parser.parse_args()
 
@@ -201,6 +214,13 @@ def main() -> int:
         memory_budget_bytes=(
           None if args.memory_budget_mib is None
           else args.memory_budget_mib * 1024 * 1024
+        ),
+      ),
+      density_config=DensityColorConfig(
+        histogram_workers=args.density_workers,
+        histogram_memory_budget_bytes=(
+          None if args.density_memory_budget_mib is None
+          else args.density_memory_budget_mib * 1024 * 1024
         ),
       ),
     )

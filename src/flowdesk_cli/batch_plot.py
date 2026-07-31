@@ -18,7 +18,7 @@ from flowdesk_core.batch_plot_export import (
   batch_plot_export_spec_from_mapping,
   run_batch_plot_export,
 )
-from flowdesk_core.density_colors import estimate_density_colors
+from flowdesk_core.density_colors import DensityColorConfig, estimate_density_colors
 from flowdesk_core.execution_control import (
   ExecutionControl,
   ExecutionOptions,
@@ -55,6 +55,7 @@ def batch_plot_command(
   renderer_backend: str = "headless",
   execution_control: ExecutionControl | None = None,
   execution_options: ExecutionOptions | None = None,
+  density_config: DensityColorConfig | None = None,
 ) -> int:
   try:
     if execution_control is None and execution_options is not None:
@@ -557,6 +558,7 @@ def batch_plot_command(
         density_result = estimate_density_colors(
           full_x, full_y, full_x[visible], full_y[visible],
           bounds=density_bounds, logical_size=(512, 512),
+          config=density_config or DensityColorConfig(),
         )
         density_colors = np.asarray(density_result.colors)
         density_colors.setflags(write=False)

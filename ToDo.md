@@ -1522,6 +1522,9 @@ thread backendを既定値にしたり、GUI描画へ自動適用したりしな
   chunkごとのfloat/int histogram working setからactive worker数を保守的に制限する。予算が小さい
   場合は1 workerへfallbackし、色結果を変えない。これは全FCS配列やRSSを制限するprocess-wide
   budgetではない。
+- [x] **headless density runtime controls**: `batch-plot` CLIへ`--density-workers`と
+  `--density-memory-budget-mib`を追加し、保存済みBatch Export定義へ書き込まずdensity色準備だけへ
+  適用する。CLI parserと`DensityColorConfig`の受け渡しをテストした。GUIへ自動適用はしない。
 - [ ] **density workerの運用統合**: GUI/CLI設定、Windows/PyInstaller lifecycle、
   大規模実FCSでのpeak RSSとcancel/closeを検証し、既定値変更の可否を判断する。
 - [ ] **process backendの採否**: GIL回避だけを理由にprocess backendを追加しない。Windows spawn、
