@@ -16,6 +16,7 @@ import sys
 import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
+from threading import Lock
 from typing import Any
 
 import numpy as np
@@ -242,10 +243,15 @@ def run_pipeline_benchmark(
   }
   elapsed_ms: list[float] = []
   report_hashes: list[str] = []
+  stage_timings_ms: list[dict[str, float]] = []
   execution_provenance: dict[str, Any] | None = None
   for _ in range(repeats):
+    stage_totals: dict[str, float] = {}
+    stage_lock = Lock()
+    runner = PipelineRunner(project)
+    _instrument_pipeline_stages(runner, stage_totals, stage_lock)
     started = time.perf_counter()
-    report = PipelineRunner(project).run_samples(
+    report = runner.run_samples(
       ExecutionContext(
         execution_profile_id="default",
         execution_control=ExecutionControl(options=resolved_options),
@@ -253,6 +259,7 @@ def run_pipeline_benchmark(
       samples,
     )
     elapsed_ms.append((time.perf_counter() - started) * 1000.0)
+    stage_timings_ms.append(dict(stage_totals))
     root_counts = {
       result.sample_id: result.event_count
       for result in report.population_results
@@ -281,7 +288,31 @@ def run_pipeline_benchmark(
       "fixture_construction": fixture_ms,
       "canonical_pipeline": elapsed_ms,
       "canonical_pipeline_median": float(np.median(np.asarray(elapsed_ms))),
+      "stages": stage_timings_ms,
     },
     "peak_rss_kib": _peak_rss_kib(),
     "report_hashes": report_hashes,
   }
+
+
+def _instrument_pipeline_stages(
+  runner: PipelineRunner,
+  totals_ms: dict[str, float],
+  lock: Lock,
+) -> None:
+  """Time canonical stages on one benchmark-only runner instance."""
+  for stage_name in (
+    "compensation", "derived_parameters", "transforms", "gating", "statistics",
+  ):
+    original = getattr(runner, f"_step_{stage_name}")
+
+    def timed(*args: Any, _original=original, _stage=stage_name, **kwargs: Any) -> Any:
+      started = time.perf_counter()
+      try:
+        return _original(*args, **kwargs)
+      finally:
+        elapsed = (time.perf_counter() - started) * 1000.0
+        with lock:
+          totals_ms[_stage] = totals_ms.get(_stage, 0.0) + elapsed
+
+    setattr(runner, f"_step_{stage_name}", timed)

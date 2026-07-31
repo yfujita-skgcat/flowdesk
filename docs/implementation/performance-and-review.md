@@ -35,7 +35,9 @@ counts. Standard profiles are 100k, 1M, and 10M events. Do not commit generated 
 Measure separately: FCS load, compensation, derived parameters, transforms, gating,
 statistics, table/layout resolution, and rendering. Record Python/NumPy/Qt versions,
 platform, CPU, memory metric, event/channel counts, seed, and code revision where available.
-Rendering FPS/time is not an analysis benchmark.
+Rendering FPS/time is not an analysis benchmark. The deterministic pipeline benchmark now
+records fixture construction separately and wraps each canonical analysis stage in a
+benchmark-only timer; batch/vector tools remain the renderer measurements.
 
 ## Active-sample versus project-wide work
 
@@ -80,6 +82,9 @@ affected gate descendants/statistics/reports.
 
 1. Add deterministic generator and correctness-only profile tests.
 2. Add benchmark harness/report JSON without performance thresholds.
+   `tools/benchmark_pipeline.py` writes `stage_boundaries_ms.stages` for compensation,
+   derived parameters, transforms, gating, and statistics, while `fixture_construction`
+   is the synthetic load boundary.
 3. Establish baseline memory/time and then add documented regression thresholds.
 4. Add cache-key builder and invalidation unit tests before enabling cache reads.
 5. Enable one cached stage at a time and compare exact/accepted numeric results.

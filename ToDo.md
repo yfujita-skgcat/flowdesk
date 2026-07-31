@@ -1216,7 +1216,9 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
 
 - [ ] `docs/implementation/performance-and-review.md`へ10万、100万、1000万events profileを追加する。
 - [ ] deterministic synthetic dataset generatorとseedを固定する。
-- [ ] load、compensation、derived、transform、gating、statistics、renderを別々に計測する。
+- [x] load（deterministic fixture construction）、compensation、derived、transform、gating、
+  statisticsをbenchmark JSONのstage boundariesへ分離して記録する。renderはcanonical pipelineと
+  混同せず、既存のbatch/vector benchmarkで別計測する。
 - [ ] cache keyへinput fingerprintと全上流definition hashを含める。
 - [ ] matrix/derived/transform/gate/statistics変更時のcache invalidation testを追加する。
 - [ ] runnerへprogress、cancel、memory budget、sample-level parallelismを追加する。実装は下記の

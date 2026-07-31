@@ -40,6 +40,10 @@ def test_pipeline_benchmark_records_stage_boundaries_without_thresholds() -> Non
     "sample-2": 24,
   }
   assert len(result["stage_boundaries_ms"]["canonical_pipeline"]) == 2
+  assert len(result["stage_boundaries_ms"]["stages"]) == 2
+  assert set(result["stage_boundaries_ms"]["stages"][0]) >= {
+    "compensation", "derived_parameters", "transforms", "statistics",
+  }
   assert result["execution"]["effective_max_workers"] == 1
   assert len(set(result["report_hashes"])) == 1
 
