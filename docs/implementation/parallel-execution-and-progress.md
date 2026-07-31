@@ -972,10 +972,11 @@ immutable `SampleExecutionResult` jobs after the serial shared preparation barri
 optional memory budget, conservative worst-sample in-flight bytes, and declared
 OpenMP/BLAS/NumExpr inner-thread environment settings; it never enables all CPUs by
 default.  The full resolution is recorded in `ExecutionReport.execution_provenance`.
-The GUI exposes the same backend, worker, and memory-budget controls through
-`Pipeline Execution Settings...`; these controls are held in session runtime state and
-are never written into the project scientific definition. GUI defaults to sequential and
-uses the thread backend only after an explicit opt-in.
+The headless CLI exposes the same backend, worker, and memory-budget controls. The GUI
+dialog retains the controls for discoverability but disables them behind a capability
+gate until Windows/PyInstaller lifecycle and worker shutdown validation is complete;
+only sequential execution can currently be selected in the GUI. The controls remain
+runtime-only and are never written into the project scientific definition.
 
 The `representative` pipeline benchmark profile now includes an identity compensation
 matrix, a compensated derived ratio, a linear transform, a rectangle population gate,
@@ -1043,8 +1044,9 @@ The headless CLI exposes the runtime-only opt-in as `flowdesk run
 --execution-backend thread --max-workers N [--memory-budget-mib M]`.  These flags create
 an `ExecutionOptions` value for that invocation; they do not alter or serialize the
 project.  The CLI prints the report's resolved backend and effective/requested worker
-count after a full pipeline run. GUI Analysis → `Pipeline Execution Settings...` exposes the
-same runtime-only controls, defaulting to sequential and requiring explicit thread opt-in.
+count after a full pipeline run. GUI Analysis → `Pipeline Execution Settings...` shows the
+same runtime-only controls, but keeps the experimental thread controls disabled until the
+capability gate is cleared.
 Interactive sample display remains a separate one-sample scheduler/cache problem; this GUI
 setting does not split events within one sample or alter the project definition.
 

@@ -23,6 +23,17 @@ def test_pipeline_execution_dialog_defaults_to_sequential(qapp) -> None:
     dialog.deleteLater()
 
 
+def test_pipeline_execution_dialog_disables_unverified_worker_controls(qapp) -> None:
+  dialog = PipelineExecutionDialog()
+  try:
+    assert dialog._execution_backend.isEnabled() is False
+    assert dialog._max_workers.isEnabled() is False
+    assert dialog._memory_budget_mib.isEnabled() is False
+    assert "disabled" in dialog._experimental_workers_status.text().lower()
+  finally:
+    dialog.deleteLater()
+
+
 def test_pipeline_execution_dialog_round_trips_runtime_thread_settings(qapp) -> None:
   dialog = PipelineExecutionDialog()
   try:

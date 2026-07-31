@@ -9,10 +9,17 @@ from PySide6.QtWidgets import (
   QDialog,
   QDialogButtonBox,
   QFormLayout,
+  QLabel,
   QSpinBox,
   QVBoxLayout,
   QWidget,
 )
+
+
+# The headless runner keeps the explicit thread backend for benchmark and CLI
+# diagnostics.  GUI/package lifecycle validation is not complete yet, so the
+# GUI must remain on the deterministic sequential backend.
+PIPELINE_EXPERIMENTAL_WORKERS_GUI_AVAILABLE = False
 
 
 @dataclass(frozen=True)
@@ -55,10 +62,23 @@ class PipelineExecutionDialog(QDialog):
     self._memory_budget_mib.setRange(0, 1_048_576)
     self._memory_budget_mib.setValue(current.memory_budget_mib or 0)
 
+    self._experimental_workers_status = QLabel(
+      "Experimental worker controls are disabled in the GUI until "
+      "Windows/PyInstaller lifecycle validation is complete."
+    )
+    self._experimental_workers_status.setObjectName(
+      "pipelineExperimentalWorkersStatusLabel"
+    )
+    self._experimental_workers_status.setWordWrap(True)
+    self._execution_backend.setEnabled(PIPELINE_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
+    self._max_workers.setEnabled(PIPELINE_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
+    self._memory_budget_mib.setEnabled(PIPELINE_EXPERIMENTAL_WORKERS_GUI_AVAILABLE)
+
     form = QFormLayout()
     form.addRow("Execution backend", self._execution_backend)
     form.addRow("Max workers", self._max_workers)
     form.addRow("Memory budget (MiB, 0 = automatic)", self._memory_budget_mib)
+    form.addRow("", self._experimental_workers_status)
 
     buttons = QDialogButtonBox(
       QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
