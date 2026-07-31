@@ -1293,6 +1293,11 @@ gate.
   while its previous path is still being read queues the new path, suppresses the
   obsolete completion/failure signal, and adopts only the current file. This prevents
   stale raw events from crossing a reconnect boundary.
+- `tools/benchmark_prefetch.py` provides a deterministic large-file smoke benchmark.
+  With a generated 300,000-event, 4.8 MiB FCS on 2026-07-31 Linux, synchronous
+  loading took 4.9 ms and `SampleLoadScheduler` loading took 7.7 ms; event counts
+  and raw hashes matched. This validates the acquisition path and immutability only,
+  not instrument-data GUI latency, peak memory, cancellation, or close behavior.
 - The implementation deliberately does not claim a speedup yet. Representative real-FCS
   latency, peak-memory, cancel, and close measurements remain required; if they show no
   material benefit or unacceptable memory growth, automatic prefetch must be disabled.
