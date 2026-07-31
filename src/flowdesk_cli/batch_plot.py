@@ -994,7 +994,10 @@ def batch_plot_queue_command(
     if isinstance(item, Mapping) and item.get("id")
   }
   estimated_queue_definition_bytes = _estimate_queue_definition_bytes(
-    project_snapshot, project_path,
+    project_snapshot,
+    project_path,
+    definition_index=definition_index,
+    definition_ids=queue,
   )
   queue_memory_limit = None
   queue_limiting_factors: list[str] = []
@@ -1257,33 +1260,106 @@ def _queue_slug(export_id: str) -> str:
 
 
 def _estimate_queue_definition_bytes(
-  project: Mapping[str, Any], project_path: str,
+  project: Mapping[str, Any],
+  project_path: str,
+  *,
+  definition_index: Mapping[str, Mapping[str, Any]] | None = None,
+  definition_ids: Sequence[str] = (),
 ) -> int:
-  """Estimate one definition's queue working set from tracked FCS files.
+  """Estimate the largest queued definition working set from tracked FCS files.
 
   The estimate is intentionally conservative and only limits explicit queue
-  concurrency. It does not alter event arrays or scientific execution.
+  concurrency. When definitions can be resolved, only their target and overlay
+  sources are counted; malformed or unknown definitions fall back to all samples.
+  It does not alter event arrays or scientific execution.
   """
-  total_file_bytes = 0
   project_root = Path(project_path).expanduser().resolve().parent
-  for sample in project.get("samples", ()):
-    if not isinstance(sample, Mapping):
-      continue
+  sample_by_id = {
+    str(sample.get("id")): sample
+    for sample in project.get("samples", ())
+    if isinstance(sample, Mapping) and sample.get("id")
+  }
+
+  def file_size(sample: Mapping[str, Any]) -> int:
     raw_path = sample.get("path")
     if not raw_path:
-      continue
+      return 0
     path = Path(str(raw_path)).expanduser()
     if not path.is_absolute():
       path = project_root / path
     try:
-      total_file_bytes += max(0, path.stat().st_size)
+      return max(0, path.stat().st_size)
     except OSError:
-      continue
-  if total_file_bytes <= 0:
+      return 0
+
+  all_sample_bytes = sum(file_size(sample) for sample in sample_by_id.values())
+  definition_sets: list[tuple[str, ...]] = []
+  if definition_index and definition_ids:
+    group_members: dict[str, tuple[str, ...]] = {}
+    for group in project.get("sample_groups", ()):
+      if not isinstance(group, Mapping) or not group.get("id"):
+        continue
+      members = tuple(
+        str(value) for value in group.get("sample_ids", ())
+        if str(value) in sample_by_id
+      )
+      rule = group.get("membership_rule")
+      if isinstance(rule, Mapping) and set(rule) == {"all"}:
+        members = tuple(sample_by_id)
+      group_members[str(group["id"])] = members
+    for definition_id in definition_ids:
+      definition = definition_index.get(str(definition_id))
+      try:
+        if not isinstance(definition, Mapping):
+          raise ValueError("definition is missing")
+        spec = batch_plot_export_spec_from_mapping(definition)
+        if spec.target == "all":
+          target_ids = tuple(sample_by_id)
+        elif spec.target == "explicit":
+          target_ids = tuple(spec.sample_ids)
+        else:
+          target_ids = group_members.get(spec.group_id or "", ())
+        if any(sample_id not in sample_by_id for sample_id in target_ids):
+          raise ValueError("definition target references an unknown sample")
+        view = next(
+          (
+            item for item in project.get("plot_views", ())
+            if isinstance(item, Mapping)
+            and str(item.get("id")) == spec.plot_view_id
+          ),
+          None,
+        )
+        if view is None:
+          raise ValueError("definition view is missing")
+        overlay_ids = _build_overlay_dependency_graph(
+          tuple(sample_by_id),
+          view.get("overlay_sources", ()),
+          view.get("manual_overlay_sample_ids", ()),
+        )
+        required = set(target_ids)
+        for sample_id in target_ids:
+          required.update(overlay_ids.get(sample_id, ()))
+        if any(sample_id not in sample_by_id for sample_id in required):
+          raise ValueError("definition overlay references an unknown sample")
+        definition_sets.append(tuple(sorted(required)))
+      except (TypeError, ValueError, KeyError):
+        definition_sets.append(tuple(sample_by_id))
+  if not definition_sets:
+    definition_sets.append(tuple(sample_by_id))
+
+  estimated_definition_bytes = 0
+  for sample_ids in definition_sets:
+    estimated_definition_bytes = max(
+      estimated_definition_bytes,
+      sum(file_size(sample_by_id[sample_id]) for sample_id in sample_ids),
+    )
+  if estimated_definition_bytes <= 0:
+    estimated_definition_bytes = all_sample_bytes
+  if estimated_definition_bytes <= 0:
     return 0
   # FCS decode, processed arrays, normalized layers, and writer temporaries
   # can coexist. Six times the file bytes is deliberately conservative.
-  return max(64 * 1024 * 1024, total_file_bytes * 6)
+  return max(64 * 1024 * 1024, estimated_definition_bytes * 6)
 
 
 def _write_queue_manifest(path: Path, payload: Mapping[str, Any]) -> None:

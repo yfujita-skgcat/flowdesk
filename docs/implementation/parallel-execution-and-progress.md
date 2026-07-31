@@ -147,8 +147,10 @@ Tests and benchmarks:
   force-terminating active writers. GUI queue controls remain sequential/disabled until
   native Windows/PyInstaller and peak-memory/reentrancy measurements justify exposure.
   When `--memory-budget-mib` is supplied, a conservative six-times-FCS-file-size estimate
-  limits queue workers further; the resolved count, estimate, budget, and limiting factor
-  are written to queue provenance. Queue provenance also records planned, submitted, and
+  of each definition's target/overlay source set limits queue workers further; the maximum
+  resolved estimate, budget, and limiting factor are written to queue provenance. If a
+  definition cannot be resolved safely, all project samples are used for the estimate.
+  Queue provenance also records planned, submitted, and
   completed definition counts plus the observed `peak_in_flight_definitions`; these fields
   make the effective bounded-concurrency behavior auditable after cancellation or failure.
   In fail-fast mode, a future cancelled before it starts is recorded as `not_started` and is

@@ -313,6 +313,52 @@ def test_batch_plot_queue_applies_memory_budget_to_queue_workers(
   assert manifest["queue_execution"]["peak_in_flight_definitions"] == 1
 
 
+def test_batch_plot_queue_memory_estimate_uses_definition_sources(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  small_path = tmp_path / "small.fcs"
+  small_path.write_bytes(b"small")
+  large_path = tmp_path / "large.fcs"
+  with large_path.open("wb") as handle:
+    handle.truncate(16 * 1024 * 1024)
+  snapshot = {
+    "samples": [
+      {"id": "small", "path": str(small_path)},
+      {"id": "large", "path": str(large_path)},
+    ],
+    "plot_views": [{
+      "id": "view", "plot_type": "scatter", "x_parameter": "x",
+      "y_parameter": "y",
+    }],
+    "batch_plot_exports": [
+      {
+        "id": "small-a", "name": "Small A", "target": "explicit",
+        "sample_ids": ["small"], "plot_view_id": "view", "formats": ["svg"],
+      },
+      {
+        "id": "small-b", "name": "Small B", "target": "explicit",
+        "sample_ids": ["small"], "plot_view_id": "view", "formats": ["svg"],
+      },
+    ],
+  }
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: snapshot)
+  monkeypatch.setattr(
+    batch_plot_module, "batch_plot_command", lambda *_args, **_kwargs: 0,
+  )
+  output_dir = tmp_path / "out"
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("small-a", "small-b"), str(output_dir),
+    queue_workers=2,
+    execution_options=ExecutionOptions(memory_budget_bytes=128 * 1024 * 1024),
+  ) == 0
+  manifest = json.loads(
+    (output_dir / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )
+  execution = manifest["queue_execution"]
+  assert execution["effective_workers"] == 2
+  assert execution["estimated_definition_bytes"] == 64 * 1024 * 1024
+
+
 def test_raw_sample_cache_is_bounded_and_tracks_fingerprint_hits() -> None:
   cache = _RawSampleCache(32)
   sample = SampleData(
