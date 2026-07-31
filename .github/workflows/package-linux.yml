@@ -46,12 +46,17 @@ jobs:
       - name: Build native packages
         run: python tools/package.py build
 
+      - name: Create package smoke fixture
+        run: >-
+          python tools/create_package_smoke_fixture.py
+          --output-dir artifacts/package-fixture
+
       - name: Run packaged smoke test
         run: >-
           python tools/package.py smoke
-          --project data/analysis.flowdesk
-          --fcs data/1_A1.fcs
-          --batch-export-id batch-export-2c72921e28a9
+          --project artifacts/package-fixture/project.flowdesk
+          --fcs artifacts/package-fixture/sample.fcs
+          --batch-export-id package-smoke-export
           --timeout 300
 
       - name: Write build manifest
