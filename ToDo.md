@@ -1214,7 +1214,11 @@ comparison、spectral/AutoSpill）と、安全な extension/batch ecosystem を�
   - [x] CLI-only `--queue-workers N`による定義単位bounded並列を追加する。各定義のinner backendを
     sequentialへ固定し、shared cancellation、宣言順manifest merge、fail-fast/continue、active writerの
     協調終了を維持する。`--memory-budget-mib`はFCS file sizeからqueue worker数も制限し、
-    見積もりとlimiting factorをmanifestへ記録する。GUIには未検証のため公開しない。
+    見積もりとlimiting factorをmanifestへ記録する。planned/submitted/completed定義数と
+    `peak_in_flight_definitions`も記録し、実際の同時実行上限を後から検証できるようにする。
+    fail-fastで開始前にcancelされたfutureは`not_started`としてcompleted数から除外し、実行中の
+    definitionは協調的な完了結果を記録する。
+    GUIには未検証のため公開しない。
   plugin queue、definition間の並列実行は未実装。
 - [ ] crashed/timeout/malformed pluginがprojectを破損しないtestを追加する。
 

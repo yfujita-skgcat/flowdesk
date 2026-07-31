@@ -148,7 +148,12 @@ Tests and benchmarks:
   native Windows/PyInstaller and peak-memory/reentrancy measurements justify exposure.
   When `--memory-budget-mib` is supplied, a conservative six-times-FCS-file-size estimate
   limits queue workers further; the resolved count, estimate, budget, and limiting factor
-  are written to queue provenance.
+  are written to queue provenance. Queue provenance also records planned, submitted, and
+  completed definition counts plus the observed `peak_in_flight_definitions`; these fields
+  make the effective bounded-concurrency behavior auditable after cancellation or failure.
+  In fail-fast mode, a future cancelled before it starts is recorded as `not_started` and is
+  excluded from `completed_definitions`; an already-running definition is allowed to reach
+  its cooperative boundary and is recorded with its actual result.
 
 ## Non-goals
 

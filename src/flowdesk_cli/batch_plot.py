@@ -6,7 +6,12 @@ import json
 import os
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import (
+  FIRST_COMPLETED,
+  CancelledError,
+  ThreadPoolExecutor,
+  wait,
+)
 from pathlib import Path
 from threading import Event, Lock, local
 from typing import Any, Literal, cast
@@ -1023,6 +1028,10 @@ def batch_plot_queue_command(
       "backend": "sequential" if queue_workers == 1 else "thread",
       "requested_workers": queue_workers,
       "effective_workers": effective_queue_workers,
+      "planned_definitions": len(queue),
+      "submitted_definitions": 0,
+      "completed_definitions": 0,
+      "peak_in_flight_definitions": 0,
       "memory_budget_bytes": base_options.memory_budget_bytes,
       "estimated_definition_bytes": estimated_queue_definition_bytes,
       "limiting_factors": queue_limiting_factors,
@@ -1129,8 +1138,11 @@ def batch_plot_queue_command(
           sample_id=export_id,
           message=f"definition {index}/{len(queue)}: {export_id}",
         ))
+      queue_manifest["queue_execution"]["submitted_definitions"] += 1
+      queue_manifest["queue_execution"]["peak_in_flight_definitions"] = 1
       _, result = run_definition(index, export_id)
       record_definition(index, result, index)
+      queue_manifest["queue_execution"]["completed_definitions"] += 1
       _write_queue_manifest(queue_manifest_path, queue_manifest)
       if result == 130:
         queue_manifest["status"] = "cancelled"
@@ -1174,6 +1186,11 @@ def batch_plot_queue_command(
               message=f"definition {next_index}/{len(queue)}: {export_id}",
             ))
           pending[executor.submit(run_definition, next_index, export_id)] = next_index
+          queue_manifest["queue_execution"]["submitted_definitions"] += 1
+          queue_manifest["queue_execution"]["peak_in_flight_definitions"] = max(
+            queue_manifest["queue_execution"]["peak_in_flight_definitions"],
+            len(pending),
+          )
           next_index += 1
         if not pending:
           break
@@ -1182,11 +1199,17 @@ def batch_plot_queue_command(
           index = pending.pop(future)
           try:
             _, result = future.result()
+          except CancelledError:
+            queue_items[index - 1]["status"] = "not_started"
+            queue_items[index - 1]["result_code"] = None
+            _write_queue_manifest(queue_manifest_path, queue_manifest)
+            continue
           except Exception as exc:
             print(f"Error: batch plot definition {queue[index - 1]!r} raised: {exc}")
             result = 1
           completed += 1
           record_definition(index, result, completed)
+          queue_manifest["queue_execution"]["completed_definitions"] = completed
           if result == 130 or (result != 0 and failure_policy == "fail-fast"):
             stop_submitting = True
             if result == 130:

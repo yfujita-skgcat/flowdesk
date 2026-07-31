@@ -230,9 +230,47 @@ def test_batch_plot_queue_supports_explicit_definition_parallelism(
   assert manifest["status"] == "success"
   assert manifest["queue_execution"]["effective_workers"] == 2
   assert manifest["queue_execution"]["nested_definition_backend"] == "sequential"
+  assert manifest["queue_execution"]["planned_definitions"] == 3
+  assert manifest["queue_execution"]["submitted_definitions"] == 3
+  assert manifest["queue_execution"]["completed_definitions"] == 3
+  assert manifest["queue_execution"]["peak_in_flight_definitions"] == 2
   assert [item["status"] for item in manifest["definitions"]] == [
     "success", "success", "success",
   ]
+
+
+def test_batch_plot_queue_parallel_fail_fast_tracks_cancelled_pending_work(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
+  failure_started = threading.Event()
+
+  def fake_batch(_project, export_id, _output_dir, **_kwargs) -> int:
+    import time
+    if export_id == "first":
+      failure_started.set()
+      time.sleep(0.02)
+      return 1
+    if export_id == "second":
+      failure_started.wait(timeout=1)
+      time.sleep(0.1)
+    return 0
+
+  monkeypatch.setattr(batch_plot_module, "batch_plot_command", fake_batch)
+  assert batch_plot_queue_command(
+    "project.flowdesk", ("first", "second", "third", "fourth"), str(tmp_path),
+    queue_workers=2,
+  ) == 1
+  manifest = json.loads(
+    (tmp_path / "batch-queue-manifest.json").read_text(encoding="utf-8")
+  )
+  assert [item["status"] for item in manifest["definitions"]] == [
+    "failed", "success", "not_started", "not_started",
+  ]
+  execution = manifest["queue_execution"]
+  assert execution["submitted_definitions"] == 2
+  assert execution["completed_definitions"] == 2
+  assert execution["peak_in_flight_definitions"] == 2
 
 
 def test_batch_plot_queue_rejects_nested_thread_backends(tmp_path: Path) -> None:
@@ -269,6 +307,10 @@ def test_batch_plot_queue_applies_memory_budget_to_queue_workers(
   )
   assert manifest["queue_execution"]["effective_workers"] == 1
   assert "memory_budget" in manifest["queue_execution"]["limiting_factors"]
+  assert manifest["queue_execution"]["planned_definitions"] == 2
+  assert manifest["queue_execution"]["submitted_definitions"] == 2
+  assert manifest["queue_execution"]["completed_definitions"] == 2
+  assert manifest["queue_execution"]["peak_in_flight_definitions"] == 1
 
 
 def test_raw_sample_cache_is_bounded_and_tracks_fingerprint_hits() -> None:
