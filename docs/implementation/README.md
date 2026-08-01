@@ -105,6 +105,7 @@ release order below.
 | Rendering consistency | `gui-export-font-normalization.md` | B7.3 consistency |
 | Sample Sheet copy | `sample-sheet-tsv-copy.md` | B1 |
 | Batch filename well | `batch-filename-well-template.md` | B7.3 |
+| Bug follow-up session/statistics | `bug-follow-up-session-and-statistics.md` | B1, A6, project lifecycle |
 
 ## Choosing a guide
 

@@ -1976,6 +1976,28 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [x] user-visibleなprogress/cancel/performance設定を公開するincrementで
   `docs/user-manual/user_manual.md`を同時更新する。
 
+## Bug follow-up: session and statistics usability
+
+`docs/bug.md`の現行4件を、科学的計算を変更しない独立incrementとして整理した。
+実装時は`docs/implementation/bug-follow-up-session-and-statistics.md`を全文読み、
+一度のLLM実行で下記の一項目だけを実装する。`docs/bug.md`は報告の原文として残し、
+完了時はこのToDoのチェックボックス、guideの検証記録、ユーザーマニュアルを更新する。
+
+- [ ] Increment 1: Sample Browserのcanonical manual order、drag-and-drop、`Ctrl+Up`/
+  `Ctrl+Down`によるreorderを追加する。stable sample ID、active/overlay selection、
+  project保存順、PipelineRunner merge順、batch `{index}`を保持し、reorderだけでResultsを
+  staleにしない。詳細、非目標、testはguideのIncrement 1に従う。
+- [ ] Increment 2: Add Statisticのparameter selectorについて、metric policy、catalog
+  diagnostic、empty catalogを区別して可視化する。count/frequencyでparameterを使わない仕様と
+  valid derived/acquired parameterの選択可否を明示し、headless statistic validationを緩めない。
+  詳細とtestはguideのIncrement 2に従う。
+- [ ] Increment 3: applicationを終了しない`File -> Close Project`を追加する。dirty save/
+  discard/cancel、worker/scheduler停止、fresh unsaved session、recovery保持を一つのlifecycle
+  contractとして実装する。詳細とtestはguideのIncrement 3に従う。
+- [ ] Increment 4: `Open Directory...`/`Open Files...`はFCS import機能として維持し、
+  current sessionへ追加する意味が明確な名称・tooltipへ変更する。Open Projectとの違い、
+  dirty-state、Close Project後の挙動をtestする。詳細はguideのIncrement 4に従う。
+
 ## Release E: OS配布とリリース自動化 [P1]
 
 配布準備のPhase 1（必須依存、`python -m flowdesk_qt`、OS標準のユーザー領域、
