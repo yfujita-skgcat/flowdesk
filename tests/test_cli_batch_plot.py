@@ -344,15 +344,20 @@ def test_batch_plot_queue_parallel_fail_fast_tracks_cancelled_pending_work(
 ) -> None:
   monkeypatch.setattr(batch_plot_module, "load_project", lambda _path: {})
   failure_started = threading.Event()
+  second_started = threading.Event()
 
   def fake_batch(_project, export_id, _output_dir, **_kwargs) -> int:
     import time
     if export_id == "first":
       failure_started.set()
-      time.sleep(0.02)
+      # Do not let the result timing decide whether the second worker was
+      # submitted.  The assertion is about fail-fast queue accounting after
+      # both initial workers are in flight.
+      second_started.wait(timeout=1)
       return 1
     if export_id == "second":
       failure_started.wait(timeout=1)
+      second_started.set()
       time.sleep(0.1)
     return 0
 
