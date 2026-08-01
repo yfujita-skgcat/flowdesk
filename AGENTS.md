@@ -36,17 +36,21 @@ raw FCS events
 
 Japanese title (≤ 50 chars)
 
-[current model name, when available]
-
-- Japanese body line
+[current model name (e.g. gpt-5.6-luna medium, gpt-5.6-terra medium, local LLM qwen3.6-27b)]
+- Japanese body line1
+- Japanese body line2
+- Japanese body line3
+....
 
 ----
 
 English title (≤ 50 chars)
 
-[current model name, when available]
-
-- English body line
+[current model name (e.g. gpt-5.6-luna medium, gpt-5.6-terra medium, local LLM qwen3.6-27b)]
+- English body line1
+- English body line2
+- English body line3
+....
 
 ## User Manual Rule
 
