@@ -20,6 +20,8 @@ Batch の表示タイトルは GUI と同じ規則で解決されます。worksp
 
 タイトルが複数行になる場合は、GUIとexportの論理レイアウトでタイトル用の上部領域を確保します。タイトル行がplot areaに重ならないようにplot rectangleの上端を必要に応じて下げます。GUI保存時にはQtのタイトルbaselineを測定して保存し、exportはその位置を基準にタイトルを配置します。フォントサイズはQtのポイント指定を出力canvasの96 DPI相当へ変換し、GUIとPNG/SVGの見かけの大きさを揃えます。フォントのアンチエイリアスや字形は出力形式・OSごとに異なる場合がありますが、タイトル行数、plot rectangle、軸・ゲートの論理座標は共通のscene/layoutから解決されます。ゲートの線種（solid/dashed/dotted/dashdot）とmajor/minor補助線の濃さもpresentation設定から各backendへ同じように反映されます。
 
+Qtのタイトル、軸ラベル、tickも同じ96 DPI基準の論理pixelへ正規化して描画します。そのため、モニターの論理DPIやOSの表示倍率を変えても、GUIとexportの文字・線・plot areaの相対比は変わりません。フォントの字形やアンチエイリアスによる1 pixel未満の差は環境により残ることがあります。
+
 PNG/JPEGのラベルフォントは、Windows/macOS/Linuxで同じ見かけのサイズになるよう、Flowdeskパッケージに同梱したDejaVu Sansのregular/boldを使用します。OSに同名フォントがインストールされていなくても、指定したDPIに応じて文字・線・tickが同じ比率で拡大されます。フォント資産が破損している場合は、文字だけが極端に小さい画像を成功扱いにせず、exportエラーとして通知します。高DPI画像を画像ビューアの自動縮小表示で比較する場合は、100%表示またはGUIの論理canvasへ縮小して比率を確認してください。
 
 **UI 網羅性検査:** 静的検査では、literal `objectName` 325件と、action・button・checkbox・menu・tab・combo-box item の一意な表示文字列172件について、マニュアル内の記載漏れは0件だった。詳細は [coverage_report.md](coverage_report.md) を参照。動的生成 control と標準 Qt dialog button は、19.2節で別途確認している。

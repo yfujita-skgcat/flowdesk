@@ -118,8 +118,26 @@ def test_plot_widget_uses_the_presentation_axis_label_font(qapp) -> None:
     left_html = widget._plot_item.getAxis("left").label.toHtml()
     for html, label in ((bottom_html, "FSC-A"), (left_html, "SSC-A")):
       assert label in html
-      assert "font-size:14pt" in html
+      assert "font-size:19px" in html
       assert "font-weight:700" in html
+  finally:
+    widget.close()
+    widget.deleteLater()
+
+
+def test_plot_widget_normalizes_tick_font_to_96_dpi_pixels(qapp) -> None:
+  widget = PlotWidget()
+  try:
+    widget.set_presentation({
+      "title_font": {"size": 14},
+      "axis_label_font": {"size": 13},
+      "tick_font": {"size": 12},
+      "x_axis_display_label": "FSC-A",
+      "y_axis_display_label": "SSC-A",
+    })
+    assert widget._plot_item.titleLabel.opts["size"] == "19px"
+    assert widget._plot_item.getAxis("bottom").style["tickFont"].pixelSize() == 16
+    assert widget._axis_label_text_style["font-size"] == "17px"
   finally:
     widget.close()
     widget.deleteLater()

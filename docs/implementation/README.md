@@ -102,6 +102,7 @@ release order below.
 | P1 | `packaging-and-release.md` | Phase 1 application packaging foundation |
 | P1.1 | `cross-platform-runtime-hardening.md` | P1 native package foundation |
 | B7.3 consistency | `batch-export-state-consistency.md` | B7.3, B7.1 |
+| Rendering consistency | `gui-export-font-normalization.md` | B7.3 consistency |
 
 ## Choosing a guide
 

@@ -50,7 +50,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 from flowdesk_core.density_colors import estimate_density_colors
 from flowdesk_core.models import GateSpec, TransformSpec
 from flowdesk_core.plot_presentation import resolve_presentation_layers
-from flowdesk_core.plot_scene import PlotScene, resolve_plot_layout
+from flowdesk_core.plot_scene import POINTS_TO_PX, PlotScene, resolve_plot_layout
 from flowdesk_core.transforms import (
     TransformError,
     TransformTick,
@@ -74,6 +74,15 @@ InteractiveGateType = Literal["rectangle", "polygon"]
 InteractionMode = Literal["pan", "select", "gate"]
 RangeMode = Literal["robust_auto", "full_auto", "manual"]
 TickPolicy = Literal["auto", "decades", "one_two_five", "legacy_auto"]
+
+
+def _logical_font_pixel_size(size: float) -> int:
+    """Convert presentation point-like sizes to fixed 96-DPI pixels.
+
+    Export uses the same conversion.  Using ``QFont.setPixelSize`` with this
+    value avoids Qt's screen-DPI-dependent point conversion on high-DPI hosts.
+    """
+    return max(1, round(float(size) * POINTS_TO_PX))
 
 # ---------------------------------------------------------------------------
 # PlotWidget
@@ -145,7 +154,7 @@ class PlotWidget(QWidget):
         self._style: PlotStyleSettings = PlotStyleSettings()
         self._axis_label_text_style: dict[str, str] = {
             "font-family": "DejaVu Sans",
-            "font-size": "14pt",
+            "font-size": f"{_logical_font_pixel_size(14.0)}px",
             "font-weight": "bold",
         }
         self._export_metadata: dict[str, Any] | None = None
@@ -250,10 +259,8 @@ class PlotWidget(QWidget):
             rect = self._plot_item.titleLabel.sceneBoundingRect()
             top_left = self._glw.mapFromScene(rect.topLeft())
             font_value = dict(title_font or {})
-            font = QFont(
-                str(font_value.get("family", "DejaVu Sans")),
-                round(float(font_value.get("size", 14.0))),
-            )
+            font = QFont(str(font_value.get("family", "DejaVu Sans")))
+            font.setPixelSize(_logical_font_pixel_size(font_value.get("size", 14.0)))
             font.setBold(str(font_value.get("weight", "bold")) == "bold")
             return float(top_left.y()) + float(QFontMetrics(font).ascent())
         except (AttributeError, RuntimeError, TypeError, ValueError):
@@ -350,7 +357,7 @@ class PlotWidget(QWidget):
         self._plot_item.setTitle(
             title_markup,
             family=family,
-            size=f"{size:g}pt",
+            size=f"{_logical_font_pixel_size(size)}px",
             bold=weight == "bold",
             color=self._foreground_color(str(value.get("background_color", "#ffffff"))),
         )
@@ -1609,7 +1616,8 @@ class PlotWidget(QWidget):
             color=self._foreground_color(s.background_color),
             width=s.axis_line_width,
         )
-        tick_font = QFont(s.tick_font_family, round(s.tick_font_size))
+        tick_font = QFont(s.tick_font_family)
+        tick_font.setPixelSize(_logical_font_pixel_size(s.tick_font_size))
         tick_font.setBold(s.tick_font_weight == "bold")
         for axis_name in ("bottom", "left"):
             axis = self._plot_item.getAxis(axis_name)
@@ -2326,7 +2334,7 @@ class PlotWidget(QWidget):
             weight = str(getattr(value, "weight", "bold"))
         return {
             "font-family": family,
-            "font-size": f"{size:g}pt",
+            "font-size": f"{_logical_font_pixel_size(size)}px",
             "font-weight": weight,
         }
 
