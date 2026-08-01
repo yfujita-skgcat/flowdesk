@@ -54,6 +54,20 @@ def test_batch_plan_rejects_unknown_explicit_sample(tmp_path) -> None:
     plan_batch_plot_export(spec, _samples(), tmp_path)
 
 
+def test_batch_plan_detects_portable_case_collision(tmp_path) -> None:
+  samples = [
+    {"id": "s1", "name": "Alpha", "path": "/tmp/a.fcs"},
+    {"id": "s2", "name": "alpha", "path": "/tmp/b.fcs"},
+  ]
+  spec = BatchPlotExportSpec(
+    id="portable-collision", name="Portable", filename_template="{sample_name}",
+    target="all", collision_policy="suffix", formats=("png",),
+  )
+  items = plan_batch_plot_export(spec, samples, tmp_path)
+  assert items[0].output_paths[0].endswith("Alpha.png")
+  assert items[1].output_paths[0].endswith("alpha-2.png")
+
+
 def test_batch_plan_prefixes_explicit_and_filename_wells(tmp_path) -> None:
   samples = [
     {"id": "s1", "name": "Control", "path": r"C:\results\plate_A01.fcs"},

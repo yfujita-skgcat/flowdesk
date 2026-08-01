@@ -18,6 +18,9 @@ from typing import Any, Iterator
 
 import numpy as np
 
+from flowdesk_core.font_resources import (
+  BundledFontError, bundled_font_filename, load_bundled_font,
+)
 from flowdesk_core.models import BatchPlotExportSpec, PlotPresentationSpec, PlotType
 from flowdesk_core.plot_presentation import (
   OverlaySourceResolution,
@@ -30,16 +33,16 @@ from flowdesk_core.plot_presentation import (
 from flowdesk_core.plot_scene import (
   POINTS_TO_PX, PlotLayoutSpec, PlotScene, resolve_plot_layout,
 )
-
-
-def _font_px(size: float) -> float:
-  """Convert persisted Qt point sizes to renderer canvas pixels."""
-  return float(size) * POINTS_TO_PX
 from flowdesk_core.vector_scatter import (
   CompactScatterBatch,
   VectorScatterLayer,
   compact_scatter_batches,
 )
+
+
+def _font_px(size: float) -> float:
+  """Convert persisted Qt point sizes to renderer canvas pixels."""
+  return float(size) * POINTS_TO_PX
 
 
 class PlotExportError(ValueError):
@@ -250,11 +253,11 @@ def prepare_plot_export(
       name: asdict(getattr(resolved.presentation, name))
       for name in ("title_font", "axis_label_font", "tick_font", "legend_font")
     },
-    "font_fallback_diagnostics": [{
-      "code": "font_backend_actual_face_unavailable",
-      "severity": "info",
-      "message": "The renderer backend determines the actual fallback face.",
-    }],
+    "raster_font": {
+      "policy": "bundled_scalable",
+      "regular": bundled_font_filename(),
+      "bold": bundled_font_filename(bold=True),
+    },
     "gate_overlays": [dict(gate) for gate in gate_overlays],
     "scene": scene_model.to_mapping(),
     "scene_hash": scene_model.scene_hash(),
@@ -1289,14 +1292,16 @@ def _scene_gates(prepared: PreparedPlotExport) -> tuple[dict[str, Any], ...]:
 
 
 def _font(size: float, *, bold: bool = False) -> Any:
-  """Return a portable Pillow font without making font availability fatal."""
-  from PIL import ImageFont
+  """Return the deterministic bundled scalable Pillow font.
 
-  name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+  A fixed-size Pillow bitmap fallback would make high-DPI text much smaller
+  than lines and points. Treat missing/corrupt package resources as an export
+  failure instead of producing a visually invalid image.
+  """
   try:
-    return ImageFont.truetype(name, max(1, round(size)))
-  except OSError:
-    return ImageFont.load_default()
+    return load_bundled_font(max(1, round(size)), bold=bold)
+  except (BundledFontError, OSError) as exc:
+    raise PlotExportError(f"bundled raster font is unavailable: {exc}") from exc
 
 
 def _draw_raster_axes(

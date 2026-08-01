@@ -30,6 +30,12 @@ datas.extend(copy_metadata("flowdesk"))
 datas.extend([
   (str(project_root / "LICENSE"), "."),
   (str(project_root / "THIRD_PARTY_NOTICES.md"), "."),
+  (str(project_root / "src" / "flowdesk_core" / "assets" / "fonts" / "DejaVuSans.ttf"),
+   "flowdesk_core/assets/fonts"),
+  (str(project_root / "src" / "flowdesk_core" / "assets" / "fonts" / "DejaVuSans-Bold.ttf"),
+   "flowdesk_core/assets/fonts"),
+  (str(project_root / "src" / "flowdesk_core" / "assets" / "fonts" / "LICENSE-DejaVu.txt"),
+   "flowdesk_core/assets/fonts"),
 ])
 
 # Flowdesk uses Qt Widgets, Qt SVG, and pyqtgraph's 2-D plotting APIs.  Keep

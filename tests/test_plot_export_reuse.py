@@ -9,8 +9,9 @@ from dataclasses import asdict
 
 import numpy as np
 import pytest
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
+from flowdesk_core.font_resources import load_bundled_font
 from flowdesk_core.models import (
   BatchPlotExportSpec,
   PlotPresentationSpec,
@@ -61,6 +62,16 @@ def test_vertical_axis_label_keeps_the_complete_pillow_glyph_bbox() -> None:
   # top must not remove a strip from the rendered text image.
   assert alpha_bbox[2] - alpha_bbox[0] >= source_alpha_bbox[3] - source_alpha_bbox[1] - 1
   assert alpha_bbox[3] - alpha_bbox[1] >= source_alpha_bbox[2] - source_alpha_bbox[0] - 1
+
+
+def test_raster_export_uses_bundled_scalable_fonts() -> None:
+  regular = load_bundled_font(58)
+  bold = load_bundled_font(58, bold=True)
+
+  assert isinstance(regular, ImageFont.FreeTypeFont)
+  assert isinstance(bold, ImageFont.FreeTypeFont)
+  assert regular.getbbox("FITC B525-A")[3] - regular.getbbox("FITC B525-A")[1] > 30
+  assert bold.getbbox("FITC B525-A")[3] - bold.getbbox("FITC B525-A")[1] > 30
 
 
 def test_presentation_precedence_and_source_provenance() -> None:

@@ -34,6 +34,10 @@ jobs:
         shell: pwsh
         run: python -m pytest -m "not gui"
 
+      - name: Write native platform report
+        shell: pwsh
+        run: python tools/platform_report.py --output artifacts/platform-report.json
+
       - name: Run density runtime smoke benchmark
         shell: pwsh
         run: >-
@@ -100,6 +104,7 @@ jobs:
           path: |
             Flowdesk-Windows-x64.zip
             artifacts/package-smoke/
+            artifacts/platform-report.json
             artifacts/density-runtime-benchmark.json
             artifacts/prefetch-runtime-benchmark.json
             artifacts/batch-runtime-smoke/

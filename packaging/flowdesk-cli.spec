@@ -11,6 +11,12 @@ src_dir = project_root / "src"
 release_documents = [
   (str(project_root / "LICENSE"), "."),
   (str(project_root / "THIRD_PARTY_NOTICES.md"), "."),
+  (str(project_root / "src" / "flowdesk_core" / "assets" / "fonts" / "DejaVuSans.ttf"),
+   "flowdesk_core/assets/fonts"),
+  (str(project_root / "src" / "flowdesk_core" / "assets" / "fonts" / "DejaVuSans-Bold.ttf"),
+   "flowdesk_core/assets/fonts"),
+  (str(project_root / "src" / "flowdesk_core" / "assets" / "fonts" / "LICENSE-DejaVu.txt"),
+   "flowdesk_core/assets/fonts"),
 ]
 
 # The CLI has no GUI entry point.  These exclusions also keep optional test

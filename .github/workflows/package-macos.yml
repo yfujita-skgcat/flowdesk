@@ -32,6 +32,9 @@ jobs:
       - name: Run core tests
         run: python -m pytest -m "not gui"
 
+      - name: Write native platform report
+        run: python tools/platform_report.py --output artifacts/platform-report.json
+
       - name: Build native packages
         run: python tools/package.py build
 
@@ -67,4 +70,5 @@ jobs:
           path: |
             Flowdesk-macOS-arm64.zip
             artifacts/package-smoke/
+            artifacts/platform-report.json
           if-no-files-found: error

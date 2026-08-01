@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QStandardPaths
@@ -30,7 +31,7 @@ def _writable_location(
     temp_root = QStandardPaths.writableLocation(
       QStandardPaths.StandardLocation.TempLocation
     )
-    temporary = Path(temp_root or "/tmp") / "flowdesk" / fallback.name
+    temporary = Path(temp_root or tempfile.gettempdir()) / "flowdesk" / fallback.name
     temporary.mkdir(parents=True, exist_ok=True)
     return temporary
 

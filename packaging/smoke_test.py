@@ -119,6 +119,16 @@ def run_smoke(
   ]
   if not output_files:
     raise RuntimeError(f"package batch export did not create non-empty outputs: {batch_output}")
+  sidecars = [
+    path for path in batch_output.iterdir()
+    if path.name.endswith((".png.json", ".jpg.json"))
+  ]
+  if not sidecars:
+    raise RuntimeError("package batch export did not create raster sidecar metadata")
+  for sidecar in sidecars:
+    metadata = json.loads(sidecar.read_text(encoding="utf-8"))
+    if metadata.get("raster_font", {}).get("policy") != "bundled_scalable":
+      raise RuntimeError(f"raster export did not use bundled scalable font: {sidecar}")
 
 
 def main() -> int:

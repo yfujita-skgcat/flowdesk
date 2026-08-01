@@ -25,6 +25,16 @@ checked for every release build.
 
 ## Other runtime dependencies
 
+### DejaVu fonts bundled for raster export
+
+Flowdesk bundles the regular and bold DejaVu Sans TrueType fonts so PNG/JPEG
+export does not depend on fonts installed by the operating system. The font
+files are distributed under the Bitstream Vera font license; the full license
+text is included beside the font assets at
+`src/flowdesk_core/assets/fonts/LICENSE-DejaVu.txt` and in packaged artifacts.
+The DejaVu font project is available at
+<https://dejavu-fonts.github.io/>.
+
 The source distribution declares these dependencies in `pyproject.toml`.
 Their own licenses remain applicable when they are installed or bundled:
 

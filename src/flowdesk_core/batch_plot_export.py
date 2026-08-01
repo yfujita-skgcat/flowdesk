@@ -22,6 +22,7 @@ from flowdesk_core.execution_control import (
 )
 from flowdesk_core.models import AnnotationSpec, BatchPlotExportSpec
 from flowdesk_core.plot_export import resolve_export_canvas
+from flowdesk_core.portable_paths import portable_filename_key, portable_output_component
 
 
 class BatchPlotExportError(ValueError):
@@ -109,7 +110,7 @@ def plan_batch_plot_export(
     raise BatchPlotExportError(f"batch target references unknown samples: {unknown!r}")
   output_root = Path(output_dir)
   typed_annotations = _typed_annotations(annotations)
-  used: set[Path] = set()
+  used: set[str] = set()
   items: list[BatchPlotExportItem] = []
   for index, sample_id in enumerate(target_ids):
     sample = sample_by_id[sample_id]
@@ -138,13 +139,15 @@ def plan_batch_plot_export(
     diagnostic: str | None = None
     for fmt in spec.formats:
       path = output_root / f"{stem}.{fmt}"
-      if path in used:
+      path_key = portable_filename_key(path)
+      if path_key in used:
         if spec.collision_policy == "fail":
           diagnostic = f"output collision: {path}"
           continue
         if spec.collision_policy == "suffix":
           path = _unique_suffix(path, used)
-      used.add(path)
+          path_key = portable_filename_key(path)
+      used.add(path_key)
       paths.append(str(path))
     items.append(BatchPlotExportItem(
       sample_id, title, tuple(paths), "failed" if diagnostic else "planned", diagnostic,
@@ -595,8 +598,7 @@ def _source_ids(
 
 
 def _safe_slug(value: str) -> str:
-  value = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
-  return value.strip("._")
+  return portable_output_component(value)
 
 
 def _typed_annotations(values: Sequence[Any]) -> tuple[AnnotationSpec, ...]:
@@ -613,10 +615,10 @@ def _typed_annotations(values: Sequence[Any]) -> tuple[AnnotationSpec, ...]:
   return tuple(result)
 
 
-def _unique_suffix(path: Path, used: set[Path]) -> Path:
+def _unique_suffix(path: Path, used: set[str]) -> Path:
   index = 2
   candidate = path
-  while candidate in used:
+  while portable_filename_key(candidate) in used:
     candidate = path.with_name(f"{path.stem}-{index}{path.suffix}")
     index += 1
   return candidate

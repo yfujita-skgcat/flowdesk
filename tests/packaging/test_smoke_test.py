@@ -44,6 +44,7 @@ def test_smoke_runs_gui_and_cli_contracts(tmp_path: Path) -> None:
       "if \"%~1\"==\"inspect\" exit /b 0\n"
       "if \"%~1\"==\"batch-plot\" (mkdir \"%~6\" 2>nul & "
       "echo batch > \"%~6\\batch.png\" & "
+      "echo {\"raster_font\":{\"policy\":\"bundled_scalable\"}} > \"%~6\\batch.png.json\" & "
       "echo {} > \"%~6\\batch-export-id.batch.json\" & exit /b 0)\n"
       "(echo sample,count) > \"%~4\"\n"
     )
@@ -63,6 +64,7 @@ def test_smoke_runs_gui_and_cli_contracts(tmp_path: Path) -> None:
       "if [ \"$1\" = \"inspect\" ]; then exit 0; fi\n"
       "if [ \"$1\" = \"batch-plot\" ]; then mkdir -p \"$6\"; "
       "echo batch > \"$6/batch.png\"; "
+      "echo '{\"raster_font\":{\"policy\":\"bundled_scalable\"}}' > \"$6/batch.png.json\"; "
       "echo '{}' > \"$6/batch-export-id.batch.json\"; exit 0; fi\n"
       "echo 'sample,count' > \"$4\"\n"
     )

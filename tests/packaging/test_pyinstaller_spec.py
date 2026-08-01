@@ -20,6 +20,9 @@ def test_onedir_spec_has_native_build_entrypoint_and_collection() -> None:
   assert "collect_packages()" in text
   assert 'project_root / "LICENSE"' in text
   assert 'project_root / "THIRD_PARTY_NOTICES.md"' in text
+  assert 'DejaVuSans.ttf' in text
+  assert 'DejaVuSans-Bold.ttf' in text
+  assert 'LICENSE-DejaVu.txt' in text
 
 
 def test_collection_covers_runtime_and_native_dependencies() -> None:
@@ -81,7 +84,18 @@ def test_headless_cli_spec_is_a_console_artifact() -> None:
   assert "copy_metadata(\"flowdesk\")" in text
   assert 'project_root / "LICENSE"' in text
   assert 'project_root / "THIRD_PARTY_NOTICES.md"' in text
+  assert 'DejaVuSans.ttf' in text
+  assert 'DejaVuSans-Bold.ttf' in text
+  assert 'LICENSE-DejaVu.txt' in text
   assert "numpy.tests" in text
+
+
+def test_bundled_font_assets_and_package_data_are_declared() -> None:
+  assert (ROOT / "src" / "flowdesk_core" / "assets" / "fonts" / "DejaVuSans.ttf").is_file()
+  assert (ROOT / "src" / "flowdesk_core" / "assets" / "fonts" / "DejaVuSans-Bold.ttf").is_file()
+  assert (ROOT / "src" / "flowdesk_core" / "assets" / "fonts" / "LICENSE-DejaVu.txt").is_file()
+  pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+  assert '"assets/fonts/*.ttf"' in pyproject
 
 
 def test_third_party_notices_separates_dependency_licenses() -> None:
