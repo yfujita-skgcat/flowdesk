@@ -3183,6 +3183,9 @@ class MainWindow(QMainWindow):
                 "y_axis_label": y_label,
                 "view_range": view_range,
                 "plot_area": list(self._plot_widget.plot_area_margins()),
+                "title_baseline_y": self._plot_widget.title_baseline_y(
+                    (view.get("presentation", {}) or {}).get("title_font", {})
+                ),
                 "x_ticks": scene_tick_values.get("x_ticks", []),
                 "y_ticks": scene_tick_values.get("y_ticks", []),
                 "x_tick_policy": self._plot_widget.tick_policy(),
@@ -5639,6 +5642,7 @@ class MainWindow(QMainWindow):
             "x_transform_id": view.get("x_transform_id"),
             "y_transform_id": view.get("y_transform_id"),
             "view_range": display_scene.get("view_range"),
+            "title_baseline_y": display_scene.get("title_baseline_y"),
             "x_ticks": display_scene.get("x_ticks", ()),
             "y_ticks": display_scene.get("y_ticks", ()),
             "x_axis_label": display_scene.get("x_axis_label", ""),

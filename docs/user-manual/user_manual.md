@@ -14,11 +14,11 @@
 
 `Save Definition` は設定だけをprojectへ保存し、`Run Export` は設定を保存した後に出力先ディレクトリへ書き出します。出力先はprojectには保存されないため、projectを別の場所へ移動しても、実行時に新しい出力先を指定できます。projectが未保存の場合は、定義を保存または実行すると通常のproject保存ダイアログが開きます。キャンセルやproject保存失敗では、定義は変更されません。
 
-Batch の表示タイトルは GUI と同じ規則で解決されます。workspace に `sample_title` 注釈があればそれを優先し、なければ sample 名、FCS ファイル名の順に使用します。overlay を含む場合、active source のドットとタイトルは Plot Presentation の `single color`（およびそのフォント設定）を使用し、overlay source は保存された source 色を使用します。古い定義に残った active source の色は GUI の現在設定より優先されません。`overlay_sample_titles` では、現在表示されている全 source のタイトルを表示順に再解決するため、active source だけを保存した古い表示状態が overlay タイトルを隠すことはありません。
+Batch の表示タイトルは GUI と同じ規則で解決されます。workspace に `sample_title` 注釈があればそれを優先し、なければ sample 名、FCS ファイル名の順に使用します。overlay を含む場合、active source のドットとタイトルは Plot Presentation の `single color`（およびそのフォント設定）を使用し、overlay source は保存された source 色を使用します。古い定義に残った active source の色は GUI の現在設定より優先されません。`overlay_sample_titles` では、現在表示されている全 source のタイトルを表示順に再解決するため、active source だけを保存した古い表示状態が overlay タイトルを隠すことはありません。Batch内では対象全プロットの最大タイトル行数を先に求め、タイトル行数が少ないプロットにも同じタイトル帯とplot frame位置を適用します。
 
 実行中に `rendering: 0/N` のままでも、内部では出力ごとの準備や描画前処理を行っている場合があります。現在処理中のファイル名は進捗ダイアログのメッセージに表示されます。特に `hybrid_raster` の SVG/PDF は、高 DPI、イベント数、透明な点の重なりに応じてラスタ合成に時間がかかります。多数の出力を短時間で作る場合は、必要な DPI に下げる、またはベクター形式の scatter モードを選ぶことで処理時間とファイルサイズを抑えられます。いずれのモードでもイベント順、座標、ゲート、統計は変更されません。
 
-タイトルが複数行になる場合は、GUIとexportの論理レイアウトでタイトル用の上部領域を確保します。タイトル行がplot areaに重ならないようにplot rectangleの上端を必要に応じて下げます。フォントサイズはQtのポイント指定を出力canvasの96 DPI相当へ変換し、GUIとPNG/SVGの見かけの大きさを揃えます。フォントのアンチエイリアスや字形は出力形式・OSごとに異なる場合がありますが、タイトル行数、plot rectangle、軸・ゲートの論理座標は共通のscene/layoutから解決されます。ゲートの線種（solid/dashed/dotted/dashdot）とmajor/minor補助線の濃さもpresentation設定から各backendへ同じように反映されます。
+タイトルが複数行になる場合は、GUIとexportの論理レイアウトでタイトル用の上部領域を確保します。タイトル行がplot areaに重ならないようにplot rectangleの上端を必要に応じて下げます。GUI保存時にはQtのタイトルbaselineを測定して保存し、exportはその位置を基準にタイトルを配置します。フォントサイズはQtのポイント指定を出力canvasの96 DPI相当へ変換し、GUIとPNG/SVGの見かけの大きさを揃えます。フォントのアンチエイリアスや字形は出力形式・OSごとに異なる場合がありますが、タイトル行数、plot rectangle、軸・ゲートの論理座標は共通のscene/layoutから解決されます。ゲートの線種（solid/dashed/dotted/dashdot）とmajor/minor補助線の濃さもpresentation設定から各backendへ同じように反映されます。
 
 **UI 網羅性検査:** 静的検査では、literal `objectName` 325件と、action・button・checkbox・menu・tab・combo-box item の一意な表示文字列172件について、マニュアル内の記載漏れは0件だった。詳細は [coverage_report.md](coverage_report.md) を参照。動的生成 control と標準 Qt dialog button は、19.2節で別途確認している。
 

@@ -244,6 +244,46 @@ class PlotWidget(QWidget):
             pass
         return (60.0, 50.0, 20.0, 60.0)
 
+    def title_baseline_y(self, title_font: Mapping[str, Any] | None = None) -> float | None:
+        """Measure the first title baseline in logical canvas coordinates."""
+        try:
+            rect = self._plot_item.titleLabel.sceneBoundingRect()
+            top_left = self._glw.mapFromScene(rect.topLeft())
+            font_value = dict(title_font or {})
+            font = QFont(
+                str(font_value.get("family", "DejaVu Sans")),
+                round(float(font_value.get("size", 14.0))),
+            )
+            font.setBold(str(font_value.get("weight", "bold")) == "bold")
+            return float(top_left.y()) + float(QFontMetrics(font).ascent())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return None
+
+    def axis_label_anchors(self) -> dict[str, tuple[float, float]]:
+        """Measure GUI axis-label anchors in logical canvas coordinates."""
+        result: dict[str, tuple[float, float]] = {}
+        for name in ("bottom", "left"):
+            try:
+                label = self._plot_item.getAxis(name).label
+                if label is None or not label.isVisible():
+                    continue
+                rect = label.sceneBoundingRect()
+                top_left = self._glw.mapFromScene(rect.topLeft())
+                bottom_right = self._glw.mapFromScene(rect.bottomRight())
+                if name == "bottom":
+                    result["x_axis_label_anchor"] = (
+                        (float(top_left.x()) + float(bottom_right.x())) / 2.0,
+                        float(bottom_right.y()),
+                    )
+                else:
+                    result["y_axis_label_anchor"] = (
+                        float(top_left.x()),
+                        (float(top_left.y()) + float(bottom_right.y())) / 2.0,
+                    )
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                continue
+        return result
+
     def set_interaction_mode(self, mode: InteractionMode) -> None:
         """Set mutually exclusive display interaction mode."""
         if mode not in {"pan", "select", "gate"}:

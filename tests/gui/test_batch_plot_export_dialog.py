@@ -168,6 +168,20 @@ def test_batch_plot_dialog_loads_saved_definition(qapp) -> None:
     dialog.deleteLater()
 
 
+def test_batch_plot_dialog_reloads_saved_aspect_setting(qapp) -> None:
+  dialog = BatchPlotExportDialog(
+    [{"id": "saved", "name": "Square", "aspect_1_to_1": True}],
+    [], [], [], "main-view",
+  )
+  try:
+    dialog._definition.setCurrentIndex(1)
+    assert dialog._aspect.isChecked() is True
+    assert dialog._height.isEnabled() is False
+    assert dialog.definition_mapping()["aspect_1_to_1"] is True
+  finally:
+    dialog.deleteLater()
+
+
 def test_batch_plot_dialog_uses_gui_canvas_dimensions_and_preserves_them(qapp) -> None:
   dialog = BatchPlotExportDialog(
     [{"id": "saved", "name": "Saved", "width": 1200, "height": 900}],

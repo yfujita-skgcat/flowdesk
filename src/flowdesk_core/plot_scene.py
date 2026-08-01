@@ -27,6 +27,8 @@ class PlotScene:
   x_ticks: tuple[dict[str, Any], ...] = ()
   y_ticks: tuple[dict[str, Any], ...] = ()
   title_lines: tuple[str, ...] = ()
+  layout_title_line_count: int | None = None
+  title_baseline_y: float | None = None
   title_colors: tuple[str, ...] = ()
   x_axis_label: str = ""
   y_axis_label: str = ""
@@ -78,6 +80,14 @@ class PlotScene:
       x_ticks=tuple(dict(tick) for tick in raw.get("x_ticks", ()) if isinstance(tick, Mapping)),
       y_ticks=tuple(dict(tick) for tick in raw.get("y_ticks", ()) if isinstance(tick, Mapping)),
       title_lines=tuple(str(item) for item in raw.get("title_lines", ()) if str(item)),
+      layout_title_line_count=(
+        None if raw.get("layout_title_line_count") is None
+        else max(1, int(raw["layout_title_line_count"]))
+      ),
+      title_baseline_y=(
+        None if raw.get("title_baseline_y") is None
+        else float(raw["title_baseline_y"])
+      ),
       title_colors=tuple(str(item) for item in raw.get("title_colors", ())),
       x_axis_label=str(raw.get("x_axis_label", "")),
       y_axis_label=str(raw.get("y_axis_label", "")),
@@ -100,6 +110,8 @@ class PlotScene:
       "x_ticks": [dict(tick) for tick in self.x_ticks],
       "y_ticks": [dict(tick) for tick in self.y_ticks],
       "title_lines": list(self.title_lines),
+      "layout_title_line_count": self.layout_title_line_count,
+      "title_baseline_y": self.title_baseline_y,
       "title_colors": list(self.title_colors),
       "x_axis_label": self.x_axis_label,
       "y_axis_label": self.y_axis_label,
@@ -214,6 +226,9 @@ def resolve_plot_layout(
   right = max(0.0, float(raw_right))
   bottom = max(0.0, float(raw_bottom))
   lines = tuple(line for line in scene.title_lines if str(line))
+  layout_line_count = max(
+    len(lines), int(scene.layout_title_line_count or 0)
+  )
   font_size = _font_size(presentation)
   line_height = max(18.0, font_size * 1.45)
   tick_size = _font_size({"title_font": (presentation or {}).get("tick_font", {})})
@@ -222,7 +237,10 @@ def resolve_plot_layout(
   # four-pixel band padding was sufficient for the old unscaled export fonts
   # but allowed the final bold title line to touch the plot frame after the
   # Qt point-to-pixel conversion.
-  title_height = (line_height * len(lines) + 14.0) if include_title and lines else 0.0
+  title_height = (
+    line_height * layout_line_count + 14.0
+    if include_title and layout_line_count else 0.0
+  )
   title_top_padding = 10.0 if title_height else 0.0
   top = max(0.0, float(raw_top))
   if title_height:
@@ -235,9 +253,12 @@ def resolve_plot_layout(
   title_block_height = max(0.0, top - title_top_padding)
   title_block = (0.0, 0.0, float(width), title_block_height)
   title_baselines = tuple(
-    title_block_height - line_height * (len(lines) - index - 0.35)
-    for index in range(len(lines))
+    title_block_height - line_height * (layout_line_count - index - 0.35)
+    for index in range(layout_line_count)
   )
+  if scene.title_baseline_y is not None and title_baselines:
+    baseline_shift = float(scene.title_baseline_y) - title_baselines[0]
+    title_baselines = tuple(value + baseline_shift for value in title_baselines)
   # Keep tick labels close to the frame; the previous full tick-font-size
   # plus nine-pixel offset was tuned for the old smaller export glyphs.
   x_tick_label_y = top + plot_height + tick_size * 0.6 + 4.0

@@ -349,12 +349,12 @@ class BatchPlotExportDialog(QDialog):
     self._update_resolution_preview()
 
   def _load_selected_definition(self, _index: int) -> None:
-    # Canvas dimensions and aspect are session-level draft settings. Keep them
-    # when switching definitions so selecting an old definition cannot resize
-    # the dialog's output canvas unexpectedly.
+    # Canvas dimensions remain session-level draft settings so selecting an old
+    # definition cannot resize the dialog's output canvas unexpectedly.  The
+    # 1:1 aspect flag, however, is part of the persisted definition and must be
+    # restored with the other export options.
     canvas_width = self._width.value()
     canvas_height = self._height.value()
-    aspect_1_to_1 = self._aspect.isChecked()
     definition_id = str(self._definition.currentData() or "")
     value = next(
       (item for item in self._definitions if str(item.get("id", "")) == definition_id),
@@ -426,7 +426,7 @@ class BatchPlotExportDialog(QDialog):
     )
     resolution_index = self._resolution_mode.findData(defaults["raster_resolution_mode"])
     self._resolution_mode.setCurrentIndex(max(0, resolution_index))
-    self._aspect.setChecked(aspect_1_to_1)
+    self._aspect.setChecked(bool(defaults["aspect_1_to_1"]))
     layout_index = self._layout_policy.findData(defaults["layout_policy"])
     if layout_index >= 0:
       self._layout_policy.setCurrentIndex(layout_index)

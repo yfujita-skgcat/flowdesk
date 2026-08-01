@@ -306,7 +306,7 @@ def write_plot_svg(
     title_colors = prepared.scene.title_colors
     for index, line in enumerate(title_lines):
       color = title_colors[index] if index < len(title_colors) else "#000000"
-      baseline = layout.title_baselines[index]
+      baseline = _title_baseline(layout, index, len(title_lines))
       elements.append(
         f'<text x="{width / 2:g}" y="{baseline:g}" text-anchor="middle" '
         f'fill="{escape(str(color))}" font-family="{escape(selected.title_font.family)}" '
@@ -1217,6 +1217,14 @@ def _title_lines(
   return _scene_with_selected_title(prepared, selected).title_lines
 
 
+def _title_baseline(
+  layout: PlotLayoutSpec, line_index: int, line_count: int,
+) -> float:
+  """Align shorter per-sample titles to the bottom of a shared title band."""
+  offset = max(0, len(layout.title_baselines) - line_count)
+  return layout.title_baselines[offset + line_index]
+
+
 def prepare_vector_render_cache(
   prepared: PreparedPlotExport,
   selected: PlotPresentationSpec,
@@ -1398,7 +1406,7 @@ def _draw_raster_text(
     title_font = _font(_font_px(selected.title_font.size) * scale, bold=selected.title_font.weight == "bold")
     for index, line in enumerate(title_lines):
       color = str(title_colors[index]) if index < len(title_colors) else "#b8c7ff"
-      _draw_centered(draw, width // 2, round(layout.title_baselines[index] * scale), line,
+      _draw_centered(draw, width // 2, round(_title_baseline(layout, index, len(title_lines)) * scale), line,
                      title_font, _rgb(color) + (255,))
   foreground = _foreground_rgba(selected.background_color)
   tick_font = _font(_font_px(selected.tick_font.size) * scale, bold=selected.tick_font.weight == "bold")
@@ -1569,7 +1577,7 @@ def _pdf_scene_text(
       x = (page_width - len(text) * size * 0.55) / 2
       # PDF text coordinates use the baseline; Pillow's raster renderer
       # receives the top-left text coordinate.
-      y = page_height - layout.title_baselines[index] - size * 0.15
+      y = page_height - _title_baseline(layout, index, len(title_lines)) - size * 0.15
       commands.append(f"BT /F2 {size:g} Tf {red:g} {green:g} {blue:g} rg {x:g} {y:g} Td ({text}) Tj ET")
   foreground = _foreground_rgba(selected.background_color)
   red, green, blue = (value / 255 for value in foreground[:3])

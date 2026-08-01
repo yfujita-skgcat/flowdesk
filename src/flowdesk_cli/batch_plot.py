@@ -426,6 +426,16 @@ def batch_plot_command(
     ] = {}
     rendered_format_counts: dict[str, int] = {}
     presentation_template = dict(view.get("presentation", {}))
+    # Reserve one common title band for the whole batch.  The visible title
+    # text remains sample-specific, but frame positions stay comparable when
+    # one target has two lines and another has three.
+    batch_title_line_count = 1
+    if presentation_template.get("title_mode", "overlay_sample_titles") == "overlay_sample_titles":
+      batch_title_line_count = max(
+        (1 + len(overlay_ids_by_sample.get(sample_id, ()))
+         for sample_id in target_sample_ids),
+        default=1,
+      )
     persisted_source_styles: dict[str, dict[str, Any]] = {
       str(style.get("source_id")): dict(style)
       for style in presentation_template.get("source_styles", ())
@@ -1055,6 +1065,8 @@ def batch_plot_command(
         )),
       )
       scene = {
+        "layout_title_line_count": batch_title_line_count,
+        "title_baseline_y": display_scene.get("title_baseline_y"),
         "x_ticks": x_ticks,
         "y_ticks": y_ticks,
         "plot_area": display_scene.get(
