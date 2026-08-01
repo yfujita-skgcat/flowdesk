@@ -127,6 +127,25 @@ def test_sample_sheet_selected_rows_copy_as_spreadsheet_tsv(qapp) -> None:
     dialog.reject()
 
 
+def test_sample_sheet_copy_can_select_an_arbitrary_cell_range(qapp) -> None:
+  dialog = SampleSheetDialog(
+    [{"id": "s1", "name": "Control", "path": "/tmp/control.fcs"}], [],
+  )
+  try:
+    selection = dialog._table.selectionModel()
+    selection.select(
+      dialog._proxy.index(0, 2),
+      QItemSelectionModel.SelectionFlag.Select,
+    )
+    selection.select(
+      dialog._proxy.index(0, 3),
+      QItemSelectionModel.SelectionFlag.Select,
+    )
+    assert dialog._table.copy_selected_rows() == "Control\tControl\n"
+  finally:
+    dialog.reject()
+
+
 def test_sample_sheet_exposes_workspace_columns_and_preserves_fcs_read_only(qapp) -> None:
   model = SampleSheetModel(
     [{"id": "s1", "name": "Sample", "path": "/tmp/sample.fcs"}],

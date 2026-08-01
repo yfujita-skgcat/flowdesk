@@ -57,18 +57,18 @@ class SampleSheetTableView(QTableView):
     model = self.model()
     if selection_model is None or model is None:
       return ""
-    rows = sorted({index.row() for index in selection_model.selectedRows()})
-    if not rows:
-      rows = sorted({index.row() for index in selection_model.selectedIndexes()})
-    if not rows:
+    indexes = selection_model.selectedIndexes()
+    if not indexes:
       return ""
+    rows = sorted({index.row() for index in indexes})
+    columns = sorted({index.column() for index in indexes})
     output = io.StringIO(newline="")
     writer = csv.writer(output, delimiter="\t", lineterminator="\n")
     for row in rows:
       writer.writerow([
         "" if (value := model.data(model.index(row, column), Qt.ItemDataRole.DisplayRole)) is None
         else str(value)
-        for column in range(model.columnCount())
+        for column in columns
       ])
     text = output.getvalue()
     QApplication.clipboard().setText(text)
@@ -381,7 +381,6 @@ class SampleSheetDialog(QDialog):
     self._proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
     self._table.setModel(self._proxy)
     self._table.setAlternatingRowColors(True)
-    self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
     self._table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
     self._table.setSortingEnabled(True)
     self._table.horizontalHeader().setSortIndicatorShown(True)

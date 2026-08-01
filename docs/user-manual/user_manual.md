@@ -16,7 +16,7 @@
 
 Batch の表示タイトルは GUI と同じ規則で解決されます。workspace に `sample_title` 注釈があればそれを優先し、なければ sample 名、FCS ファイル名の順に使用します。overlay を含む場合、active source のドットとタイトルは Plot Presentation の `single color`（およびそのフォント設定）を使用し、overlay source は保存された source 色を使用します。古い定義に残った active source の色は GUI の現在設定より優先されません。`overlay_sample_titles` では、現在表示されている全 source のタイトルを表示順に再解決するため、active source だけを保存した古い表示状態が overlay タイトルを隠すことはありません。Batch内では対象全プロットの最大タイトル行数を先に求め、タイトル行数が少ないプロットにも同じタイトル帯とplot frame位置を適用します。
 
-Sample Sheetでは、表の行を選択して `Ctrl+C`（macOSでは `Command+C`）を押すと、表示中の全列をTSV形式でクリップボードへコピーできます。Google SheetsやExcelへ貼り付けると、行・列がそのままセルに分かれます。コピーは読み取り専用で、sample titleやannotationを変更しません。
+Sample Sheetでは、表の任意のセル範囲を選択して `Ctrl+C`（macOSでは `Command+C`）を押すと、選択範囲をTSV形式でクリップボードへコピーできます。行全体を選択した場合は表示中の全列が対象です。Google SheetsやExcelへ貼り付けると、行・列がそのままセルに分かれます。コピーは読み取り専用で、sample titleやannotationを変更しません。
 
 実行中に `rendering: 0/N` のままでも、内部では出力ごとの準備や描画前処理を行っている場合があります。現在処理中のファイル名は進捗ダイアログのメッセージに表示されます。特に `hybrid_raster` の SVG/PDF は、高 DPI、イベント数、透明な点の重なりに応じてラスタ合成に時間がかかります。多数の出力を短時間で作る場合は、必要な DPI に下げる、またはベクター形式の scatter モードを選ぶことで処理時間とファイルサイズを抑えられます。いずれのモードでもイベント順、座標、ゲート、統計は変更されません。
 

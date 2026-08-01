@@ -7,8 +7,9 @@ Google Sheets, Excel, or another tabular editor with one value per cell.
 
 ## Rules
 
-- Copy selected rows from the proxy view in their current visual order.
-- Include every Sample Sheet column, including workspace annotation columns.
+- Copy the selected cell rectangle from the proxy view in its current visual
+  order. A row selection therefore includes every Sample Sheet column.
+- Include selected workspace annotation columns as well as the base columns.
 - Emit tab-separated text with one row per line; quote cells containing tabs or
   newlines so their contents remain in one spreadsheet cell.
 - Copying is read-only and must not modify annotations, sorting, filtering, or
