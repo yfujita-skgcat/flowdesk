@@ -11,7 +11,7 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -68,6 +68,38 @@ class _SampleInfo:
         self.info = info
         self.fingerprint = fingerprint
         self.status = status
+
+
+class _SampleListWidget(QListWidget):
+  """List widget exposing keyboard and internal drag reordering."""
+
+  order_changed = Signal(list)
+  move_requested = Signal(int)
+
+  def keyPressEvent(self, event) -> None:
+    if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+      if event.key() == Qt.Key.Key_Up:
+        self.move_requested.emit(-1)
+        event.accept()
+        return
+      if event.key() == Qt.Key.Key_Down:
+        self.move_requested.emit(1)
+        event.accept()
+        return
+    super().keyPressEvent(event)
+
+  def dropEvent(self, event) -> None:
+    before = [
+      str(self.item(index).data(Qt.ItemDataRole.UserRole))
+      for index in range(self.count())
+    ]
+    super().dropEvent(event)
+    after = [
+      str(self.item(index).data(Qt.ItemDataRole.UserRole))
+      for index in range(self.count())
+    ]
+    if before != after:
+      self.order_changed.emit(after)
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +400,48 @@ class SampleBrowser(QWidget):
         """Register a callback invoked after a reconnect is accepted."""
         self._reconnected_callbacks.append(callback)
 
+    def on_samples_reordered(self, callback: Any) -> None:
+        """Register a callback after the canonical sample order changes."""
+        self._reordered_callbacks.append(callback)
+
+    def move_selected_sample(self, delta: int) -> bool:
+        """Move only the current sample by one canonical-order position."""
+        selected = self.selected_sample()
+        if selected is None or delta not in {-1, 1}:
+            return False
+        index = next(
+            (index for index, sample in enumerate(self._samples)
+             if sample.id == selected.id), -1
+        )
+        target = index + delta
+        if index < 0 or not (0 <= target < len(self._samples)):
+            return False
+        order = [sample.id for sample in self._samples]
+        order[index], order[target] = order[target], order[index]
+        return self.reorder_samples(order)
+
+    def reorder_samples(self, ordered_ids: list[str]) -> bool:
+        """Apply a complete stable-ID order and notify the owning window."""
+        current_ids = [sample.id for sample in self._samples]
+        if sorted(ordered_ids) != sorted(current_ids) or ordered_ids == current_ids:
+            return False
+        selected = self.selected_sample()
+        selected_id = selected.id if selected is not None else None
+        selected_ids = {
+            str(item.data(Qt.ItemDataRole.UserRole))
+            for item in self._list_widget.selectedItems()
+        }
+        by_id = {sample.id: sample for sample in self._samples}
+        self._samples = [by_id[sample_id] for sample_id in ordered_ids]
+        self._selected_index = -1
+        self._rebuild_sample_list(
+            selected_id=selected_id,
+            selected_ids=selected_ids,
+        )
+        for callback in self._reordered_callbacks:
+            invoke_callback(callback, list(ordered_ids))
+        return True
+
     # -- private ------------------------------------------------------------
 
     def _add_single_file(self, path: str) -> bool:
@@ -497,16 +571,22 @@ class SampleBrowser(QWidget):
             else:
                 sample.status = "channel mismatch"
 
-    def _rebuild_sample_list(self, selected_id: str | None = None) -> None:
+    def _rebuild_sample_list(
+        self,
+        selected_id: str | None = None,
+        selected_ids: set[str] | None = None,
+    ) -> None:
         if selected_id is None and self._list_widget.currentItem() is not None:
             selected_id = str(self._list_widget.currentItem().data(Qt.UserRole))
         labels = {"match": "✓", "order differs": "↕", "channel mismatch": "≠",
                   "fingerprint mismatch": "!", "missing": "?"}
         self._list_widget.blockSignals(True)
         self._list_widget.clear()
+        selected_ids = selected_ids or ({selected_id} if selected_id else set())
         for sample in self._samples:
             item = QListWidgetItem()
             item.setData(Qt.UserRole, sample.id)
+            item.setSelected(sample.id in selected_ids)
             display_name = self._display_names.get(sample.id, sample.name)
             item.setToolTip(
                 f"{display_name} ({sample.name})\n{sample.path}\n"
@@ -791,8 +871,12 @@ class SampleBrowser(QWidget):
     def _sort_samples(self) -> None:
         selected = self.selected_sample()
         key = self._sort_combo.currentData()
+        if key == "manual":
+            return
         self._samples.sort(key=lambda sample: str(getattr(sample, key, "")).casefold())
         self._rebuild_sample_list(selected.id if selected is not None else None)
+        for callback in self._reordered_callbacks:
+            invoke_callback(callback, [sample.id for sample in self._samples])
 
     # -- UI construction -----------------------------------------------------
 
@@ -801,13 +885,20 @@ class SampleBrowser(QWidget):
         self._removed_callbacks: list[Any] = []
         self._batch_removed_callbacks: list[Any] = []
         self._reconnected_callbacks: list[Any] = []
+        self._reordered_callbacks: list[Any] = []
         self._overlay_callbacks: list[Any] = []
         self.setObjectName("sampleBrowser")
 
-        self._list_widget = QListWidget()
+        self._list_widget = _SampleListWidget()
         self._list_widget.setObjectName("sampleList")
         self._list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list_widget.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self._list_widget.setDragEnabled(True)
+        self._list_widget.setAcceptDrops(True)
+        self._list_widget.setDropIndicatorShown(True)
+        self._list_widget.setDragDropMode(QAbstractItemView.InternalMove)
+        self._list_widget.order_changed.connect(self.reorder_samples)
+        self._list_widget.move_requested.connect(self.move_selected_sample)
         self._list_widget.currentRowChanged.connect(self._on_list_selection_changed)
         self._list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list_widget.customContextMenuRequested.connect(
@@ -840,6 +931,7 @@ class SampleBrowser(QWidget):
         self._filter_edit.textChanged.connect(self._apply_filter)
         self._sort_combo = QComboBox()
         self._sort_combo.setObjectName("sampleSortCombo")
+        self._sort_combo.addItem("Manual", "manual")
         self._sort_combo.addItem("Name", "name")
         self._sort_combo.addItem("Path", "path")
         self._sort_combo.addItem("Status", "status")

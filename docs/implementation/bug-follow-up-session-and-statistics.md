@@ -190,3 +190,23 @@ saved `.flowdesk` bundle.  Do not remove their functionality.
 - Labels/tooltips distinguish FCS import from Open Project.
 - Add-directory/add-files preserve existing samples and produce the documented
   dirty-state behavior.
+
+## Implementation verification (2026-08-02)
+
+- Increment 1 is implemented in `SampleBrowser` with stable-ID manual ordering,
+  internal drag/drop, `Ctrl+Up`/`Ctrl+Down`, and a `MainWindow` dirty-state
+  callback.  Reordering does not invalidate scientific Results.
+- Increment 2 is implemented in `StatisticsEditorDialog` with a visible
+  parameter-status explanation and regression coverage for count/frequency and
+  value metrics.  Invalid catalog entries remain disabled.
+- Increment 3 is implemented with `File -> Close Project`; it cancels project
+  workers without shutting down reusable schedulers, clears project state, and
+  creates a fresh unsaved session identity.  Dirty-state confirmation uses the
+  existing Save/Discard/Cancel behavior.
+- Increment 4 retains both FCS import paths and renames their visible actions to
+  `Add FCS Directory...`, `Add FCS Files...`, and `Add FCS Samples`, with
+  tooltips distinguishing them from `Open Project...`.
+- Focused reorder, statistics, Close Project, and ruff checks pass.  A broader
+  Qt GUI suite still has an existing intermittent native Qt teardown
+  segmentation fault in an unrelated batch-export cancellation test; rerun
+  that suite on the target CI platforms before release.

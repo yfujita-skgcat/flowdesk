@@ -113,6 +113,10 @@ def test_value_metric_enables_parameter_selector(qapp) -> None:
   assert not dialog._parameter_combo.isEnabled()
   dialog._metric_combo.setCurrentText("mean")
   assert dialog._parameter_combo.isEnabled()
+  assert "Select a valid" in dialog._parameter_status_label.text()
+  dialog._metric_combo.setCurrentText("count")
+  assert not dialog._parameter_combo.isEnabled()
+  assert "does not use a parameter" in dialog._parameter_status_label.text()
 
 
 def test_statistics_editor_persists_population_scope_and_compute_flag(qapp) -> None:

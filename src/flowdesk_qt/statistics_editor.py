@@ -276,6 +276,7 @@ class StatisticsEditorDialog(QDialog):
             if new_statistic_defaults is not None else None
         )
         self._current_row = -1
+        self._last_valid_parameter_id = ""
         self._target_population_ids: tuple[str, ...] = ()
         self._loading = False
         self._undo_history: list[list[dict[str, Any]]] = []
@@ -395,6 +396,10 @@ class StatisticsEditorDialog(QDialog):
             if item is not None:
                 item.setEnabled(enabled)
 
+        self._parameter_status_label = QLabel("")
+        self._parameter_status_label.setObjectName("statisticParameterStatusLabel")
+        self._parameter_status_label.setWordWrap(True)
+
         self._metric_combo = QComboBox()
         self._metric_combo.setObjectName("statisticMetricCombo")
         self._metric_combo.addItems(_METRICS)
@@ -436,6 +441,7 @@ class StatisticsEditorDialog(QDialog):
         form.addRow("Name:", self._name_edit)
         form.addRow("Population targets:", population_row)
         form.addRow("Parameter:", self._parameter_combo)
+        form.addRow("Parameter status:", self._parameter_status_label)
         form.addRow("Metric:", self._metric_combo)
         form.addRow("Value domain:", self._source_combo)
         form.addRow("Transform:", self._transform_combo)
@@ -476,6 +482,9 @@ class StatisticsEditorDialog(QDialog):
         self._redo_button.clicked.connect(self._redo)
         self._metric_combo.currentTextChanged.connect(self._on_metric_changed)
         self._metric_combo.currentIndexChanged.connect(self._on_metric_changed)
+        self._parameter_combo.currentIndexChanged.connect(
+            lambda _index: self._update_parameter_status()
+        )
         self._source_combo.currentTextChanged.connect(self._on_source_changed)
         self._population_scope_combo.currentIndexChanged.connect(
             self._on_population_scope_changed
@@ -747,10 +756,61 @@ class StatisticsEditorDialog(QDialog):
         self._percentile_q_label.setVisible(is_percentile)
         self._percentile_q_edit.setVisible(is_percentile)
 
-        # For count/frequency metrics, disable parameter selection
-        self._parameter_combo.setEnabled(is_value_metric)
-        if not is_value_metric:
+        current_parameter = str(self._parameter_combo.currentData() or "")
+        if is_value_metric:
+            if self._parameter_item_enabled(current_parameter):
+                self._last_valid_parameter_id = current_parameter
+            elif self._parameter_item_enabled(self._last_valid_parameter_id):
+                self._parameter_combo.setCurrentIndex(
+                    self._parameter_combo.findData(self._last_valid_parameter_id)
+                )
+            self._parameter_combo.setEnabled(self._has_valid_parameter())
+        else:
+            if current_parameter:
+                self._last_valid_parameter_id = current_parameter
             self._parameter_combo.setCurrentIndex(0)
+            self._parameter_combo.setEnabled(False)
+        self._update_parameter_status(is_value_metric)
+
+    def _parameter_item_enabled(self, parameter_id: str) -> bool:
+        if not parameter_id:
+            return False
+        index = self._parameter_combo.findData(parameter_id)
+        if index < 0:
+            return False
+        item = self._parameter_combo.model().item(index)
+        return item is not None and item.isEnabled()
+
+    def _has_valid_parameter(self) -> bool:
+        model = self._parameter_combo.model()
+        return any(
+            index > 0 and model.item(index) is not None and model.item(index).isEnabled()
+            for index in range(self._parameter_combo.count())
+        )
+
+    def _update_parameter_status(self, is_value_metric: bool | None = None) -> None:
+        if is_value_metric is None:
+            is_value_metric = self._metric_combo.currentText() in _VALUE_METRICS
+        if not is_value_metric:
+            self._parameter_status_label.setText(
+                "This metric counts events or frequency; it does not use a parameter."
+            )
+            return
+        if not self._has_valid_parameter():
+            self._parameter_status_label.setText(
+                "No valid parameters are available. Check acquired channels and "
+                "derived-parameter diagnostics."
+            )
+            return
+        current = str(self._parameter_combo.currentData() or "")
+        if current and not self._parameter_item_enabled(current):
+            self._parameter_status_label.setText(
+                "The saved parameter is unavailable; choose an enabled parameter."
+            )
+            return
+        self._parameter_status_label.setText(
+            "Select a valid acquired or derived parameter for this value metric."
+        )
 
     def _on_source_changed(self) -> None:
         self._transform_combo.setEnabled(

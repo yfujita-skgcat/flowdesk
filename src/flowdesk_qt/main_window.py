@@ -663,15 +663,23 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = menubar.addMenu("&File")
 
-        self.action_open_directory = QAction("&Open Directory...", self)
+        self.action_open_directory = QAction("&Add FCS Directory...", self)
         self.action_open_directory.setObjectName("actionOpenDirectory")
         self.action_open_directory.setShortcut(QKeySequence.Open)
+        self.action_open_directory.setToolTip(
+            "Add FCS samples from one directory to the current session"
+        )
+        self.action_open_directory.setStatusTip(self.action_open_directory.toolTip())
         self.action_open_directory.triggered.connect(self._on_open_directory)
         file_menu.addAction(self.action_open_directory)
 
-        self.action_open_files = QAction("Open &Files...", self)
+        self.action_open_files = QAction("Add FCS &Files...", self)
         self.action_open_files.setObjectName("actionOpenFiles")
         self.action_open_files.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        self.action_open_files.setToolTip(
+            "Add selected FCS files to the current session"
+        )
+        self.action_open_files.setStatusTip(self.action_open_files.toolTip())
         self.action_open_files.triggered.connect(self._on_open_files)
         file_menu.addAction(self.action_open_files)
 
@@ -679,6 +687,11 @@ class MainWindow(QMainWindow):
         self.action_open_project.setObjectName("actionOpenProject")
         self.action_open_project.triggered.connect(self._on_open_project)
         file_menu.addAction(self.action_open_project)
+
+        self.action_close_project = QAction("&Close Project", self)
+        self.action_close_project.setObjectName("actionCloseProject")
+        self.action_close_project.triggered.connect(self._on_close_project)
+        file_menu.addAction(self.action_close_project)
 
         self.action_save_project = QAction("&Save Project", self)
         self.action_save_project.setObjectName("actionSaveProject")
@@ -937,7 +950,12 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        action_open = QAction("Open Samples", self)
+        action_open = QAction("Add FCS Samples", self)
+        action_open.setObjectName("actionAddFcsSamples")
+        action_open.setToolTip(
+            "Add FCS samples from a directory to the current session"
+        )
+        action_open.setStatusTip(action_open.toolTip())
         action_open.triggered.connect(self._on_open_directory)
         toolbar.addAction(action_open)
 
@@ -1244,6 +1262,7 @@ class MainWindow(QMainWindow):
 
         # When a sample is removed, clean up its associated state
         self._sample_browser.on_samples_removed(self._on_samples_removed)
+        self._sample_browser.on_samples_reordered(self._on_samples_reordered)
         self._sample_browser.on_sample_reconnected(self._on_sample_reconnected)
         self._sample_browser.on_overlay_changed(self._on_manual_overlay_changed)
 
@@ -1466,6 +1485,11 @@ class MainWindow(QMainWindow):
             f"Removed {len(samples)} sample" + ("s" if len(samples) != 1 else "")
         )
         self._project_dirty = True
+
+    def _on_samples_reordered(self, ordered_ids: list[str]) -> None:
+        """Persist user sample order without invalidating scientific Results."""
+        self._project_dirty = True
+        self._update_status(f"Sample order updated ({len(ordered_ids)} samples)")
 
     def _load_sample_events(self, sample: _SampleInfo) -> None:
         """Load FCS event data for a sample."""
@@ -3373,13 +3397,12 @@ class MainWindow(QMainWindow):
             self._pending_results_export = None
         self._update_status("Pipeline cancelled; previous Results are stale")
 
-    def closeEvent(self, event: QCloseEvent) -> None:
-        """Do not destroy the window while its pipeline thread is running."""
-        self._preview_scheduler.shutdown()
+    def _cancel_project_workers(self) -> None:
+        """Cancel asynchronous work without shutting down reusable schedulers."""
         self._sample_prefetch_timer.stop()
-        self._sample_load_scheduler.shutdown()
-        self._processed_display_scheduler.shutdown()
-        self._plot_widget.shutdown_density_scheduler()
+        self._sample_load_scheduler.cancel_pending()
+        self._processed_display_scheduler.cancel_pending()
+        self._preview_scheduler.cancel_pending()
         worker = self._worker
         if worker is not None and worker.isRunning():
             worker.request_cancel()
@@ -3392,6 +3415,142 @@ class MainWindow(QMainWindow):
             batch_worker.wait()
         if batch_worker is not None:
             self._release_batch_plot_worker(batch_worker)
+
+    def _confirm_close_project(self) -> bool:
+        """Return whether a dirty project may be discarded or saved."""
+        if not self._project_dirty:
+            return True
+        choice = QMessageBox.warning(
+            self,
+            "Close Project",
+            "The current project has unsaved changes. Save before closing?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if choice == QMessageBox.StandardButton.Save:
+            return self._on_save_project_result()
+        return choice == QMessageBox.StandardButton.Discard
+
+    def _on_save_project_result(self) -> bool:
+        """Save the current project and report success for lifecycle callers."""
+        if self._project_path is None:
+            return self._save_project_interactively()
+        try:
+            self._save_project_to_path(self._project_path)
+            self._update_status(f"Project saved to {self._project_path}")
+            return True
+        except Exception as exc:
+            logger.error("Project save failed: %s", exc)
+            QMessageBox.critical(self, "Project Save Error", str(exc))
+            return False
+
+    def _clear_project_session(self) -> None:
+        """Clear project-owned state while keeping the main window reusable."""
+        self._cancel_project_workers()
+        self._plot_widget.clear_plot()
+        self._sample_browser.clear_samples()
+        self._event_data.clear()
+        self._sample_data.clear()
+        self._clear_processed_display_cache()
+        self._prefetched_sample_ids.clear()
+        self._plot_widget.set_marginal_enabled(False)
+        self._plot_toolbar.set_marginal_enabled(False)
+        self._active_sample_id = None
+        self._displayed_sample_id = None
+        self._gate_editor.set_current_sample_id(None)
+        self._channel_names = []
+        self._parameter_catalog = ()
+        self._channel_metadata.set_sample(None)
+        self._channel_metadata.set_parameter_catalog(())
+        self._channel_selector.set_channels([])
+        self._gate_editor.set_gates([], notify=False)
+        self._gate_editor.mark_undo_clean()
+        self._derived_parameters = []
+        self._compensation_matrices = []
+        self._compensation_bindings = []
+        self._compensation_calculations = []
+        self._transforms = []
+        self._statistics = []
+        self._batch_plot_exports = []
+        self._plot_views = []
+        self._overlays = []
+        self._overlay_undo_stack = UndoStack(
+            {"plot_views": []}, on_changed=self._on_overlay_state_changed
+        )
+        self._analysis_settings_undo_stack = None
+        self._backgating_specs = []
+        self._auto_gate_templates = []
+        self._auto_gate_fits = []
+        self._magnetic_gate_templates = []
+        self._magnetic_gate_fits = []
+        self._tethered_gate_templates = []
+        self._tethered_gate_fits = []
+        self._default_compensation_matrix_id = None
+        self._migration_diagnostics = []
+        self._sample_groups = []
+        self._group_strategy_bindings = []
+        self._annotations = []
+        self._gate_overrides = []
+        self._override_undo_stack = UndoStack({"gate_overrides": []})
+        self._display_population_id = "all_events"
+        self._plot_transform_overrides = {}
+        self._display_transform_overrides = {}
+        self._pending_gate_geometry_updates = {}
+        self._old_membership_banner = False
+        self._selected_gate_id = None
+        self._pending_view_range_restore = None
+        self._preview_revision = PreviewRevisionState()
+        self._preview_report = None
+        self._last_result_report = None
+        self._result_state = RuntimeResultState()
+        self._results_stale = False
+        self._results_stale_reason = None
+        self._pending_results_export = None
+        self._group_panel.set_groups([])
+        self._group_panel.set_sample_ids([])
+        self._advanced_groups_enabled = False
+        self.action_advanced_groups.setChecked(False)
+        self._set_advanced_groups_enabled(False)
+        self._workspace_tree.set_samples([])
+        self._workspace_tree.set_population_hierarchy({}, {})
+        self._results_workspace.set_samples([])
+        self._results_workspace.set_population_hierarchy({}, {})
+        self._results_workspace.clear()
+        self._results_workspace.set_result_state(self._result_state)
+        self._population_tree.clear()
+        self._population_tree.set_population_parents({})
+        self._channel_selector.set_x_transform("linear")
+        self._channel_selector.set_y_transform("linear")
+        self._project_id = f"flowdesk_session_{uuid.uuid4().hex[:8]}"
+        self._project_path = None
+        self._project_dirty = False
+        self._update_workspace_navigation()
+        self._update_compensation_status()
+        self._update_undo_actions()
+
+    def _on_close_project(self) -> None:
+        """Close only the current project, leaving Flowdesk running."""
+        if not self._confirm_close_project():
+            return
+        self._project_loading = True
+        self._preview_scheduler.suspend()
+        try:
+            self._clear_project_session()
+        finally:
+            self._project_loading = False
+            self._preview_scheduler.resume()
+        self._update_status("Project closed; ready for a new unsaved session")
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Do not destroy the window while its pipeline thread is running."""
+        self._cancel_project_workers()
+        self._preview_scheduler.shutdown()
+        self._sample_prefetch_timer.stop()
+        self._sample_load_scheduler.shutdown()
+        self._processed_display_scheduler.shutdown()
+        self._plot_widget.shutdown_density_scheduler()
         self._plot_widget.release_transient_items()
         super().closeEvent(event)
 
@@ -3435,6 +3594,8 @@ class MainWindow(QMainWindow):
             return
 
         count = self._sample_browser.add_samples_from_directory(directory)
+        if count:
+            self._project_dirty = True
         self._update_status(f"Loaded {count} samples from {directory}")
 
     def _on_open_files(self) -> None:
@@ -3449,6 +3610,8 @@ class MainWindow(QMainWindow):
             return
 
         count = self._sample_browser.add_samples_from_paths(paths)
+        if count:
+            self._project_dirty = True
         self._update_status(f"Loaded {count} samples")
 
     def _on_save_project(self) -> None:
@@ -3655,18 +3818,7 @@ class MainWindow(QMainWindow):
         self._project_loading = True
         self._preview_scheduler.suspend()
         try:
-            worker = self._worker
-            if worker is not None and worker.isRunning():
-                worker.request_cancel()
-                worker.wait()
-            if worker is not None:
-                self._release_pipeline_worker(worker)
-            batch_worker = self._batch_plot_worker
-            if batch_worker is not None and batch_worker.isRunning():
-                batch_worker.request_cancel()
-                batch_worker.wait()
-            if batch_worker is not None:
-                self._release_batch_plot_worker(batch_worker)
+            self._cancel_project_workers()
             self._load_project_contents(path)
         finally:
             self._project_loading = False

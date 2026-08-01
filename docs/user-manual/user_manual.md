@@ -114,7 +114,7 @@ OSごとのユーザー書込み可能なアプリケーションデータ領域
 
 ## 3. 基本的な解析手順
 
-1. **File → Open Directory...**、**File → Open Files...**、または **Add FCS Files...** で FCS を読み込む。
+1. **File → Add FCS Directory...**、**File → Add FCS Files...**、または Samples ペインの **Add FCS Files...** で FCS を現在のセッションへ追加する。
 2. Samples リストで active sample を選ぶ。
 3. `X axis`、`Y axis`、必要なら analysis transform を選ぶ。
 4. Gating タブで gate type と parent population を選び、`Create Gate` を実行する。
@@ -191,16 +191,17 @@ statisticsを変更しない。
 
 |項目|ショートカット|説明|
 |---|---:|---|
-|Open Directory...|Ctrl+O|選択したディレクトリ直下の `*.fcs` を読み込む。サブディレクトリは再帰検索しない。|
-|Open Files...|Ctrl+Shift+O|複数の FCS ファイルを個別選択して読み込む。|
+|Add FCS Directory...|Ctrl+O|選択したディレクトリ直下の `*.fcs` を現在のセッションへ追加する。既存サンプルは消えず、サブディレクトリは再帰検索しない。|
+|Add FCS Files...|Ctrl+Shift+O|複数の FCS ファイルを現在のセッションへ追加する。既存サンプルは消えない。|
 |Open Project...|—|既存 `.flowdesk` directory bundle を開き、そのbundleを以後のcurrent project（Ctrl+Sの保存先）に切り替える。より新しい recovery copy がある場合は、別コピーとして復元するか確認される。|
+|Close Project|—|現在の project だけを閉じ、Flowdeskを終了せず空の未保存セッションへ戻る。未保存変更がある場合は Save / Discard / Cancel を選ぶ。|
 |Save Project|Ctrl+S|保存済みprojectを現在の `.flowdesk` directory bundleへ上書き保存する。未保存の場合は保存名を入力する。|
 |Save Project As...|—|常に保存名を入力し、新しい `.flowdesk` directory bundleとして保存する。既存bundleを指定した場合は上書き確認を表示する。|
 |Save Analysis Settings...|—|サンプル、FCSパス、Resultsを含めず、再利用可能な解析定義だけを `.flowdesk-settings` directory bundle として保存する。|
 |Load Analysis Settings...|—|`.flowdesk-settings` または既存 `.flowdesk` project から解析定義を読み込み、現在のサンプルを維持したまま定義を置換する。|
 |Exit|Ctrl+Q|Flowdesk を終了する。|
 
-`Open Samples` toolbar button は名称とは異なり、現行実装では **Open Directory...** と同じ処理を呼ぶ。
+`Add FCS Samples` toolbar button はディレクトリ直下の FCS を現在のセッションへ追加する。これは **Open Project...** と異なり、既存サンプルを消去しない。
 
 ### 5.2 Edit
 
@@ -269,7 +270,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 
 |ボタン|説明|
 |---|---|
-|Open Samples|ディレクトリを選び、直下の FCS を読み込む。個別ファイル選択は File → Open Files... または Add FCS Files... を使う。|
+|Add FCS Samples|ディレクトリを選び、直下の FCS を現在のセッションへ追加する。個別ファイル選択は File → Add FCS Files... を使う。|
 |Run Pipeline|Analysis → Run Pipeline と同じ。|
 |Export Results|Results → Export Results... と同じ。population metrics と custom statistics を統合して出力する。|
 
@@ -282,7 +283,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |control|選択肢・操作|説明|
 |---|---|---|
 |Filter samples…|文字入力|sample name、path、status に対する case-insensitive filter。表示だけを絞り、project から削除しない。|
-|Sort|Name / Path / Status|sample list の並び順を変更する。active sample は stable ID で維持される。|
+|Sort|Manual / Name / Path / Status|Manual は保存された順序。Name / Path / Status を選ぶと、その順序を明示的に並べ替える。active sample は stable ID で維持される。|
 |Overlay mode|Manual only / Manual + comparison set|manual `Ov` のみ、または manual と comparison set の両方を overlay source とする。コードには `comparison_only` の復元対応もあるが、GUI combo には表示されない。|
 
 ### 7.2 sample row
@@ -295,6 +296,8 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |Rel|表示ラベル|`active`、manual、reference、positive_control 等の relation/status。ラベル自体はクリック操作を持たない。|
 
 status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel mismatch、`!`=fingerprint mismatch、`?`=missing である。tooltip には display title、元の name、path、event count、status が表示される。
+
+Manual順では、行をドラッグして並べ替えできます。現在のsampleを選択した状態で `Ctrl+Up` / `Ctrl+Down` を押すと1行移動します。通常のUp/Downはsample選択に使います。並べ替えはstable sample IDを保持したままprojectへ保存され、解析結果の数値は変更しません。
 
 ### 7.3 Samples list の右クリックメニュー
 
@@ -752,6 +755,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 |scope: Selected populations...|Targets... tree で明示選択。|
 |scope: All current populations|現在存在する全 population。|
 |Parameter|value metric の parameter。count/frequency では `(none)` 可。|
+|Parameter status|parameter が選べない場合の理由を表示する。count/frequency は parameter を使わず、invalid derived parameter や互換 parameter 不在も明示する。|
 |Metric|count / frequency_of_parent / frequency_of_total / mean / median / geometric_mean / stddev / cv / mad / percentile|
 |Source Stage|raw / compensated / transformed|
 |Transform|`(native value space)`、または persisted transform ID。|
@@ -1054,8 +1058,8 @@ Filename templateでは、`{sample_id}`、`{sample_title}`、`{sample_name}`、`
 
 |shortcut|action|
 |---|---|
-|Ctrl+O|Open Directory...|
-|Ctrl+Shift+O|Open Files...|
+|Ctrl+O|Add FCS Directory...|
+|Ctrl+Shift+O|Add FCS Files...|
 |Ctrl+S|Save Project...|
 |Ctrl+Z|Undo Gate Change|
 |Ctrl+Shift+Z|Redo Gate Change|
@@ -1478,7 +1482,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |---|---|
 |File/Edit/Analysis/Results/Data/Plot/Help menu headings|MainWindow menu bar|
 |About Flowdesk action|Help menu|
-|Open Samples / Run Pipeline / Export Results toolbar actions|Main Toolbar|
+|Add FCS Samples / Run Pipeline / Export Results toolbar actions|Main Toolbar|
 |Gate dialog OK / Cancel and gate-specific spin boxes|Create/Edit Gate dialog|
 |Gate override Geometry mode / Gate purpose combo / OK / Cancel|GateOverrideDialog|
 |Group Add/Rename/Delete input dialogs|GroupPanel|

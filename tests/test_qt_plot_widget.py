@@ -2073,6 +2073,33 @@ def test_sample_browser_removes_all_extended_selection_rows(
     app.processEvents()
 
 
+def test_sample_browser_reorders_by_stable_id_and_keyboard_move(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  try:
+    monkeypatch.setattr("flowdesk_qt.sample_browser.read_fcs_info", lambda _path: _fcs_info())
+    paths = [tmp_path / f"sample-{index}.fcs" for index in range(3)]
+    for path in paths:
+      path.write_text("not real fcs")
+    assert browser.add_samples_from_paths([str(path) for path in paths]) == 3
+    ids = [sample.id for sample in browser.samples()]
+    browser.select_sample(ids[1])
+    assert browser.move_selected_sample(1)
+    assert [sample.id for sample in browser.samples()] == [ids[0], ids[2], ids[1]]
+    assert browser.selected_sample() is not None
+    assert browser.selected_sample().id == ids[1]
+    assert browser.reorder_samples([ids[1], ids[0], ids[2]])
+    assert [sample.id for sample in browser.samples()] == [ids[1], ids[0], ids[2]]
+    assert browser.move_selected_sample(-1) is False
+  finally:
+    browser.close()
+    browser.deleteLater()
+    app.processEvents()
+
+
 def test_sample_browser_same_stem_different_paths_get_unique_ids(
   tmp_path: Path,
   monkeypatch: pytest.MonkeyPatch,

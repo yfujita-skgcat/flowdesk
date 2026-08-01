@@ -25,6 +25,29 @@ pytestmark = [pytest.mark.gui, pytest.mark.gui_e2e]
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
+def test_close_project_keeps_window_open_and_import_actions_are_explicit(
+  qapp, gui_artifact_widgets: list[object], tmp_path: Path,
+) -> None:
+  window = MainWindow()
+  gui_artifact_widgets.append(window)
+  window._project_path = tmp_path / "old.flowdesk"
+  window._project_dirty = False
+
+  assert window.action_open_directory.objectName() == "actionOpenDirectory"
+  assert window.action_open_files.objectName() == "actionOpenFiles"
+  assert window.action_open_directory.text().replace("&", "") == "Add FCS Directory..."
+  assert window.action_open_files.text().replace("&", "") == "Add FCS Files..."
+  assert "current session" in window.action_open_directory.toolTip()
+
+  window.action_close_project.trigger()
+
+  assert window.isWindow() is True
+  assert window._project_path is None
+  assert window._project_dirty is False
+  assert window._sample_browser.samples() == []
+  assert window._project_id.startswith("flowdesk_session_")
+
+
 def test_terminal_interrupt_closes_window_and_quits_application(qapp, monkeypatch) -> None:
   window = MainWindow()
   close_calls: list[str] = []
