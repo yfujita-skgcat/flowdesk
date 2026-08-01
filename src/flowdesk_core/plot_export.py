@@ -27,7 +27,14 @@ from flowdesk_core.plot_presentation import (
   resolve_presentation_title,
   validate_presentation,
 )
-from flowdesk_core.plot_scene import PlotLayoutSpec, PlotScene, resolve_plot_layout
+from flowdesk_core.plot_scene import (
+  POINTS_TO_PX, PlotLayoutSpec, PlotScene, resolve_plot_layout,
+)
+
+
+def _font_px(size: float) -> float:
+  """Convert persisted Qt point sizes to renderer canvas pixels."""
+  return float(size) * POINTS_TO_PX
 from flowdesk_core.vector_scatter import (
   CompactScatterBatch,
   VectorScatterLayer,
@@ -303,20 +310,20 @@ def write_plot_svg(
       elements.append(
         f'<text x="{width / 2:g}" y="{baseline:g}" text-anchor="middle" '
         f'fill="{escape(str(color))}" font-family="{escape(selected.title_font.family)}" '
-        f'font-size="{selected.title_font.size:g}" '
+        f'font-size="{_font_px(selected.title_font.size):g}" '
         f'font-weight="{escape(selected.title_font.weight)}">{escape(line)}</text>'
       )
   if options is None or options.include_axis_labels:
     elements.extend([
       f'<text x="{layout.x_axis_label_anchor[0]:g}" y="{layout.x_axis_label_anchor[1]:g}" '
       f'text-anchor="middle" fill="{axis_color}" '
-      f'font-size="{selected.axis_label_font.size:g}">'
+      f'font-size="{_font_px(selected.axis_label_font.size):g}">'
       f"{escape(selected.x_axis_display_label or '')}</text>",
       f'<text x="{layout.y_axis_label_anchor[0]:g}" y="{layout.y_axis_label_anchor[1]:g}" '
       f'text-anchor="middle" fill="{axis_color}" '
       f'transform="rotate(-90 {layout.y_axis_label_anchor[0]:g} '
       f'{layout.y_axis_label_anchor[1]:g})" '
-      f'font-size="{selected.axis_label_font.size:g}">'
+      f'font-size="{_font_px(selected.axis_label_font.size):g}">'
       f"{escape(selected.y_axis_display_label or '')}</text>",
     ])
   style_by_id = {style.source_id: style for style in selected.source_styles}
@@ -953,8 +960,9 @@ def _svg_scene_axes(
         grid = f'M {left:g} {y:g} H {left + width:g}'
         tick_path = f'M {left:g} {y:g} h {-6 if major else -3:g}'
       if selected.show_grid:
+        grid_color = "#b8b8b8" if major else "#e0e0e0"
         elements.append(
-          f'<path d="{grid}" fill="none" stroke="#d8d8d8" '
+          f'<path d="{grid}" fill="none" stroke="{grid_color}" '
           f'stroke-width="{1.0 if not major else 1.25:g}"/>'
         )
       elements.append(
@@ -969,26 +977,26 @@ def _svg_scene_axes(
           elements.append(
             f'<text x="{x:g}" y="{layout.x_tick_label_y:g}" '
             f'text-anchor="middle" fill="{axis_color}" '
-            f'font-size="{selected.tick_font.size:g}">{escape(label)}</text>'
+            f'font-size="{_font_px(selected.tick_font.size):g}">{escape(label)}</text>'
           )
         else:
           elements.append(
-            f'<text x="{layout.y_tick_label_x:g}" y="{y + selected.tick_font.size * 0.35:g}" '
+            f'<text x="{layout.y_tick_label_x:g}" y="{y + _font_px(selected.tick_font.size) * 0.35:g}" '
             f'text-anchor="end" fill="{axis_color}" '
-            f'font-size="{selected.tick_font.size:g}">{escape(label)}</text>'
+            f'font-size="{_font_px(selected.tick_font.size):g}">{escape(label)}</text>'
           )
   if selected.x_axis_display_label:
     elements.append(
       f'<text x="{layout.x_axis_label_anchor[0]:g}" y="{layout.x_axis_label_anchor[1]:g}" '
       f'text-anchor="middle" fill="{axis_color}" '
-      f'font-size="{selected.axis_label_font.size:g}">{escape(selected.x_axis_display_label)}</text>'
+      f'font-size="{_font_px(selected.axis_label_font.size):g}">{escape(selected.x_axis_display_label)}</text>'
     )
   if selected.y_axis_display_label:
     x_anchor, y_center = layout.y_axis_label_anchor
     elements.append(
       f'<text x="{x_anchor:g}" y="{y_center:g}" '
       f'text-anchor="middle" transform="rotate(-90 {x_anchor:g} {y_center:g})" '
-      f'fill="{axis_color}" font-size="{selected.axis_label_font.size:g}">'
+      f'fill="{axis_color}" font-size="{_font_px(selected.axis_label_font.size):g}">'
       f'{escape(selected.y_axis_display_label)}</text>'
     )
   return elements
@@ -1297,7 +1305,6 @@ def _draw_raster_axes(
   width = max(1, round(selected.axis_line_width * scale))
   bottom = top + plot_height
   if selected.show_grid:
-    grid_color = (216, 216, 216, 255)
     scene = _scene_mapping(prepared)
     for axis, origin, extent, horizontal in (
       ("x_ticks", left, plot_width, True),
@@ -1310,13 +1317,15 @@ def _draw_raster_axes(
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
         if horizontal:
           x = round(origin + position * extent)
-          draw.line((x, top, x, bottom), fill=grid_color, width=max(1, round(scale / 2)))
+          grid_color = (184, 184, 184, 255) if bool(tick.get("major", True)) else (224, 224, 224, 255)
+          draw.line((x, top, x, bottom), fill=grid_color, width=max(1, round(scale * (1.25 if tick.get("major", True) else 0.75))))
         else:
           y = round(origin - position * extent)
+          grid_color = (184, 184, 184, 255) if bool(tick.get("major", True)) else (224, 224, 224, 255)
           draw.line(
             (left, y, left + plot_width, y),
             fill=grid_color,
-            width=max(1, round(scale / 2)),
+            width=max(1, round(scale * (1.25 if tick.get("major", True) else 0.75))),
           )
   draw.rectangle(
     (left, top, left + plot_width, bottom), outline=color, width=width
@@ -1386,13 +1395,13 @@ def _draw_raster_text(
   title_lines = _title_lines(prepared, selected)
   title_colors = scene.get("title_colors", ()) if isinstance(scene, dict) else ()
   if options is None or options.include_title:
-    title_font = _font(selected.title_font.size * scale, bold=selected.title_font.weight == "bold")
+    title_font = _font(_font_px(selected.title_font.size) * scale, bold=selected.title_font.weight == "bold")
     for index, line in enumerate(title_lines):
       color = str(title_colors[index]) if index < len(title_colors) else "#b8c7ff"
       _draw_centered(draw, width // 2, round(layout.title_baselines[index] * scale), line,
                      title_font, _rgb(color) + (255,))
   foreground = _foreground_rgba(selected.background_color)
-  tick_font = _font(selected.tick_font.size * scale, bold=selected.tick_font.weight == "bold")
+  tick_font = _font(_font_px(selected.tick_font.size) * scale, bold=selected.tick_font.weight == "bold")
   if options is None or options.include_ticks:
     for axis, origin, extent, horizontal in (
       ("x_ticks", left, plot_width, True),
@@ -1415,7 +1424,7 @@ def _draw_raster_text(
           y = round(origin - position * extent) - (bbox[3] - bbox[1]) // 2
           draw.text((x, y), label, font=tick_font, fill=foreground)
   if options is None or options.include_axis_labels:
-    axis_font = _font(selected.axis_label_font.size * scale,
+    axis_font = _font(_font_px(selected.axis_label_font.size) * scale,
                       bold=selected.axis_label_font.weight == "bold")
     _draw_centered(
       draw, round(layout.x_axis_label_anchor[0] * scale),
@@ -1555,7 +1564,7 @@ def _pdf_scene_text(
     for index, line in enumerate(title_lines):
       color = str(colors[index]) if index < len(colors) else "#4c78a8"
       red, green, blue = (value / 255 for value in _rgb(color))
-      size = selected.title_font.size
+      size = _font_px(selected.title_font.size)
       text = _pdf_text(line)
       x = (page_width - len(text) * size * 0.55) / 2
       # PDF text coordinates use the baseline; Pillow's raster renderer
@@ -1573,7 +1582,7 @@ def _pdf_scene_text(
         if not label:
           continue
         position = min(1.0, max(0.0, float(tick.get("position", 0.0))))
-        size = selected.tick_font.size
+        size = _font_px(selected.tick_font.size)
         if horizontal:
           x = left + position * width - _pdf_tick_label_width(label, size) / 2
           y = page_height - layout.x_tick_label_y
@@ -1582,7 +1591,7 @@ def _pdf_scene_text(
           y = page_height - (top + plot_height - position * plot_height) - size * 0.35
         commands.extend(_pdf_tick_label_commands(label, x, y, size, red, green, blue))
   if options is None or options.include_axis_labels:
-    size = selected.axis_label_font.size
+    size = _font_px(selected.axis_label_font.size)
     x_label = _pdf_text(selected.x_axis_display_label or "")
     if x_label:
       x = layout.x_axis_label_anchor[0] - len(x_label) * size * 0.28

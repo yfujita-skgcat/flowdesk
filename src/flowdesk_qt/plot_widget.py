@@ -338,6 +338,10 @@ class PlotWidget(QWidget):
         for key in ("background_color", "gate_outline_color"):
             if isinstance(value.get(key), str) and value[key]:
                 style_updates[key] = value[key]
+        if value.get("gate_outline_width") is not None:
+            style_updates["gate_outline_width"] = float(value["gate_outline_width"])
+        if value.get("gate_outline_style") in {"solid", "dashed", "dotted", "dashdot"}:
+            style_updates["gate_outline_style"] = str(value["gate_outline_style"])
         if isinstance(value.get("single_color"), str) and value["single_color"]:
             style_updates["dot_color"] = value["single_color"]
         if value.get("single_dot_size") is not None:
@@ -943,7 +947,7 @@ class PlotWidget(QWidget):
         default_pen = mkPen(
             color=s.gate_outline_color,
             width=2,
-            style=Qt.DashLine,
+            style=self._qt_line_style(s.gate_outline_style),
         )
         selected_color = self._contrast_gate_color()
         highlight_pen = mkPen(
@@ -1656,6 +1660,8 @@ class PlotWidget(QWidget):
         # Re-apply gate overlay colors
         gate_style_changed = previous is None or (
             previous.gate_outline_color != s.gate_outline_color
+            or previous.gate_outline_width != s.gate_outline_width
+            or previous.gate_outline_style != s.gate_outline_style
             or previous.gate_fill_color != s.gate_fill_color
             or previous.gate_fill_opacity != s.gate_fill_opacity
         )
@@ -1675,6 +1681,16 @@ class PlotWidget(QWidget):
         )
         return "#000000" if luminance >= 128 else "#e8e8e8"
 
+    @staticmethod
+    def _qt_line_style(style: str) -> Any:
+        """Map the persisted renderer-neutral line style to Qt."""
+        return {
+            "solid": Qt.SolidLine,
+            "dotted": Qt.DotLine,
+            "dashdot": Qt.DashDotLine,
+            "dashed": Qt.DashLine,
+        }.get(str(style), Qt.DashLine)
+
     def _refresh_gate_colors(self) -> None:
         """Update gate overlay outline and fill colors without removing items."""
         s = self._style
@@ -1688,8 +1704,8 @@ class PlotWidget(QWidget):
 
         pen = mkPen(
             color=s.gate_outline_color,
-            width=2,
-            style=Qt.DashLine,
+            width=s.gate_outline_width,
+            style=self._qt_line_style(s.gate_outline_style),
         )
 
         for item in self._gate_items:
@@ -1799,8 +1815,8 @@ class PlotWidget(QWidget):
 
         pen = mkPen(
             color=outline_color or self._style.gate_outline_color,
-            width=2,
-            style=Qt.DashLine,
+            width=self._style.gate_outline_width,
+            style=self._qt_line_style(self._style.gate_outline_style),
         )
 
         if gate.gate_type == "rectangle":

@@ -640,8 +640,11 @@ def test_hybrid_pdf_matches_png_layout_at_pdf_logical_resolution(tmp_path) -> No
   # plot rectangle, and scatter positions must remain visually aligned.
   # The canonical anchors are identical; PDF Type1 and Pillow glyph
   # rasterisation differ slightly after the axis-label anchor update.
-  assert normalized_rmse < 0.16
-  assert normalized_mean_error < 0.03
+  # Qt-compatible point-to-pixel font conversion increases text coverage;
+  # PDF Type1 and Pillow rasterisation consequently differ slightly more while
+  # retaining identical scene geometry and scatter placement.
+  assert normalized_rmse < 0.20
+  assert normalized_mean_error < 0.05
 
 
 @pytest.mark.parametrize("mode", ("full_vector", "compact_vector", "hybrid_raster"))
@@ -902,7 +905,7 @@ def test_export_uses_captured_scene_plot_area_margins(tmp_path) -> None:
   text = path.read_text(encoding="utf-8")
   # The captured top margin is enlarged for the title block instead of
   # allowing the title to overlap the data rectangle.
-  assert 'x="11" y="32" width="176" height="114"' in text
+  assert 'x="11" y="44.3" width="176" height="101.7"' in text
 
 
 def test_plot_layout_reserves_space_for_multiline_title() -> None:

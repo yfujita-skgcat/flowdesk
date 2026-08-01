@@ -18,7 +18,7 @@ Batch の表示タイトルは GUI と同じ規則で解決されます。worksp
 
 実行中に `rendering: 0/N` のままでも、内部では出力ごとの準備や描画前処理を行っている場合があります。現在処理中のファイル名は進捗ダイアログのメッセージに表示されます。特に `hybrid_raster` の SVG/PDF は、高 DPI、イベント数、透明な点の重なりに応じてラスタ合成に時間がかかります。多数の出力を短時間で作る場合は、必要な DPI に下げる、またはベクター形式の scatter モードを選ぶことで処理時間とファイルサイズを抑えられます。いずれのモードでもイベント順、座標、ゲート、統計は変更されません。
 
-タイトルが複数行になる場合は、GUIとexportの論理レイアウトでタイトル用の上部領域を確保します。タイトル行がplot areaに重ならないようにplot rectangleの上端を必要に応じて下げます。フォントのアンチエイリアスや字形は出力形式・OSごとに異なる場合がありますが、タイトル行数、plot rectangle、軸・ゲートの論理座標は共通のscene/layoutから解決されます。
+タイトルが複数行になる場合は、GUIとexportの論理レイアウトでタイトル用の上部領域を確保します。タイトル行がplot areaに重ならないようにplot rectangleの上端を必要に応じて下げます。フォントサイズはQtのポイント指定を出力canvasの96 DPI相当へ変換し、GUIとPNG/SVGの見かけの大きさを揃えます。フォントのアンチエイリアスや字形は出力形式・OSごとに異なる場合がありますが、タイトル行数、plot rectangle、軸・ゲートの論理座標は共通のscene/layoutから解決されます。ゲートの線種（solid/dashed/dotted/dashdot）とmajor/minor補助線の濃さもpresentation設定から各backendへ同じように反映されます。
 
 **UI 網羅性検査:** 静的検査では、literal `objectName` 325件と、action・button・checkbox・menu・tab・combo-box item の一意な表示文字列172件について、マニュアル内の記載漏れは0件だった。詳細は [coverage_report.md](coverage_report.md) を参照。動的生成 control と標準 Qt dialog button は、19.2節で別途確認している。
 

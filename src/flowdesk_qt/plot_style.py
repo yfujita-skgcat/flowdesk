@@ -28,13 +28,15 @@ class PlotStyleSettings:
 
     # Gate overlay appearance
     gate_outline_color: str = "#e00000"
+    gate_outline_width: float = 1.5
+    gate_outline_style: str = "solid"
     gate_fill_color: str = "#e00000"
     gate_fill_opacity: float = 0.0
 
     # Axis and tick readability
     axis_line_width: float = 2.0
     tick_font_family: str = "DejaVu Sans"
-    tick_font_size: float = 10.0
+    tick_font_size: float = 11.0
     tick_font_weight: str = "bold"
 
     # Optional features
@@ -53,6 +55,8 @@ class PlotStyleSettings:
                 self.dot_size,
                 self.dot_opacity,
                 self.gate_outline_color,
+                self.gate_outline_width,
+                self.gate_outline_style,
                 self.gate_fill_color,
                 self.gate_fill_opacity,
                 self.axis_line_width,

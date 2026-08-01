@@ -218,8 +218,12 @@ def resolve_plot_layout(
   line_height = max(18.0, font_size * 1.45)
   tick_size = _font_size({"title_font": (presentation or {}).get("tick_font", {})})
   axis_size = _font_size({"title_font": (presentation or {}).get("axis_label_font", {})})
-  title_height = (line_height * len(lines) + 8.0) if include_title and lines else 0.0
-  title_top_padding = 4.0 if title_height else 0.0
+  # Leave enough room for the actual Qt/Pillow glyph descent.  The previous
+  # four-pixel band padding was sufficient for the old unscaled export fonts
+  # but allowed the final bold title line to touch the plot frame after the
+  # Qt point-to-pixel conversion.
+  title_height = (line_height * len(lines) + 14.0) if include_title and lines else 0.0
+  title_top_padding = 10.0 if title_height else 0.0
   top = max(0.0, float(raw_top))
   if title_height:
     top = max(top, title_height + title_top_padding)
@@ -234,14 +238,18 @@ def resolve_plot_layout(
     title_block_height - line_height * (len(lines) - index - 0.35)
     for index in range(len(lines))
   )
-  x_tick_label_y = top + plot_height + tick_size + 9.0
+  # Keep tick labels close to the frame; the previous full tick-font-size
+  # plus nine-pixel offset was tuned for the old smaller export glyphs.
+  x_tick_label_y = top + plot_height + tick_size * 0.6 + 4.0
   y_tick_label_x = left - 9.0
   x_axis_label_anchor = (
     left + plot_width / 2.0,
-    top + plot_height + tick_size + axis_size * 2.4,
+    x_tick_label_y + axis_size * 1.5 + 4.0,
   )
   y_axis_label_anchor = (
-    left - tick_size * 3.2,
+    # Major tick labels can be several characters wide (e.g. ``10⁷``).
+    # Reserve a separate column so the rotated axis label cannot overlap them.
+    left - tick_size * 5.5,
     top + plot_height / 2.0,
   )
   return PlotLayoutSpec(
@@ -256,3 +264,4 @@ def resolve_plot_layout(
     x_axis_label_anchor=x_axis_label_anchor,
     y_axis_label_anchor=y_axis_label_anchor,
   )
+POINTS_TO_PX = 96.0 / 72.0
