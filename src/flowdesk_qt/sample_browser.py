@@ -249,34 +249,56 @@ class SampleBrowser(QWidget):
         return [ch.name for ch in sample.info.channels]
 
     def remove_selected_sample(self) -> _SampleInfo | None:
-        """Remove the currently selected sample from the list.
+        """Remove the current selection and return its first removed sample."""
+        removed = self.remove_selected_samples()
+        return removed[0] if removed else None
 
-        Returns the removed ``_SampleInfo``, or ``None`` if nothing was selected.
-        Also auto-selects the next available sample (or clears selection).
-        """
-        item = self._list_widget.currentItem()
-        if item is None:
-            return None
-        sample_id = str(item.data(Qt.UserRole))
-        idx = next((i for i, sample in enumerate(self._samples) if sample.id == sample_id), -1)
-        if idx < 0:
-            return None
-        removed = self._samples.pop(idx)
-        if removed.path:
-            self._known_paths.discard(Path(removed.path).resolve())
+    def remove_selected_samples(self) -> list[_SampleInfo]:
+        """Remove all selected samples in one list update."""
+        selected_ids = {
+            str(item.data(Qt.UserRole))
+            for item in self._list_widget.selectedItems()
+            if item.data(Qt.UserRole) is not None
+        }
+        if not selected_ids:
+            return []
+        removed = [sample for sample in self._samples if sample.id in selected_ids]
+        if not removed:
+            return []
+        removed_index = min(
+            index for index, sample in enumerate(self._samples)
+            if sample.id in selected_ids
+        )
+        self._samples = [sample for sample in self._samples if sample.id not in selected_ids]
+        for sample in removed:
+            if sample.path:
+                self._known_paths.discard(Path(sample.path).resolve())
+        self._manual_overlay_sample_ids.difference_update(selected_ids)
+        for sample_id in selected_ids:
+            self._manual_overlay_colors.pop(sample_id, None)
+            self._overlay_roles.pop(sample_id, None)
+        for comparison in self._comparison_sets:
+            members = comparison.get("members", [])
+            comparison["members"] = [
+                member for member in members
+                if not isinstance(member, dict)
+                or str(member.get("sample_id")) not in selected_ids
+            ]
+        self._comparison_sets = [
+            comparison for comparison in self._comparison_sets
+            if len(comparison.get("members", [])) >= 2
+        ]
+        self._selected_index = -1
         self._refresh_channel_statuses()
-        self._rebuild_sample_list()
-
-        # Auto-select next sample or clear selection.
-        if self._samples:
-            self._list_widget.setCurrentRow(min(idx, len(self._samples) - 1))
-        else:
-            self._selected_index = -1
-
-        # Notify callbacks about removal.
-        for cb in self._removed_callbacks:
-            invoke_callback(cb, removed)
-
+        next_index = min(removed_index, len(self._samples) - 1)
+        next_id = self._samples[next_index].id if self._samples else None
+        self._rebuild_sample_list(selected_id=next_id)
+        for removed_sample in removed:
+            for callback in self._removed_callbacks:
+                invoke_callback(callback, removed_sample)
+        for callback in self._batch_removed_callbacks:
+            invoke_callback(callback, removed)
+        self._emit_overlay_state()
         return removed
 
     def reconnect_sample(
@@ -337,6 +359,10 @@ class SampleBrowser(QWidget):
         The callback receives a ``_SampleInfo`` instance of the removed sample.
         """
         self._removed_callbacks.append(callback)
+
+    def on_samples_removed(self, callback: Any) -> None:
+        """Register a callback invoked once for a multi-sample removal."""
+        self._batch_removed_callbacks.append(callback)
 
     def on_sample_reconnected(self, callback: Any) -> None:
         """Register a callback invoked after a reconnect is accepted."""
@@ -773,6 +799,7 @@ class SampleBrowser(QWidget):
     def _build_ui(self) -> None:
         self._selection_callbacks: list[Any] = []
         self._removed_callbacks: list[Any] = []
+        self._batch_removed_callbacks: list[Any] = []
         self._reconnected_callbacks: list[Any] = []
         self._overlay_callbacks: list[Any] = []
         self.setObjectName("sampleBrowser")
@@ -879,8 +906,8 @@ class SampleBrowser(QWidget):
                 )
 
     def _on_remove_selected(self) -> None:
-        removed = self.remove_selected_sample()
-        if removed is None:
+        removed = self.remove_selected_samples()
+        if not removed:
             QMessageBox.information(
                 self,
                 "No sample selected",

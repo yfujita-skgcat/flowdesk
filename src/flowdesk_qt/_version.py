@@ -1,3 +1,3 @@
 """Single source of truth for the Flowdesk application version."""
 
-__version__ = "0.1.12"
+__version__ = "0.1.13"

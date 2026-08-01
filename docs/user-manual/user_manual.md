@@ -187,7 +187,7 @@ statisticsを変更しない。
 |---|---:|---|
 |Open Directory...|Ctrl+O|選択したディレクトリ直下の `*.fcs` を読み込む。サブディレクトリは再帰検索しない。|
 |Open Files...|Ctrl+Shift+O|複数の FCS ファイルを個別選択して読み込む。|
-|Open Project...|—|既存 `.flowdesk` directory bundle を開く。より新しい recovery copy がある場合は、別コピーとして復元するか確認される。|
+|Open Project...|—|既存 `.flowdesk` directory bundle を開き、そのbundleを以後のcurrent project（Ctrl+Sの保存先）に切り替える。より新しい recovery copy がある場合は、別コピーとして復元するか確認される。|
 |Save Project|Ctrl+S|保存済みprojectを現在の `.flowdesk` directory bundleへ上書き保存する。未保存の場合は保存名を入力する。|
 |Save Project As...|—|常に保存名を入力し、新しい `.flowdesk` directory bundleとして保存する。既存bundleを指定した場合は上書き確認を表示する。|
 |Save Analysis Settings...|—|サンプル、FCSパス、Resultsを含めず、再利用可能な解析定義だけを `.flowdesk-settings` directory bundle として保存する。|
@@ -313,7 +313,7 @@ status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel
 |ボタン|説明|
 |---|---|
 |Add FCS Files...|複数 FCS を個別選択して追加する。無効な FCS しか選ばれなかった場合は warning。|
-|Remove Selected|現在の active/current row を project session から外す。ディスク上の FCS は削除しない。次の sample が自動選択される。|
+|Remove Selected|選択中の1つ以上の sampleをproject sessionから外す。ディスク上のFCSは削除しない。削除後は次のsampleが自動選択され、overlay/comparison設定からも削除対象を取り除く。|
 |Reconnect…|missing または移動した sample を新しい FCS path に接続する。stored fingerprint と異なる場合は、identity replacement を明示確認する。|
 
 ---
@@ -788,7 +788,7 @@ population hierarchy の各 row に checkbox があり、statistic target を st
 |Title|editable display title。|
 |FCS-derived annotation cell|read-only。workspace column を追加して override する設計。|
 |Add Annotation Column…|新しい editable workspace annotation column を追加。|
-|Paste|clipboard の TSV を貼り付け。基本形式は sample ID + title。未知/重複 ID は全体を拒否し partial overwrite しない。|
+|Paste|clipboard の TSV を貼り付け。1列目は stable sample ID または重複しない Sample name、2列目は title。未知/重複/曖昧な値は全体を拒否し partial overwrite しない。形式エラーは警告を表示し、ダイアログを閉じない。|
 |Import CSV…|annotation CSV を validate して merge。未知 sample ID は拒否。|
 |Fill Titles…|prefix を入力し、全 sample に `prefix1`, `prefix2`... を設定。|
 |Find/Replace…|workspace/editable annotation の文字列を一括置換。FCS-derived 値は変更しない。|

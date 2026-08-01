@@ -61,6 +61,21 @@ def test_sample_sheet_paste_fill_sort_and_undo(qapp) -> None:
     model.paste_tsv("s3\tBad\n")
 
 
+def test_sample_sheet_paste_accepts_unique_sample_name_and_rejects_duplicates(qapp) -> None:
+  model = SampleSheetModel(
+    [
+      {"id": "hash-1", "name": "01-Well-A1", "path": "/tmp/a.fcs"},
+      {"id": "hash-2", "name": "01-Well-B1", "path": "/tmp/b.fcs"},
+      {"id": "hash-3", "name": "duplicate", "path": "/tmp/c.fcs"},
+      {"id": "hash-4", "name": "duplicate", "path": "/tmp/d.fcs"},
+    ], [],
+  )
+  model.paste_tsv("Sample Name\tTitle\n01-Well-A1\tControl\n")
+  assert model.data(model.index(0, 3), Qt.ItemDataRole.DisplayRole) == "Control"
+  with pytest.raises(ValueError, match="ambiguous sample name"):
+    model.paste_tsv("duplicate\tBad\n")
+
+
 def test_sample_sheet_csv_preview_validates_sample_ids(qapp) -> None:
   dialog = SampleSheetDialog(
     [{"id": "s1", "name": "Sample", "path": "/tmp/sample.fcs"}], [],

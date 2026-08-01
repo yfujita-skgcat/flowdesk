@@ -2047,6 +2047,32 @@ def test_sample_browser_skips_duplicate_path_and_releases_on_remove(
     app.processEvents()
 
 
+def test_sample_browser_removes_all_extended_selection_rows(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  try:
+    monkeypatch.setattr("flowdesk_qt.sample_browser.read_fcs_info", lambda _path: _fcs_info())
+    paths = [tmp_path / f"sample-{index}.fcs" for index in range(3)]
+    for path in paths:
+      path.write_text("not real fcs")
+    assert browser.add_samples_from_paths([str(path) for path in paths]) == 3
+    browser._list_widget.setCurrentRow(0)
+    browser._list_widget.item(1).setSelected(True)
+    browser._list_widget.item(2).setSelected(True)
+
+    removed = browser.remove_selected_samples()
+
+    assert len(removed) == 3
+    assert browser.samples() == []
+  finally:
+    browser.close()
+    browser.deleteLater()
+    app.processEvents()
+
+
 def test_sample_browser_same_stem_different_paths_get_unique_ids(
   tmp_path: Path,
   monkeypatch: pytest.MonkeyPatch,
@@ -2623,6 +2649,8 @@ def test_gui_project_save_reload_and_headless_results_match(tmp_path: Path) -> N
     )
 
     reloaded_window._load_project_from_path(project_path)
+    assert reloaded_window._project_path == project_path
+    assert reloaded_window._project_id == saved["project_id"]
     for _ in range(20):
       app.processEvents()
       if np.allclose(reloaded_window._plot_widget.view_range(), saved_viewport):

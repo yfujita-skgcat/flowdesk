@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
   QHBoxLayout,
   QInputDialog,
   QLineEdit,
+  QMessageBox,
   QPushButton,
   QTableView,
   QVBoxLayout,
@@ -34,6 +36,8 @@ from flowdesk_core.annotations import (
   set_sample_title,
 )
 from flowdesk_core.models import AnnotationSpec
+
+logger = logging.getLogger(__name__)
 
 
 class SampleSheetModel(QAbstractTableModel):
@@ -145,41 +149,57 @@ class SampleSheetModel(QAbstractTableModel):
   def paste_tsv(self, text: str, start_row: int = 0) -> None:
     """Paste a two-column Excel/TSV selection into the title column.
 
-    The first column must be a known stable sample ID and the second column is
-    the title.  Rows are validated before any mutation so a malformed paste
-    cannot shift or partially overwrite later rows.
+    The first column may contain a stable sample ID or an exact, unique sample
+    name; the second column is the title. Rows are validated before any
+    mutation so a malformed paste cannot shift or partially overwrite later
+    rows.
     """
     rows = list(csv.reader(io.StringIO(text), delimiter="\t"))
     if not rows:
       return
-    if len(rows[0]) >= 2 and rows[0][0].strip().lower() in {"sample id", "sample_id"}:
+    if len(rows[0]) >= 2 and rows[0][0].strip().lower() in {
+      "sample id", "sample_id", "sample name", "sample_name", "name",
+    }:
       rows = rows[1:]
-    known = {str(sample.get("id", "")): index for index, sample in enumerate(self._samples)}
+    known_ids = {str(sample.get("id", "")) for sample in self._samples}
+    names: dict[str, list[str]] = {}
+    for sample in self._samples:
+      name = str(sample.get("name", "")).strip()
+      if name:
+        names.setdefault(name, []).append(str(sample.get("id", "")))
     updates: list[tuple[str, str]] = []
     for row_index, row in enumerate(rows, start=1):
       if len(row) < 2 or not row[0].strip():
         raise ValueError(f"paste row {row_index} must contain sample ID and title")
-      sample_id = row[0].strip()
-      if sample_id not in known:
-        raise ValueError(f"paste row {row_index} references unknown sample {sample_id!r}")
+      key = row[0].strip()
+      if key in known_ids:
+        sample_id = key
+      elif len(names.get(key, [])) == 1:
+        sample_id = names[key][0]
+      elif names.get(key):
+        raise ValueError(f"paste row {row_index} references ambiguous sample name {key!r}")
+      else:
+        raise ValueError(f"paste row {row_index} references unknown sample ID or name {key!r}")
       updates.append((sample_id, row[1]))
     if len({sample_id for sample_id, _title in updates}) != len(updates):
       raise ValueError("paste contains duplicate sample IDs")
     self._remember()
+    self.beginResetModel()
     for sample_id, title in updates:
       self._annotations = set_sample_title(self._annotations, sample_id, title)
-    self.layoutChanged.emit()
+    self.endResetModel()
 
   def fill_title_series(self, prefix: str, start: int, step: int = 1) -> None:
     """Set deterministic titles such as ``prefix 1``, ``prefix 2``."""
     self._remember()
+    self.beginResetModel()
     for index, sample in enumerate(self._samples):
       self._annotations = set_sample_title(
         self._annotations,
         str(sample.get("id", "")),
         f"{prefix}{start + index * step}",
       )
-    self.layoutChanged.emit()
+    self.endResetModel()
 
   def import_csv_text(self, text: str) -> None:
     """Validate and merge CSV annotations before changing the table state."""
@@ -188,9 +208,9 @@ class SampleSheetModel(QAbstractTableModel):
     unknown = sorted({item.sample_id for item in imported} - known)
     if unknown:
       raise ValueError(f"CSV references unknown samples: {unknown!r}")
+    self.beginResetModel()
     self._remember()
     self._annotations = self._annotations + tuple(imported)
-    self.beginResetModel()
     self._annotation_columns = tuple(
       value for value in annotation_columns(self._annotations)
       if value != "sample_title"
@@ -202,6 +222,7 @@ class SampleSheetModel(QAbstractTableModel):
     if not old:
       return
     self._remember()
+    self.beginResetModel()
     self._annotations = tuple(
       AnnotationSpec(
         sample_id=item.sample_id,
@@ -215,7 +236,7 @@ class SampleSheetModel(QAbstractTableModel):
       )
       for item in self._annotations
     )
-    self.layoutChanged.emit()
+    self.endResetModel()
 
   def sort(self, column: int, order=Qt.SortOrder.AscendingOrder) -> None:
     """Sort rows by display value while retaining stable IDs and annotations."""
@@ -234,16 +255,18 @@ class SampleSheetModel(QAbstractTableModel):
     if not self._undo:
       return False
     self._redo.append(self._annotations)
+    self.beginResetModel()
     self._annotations = self._undo.pop()
-    self.layoutChanged.emit()
+    self.endResetModel()
     return True
 
   def redo(self) -> bool:
     if not self._redo:
       return False
     self._undo.append(self._annotations)
+    self.beginResetModel()
     self._annotations = self._redo.pop()
-    self.layoutChanged.emit()
+    self.endResetModel()
     return True
 
   def data_for_sample(self, sample: dict[str, Any], column: int) -> str:
@@ -399,7 +422,20 @@ class SampleSheetDialog(QDialog):
       return
 
   def _on_paste(self) -> None:
-    self._model.paste_tsv(QApplication.clipboard().text())
+    clipboard = QApplication.clipboard()
+    try:
+      mime = clipboard.mimeData()
+      text = clipboard.text()
+      logger.info(
+        "Sample Sheet paste requested: formats=%s text_length=%d lines=%d",
+        list(mime.formats()) if mime is not None else [],
+        len(text),
+        text.count("\n") + (1 if text else 0),
+      )
+      self._model.paste_tsv(text)
+    except Exception as exc:
+      logger.exception("Sample Sheet paste failed")
+      QMessageBox.warning(self, "Paste failed", str(exc))
 
   def _on_import_csv(self) -> None:
     path, _ = QFileDialog.getOpenFileName(

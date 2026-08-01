@@ -424,6 +424,7 @@ class MainWindow(QMainWindow):
             self._start_auto_recalculation
         )
         self._project_dirty = False
+        self._project_loading = False
         self._autosave_settings = AutosaveSettings(
             enabled=bool(QSettings().value("autosave/enabled", True, type=bool)),
             interval_seconds=int(QSettings().value("autosave/interval_seconds", 300)),
@@ -1242,7 +1243,7 @@ class MainWindow(QMainWindow):
         self._sample_browser.on_sample_selected(self._on_sample_selected)
 
         # When a sample is removed, clean up its associated state
-        self._sample_browser.on_sample_removed(self._on_sample_removed)
+        self._sample_browser.on_samples_removed(self._on_samples_removed)
         self._sample_browser.on_sample_reconnected(self._on_sample_reconnected)
         self._sample_browser.on_overlay_changed(self._on_manual_overlay_changed)
 
@@ -1431,7 +1432,7 @@ class MainWindow(QMainWindow):
         self._replot()
 
     def _on_sample_removed(self, sample: _SampleInfo) -> None:
-        """Called when a sample is removed from the browser."""
+        """Clean up state for one removed sample."""
         # Remove event data for this sample
         self._event_data.pop(sample.id, None)
         self._sample_data.pop(sample.id, None)
@@ -1446,6 +1447,25 @@ class MainWindow(QMainWindow):
             self._channel_names = []
             self._channel_selector.set_channels([])
             self._plot_widget.clear_plot()
+
+    def _on_samples_removed(self, samples: list[_SampleInfo]) -> None:
+        """Clean up all removed samples once, then invalidate results once."""
+        removed_ids = {sample.id for sample in samples}
+        for sample in samples:
+            self._event_data.pop(sample.id, None)
+            self._sample_data.pop(sample.id, None)
+            self._prefetched_sample_ids.discard(sample.id)
+            self._drop_processed_display_cache_sample(sample.id)
+        if self._current_sample_id in removed_ids:
+            self._current_sample_id = None
+            self._channel_metadata.set_sample(None)
+            self._channel_names = []
+            self._channel_selector.set_channels([])
+            self._plot_widget.clear_plot()
+        self._mark_results_stale(
+            f"Removed {len(samples)} sample" + ("s" if len(samples) != 1 else "")
+        )
+        self._project_dirty = True
 
     def _load_sample_events(self, sample: _SampleInfo) -> None:
         """Load FCS event data for a sample."""
@@ -3389,7 +3409,7 @@ class MainWindow(QMainWindow):
 
     def _autosave_tick(self) -> None:
         """Autosave only dirty projects and never while analysis is executing."""
-        if not self._project_dirty or self._project_path is None:
+        if self._project_loading or not self._project_dirty or self._project_path is None:
             return
         if self._worker is not None and self._worker.isRunning():
             return
@@ -3616,6 +3636,28 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Project Load Error", str(exc))
 
     def _load_project_from_path(self, path: str | Path) -> None:
+        """Switch the window to a project, isolating it from old async work."""
+        self._project_loading = True
+        self._preview_scheduler.suspend()
+        try:
+            worker = self._worker
+            if worker is not None and worker.isRunning():
+                worker.request_cancel()
+                worker.wait()
+            if worker is not None:
+                self._release_pipeline_worker(worker)
+            batch_worker = self._batch_plot_worker
+            if batch_worker is not None and batch_worker.isRunning():
+                batch_worker.request_cancel()
+                batch_worker.wait()
+            if batch_worker is not None:
+                self._release_batch_plot_worker(batch_worker)
+            self._load_project_contents(path)
+        finally:
+            self._project_loading = False
+            self._preview_scheduler.resume()
+
+    def _load_project_contents(self, path: str | Path) -> None:
         """Load saved samples, gates, and display-only plot settings."""
         project_path = Path(path)
         manifest = load_project(project_path)
@@ -3639,6 +3681,10 @@ class MainWindow(QMainWindow):
                     self._recovery_manager.recover_copy(recovery_candidates[0], recovered_path)
                     project_path = recovered_path
                     manifest = load_project(project_path)
+        # Switch the current-project identity before any widget callbacks can
+        # run while the loaded samples and display state are being installed.
+        self._project_id = str(manifest["project_id"])
+        self._project_path = project_path
         strategy_data = manifest.get("gating_strategies_data", {}).get(
             "default_strategy",
             {"id": "default_strategy", "name": "Default Strategy", "gates": []},
@@ -3807,8 +3853,6 @@ class MainWindow(QMainWindow):
                 str(display.get("y_channel", "")),
             )
 
-        self._project_id = str(manifest["project_id"])
-        self._project_path = project_path
         self._default_compensation_matrix_id = manifest.get(
             "default_compensation_matrix_id"
         )
