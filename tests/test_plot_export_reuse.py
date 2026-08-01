@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import subprocess
+from dataclasses import asdict
 
 import numpy as np
 import pytest
@@ -825,6 +826,24 @@ def test_export_tick_labels_use_gui_superscript_notation() -> None:
   assert _display_tick_label("1.0e3") == "10³"
   assert _display_tick_label("2e3") == "2 × 10³"
   assert _display_tick_label("-1e-2") == "-1 × 10⁻²"
+
+
+def test_overlay_runtime_titles_replace_stale_single_title() -> None:
+  sources = (
+    {"source_id": "s1", "sample_id": "sample-1", "display_name": "Control", "visible": True},
+    {"source_id": "s2", "sample_id": "sample-2", "display_name": "Treated", "visible": True},
+  )
+  prepared = prepare_plot_export(
+    "view", "scatter", sources,
+    (OverlaySourceResolution("s1", "compatible"), OverlaySourceResolution("s2", "compatible")),
+    view_presentation={"title": "Control", "title_mode": "overlay_sample_titles"},
+    scene={"title_lines": ["Control"]},
+  )
+  assert prepared.scene.title_lines == ("Control", "Treated")
+  layout = resolve_plot_layout(
+    prepared.scene, {}, width=640, height=480,
+  )
+  assert len(layout.title_baselines) == 2
 
 
 def test_export_options_control_svg_elements_and_aspect(tmp_path) -> None:

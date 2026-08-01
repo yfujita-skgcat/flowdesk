@@ -868,8 +868,6 @@ class PlotWidget(QWidget):
             style = dict(getattr(layer, "style", {}))
             x_values = np.asarray(layer.x)
             y_values = np.asarray(layer.y)
-            export_x = x_values.copy()
-            export_y = y_values.copy()
             export_style = dict(style)
             sample_indices = self._display_sample_indices(
                 len(x_values), self._max_display_points
@@ -891,7 +889,13 @@ class PlotWidget(QWidget):
                 ),
             )
             self._overlay_scatter_items.append(item)
-            self._export_overlay_layers.append((export_x, export_y, export_style))
+            # Keep single-plot export pixel-for-pixel aligned with the live
+            # preview.  Overlay arrays have already passed the analytical
+            # population/display mask; apply the same presentation-only point
+            # sampling before retaining them for export.
+            self._export_overlay_layers.append(
+                (x_values.copy(), y_values.copy(), export_style)
+            )
 
     def clear_overlay_layers(self) -> None:
         """Remove display-only overlay layers without changing analysis state."""

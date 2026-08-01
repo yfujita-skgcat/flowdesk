@@ -189,10 +189,21 @@ def prepare_plot_export(
   )
   style_by_id = {style.source_id: style for style in resolved.presentation.source_styles}
   scene_value = dict(scene or {})
-  scene_value.setdefault(
-    "title_lines",
-    resolve_presentation_title(resolved.presentation, source_labels).splitlines(),
-  )
+  resolved_title_lines = resolve_presentation_title(
+    resolved.presentation, source_labels
+  ).splitlines()
+  # A persisted display_scene can contain a title captured while only the
+  # active source was visible.  When the current view is an overlay, source
+  # labels are the authoritative runtime metadata and must not be shadowed by
+  # that stale one-line scene value.  Keep explicit scene titles for single
+  # source/custom-title exports and for the current-sample title mode.
+  if (
+    resolved.presentation.title_mode == "overlay_sample_titles"
+    and len(source_labels) > 1
+  ):
+    scene_value["title_lines"] = resolved_title_lines
+  else:
+    scene_value.setdefault("title_lines", resolved_title_lines)
   scene_value.setdefault("source_order", list(visible_order))
   scene_value.setdefault("x_axis_label", resolved.presentation.x_axis_display_label or "")
   scene_value.setdefault("y_axis_label", resolved.presentation.y_axis_display_label or "")
@@ -1177,6 +1188,15 @@ def _scene_with_selected_title(
 ) -> PlotScene:
   """Use an explicit writer presentation title for direct-export callers."""
   selected_lines = tuple(str(line) for line in selected.title.splitlines() if str(line))
+  # In overlay mode the scene title lines are resolved from the current
+  # visible source metadata.  ``selected.title`` may be a stale persisted
+  # active-sample title, so replacing the scene here would silently render
+  # only the first overlay title and allocate a one-line title band.
+  if (
+    selected.title_mode == "overlay_sample_titles"
+    and len(prepared.scene.title_lines) > 1
+  ):
+    return prepared.scene
   if not selected_lines or selected_lines == prepared.scene.title_lines:
     return prepared.scene
   return replace(prepared.scene, title_lines=selected_lines)
