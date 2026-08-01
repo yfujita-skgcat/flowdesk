@@ -60,7 +60,12 @@ def render_batch_plot_qt(
   y_spec = _transform_spec(y_transform)
   sources = tuple({
     "source_id": source_id, "sample_id": source_id,
-    "population_id": "all_events", "display_name": source_id,
+    "population_id": "all_events",
+    "display_name": (
+      "\n".join(title_lines) if len(source_ids) == 1 and title_lines
+      else title_lines[index] if index < len(title_lines)
+      else source_id
+    ),
     "visible": True, "order": index,
   } for index, source_id in enumerate(source_ids))
   if not sources:

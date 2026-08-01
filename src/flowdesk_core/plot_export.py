@@ -19,7 +19,9 @@ from typing import Any, Iterator
 import numpy as np
 
 from flowdesk_core.font_resources import (
-  BundledFontError, bundled_font_filename, load_bundled_font,
+  BundledFontError,
+  bundled_font_filename,
+  load_bundled_font,
 )
 from flowdesk_core.models import BatchPlotExportSpec, PlotPresentationSpec, PlotType
 from flowdesk_core.plot_presentation import (
@@ -31,7 +33,10 @@ from flowdesk_core.plot_presentation import (
   validate_presentation,
 )
 from flowdesk_core.plot_scene import (
-  POINTS_TO_PX, PlotLayoutSpec, PlotScene, resolve_plot_layout,
+  POINTS_TO_PX,
+  PlotLayoutSpec,
+  PlotScene,
+  resolve_plot_layout,
 )
 from flowdesk_core.vector_scatter import (
   CompactScatterBatch,
@@ -192,25 +197,26 @@ def prepare_plot_export(
     global_preference,
     source_ids=tuple(visible_order),
   )
-  resolved_dict = asdict(resolved.presentation)
   source_labels = tuple(
     str(source_by_id[source_id].get("display_name", source_id))
     for source_id in visible_order
   )
+  resolved_title = resolve_presentation_title(
+    resolved.presentation, source_labels
+  )
+  if source_labels:
+    resolved = replace(
+      resolved,
+      presentation=replace(resolved.presentation, title=resolved_title),
+    )
+  resolved_dict = asdict(resolved.presentation)
   style_by_id = {style.source_id: style for style in resolved.presentation.source_styles}
   scene_value = dict(scene or {})
-  resolved_title_lines = resolve_presentation_title(
-    resolved.presentation, source_labels
-  ).splitlines()
-  # A persisted display_scene can contain a title captured while only the
-  # active source was visible.  When the current view is an overlay, source
-  # labels are the authoritative runtime metadata and must not be shadowed by
-  # that stale one-line scene value.  Keep explicit scene titles for single
-  # source/custom-title exports and for the current-sample title mode.
-  if (
-    resolved.presentation.title_mode == "overlay_sample_titles"
-    and len(source_labels) > 1
-  ):
+  resolved_title_lines = resolved_title.splitlines()
+  # A persisted display_scene can contain a title captured before a Sample
+  # Sheet edit. In overlay-sample-title mode the current visible source labels
+  # are authoritative for both one-source and multi-source exports.
+  if resolved.presentation.title_mode == "overlay_sample_titles":
     scene_value["title_lines"] = resolved_title_lines
   else:
     scene_value.setdefault("title_lines", resolved_title_lines)
@@ -1199,13 +1205,12 @@ def _scene_with_selected_title(
 ) -> PlotScene:
   """Use an explicit writer presentation title for direct-export callers."""
   selected_lines = tuple(str(line) for line in selected.title.splitlines() if str(line))
-  # In overlay mode the scene title lines are resolved from the current
-  # visible source metadata.  ``selected.title`` may be a stale persisted
-  # active-sample title, so replacing the scene here would silently render
-  # only the first overlay title and allocate a one-line title band.
+  # In overlay mode the scene title lines are resolved from current visible
+  # source metadata. ``selected.title`` must never shadow a Sample Sheet title,
+  # regardless of whether one or many sources are visible.
   if (
     selected.title_mode == "overlay_sample_titles"
-    and len(prepared.scene.title_lines) > 1
+    and selected is prepared.resolved_presentation.presentation
   ):
     return prepared.scene
   if not selected_lines or selected_lines == prepared.scene.title_lines:

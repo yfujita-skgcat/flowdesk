@@ -15,6 +15,14 @@ before starting the worker, but the `Run Saved Queue` branch starts
 project bundle from disk, so they can use an older title such as the FCS/sample
 name while the GUI already displays the new workspace `sample_title`.
 
+A second title boundary exists inside the renderer. `prepare_plot_export()` can
+correctly resolve a runtime source label and place it in `PlotScene.title_lines`,
+while the resolved `PlotPresentationSpec.title` still contains the persisted
+pre-edit title. Writers must not replace a runtime scene title with that stale
+field merely because the view contains only one source. In
+`overlay_sample_titles` mode, visible source labels are authoritative for one or
+many sources alike.
+
 ## Implementation rules
 
 1. Before either a single-definition export or a saved-queue export starts, make
@@ -28,10 +36,15 @@ name while the GUI already displays the new workspace `sample_title`.
    does.
 5. Keep scientific execution in `flowdesk_core`/the headless pipeline. The Qt
    layer only persists state and starts the existing worker.
+6. Resolve the runtime title once in `prepare_plot_export()` and store the same
+   value in both the resolved presentation metadata and the renderer-neutral
+   scene. Writers must consume the scene title in `overlay_sample_titles` mode.
 
 ## Target files
 
 - `src/flowdesk_qt/main_window.py`: shared pre-export persistence boundary.
+- `src/flowdesk_core/plot_export.py`: canonical runtime title resolution for
+  single-source and overlay writers.
 - `tests/gui/test_statistics_entrypoints.py` or `tests/gui/test_gui_workflow.py`:
   queue-start and save-failure regression tests.
 - `docs/user-manual/user_manual.md`: document that Saved Queue persists current
@@ -43,6 +56,9 @@ name while the GUI already displays the new workspace `sample_title`.
   assert the save hook runs before the queue worker starts.
 - Assert a failed/cancelled save starts no worker and leaves the project dirty.
 - Retain existing tests for single-definition export and queue worker arguments.
+- Prepare a single-source export with a stale persisted title and a current
+  Sample Sheet display name; assert PNG/SVG metadata and rendered SVG text use
+  the current display name.
 
 ## Acceptance criteria
 

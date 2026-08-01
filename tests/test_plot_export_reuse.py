@@ -5,7 +5,6 @@ import json
 import re
 import shutil
 import subprocess
-from dataclasses import asdict
 
 import numpy as np
 import pytest
@@ -15,15 +14,15 @@ from flowdesk_core.font_resources import load_bundled_font
 from flowdesk_core.models import (
   BatchPlotExportSpec,
   PlotPresentationSpec,
-  SourceStyleSpec,
   PlotViewRegistry,
   PlotViewSpec,
+  SourceStyleSpec,
 )
 from flowdesk_core.plot_export import (
   PlotExportError,
+  _display_tick_label,
   _font,
   _hybrid_scatter_raster,
-  _display_tick_label,
   _vertical_text_image,
   prepare_plot_export,
   prepare_vector_render_cache,
@@ -858,6 +857,31 @@ def test_overlay_runtime_titles_replace_stale_single_title() -> None:
     prepared.scene, {}, width=640, height=480,
   )
   assert len(layout.title_baselines) == 2
+
+
+def test_single_runtime_title_replaces_stale_persisted_title(tmp_path) -> None:
+  sources = ({
+    "source_id": "s1", "sample_id": "sample-1",
+    "display_name": "A1_ss1", "visible": True,
+  },)
+  prepared = prepare_plot_export(
+    "view", "scatter", sources,
+    (OverlaySourceResolution("s1", "compatible"),),
+    view_presentation={"title": "1_A1", "title_mode": "overlay_sample_titles"},
+    scene={"title_lines": ["1_A1"]},
+  )
+
+  assert prepared.resolved_presentation.presentation.title == "A1_ss1"
+  assert prepared.scene.title_lines == ("A1_ss1",)
+
+  path = tmp_path / "single-title.svg"
+  write_plot_svg(path, prepared, layers={"s1": ((0.5,), (0.5,))})
+  svg = path.read_text(encoding="utf-8")
+  metadata = json.loads(path.with_suffix(".svg.json").read_text(encoding="utf-8"))
+  assert ">A1_ss1</text>" in svg
+  assert ">1_A1</text>" not in svg
+  assert metadata["presentation"]["title"] == "A1_ss1"
+  assert metadata["scene"]["title_lines"] == ["A1_ss1"]
 
 
 def test_export_options_control_svg_elements_and_aspect(tmp_path) -> None:
