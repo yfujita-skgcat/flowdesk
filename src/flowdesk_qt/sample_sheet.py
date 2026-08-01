@@ -14,6 +14,7 @@ from PySide6.QtCore import (
   QSortFilterProxyModel,
   Qt,
 )
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
   QApplication,
   QDialog,
@@ -38,6 +39,40 @@ from flowdesk_core.annotations import (
 from flowdesk_core.models import AnnotationSpec
 
 logger = logging.getLogger(__name__)
+
+
+class SampleSheetTableView(QTableView):
+  """Sample Sheet table with spreadsheet-compatible row copying."""
+
+  def keyPressEvent(self, event) -> None:
+    if event.matches(QKeySequence.StandardKey.Copy):
+      self.copy_selected_rows()
+      event.accept()
+      return
+    super().keyPressEvent(event)
+
+  def copy_selected_rows(self) -> str:
+    """Copy selected rows as TSV and return the copied text."""
+    selection_model = self.selectionModel()
+    model = self.model()
+    if selection_model is None or model is None:
+      return ""
+    rows = sorted({index.row() for index in selection_model.selectedRows()})
+    if not rows:
+      rows = sorted({index.row() for index in selection_model.selectedIndexes()})
+    if not rows:
+      return ""
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, delimiter="\t", lineterminator="\n")
+    for row in rows:
+      writer.writerow([
+        "" if (value := model.data(model.index(row, column), Qt.ItemDataRole.DisplayRole)) is None
+        else str(value)
+        for column in range(model.columnCount())
+      ])
+    text = output.getvalue()
+    QApplication.clipboard().setText(text)
+    return text
 
 
 class SampleSheetModel(QAbstractTableModel):
@@ -338,7 +373,7 @@ class SampleSheetDialog(QDialog):
     self._filter_edit = QLineEdit()
     self._filter_edit.setObjectName("sampleSheetFilterEdit")
     self._filter_edit.setPlaceholderText("Filter samples...")
-    self._table = QTableView()
+    self._table = SampleSheetTableView()
     self._table.setObjectName("sampleSheetTable")
     self._proxy = QSortFilterProxyModel(self)
     self._proxy.setSourceModel(self._model)
@@ -346,6 +381,8 @@ class SampleSheetDialog(QDialog):
     self._proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
     self._table.setModel(self._proxy)
     self._table.setAlternatingRowColors(True)
+    self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+    self._table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
     self._table.setSortingEnabled(True)
     self._table.horizontalHeader().setSortIndicatorShown(True)
     add_column = QPushButton("Add Annotation Column…")

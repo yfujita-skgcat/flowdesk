@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QItemSelectionModel, Qt
 
 from flowdesk_qt.sample_sheet import SampleSheetDialog, SampleSheetModel
 
@@ -100,6 +100,31 @@ def test_sample_sheet_filter_is_case_insensitive_and_non_destructive(qapp) -> No
   assert dialog._proxy.data(dialog._proxy.index(0, 0)) == "s2"
   assert len(dialog.annotations()) == 0
   dialog.reject()
+
+
+def test_sample_sheet_selected_rows_copy_as_spreadsheet_tsv(qapp) -> None:
+  dialog = SampleSheetDialog(
+    [
+      {"id": "s1", "name": "Control", "path": "/tmp/control.fcs"},
+      {"id": "s2", "name": "Treated", "path": "/tmp/treated.fcs"},
+    ],
+    [{"sample_id": "s1", "keyword": "Condition", "value": "ctrl", "source": "workspace"}],
+  )
+  try:
+    dialog._table.selectRow(0)
+    dialog._table.selectionModel().select(
+      dialog._proxy.index(1, 0),
+      QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+    )
+    copied = dialog._table.copy_selected_rows()
+    assert copied == (
+      "s2\t/tmp/treated.fcs\tTreated\tTreated\t\n"
+      "s1\t/tmp/control.fcs\tControl\tControl\tctrl\n"
+    )
+    assert qapp.clipboard().text() == copied
+    assert dialog.annotations()[0]["value"] == "ctrl"
+  finally:
+    dialog.reject()
 
 
 def test_sample_sheet_exposes_workspace_columns_and_preserves_fcs_read_only(qapp) -> None:

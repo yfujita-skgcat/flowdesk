@@ -103,6 +103,7 @@ release order below.
 | P1.1 | `cross-platform-runtime-hardening.md` | P1 native package foundation |
 | B7.3 consistency | `batch-export-state-consistency.md` | B7.3, B7.1 |
 | Rendering consistency | `gui-export-font-normalization.md` | B7.3 consistency |
+| Sample Sheet copy | `sample-sheet-tsv-copy.md` | B1 |
 
 ## Choosing a guide
 
