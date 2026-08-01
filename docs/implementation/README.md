@@ -104,6 +104,7 @@ release order below.
 | B7.3 consistency | `batch-export-state-consistency.md` | B7.3, B7.1 |
 | Rendering consistency | `gui-export-font-normalization.md` | B7.3 consistency |
 | Sample Sheet copy | `sample-sheet-tsv-copy.md` | B1 |
+| Batch filename well | `batch-filename-well-template.md` | B7.3 |
 
 ## Choosing a guide
 

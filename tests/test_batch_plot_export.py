@@ -110,6 +110,48 @@ def test_batch_plan_does_not_infer_ambiguous_well(tmp_path) -> None:
   assert item.output_paths[0].endswith("A1_B2_s1_main-view.png")
 
 
+def test_batch_filename_template_well_uses_title_and_batch_width(tmp_path) -> None:
+  samples = [
+    {"id": "s1", "name": "one", "path": "/results/one.fcs"},
+    {"id": "s2", "name": "two", "path": "/results/two.fcs"},
+    {"id": "s3", "name": "three", "path": "/results/three.fcs"},
+  ]
+  spec = BatchPlotExportSpec(
+    id="well-template", name="Well template", filename_template="{well}",
+  )
+  items = plan_batch_plot_export(
+    spec, samples, tmp_path,
+    annotations=[
+      {"sample_id": "s1", "keyword": "sample_title", "value": "A1-sample1", "source": "workspace"},
+      {"sample_id": "s2", "keyword": "sample_title", "value": "C12-sample2", "source": "workspace"},
+      {"sample_id": "s3", "keyword": "sample_title", "value": "no-well", "source": "workspace"},
+    ],
+  )
+  assert [Path(item.output_paths[0]).name for item in items] == [
+    "A01.png", "C12.png", "X00.png",
+  ]
+
+
+def test_batch_filename_template_well_supports_three_digit_width(tmp_path) -> None:
+  samples = [
+    {"id": "s1", "name": "one", "path": "/results/one.fcs"},
+    {"id": "s2", "name": "two", "path": "/results/two.fcs"},
+  ]
+  spec = BatchPlotExportSpec(
+    id="well-template", name="Well template", filename_template="{well}",
+  )
+  items = plan_batch_plot_export(
+    spec, samples, tmp_path,
+    annotations=[
+      {"sample_id": "s1", "keyword": "sample_title", "value": "A7", "source": "workspace"},
+      {"sample_id": "s2", "keyword": "sample_title", "value": "C123", "source": "workspace"},
+    ],
+  )
+  assert [Path(item.output_paths[0]).name for item in items] == [
+    "A007.png", "C123.png",
+  ]
+
+
 def test_batch_run_writes_outputs_sidecars_and_manifest(tmp_path) -> None:
   spec = BatchPlotExportSpec(id="export", name="Export", formats=("svg",))
   original_samples = [dict(sample) for sample in _samples()]

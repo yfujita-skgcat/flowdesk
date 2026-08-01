@@ -6,7 +6,7 @@ import json
 import re
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import CancelledError, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -110,6 +110,15 @@ def plan_batch_plot_export(
     raise BatchPlotExportError(f"batch target references unknown samples: {unknown!r}")
   output_root = Path(output_dir)
   typed_annotations = _typed_annotations(annotations)
+  title_well_width = _title_well_width(
+    resolve_sample_title(
+      str(sample.get("id", "")),
+      str(sample.get("name", "")),
+      str(sample.get("path", "")),
+      typed_annotations,
+    )
+    for sample in samples
+  )
   used: set[str] = set()
   items: list[BatchPlotExportItem] = []
   for index, sample_id in enumerate(target_ids):
@@ -134,6 +143,7 @@ def plan_batch_plot_export(
     stem = _filename_stem(
       spec, sample, sample_id, title, index,
       source_sample_ids=source_ids, well_resolutions=wells,
+      well=_title_well(title, title_well_width),
     )
     paths: list[str] = []
     diagnostic: str | None = None
@@ -531,6 +541,7 @@ def _filename_stem(
   *,
   source_sample_ids: Sequence[str] = (),
   well_resolutions: Sequence[WellResolution] = (),
+  well: str = "X00",
 ) -> str:
   values = {
     "sample_id": sample_id,
@@ -538,6 +549,7 @@ def _filename_stem(
     "sample_name": str(sample.get("name", sample_id)),
     "plot_id": spec.plot_view_id,
     "index": str(index),
+    "well": well,
   }
   try:
     rendered = spec.filename_template.format(**values)
@@ -578,6 +590,29 @@ def resolve_sample_well(sample: Mapping[str, Any]) -> WellResolution:
 
 
 _WELL_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])([A-Pa-p](?:0?[1-9]|[1-9][0-9]))(?![A-Za-z0-9])")
+
+
+_TITLE_WELL_RE = re.compile(
+  r"(?<![A-Za-z0-9])([A-Pa-p])0*([1-9][0-9]{0,2})(?![A-Za-z0-9])"
+)
+
+
+def _title_well_width(titles: Iterable[Any]) -> int:
+  """Return the maximum numeric well width, with a two-digit minimum."""
+  widths = [
+    len(match.group(2))
+    for title in titles
+    for match in _TITLE_WELL_RE.finditer(str(title))
+  ]
+  return max(2, max(widths, default=2))
+
+
+def _title_well(title: str, width: int) -> str:
+  """Extract and normalize the first well token from a resolved title."""
+  match = _TITLE_WELL_RE.search(str(title))
+  if match is None:
+    return "X" + "0" * width
+  return f"{match.group(1).upper()}{int(match.group(2)):0{width}d}"
 
 
 def _normalize_well(value: Any) -> str | None:

@@ -1046,6 +1046,8 @@ GUIとheadless exportは、X/Y parameter、transform ID、viewport、GUIで確�
 
 出力ファイル名は portable slug に変換される。sample または metadata の well (`A01` は `A1` に正規化) を優先し、未設定の場合は FCS ファイル名中の曖昧でない `A1`、`B02`、`H12` のような token だけを使用する。単一 source は `A1_<template>.png`、複数 source は表示順に `A1_B2_<template>.png` となり、well が分からない複数 source は stable sample ID を prefix にする。推定元と source ID は sidecar と batch manifest に保存される。
 
+Filename templateでは、`{sample_id}`、`{sample_title}`、`{sample_name}`、`{plot_id}`、`{index}`に加えて`{well}`を使用できます。`{well}`は解決済みタイトル中の独立した`A1`、`C12`などから抽出し、バッチ全体で最大の数字桁数（最低2桁）に合わせて`A01`、`C12`のようにゼロ埋めします。タイトルにwellがない場合は同じ幅の`X00`または`X000`になります。`{index}`は0始まりです。
+
 ---
 
 ## 16. キーボードショートカット
