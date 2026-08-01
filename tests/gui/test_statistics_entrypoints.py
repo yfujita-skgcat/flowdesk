@@ -602,6 +602,98 @@ def test_gui_batch_plot_action_delegates_to_cli_core_runner(qapp, monkeypatch, t
     window.deleteLater()
 
 
+def test_gui_saved_queue_persists_dirty_state_before_starting_worker(
+  qapp, monkeypatch, tmp_path,
+) -> None:
+  window = MainWindow()
+  window._project_path = tmp_path / "project.flowdesk"
+  window._project_dirty = True
+  calls: list[tuple[str, object]] = []
+
+  class AcceptedDialog:
+    def __init__(self, *_args, **_kwargs):
+      pass
+
+    def exec(self):
+      return QDialog.DialogCode.Accepted
+
+    def request(self):
+      from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportRequest
+
+      return BatchPlotExportRequest(
+        {}, str(tmp_path / "plots"), False,
+        queue_export_ids=("first", "second"),
+      )
+
+  def save(_self, path):
+    calls.append(("save", str(path)))
+    _self._project_dirty = False
+
+  def start(_self, export_ids, output_dir, **_kwargs):
+    calls.append(("start", (tuple(export_ids), output_dir)))
+
+  monkeypatch.setattr("flowdesk_qt.main_window.BatchPlotExportDialog", AcceptedDialog)
+  monkeypatch.setattr("flowdesk_qt.main_window.MainWindow._save_project_to_path", save)
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.MainWindow._start_batch_plot_queue_export", start,
+  )
+  try:
+    window._on_batch_plot_export()
+    assert calls == [
+      ("save", str(window._project_path)),
+      ("start", (("first", "second"), str(tmp_path / "plots"))),
+    ]
+  finally:
+    window.close()
+    window.deleteLater()
+
+
+def test_gui_saved_queue_does_not_start_when_project_save_fails(
+  qapp, monkeypatch, tmp_path,
+) -> None:
+  window = MainWindow()
+  window._project_path = tmp_path / "project.flowdesk"
+  window._project_dirty = True
+  started = False
+
+  class AcceptedDialog:
+    def __init__(self, *_args, **_kwargs):
+      pass
+
+    def exec(self):
+      return QDialog.DialogCode.Accepted
+
+    def request(self):
+      from flowdesk_qt.batch_plot_export_dialog import BatchPlotExportRequest
+
+      return BatchPlotExportRequest(
+        {}, str(tmp_path / "plots"), False, queue_export_ids=("first",),
+      )
+
+  def fail_save(_self, _path):
+    raise OSError("read-only project")
+
+  def start(*_args, **_kwargs):
+    nonlocal started
+    started = True
+
+  monkeypatch.setattr("flowdesk_qt.main_window.BatchPlotExportDialog", AcceptedDialog)
+  monkeypatch.setattr("flowdesk_qt.main_window.MainWindow._save_project_to_path", fail_save)
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.MainWindow._start_batch_plot_queue_export", start,
+  )
+  monkeypatch.setattr(
+    "flowdesk_qt.main_window.QMessageBox.critical", lambda *_args: None,
+  )
+  try:
+    window._on_batch_plot_export()
+    assert started is False
+    assert window._project_dirty is True
+  finally:
+    window.close()
+    window.deleteLater()
+
+
 def test_gui_batch_plot_action_deletes_persisted_definition(qapp, monkeypatch, tmp_path) -> None:
   window = MainWindow()
   window._project_path = tmp_path / "project.flowdesk"

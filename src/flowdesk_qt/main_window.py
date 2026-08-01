@@ -119,12 +119,12 @@ from flowdesk_qt.pipeline_execution_dialog import (
     PipelineExecutionRequest,
 )
 from flowdesk_qt.plot_export_dialog import PlotExportDialog, PlotExportRequest
-from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 from flowdesk_qt.plot_toolbar import PlotToolbar
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.preview_scheduler import PreviewScheduler
 from flowdesk_qt.processed_display_scheduler import ProcessedDisplayScheduler
+from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 from flowdesk_qt.results_export_dialog import ResultsExportOptions
 from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
@@ -3507,6 +3507,21 @@ class MainWindow(QMainWindow):
         self._gate_editor.mark_undo_clean()
         self._update_undo_actions()
 
+    def _persist_project_before_batch_export(self) -> bool:
+        """Persist dirty GUI state before a disk-backed export worker starts."""
+        if not self._project_dirty:
+            return True
+        if self._project_path is None:
+            return self._save_project_interactively()
+        try:
+            self._save_project_to_path(self._project_path)
+            self._update_status("Project saved before batch export")
+            return True
+        except Exception as exc:
+            logger.error("Project save failed before batch export: %s", exc)
+            QMessageBox.critical(self, "Project Save Error", str(exc))
+            return False
+
     def _on_save_analysis_settings(self) -> None:
         """Save reusable definitions without samples or computed Results."""
         path_str = QFileDialog.getExistingDirectory(
@@ -4270,6 +4285,8 @@ class MainWindow(QMainWindow):
             return
         request = dialog.request()
         if request.queue_export_ids:
+            if not self._persist_project_before_batch_export():
+                return
             self._start_batch_plot_queue_export(
                 request.queue_export_ids,
                 request.output_dir,
