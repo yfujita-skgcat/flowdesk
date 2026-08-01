@@ -85,6 +85,7 @@ git status --short
 | D7 | `docs/implementation/preferences-and-accessibility.md` |
 | Performance | `docs/implementation/performance-and-review.md` |
 | Performance parallel/progress | `docs/implementation/parallel-execution-and-progress.md` |
+| P1.1 | `docs/implementation/cross-platform-runtime-hardening.md` |
 
 ## Release A: Scientific foundation
 
@@ -896,6 +897,43 @@ PDFの主要hot stageは測定で特定し、選択した最適化は同一scene
 - [x] Batch Plot Exportは現在選択中のFITC/APC等の軸、formal transform ID、population、
   visible overlay、gate、axis label/tickをsingle exportと同じdefinitionで出力する。不完全な
   viewが先頭FCS channelや空のlabel/gateへ暗黙fallbackすることはない。
+
+#### Phase B7.3.H: Windows GUI / PNG font-size parity (plan)
+
+実装前に`docs/implementation/windows-gui-export-font-parity.md`を全文読む。一回のLLM実行では
+下記incrementを一つだけ実装し、診断ログ、test、user manual、ToDo更新、commitを完了して停止する。
+
+- [ ] Increment 1A: 確定原因であるWindows packaged PNGのfont fallbackを修正する。現在は
+  `ImageFont.truetype("DejaVuSans*.ttf", size)`がWindowsで見つからず、DPIでscaleしない
+  `ImageFont.load_default()`へsilent fallbackするため文字だけが極小になる。regular/boldのscalable
+  fontとlicenseをrepository/packageに含め、source/PyInstaller共通のresource helperで読み込む。GUI/CLI両spec、
+  `THIRD_PARTY_NOTICES.md`、packaged smoke testを更新し、bundled fontが欠落・破損した場合は
+  fixed bitmap fontで成功扱いにせずstructured export errorとする。
+- [ ] Increment 1B: Windowsの実測環境でGUI screenshotとPNGを同一logical scaleで比較する。Batch設定の
+  logical canvas、effective raster、DPI、viewer zoom、resolved font resourceを記録する。Qt version、
+  Windows display scale、logical DPI、devicePixelRatio、GUI QFontMetrics、core/Pillow font metrics、
+  plot rectangle/title baselineを機密イベント値なしでdebug artifactへ記録し、修正後に残る
+  font metric、DPI conversion、layout差だけを分離する。viewer zoomは比較条件であり今回の主原因ではない。
+- [ ] Increment 2: `PlotScene`にresolved font contractを追加し、persisted point sizeから96-DPI logical
+  pixel size、family、weight、ascent/descent、line heightを一度だけ解決する。Qt/pyqtgraphのpoint
+  size、core/Pillowのfont size、raster DPI scaleが二重変換されないようにし、Windows monitor DPIを
+  headless geometryへ持ち込まない。旧`legacy_pixel_dimensions`定義の出力意味を保持する。
+- [ ] Increment 3: GUI、single export、Batch/CLI PNGが同じfont contract、title/axis/tick text、
+  plot rectangle、baseline、visibilityを使うよう統合する。Qt adapterとPillow adapterのfont fallback
+  をsidecarへ記録し、font metric差は明示toleranceのみ許容する。フォントを単に拡大してviewer画像へ
+  合わせる修正、monitor DPIによるrange/gate/sampling変更、screenshot captureへの依存は禁止する。
+- [ ] Increment 4: 96/150/300/600 DPI、657×657 logical canvas、1/1.25/1.5/2 Qt scale factor、
+  one/multi-line title、長いaxis label、superscript tick、bold fontを対象にcross-platform testを追加する。
+  高DPI PNGをlogical canvasへ正規化した画像でGUIとのplot rectangle、font proportion、tick/gate/colorを比較し、
+  title clipping/overlap、output dimensions、PNG density metadata、point-plan hash、analysis result不変を検証する。
+- [ ] Increment 5: 実装済み仕様だけを`docs/user-manual/user_manual.md`へ追記する。高DPI PNGはpixel数が
+  増えるためviewer zoomが小さく見えること、100%またはlogical-sizeへ正規化して比較することを説明する。
+
+受け入れ条件: 300 DPIで実pixel数が増えても、同じlogical sizeへ正規化したGUI/PNGのtitle、axis label、
+tick、plot rectangle、gate、colorの比率が明示tolerance内で一致する。Windows native検証がない場合は、
+Qt scale factorを制御したLinux testを補助証拠として扱い、Windows font fallback parityを保証したとは記載しない。
+詳細なtarget file、診断項目、禁止事項、verification commandは`docs/implementation/windows-gui-export-font-parity.md`
+を正とする。
 
 ### Phase B7.4: Analysis workflow integration [S02/S04/S05/S07/S09/S10/S11/S14]
 
@@ -1949,9 +1987,9 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [ ] `packaging/flowdesk.spec`を追加し、PyInstaller `onedir` buildをLinux、Windows、macOSで再現できるようにする。
 - [ ] PyInstaller成果物をPython未導入のclean環境で起動するpackage smoke testを追加する。GUI起動、FCS読込、Pipeline、project save/load、TSV/CSV/PNG/SVG/PDF exportを確認する。
 - [x] PyInstaller package smokeへ、native `flowdesk-cli` executableによる保存済みBatch Plot Export
-  の実行を追加した。3 OS workflowで`data/analysis.flowdesk`の4 samplesを実行し、非空PNG/PDF、
-  sidecar、batch manifestを確認する。これはclean環境でのGUI操作、QThread終了、batch thread
-  backendのreentrancyを代替しない。
+  の実行を追加した。現行3 OS workflowはCI内生成の1 sample・256 event synthetic fixtureで
+  非空PNG、sidecar、batch manifestを確認する。これはmulti-sample overlay/gate、PDF、clean環境での
+  GUI操作、QThread終了、batch thread backendのreentrancyを代替しない。
 - [ ] Windows向けにInno Setupまたは同等のinstallerを追加する。ユーザー領域へのインストール、Start Menu、uninstaller、upgrade、必要なら`.fcs`関連付けを確認する。
 - [ ] macOS向けに`.app`とDMGを追加する。arm64を先行対象とし、必要に応じてx86_64またはuniversal buildを定義する。
 - [ ] macOSのDeveloper ID code signing、Hardened Runtime、notarization、ticket stapleをCIで実行できるようにする。秘密情報がない場合は署名工程を安全にskipして理由を記録する。
@@ -1962,6 +2000,43 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [ ] 各配布物のSHA-256 checksum、build version、source commit、build OSをrelease metadataへ記録する。
 - [ ] 配布物を実機またはclean VMでinstall、起動、更新、uninstallし、ユーザー書込み領域、Unicode/空白を含むFCS path、Ctrl-C、QThread終了を確認する。
 - [ ] Windows SmartScreen、macOS Gatekeeper、Linux executable permission/AppImage制約を含む既知の制限とユーザー向け手順を`README.md`と`docs/user-manual/user_manual.md`へ追記する。
+
+### Phase P1.1: Cross-platform runtime hardening (plan)
+
+実装前に`docs/implementation/cross-platform-runtime-hardening.md`を全文読む。Linuxでの成功を
+Windows/macOSの検証済み証拠とせず、一回のLLM実行で下記incrementを一つだけ実装する。
+
+- [ ] Increment 1: 3 OSのnative CIでOS/architecture、Python、NumPy/BLAS、Pillow、Qt、locale、
+  filesystem case sensitivity、Qt platform/image plugin、screen logical DPI/device ratio、resource解決を
+  構造化artifactに記録する。Windows/macOSでsource GUI subsetとfrozen GUI screenshot/UI stateを実行し、
+  `MainWindow`生成とnon-empty outputだけをpackage成功条件にしない。
+- [ ] Increment 2: `windows-gui-export-font-parity.md` Increment 2Aを前提とし、font、license、Qt plugin等の
+  runtime resourceをsource/PyInstaller共通helperで解決する。Windows 100/125/150/200%とmacOS Retinaで
+  同一`PlotScene`を描画し、title/axis/tick/gate/grid/dotの正規化比率、clipping、scene hashを検証する。
+- [ ] Increment 3: Batch/CSV/TSV/plot exportのportable filename policyを一本化する。Unicode NFC/NFD、
+  case-only衝突、Windows予約名、末尾dot/space、空slug、長いcomponent/path、安定ID suffixをrender前に
+  解決し、case-sensitive/insensitive filesystemで同じfinal filenameとcollision結果にする。
+- [ ] Increment 4: project/FCS path解決をresolved/missing/foreign-absolute/permission-denied/ambiguousのtyped
+  statusで返す。Windows drive/UNC、macOS `/Volumes`、POSIX absolute、portable relative、`..`、Unicode、
+  case-only、symlink、long pathをtestし、異OSのabsolute pathを利用可能として黙って解釈せずReconnectを要求する。
+- [ ] Increment 5: project bundleのgeneration/staging contract、Windows sharing violation時の復旧可能なerror、
+  recoveryのUTC generation/sequence、native temp directory、QSettings identity/schema/isolation/`sync()`/`status()`を実装する。
+  失敗時に前のproject、active project path、user settingsを壊さないことをfailure injectionで検証する。
+- [ ] Increment 6: native Windows/macOSでsample切替、density、Pipeline、Batch Export、cancel、project replace、
+  close、clipboard Unicode TSV/CRLF、native dialog seam、resize/scroll、DPI/screen変更を検証する。GUI thread外の
+  Qt変更、obsolete result adoption、QThread/QThreadPool残留、segmentation faultを成功扱いにしない。
+- [ ] Increment 7: sequential/bounded-threadのcount、membership、diagnostic、scene、filename、cancel/cleanup、
+  peak RSS、effective workerを3 OSで比較する。FCS endian/Unicode metadata、compensation condition threshold、
+  non-finite derived value、gate boundary、empty populationを科学parity fixtureに含める。Windows `spawn`、
+  `freeze_support`、shared-memory ownership、frozen child cleanupが完成するまでprocess backendは追加しない。
+- [ ] Increment 8: Windows per-user installerとmacOS `.app`/DMGをclean machineでinstall/launch/upgrade/uninstallする。
+  SmartScreen、Developer ID/Hardened Runtime/notarization/staple/Gatekeeper、Finder/Start Menu起動、対応architecture、
+  Unicode/空白/長いpath、checksum、build/license manifestをrelease acceptanceに含める。
+
+受け入れ条件: 広告する各OS/architectureのnative artifactでGUI操作、FCS解決、project保存/再読込、
+PNG/JPEG/SVG/PDF、worker cancel/close、Unicode/path、科学結果parityが検証される。native環境がない場合は
+対応済みとせず、未検証のcontractと代替証拠を明記する。詳細な対象file、禁止事項、test matrixは
+`docs/implementation/cross-platform-runtime-hardening.md`を正とする。
 
 ## 各Phaseの最終確認template
 

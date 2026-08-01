@@ -100,6 +100,7 @@ release order below.
 | ToDo phase | Guide | Prerequisite |
 |---|---|---|
 | P1 | `packaging-and-release.md` | Phase 1 application packaging foundation |
+| P1.1 | `cross-platform-runtime-hardening.md` | P1 native package foundation |
 
 ## Choosing a guide
 

@@ -17,8 +17,10 @@ Phase 1の配布準備は実装済みである。
 - PyInstallerの標準hookを優先し、collectorではpyqtgraphのデータだけを追加収集する。
 - GUI specはQt Widgets/SVGと2D plotに不要なQt optional modules、OpenGL、テストモジュールを除外する。
 - package workflowはNode.js警告を避けるため、checkout、setup-python、upload-artifactの現行majorを使用する。
-- package workflowのPyInstaller smokeは、native CLI実行ファイルで保存済みBatch Plot Export定義を
-  実行し、4サンプルのPNG/PDF、sidecar、batch manifestが非空で生成されることまで確認する。
+- package workflowのPyInstaller smokeは、CI内で生成する1サンプル・256 eventの
+  synthetic fixtureと保存済みBatch Plot Export定義をnative CLI executableで実行し、
+  PNG、sidecar、batch manifestが非空で生成されることまで確認する。現行smokeは
+  multi-sample/overlay/gate/PDF/native GUI renderingのrelease gateではない。
 
 次のPhase 2以降は未実装であり、PyInstaller specやOS installerを追加する前に、各Phaseを個別に完了させる。
 
@@ -85,11 +87,12 @@ flowdesk-cli batch-plot <project> --export-id <id> --output-dir <smoke-output>/b
 - `<export-id>.batch.json` が非空で、出力ファイルが1つ以上非空である。
 - 既存のpipeline `results.tsv` smokeと同じprojectを使い、project変更やraw FCS変更を行わない。
 
-Windows、macOS、Linux workflowは追跡済みの`data/analysis.flowdesk`と
-`batch-export-2c72921e28a9`を使う。timeoutは300秒とし、失敗時はpackage artifactを成功扱いで
-公開しない。このsmokeはGUI操作、Qt thread affinity、PyInstaller終了後のQThread残留、
-batch thread backendのreentrancyを証明しないため、それらは別のnative/clean-environment testで
-検証する。
+Windows、macOS、Linux workflowは`tools/create_package_smoke_fixture.py`が作る
+`artifacts/package-fixture/project.flowdesk`、`sample.fcs`、`package-smoke-export`を使う。
+timeoutは300秒とし、失敗時はpackage artifactを成功扱いで公開しない。このsmokeは
+GUI操作、Qt thread affinity、PyInstaller終了後のQThread残留、batch thread backendの
+reentrancy、multi-sample overlay/gate、JPEG/SVG/PDFを証明しないため、それらは
+`cross-platform-runtime-hardening.md`のnative/clean-environment testで検証する。
 
 開発環境でのpytest成功だけではpackage smoke testの代替にならない。package後の実行ログとversionをartifactへ保存する。
 
