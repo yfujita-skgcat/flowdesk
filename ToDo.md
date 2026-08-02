@@ -150,6 +150,7 @@ git status --short
 - [x] 済み: name、expression、inputs、source stage、unit、policyを編集するdialogを追加する。
 - [x] 済み: channel/derived parameter挿入、syntax validation、error位置、small previewを提供する。
 - [x] 済み: previewはcore evaluatorを使用し、GUI独自計算をしない。
+- [x] 済み: `Inputs`の手動選択を廃止し、式から検出した依存parameterを読み取り専用で表示する。挿入操作は単一のparameter選択欄に統一する。
 
 #### 必須test
 

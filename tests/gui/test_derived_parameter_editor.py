@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
   QComboBox,
   QLabel,
   QLineEdit,
-  QListWidget,
   QPlainTextEdit,
   QPushButton,
 )
@@ -60,10 +59,11 @@ def test_editor_persists_all_fields_and_inserts_parameter(qapp) -> None:
     )
     assert insert_button is not None
     insert_button.click()
-    inputs = dialog.findChild(QListWidget, "derivedParameterInputsList")
-    assert inputs is not None
-    for row in range(inputs.count()):
-      inputs.item(row).setSelected(True)
+    detected_inputs = dialog.findChild(
+      QLabel, "derivedParameterDetectedInputsLabel"
+    )
+    assert detected_inputs is not None
+    assert detected_inputs.text() == "Signal [signal], Reference [reference]"
     source = dialog.findChild(QComboBox, "derivedParameterSourceStageCombo")
     policy = dialog.findChild(QComboBox, "derivedParameterPolicyCombo")
     assert source is not None and policy is not None
@@ -85,6 +85,40 @@ def test_editor_persists_all_fields_and_inserts_parameter(qapp) -> None:
       "non_finite_policy": "strict",
       "notes": "",
     }]
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_editor_replaces_detected_inputs_when_expression_changes(qapp) -> None:
+  dialog = DerivedParameterEditorDialog(
+    [],
+    (
+      ChannelSpec(id="signal", name="Signal"),
+      ChannelSpec(id="reference", name="Reference"),
+    ),
+  )
+  try:
+    expression = dialog.findChild(
+      QPlainTextEdit, "derivedParameterExpressionEdit"
+    )
+    detected_inputs = dialog.findChild(
+      QLabel, "derivedParameterDetectedInputsLabel"
+    )
+    assert expression is not None and detected_inputs is not None
+
+    expression.setPlainText("signal")
+    assert dialog.definitions()[0]["input_parameters"] == ["signal"]
+    assert detected_inputs.text() == "Signal [signal]"
+
+    expression.setPlainText("reference")
+    assert dialog.definitions()[0]["input_parameters"] == ["reference"]
+    assert detected_inputs.text() == "Reference [reference]"
+
+    expression.setPlainText("signal /")
+    assert dialog.definitions()[0]["input_parameters"] == []
+    assert detected_inputs.text() == "Invalid or incomplete expression"
   finally:
     dialog.close()
     dialog.deleteLater()

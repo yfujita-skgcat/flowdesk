@@ -9,7 +9,6 @@ from typing import Any
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-  QAbstractItemView,
   QComboBox,
   QDialog,
   QDialogButtonBox,
@@ -18,7 +17,6 @@ from PySide6.QtWidgets import (
   QLabel,
   QLineEdit,
   QListWidget,
-  QListWidgetItem,
   QPlainTextEdit,
   QPushButton,
   QSplitter,
@@ -29,6 +27,8 @@ from PySide6.QtWidgets import (
 from flowdesk_core.derived_parameters import (
   DerivedParameterPlanningError,
   DerivedParameterPreview,
+  ExpressionError,
+  extract_parameter_references,
   plan_derived_parameters,
 )
 from flowdesk_core.models import ChannelSpec, DerivedParameterSpec
@@ -129,12 +129,12 @@ class DerivedParameterEditorDialog(QDialog):
     self._expression_edit.setPlaceholderText("signal / reference")
     form.addRow("Expression:", self._expression_edit)
 
-    self._inputs_list = QListWidget()
-    self._inputs_list.setObjectName("derivedParameterInputsList")
-    self._inputs_list.setSelectionMode(
-      QAbstractItemView.SelectionMode.MultiSelection
+    self._detected_inputs_label = QLabel("No input parameters detected")
+    self._detected_inputs_label.setObjectName(
+      "derivedParameterDetectedInputsLabel"
     )
-    form.addRow("Inputs:", self._inputs_list)
+    self._detected_inputs_label.setWordWrap(True)
+    form.addRow("Detected inputs:", self._detected_inputs_label)
 
     insertion = QHBoxLayout()
     self._insert_parameter_combo = QComboBox()
@@ -147,7 +147,7 @@ class DerivedParameterEditorDialog(QDialog):
     )
     insertion.addWidget(self._insert_parameter_combo)
     insertion.addWidget(self._insert_parameter_button)
-    form.addRow("Expression helper:", insertion)
+    form.addRow("Insert parameter:", insertion)
     right_layout.addLayout(form)
 
     actions = QHBoxLayout()
@@ -185,6 +185,7 @@ class DerivedParameterEditorDialog(QDialog):
     self._new_button.clicked.connect(self._add_definition)
     self._delete_button.clicked.connect(self._delete_definition)
     self._insert_parameter_button.clicked.connect(self._insert_parameter)
+    self._expression_edit.textChanged.connect(self._refresh_detected_inputs)
     self._validate_button.clicked.connect(self._validate_current)
     self._preview_button.clicked.connect(self._preview_current)
     buttons.accepted.connect(self._accept_if_valid)
@@ -214,16 +215,37 @@ class DerivedParameterEditorDialog(QDialog):
         labels.setdefault(output_id, str(definition.get("name", "Derived")))
     return list(labels.items())
 
-  def _refresh_parameter_widgets(self, selected: set[str]) -> None:
+  def _refresh_parameter_widgets(self) -> None:
     choices = self._parameter_choices()
-    self._inputs_list.clear()
     self._insert_parameter_combo.clear()
     for parameter_id, label in choices:
-      item = QListWidgetItem(f"{label} [{parameter_id}]")
-      item.setData(Qt.ItemDataRole.UserRole, parameter_id)
-      item.setSelected(parameter_id in selected)
-      self._inputs_list.addItem(item)
       self._insert_parameter_combo.addItem(f"{label} [{parameter_id}]", parameter_id)
+
+  def _detected_input_parameters(self, expression: str) -> tuple[str, ...] | None:
+    try:
+      return extract_parameter_references(
+        expression,
+        (parameter_id for parameter_id, _label in self._parameter_choices()),
+      )
+    except (DerivedParameterPlanningError, ExpressionError):
+      return None
+
+  def _refresh_detected_inputs(self) -> None:
+    if self._loading:
+      return
+    references = self._detected_input_parameters(
+      self._expression_edit.toPlainText().strip()
+    )
+    if references is None:
+      self._detected_inputs_label.setText("Invalid or incomplete expression")
+      return
+    labels = dict(self._parameter_choices())
+    if not references:
+      self._detected_inputs_label.setText("No input parameters detected")
+      return
+    self._detected_inputs_label.setText(
+      ", ".join(f"{labels[parameter_id]} [{parameter_id}]" for parameter_id in references)
+    )
 
   def _refresh_definition_list(self, selected_row: int) -> None:
     self._loading = True
@@ -253,8 +275,8 @@ class DerivedParameterEditorDialog(QDialog):
       self._output_id_edit.clear()
       self._unit_edit.clear()
       self._expression_edit.clear()
-      self._inputs_list.clear()
       self._insert_parameter_combo.clear()
+      self._detected_inputs_label.setText("No input parameters detected")
       self._diagnostic_label.setText("No definitions")
       self._preview_label.setText("No preview")
     finally:
@@ -284,31 +306,28 @@ class DerivedParameterEditorDialog(QDialog):
       )
       self._nonfinite_combo.setCurrentIndex(max(0, policy_index))
       self._expression_edit.setPlainText(str(definition.get("expression", "")))
-      self._refresh_parameter_widgets(
-        set(definition.get("input_parameters", []))
-      )
+      self._refresh_parameter_widgets()
       self._diagnostic_label.setText("Not validated")
       self._preview_label.setText("No preview")
     finally:
       self._loading = False
+    self._refresh_detected_inputs()
 
   def _commit_current(self) -> None:
     if self._loading or not (0 <= self._current_row < len(self._definitions)):
       return
     original = self._definitions[self._current_row]
+    expression = self._expression_edit.toPlainText().strip()
+    references = self._detected_input_parameters(expression)
     original.update({
       "id": self._id_edit.text().strip(),
       "name": self._name_edit.text().strip(),
-      "expression": self._expression_edit.toPlainText().strip(),
+      "expression": expression,
       "output_channel_id": self._output_id_edit.text().strip(),
       "output_label": original.get("output_label"),
       "unit": self._unit_edit.text().strip() or None,
       "source_stage": self._source_combo.currentText(),
-      "input_parameters": [
-        str(self._inputs_list.item(row).data(Qt.ItemDataRole.UserRole))
-        for row in range(self._inputs_list.count())
-        if self._inputs_list.item(row).isSelected()
-      ],
+      "input_parameters": list(references or ()),
       "invalid_value_policy": self._policy_combo.currentText(),
       "non_finite_policy": self._nonfinite_combo.currentData() or "strict",
       "notes": str(original.get("notes", "")),

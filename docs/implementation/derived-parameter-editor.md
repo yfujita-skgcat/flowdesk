@@ -241,6 +241,63 @@ derived stage rather than a Qt calculation or raw-event fallback.
   warning, sample ID, parameter ID, exception type, affected event count,
   expression, and persisted policy remain visible and machine-readable.
 
+## Increment 6: expression-derived dependencies and unambiguous insertion UI
+
+### Problem
+
+The original editor exposed two independent parameter selectors: a multi-select
+`Inputs` list and an `Expression helper` combo.  The Insert button used the
+combo, while selecting the list only wrote `input_parameters`.  This made the
+list look like the insertion target even though it did not change the
+expression or numeric evaluation.
+
+### Fixed UI and persistence contract
+
+- Remove the editable `Inputs` multi-select entirely.  The editor has one
+  `Insert parameter` combo and button; the selected combo value is the only
+  value inserted at the expression cursor.
+- Replace the editable list with a read-only `Detected inputs` field.  It is
+  derived from the restricted core expression parser, in first-reference
+  order, and is never independently selectable or saved from Qt state.
+- At every draft commit, calculate `input_parameters` from the expression with
+  `extract_parameter_references(expression, known_parameter_ids)`.  A valid
+  expression therefore persists an exact, reproducible dependency list.
+- For an incomplete, unsafe, or unknown-parameter expression, display an
+  invalid/incomplete status in `Detected inputs` and persist an empty list for
+  that invalid draft.  Validation remains authoritative and reports the core
+  diagnostic; the UI must not retain stale dependencies from an earlier
+  expression.
+- Existing projects are normalized when edited and saved: manually declared
+  dependencies that are not referenced by the expression are removed.  They
+  were not numeric inputs, so this cannot change expression values.  This
+  release deliberately does not preserve the obsolete manual-dependency UI.
+
+### Target files
+
+- `src/flowdesk_qt/derived_parameter_editor.py`
+- `tests/gui/test_derived_parameter_editor.py`
+- `docs/user-manual/user_manual.md`
+- `ToDo.md`
+
+### Required tests
+
+- Inserting a selected acquired parameter writes its stable ID at the cursor
+  and the detected list shows that exact ID.
+- A two-input expression persists its detected IDs without any separate input
+  selection operation.
+- Replacing an expression changes persisted dependencies and never retains an
+  obsolete ID.
+- An incomplete expression does not display or save stale detected IDs, while
+  Validate still reports the core syntax diagnostic.
+
+### Acceptance criteria
+
+- No selectable `Inputs` widget exists in the derived parameter editor.
+- The only parameter-selection control that can affect the expression is
+  labeled `Insert parameter`.
+- GUI preview and headless planning receive the exact same expression-derived
+  `input_parameters` metadata.
+
 ## Do not do
 
 - Do not use `eval`, `exec`, or unrestricted AST execution.

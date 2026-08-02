@@ -640,9 +640,8 @@ source event count、candidate event count、gained、lost、scientific equivale
 |Failure policy|emit_nan_with_warning / fail_sample / fail_run|
 |Non-finite policy|`Strict (report invalid events)` / `Exclude invalid values explicitly`。前者は invalid event を報告し、後者は invalid value を明示的に除外する。|
 |Expression|安全な式。placeholder は `signal / reference`。|
-|Inputs|依存 parameter を複数選択。|
-|Expression helper combo|acquired parameter と先行 derived output の候補。|
-|Insert parameter|cursor 位置へ stable parameter ID を挿入。|
+|Detected inputs|Expressionから安全なparserで自動検出した依存parameter。読み取り専用で、式が未完成・不正な間はその状態を表示する。|
+|Insert parameter|acquired parameter とderived outputの候補を一つ選び、`Insert parameter`でcursor位置へstable parameter IDを挿入する。複数の選択欄はない。|
 |Validate|syntax、dependency、cycle、output ID 等を core validator で検査。|
 |Preview|current sample の最大 200 event 程度を canonical processing path で評価する診断 preview。|
 |diagnostic label|validation code と message。|
@@ -1205,7 +1204,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`derived_parameter_editor.py`|`derivedParameterPolicyCombo`|
 |`derived_parameter_editor.py`|`derivedParameterNonFinitePolicyCombo`|
 |`derived_parameter_editor.py`|`derivedParameterExpressionEdit`|
-|`derived_parameter_editor.py`|`derivedParameterInputsList`|
+|`derived_parameter_editor.py`|`derivedParameterDetectedInputsLabel`|
 |`derived_parameter_editor.py`|`derivedParameterInsertParameterCombo`|
 |`derived_parameter_editor.py`|`derivedParameterInsertParameterButton`|
 |`derived_parameter_editor.py`|`derivedParameterValidateButton`|
