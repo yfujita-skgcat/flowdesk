@@ -139,7 +139,7 @@ class DerivedParameterEditorDialog(QDialog):
       "derivedParameterDetectedInputsLabel"
     )
     self._detected_inputs_label.setWordWrap(True)
-    form.addRow("Detected inputs:", self._detected_inputs_label)
+    form.addRow("Expression inputs:", self._detected_inputs_label)
 
     insertion = QHBoxLayout()
     self._insert_parameter_combo = QComboBox()
@@ -227,7 +227,8 @@ class DerivedParameterEditorDialog(QDialog):
     for definition in self._definitions:
       output_id = str(definition.get("output_channel_id", ""))
       if output_id:
-        labels.setdefault(output_id, str(definition.get("name", "Derived")))
+        name = str(definition.get("name", "Derived"))
+        labels.setdefault(output_id, f"{name} [{output_id}]")
     return list(labels.items())
 
   @staticmethod
@@ -317,7 +318,7 @@ class DerivedParameterEditorDialog(QDialog):
       self._detected_inputs_label.setText("No input parameters detected")
       return
     self._detected_inputs_label.setText(
-      ", ".join(f"{labels[parameter_id]} [{parameter_id}]" for parameter_id in references)
+      ", ".join(labels[parameter_id] for parameter_id in references)
     )
 
   def _refresh_definition_list(self, selected_row: int) -> None:

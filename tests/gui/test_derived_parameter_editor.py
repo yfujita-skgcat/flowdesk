@@ -148,7 +148,7 @@ def test_editor_persists_all_fields_and_inserts_parameter(qapp) -> None:
       QLabel, "derivedParameterDetectedInputsLabel"
     )
     assert detected_inputs is not None
-    assert detected_inputs.text() == "Signal [signal], Reference [reference]"
+    assert detected_inputs.text() == "Signal, Reference"
     source = dialog.findChild(QComboBox, "derivedParameterSourceStageCombo")
     policy = dialog.findChild(QComboBox, "derivedParameterPolicyCombo")
     assert source is not None and policy is not None
@@ -187,6 +187,8 @@ def test_insert_parameter_shows_short_and_canonical_names(qapp) -> None:
     dialog._new_button.click()
     assert dialog._insert_parameter_combo.itemText(0) == "APC-A [FL2-A]"
     assert dialog._insert_parameter_combo.itemData(0) == "stable-fl2"
+    dialog._expression_edit.setPlainText("stable-fl2")
+    assert dialog._detected_inputs_label.text() == "APC-A [FL2-A]"
   finally:
     dialog.close()
     dialog.deleteLater()
@@ -213,11 +215,11 @@ def test_editor_replaces_detected_inputs_when_expression_changes(qapp) -> None:
 
     expression.setPlainText("signal")
     assert dialog.definitions()[0]["input_parameters"] == ["signal"]
-    assert detected_inputs.text() == "Signal [signal]"
+    assert detected_inputs.text() == "Signal"
 
     expression.setPlainText("reference")
     assert dialog.definitions()[0]["input_parameters"] == ["reference"]
-    assert detected_inputs.text() == "Reference [reference]"
+    assert detected_inputs.text() == "Reference"
 
     expression.setPlainText("signal /")
     assert dialog.definitions()[0]["input_parameters"] == []

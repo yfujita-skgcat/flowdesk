@@ -265,14 +265,14 @@ expression or numeric evaluation.
 - Remove the editable `Inputs` multi-select entirely.  The editor has one
   `Insert parameter` combo and button; the selected combo value is the only
   value inserted at the expression cursor.
-- Replace the editable list with a read-only `Detected inputs` field.  It is
+- Replace the editable list with a read-only `Expression inputs` field.  It is
   derived from the restricted core expression parser, in first-reference
   order, and is never independently selectable or saved from Qt state.
 - At every draft commit, calculate `input_parameters` from the expression with
   `extract_parameter_references(expression, known_parameter_ids)`.  A valid
   expression therefore persists an exact, reproducible dependency list.
 - For an incomplete, unsafe, or unknown-parameter expression, display an
-  invalid/incomplete status in `Detected inputs` and persist an empty list for
+  invalid/incomplete status in `Expression inputs` and persist an empty list for
   that invalid draft.  Validation remains authoritative and reports the core
   diagnostic; the UI must not retain stale dependencies from an earlier
   expression.
