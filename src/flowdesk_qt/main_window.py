@@ -2456,6 +2456,14 @@ class MainWindow(QMainWindow):
         self._plot_widget.clear_overlay_layers()
         self._plot_widget.set_status_banner("")
         state = self._sample_browser.overlay_state()
+        sample_order = {
+            sample.id: len(self._sample_browser.samples()) - index
+            for index, sample in enumerate(self._sample_browser.samples())
+        }
+        if self._current_sample_id is not None:
+            self._plot_widget.set_base_layer_z(
+                float(sample_order.get(self._current_sample_id, 0))
+            )
         view = next(
             (item for item in self._plot_views if item.get("id") == self._overlay_view_id()),
             None,
@@ -2576,6 +2584,7 @@ class MainWindow(QMainWindow):
                         ),
                         "alpha": float(style.get("alpha", 0.65)),
                         "label": style.get("legend_label", source.get("display_name", sample_id)),
+                        "z_value": float(sample_order.get(sample_id, 0)),
                     },
                 )
             )

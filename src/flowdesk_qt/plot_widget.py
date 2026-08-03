@@ -171,6 +171,7 @@ class PlotWidget(QWidget):
         self._is_histogram_mode: bool = False
         self._histogram_item: Any | None = None
         self._overlay_scatter_items: list[Any] = []
+        self._base_layer_z = 0.0
         # Renderer-neutral overlay payload retained for the canonical export
         # route.  The Qt graphics items remain display-only and are never
         # inspected by an exporter.
@@ -942,7 +943,7 @@ class PlotWidget(QWidget):
                     float(style.get("alpha", self._style.dot_opacity)),
                 ),
             )
-            item.setZValue(float(z_index))
+            item.setZValue(float(style.get("z_value", z_index)))
             self._overlay_scatter_items.append(item)
             # Keep single-plot export pixel-for-pixel aligned with the live
             # preview.  Overlay arrays have already passed the analytical
@@ -957,6 +958,14 @@ class PlotWidget(QWidget):
         for item in self._overlay_scatter_items:
             self._plot_item.removeItem(item)
         self._overlay_scatter_items.clear()
+
+    def set_base_layer_z(self, z_value: float) -> None:
+        """Set the z-order of the active sample's scatter items."""
+        self._base_layer_z = float(z_value)
+        if self._scatter is not None:
+            self._scatter.setZValue(self._base_layer_z)
+        for item, _color in self._population_scatter_items:
+            item.setZValue(self._base_layer_z)
 
     def add_gate_overlay(
         self,
@@ -1547,7 +1556,7 @@ class PlotWidget(QWidget):
         opacity: float,
     ) -> Any:
         """Draw one uniform-color layer without pyqtgraph per-point styles."""
-        return self._plot_item.plot(
+        item = self._plot_item.plot(
             x_values,
             y_values,
             pen=None,
@@ -1557,6 +1566,8 @@ class PlotWidget(QWidget):
             pxMode=True,
             symbolBrush=self._make_brush(color, opacity),
         )
+        item.setZValue(self._base_layer_z)
+        return item
 
     @staticmethod
     def _display_sample_indices(
@@ -2627,6 +2638,7 @@ class PlotWidget(QWidget):
         if self._scatter is None:
             self._scatter = ScatterPlotItem()
             self._plot_item.addItem(self._scatter)
+            self._scatter.setZValue(self._base_layer_z)
         if self._scatter.data is None or len(self._scatter.data) != len(self._rendered_x):
             self._scatter.setData(
                 x=self._rendered_x,

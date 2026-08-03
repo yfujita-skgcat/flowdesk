@@ -94,6 +94,9 @@ def test_prepared_overlay_layers_render_without_recomputing_membership() -> None
   plot.plot_overlay_layers(layers)
   assert len(plot._overlay_scatter_items) == 2
   assert [item.zValue() for item in plot._overlay_scatter_items] == [1.0, 2.0]
+  plot.plot_events(np.array([1.0]), np.array([2.0]))
+  plot.set_base_layer_z(3.0)
+  assert plot._scatter is not None and plot._scatter.zValue() == 3.0
   plot.clear_overlay_layers()
   assert plot._overlay_scatter_items == []
 
