@@ -9,6 +9,8 @@ import pytest
 from PIL import Image
 
 from flowdesk_core.models import BatchPlotExportSpec
+from flowdesk_core.plot_export import prepare_display_export, write_plot_png
+from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.plot_scene import PlotScene, resolve_plot_layout
 from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.plot_widget import PlotWidget
@@ -35,6 +37,87 @@ def test_live_export_metadata_includes_manual_overlay_layers(qapp) -> None:
     qapp.processEvents()
 
 
+def test_plot_scene_sanitizes_nonfinite_layout_metadata() -> None:
+  scene = PlotScene.from_mapping({
+    "plot_area": [float("nan"), 50.0, 20.0, 60.0],
+    "title_baseline_y": float("nan"),
+    "layout_title_line_count": float("nan"),
+  })
+  assert scene.plot_area == (60.0, 50.0, 20.0, 60.0)
+  assert scene.title_baseline_y is None
+  assert scene.layout_title_line_count is None
+
+
+def test_shared_display_export_payload_resolves_overlay_titles_and_colors() -> None:
+  prepared = prepare_display_export(
+    "main-view", "scatter",
+    (
+      {"source_id": "s1", "display_name": "Blue", "visible": True, "order": 0},
+      {"source_id": "s2", "display_name": "Red", "visible": True, "order": 1},
+      {"source_id": "s3", "display_name": "Green", "visible": True, "order": 2},
+    ),
+    tuple(OverlaySourceResolution(source_id, "compatible", index) for index, source_id in
+          enumerate(("s1", "s2", "s3"))),
+    presentation={
+      "title_mode": "overlay_sample_titles", "single_color": "#0000ff",
+      "x_axis_display_label": "iRFP670 (APC-A)",
+      "y_axis_display_label": "EGFP (FITC-A)",
+    },
+    active_source_id="s1", manual_overlay_colors={"s2": "#ff0000", "s3": "#00ff00"},
+    scene={"x_axis_label": "iRFP670 (APC-A)", "y_axis_label": "EGFP (FITC-A)"},
+  )
+  assert prepared.scene.title_lines == ("Blue", "Red", "Green")
+  assert prepared.scene.title_colors == ("#0000ff", "#ff0000", "#00ff00")
+  assert prepared.scene.x_axis_label == "iRFP670 (APC-A)"
+  assert prepared.scene.y_axis_label == "EGFP (FITC-A)"
+  assert prepared.resolved_presentation.presentation.x_axis_display_label == "iRFP670 (APC-A)"
+
+
+def test_qt_current_view_adapter_matches_shared_png_writer(qapp, tmp_path) -> None:
+  prepared = prepare_display_export(
+    "main-view", "scatter",
+    ({"source_id": "s1", "display_name": "Sample", "visible": True, "order": 0},),
+    (OverlaySourceResolution("s1", "compatible", 0),),
+    presentation={"single_color": "#3366cc", "x_axis_display_label": "X"},
+    active_source_id="s1",
+  )
+  options = BatchPlotExportSpec(id="parity", name="Parity", width=300, height=200)
+  adapter_path = tmp_path / "adapter.png"
+  core_path = tmp_path / "core.png"
+  render_batch_plot_qt(
+    adapter_path,
+    raw_layers={"s1": (np.array([1.0, 10.0]), np.array([2.0, 20.0]))},
+    source_ids=("s1",), source_styles={}, presentation={}, x_parameter="x",
+    y_parameter="y", title_lines=(), title_colors=(), x_transform=None,
+    y_transform=None, x_range=(1.0, 10.0), y_range=(2.0, 20.0), gates=(),
+    width=300, height=200, options=options, prepared=prepared,
+  )
+  write_plot_png(
+    core_path, prepared, layers={"s1": ((0.0, 1.0), (0.0, 1.0))},
+    options=options, width=300, height=200,
+  )
+  assert adapter_path.read_bytes() == core_path.read_bytes()
+
+
+def test_qt_export_skips_nonfinite_display_events(qapp, tmp_path) -> None:
+  path = tmp_path / "finite.png"
+  render_batch_plot_qt(
+    path,
+    raw_layers={"s1": (np.array([1.0, np.nan, 10.0]), np.array([2.0, 3.0, 20.0]))},
+    source_ids=("s1",),
+    source_styles={"s1": {"color": "#000000", "marker_size": 1.5}},
+    presentation={"background_color": "#ffffff"},
+    x_parameter="x", y_parameter="y", title_lines=("Sample",),
+    title_colors=("#000000",), x_transform=None, y_transform=None,
+    x_range=(1.0, 10.0), y_range=(2.0, 20.0), gates=(), width=300, height=200,
+    options=BatchPlotExportSpec(id="finite", name="Finite"),
+    export_metadata={"test": True},
+  )
+  metadata = json.loads(path.with_suffix(".png.json").read_text(encoding="utf-8"))
+  assert metadata["display_state"]["input_event_count"] == 3
+  assert metadata["display_state"]["displayed_event_count"] == 2
+
+
 def test_qt_batch_renderer_writes_the_shared_scene_and_image(qapp, tmp_path) -> None:
   path = tmp_path / "plot.png"
   render_batch_plot_qt(
@@ -55,11 +138,14 @@ def test_qt_batch_renderer_writes_the_shared_scene_and_image(qapp, tmp_path) -> 
       id="export", name="Export", include_title=True,
       include_axis_labels=True, include_ticks=True,
     ),
-    export_metadata={"scene_hash": "test-scene"},
+    export_metadata={"test_marker": True},
   )
   assert path.exists() and path.stat().st_size > 1_000
   metadata = json.loads(path.with_suffix(".png.json").read_text(encoding="utf-8"))
-  assert metadata["scene_hash"] == "test-scene"
+  assert metadata["test_marker"] is True
+  assert metadata["scene_hash"] == PlotScene.from_mapping(
+    metadata["scene"]
+  ).scene_hash()
   assert metadata["display_state"]["displayed_event_count"] == 2
 
 

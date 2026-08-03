@@ -22,6 +22,8 @@ class PlotExportRequest:
   format_name: str
   width: int = 800
   height: int = 600
+  dpi: int = 96
+  raster_resolution_mode: str = "dpi_scaled"
   aspect_1_to_1: bool = False
   include_title: bool = True
   include_axis_labels: bool = True
@@ -36,6 +38,8 @@ class PlotExportRequest:
       "format": self.format_name,
       "width": self.width,
       "height": self.height,
+      "dpi": self.dpi,
+      "raster_resolution_mode": self.raster_resolution_mode,
       "aspect_1_to_1": self.aspect_1_to_1,
       "include_title": self.include_title,
       "include_axis_labels": self.include_axis_labels,
@@ -66,8 +70,18 @@ class PlotExportDialog(QDialog):
     self._height.setObjectName("plotExportHeightSpinBox")
     self._height.setRange(1, 20_000)
     self._height.setValue(600)
+    self._dpi = QSpinBox()
+    self._dpi.setObjectName("plotExportDpiSpinBox")
+    self._dpi.setRange(1, 1200)
+    self._dpi.setValue(96)
+    self._resolution_mode = QComboBox()
+    self._resolution_mode.setObjectName("plotExportRasterResolutionCombo")
+    self._resolution_mode.addItem("Scale pixels by DPI", "dpi_scaled")
+    self._resolution_mode.addItem("Keep logical pixel dimensions", "legacy_pixel_dimensions")
     self._aspect = QCheckBox("1:1 aspect")
     self._aspect.setObjectName("plotExportAspectCheckBox")
+    self._aspect.toggled.connect(self._update_aspect_widgets)
+    self._width.valueChanged.connect(self._sync_aspect_height)
     self._title = self._check("Include title", "plotExportIncludeTitleCheckBox", True)
     self._labels = self._check(
       "Include axis labels", "plotExportIncludeAxisLabelsCheckBox", True
@@ -82,6 +96,8 @@ class PlotExportDialog(QDialog):
     form.addRow("Format", self._format)
     form.addRow("Width", self._width)
     form.addRow("Height", self._height)
+    form.addRow("DPI", self._dpi)
+    form.addRow("Raster resolution", self._resolution_mode)
     form.addRow("Aspect", self._aspect)
     for widget in (
       self._title, self._labels, self._ticks, self._gates, self._legend, self._status
@@ -107,6 +123,8 @@ class PlotExportDialog(QDialog):
       format_name=self._format.currentText(),
       width=self._width.value(),
       height=self._height.value(),
+      dpi=self._dpi.value(),
+      raster_resolution_mode=str(self._resolution_mode.currentData()),
       aspect_1_to_1=self._aspect.isChecked(),
       include_title=self._title.isChecked(),
       include_axis_labels=self._labels.isChecked(),
@@ -115,3 +133,18 @@ class PlotExportDialog(QDialog):
       include_legend=self._legend.isChecked(),
       include_status_banner=self._status.isChecked(),
     )
+
+  def _sync_aspect_height(self, value: int) -> None:
+    if not self._aspect.isChecked() or self._height.value() == value:
+      return
+    self._height.blockSignals(True)
+    self._height.setValue(value)
+    self._height.blockSignals(False)
+
+  def _update_aspect_widgets(self) -> None:
+    square = self._aspect.isChecked()
+    self._height.setEnabled(not square)
+    if square:
+      self._height.blockSignals(True)
+      self._height.setValue(self._width.value())
+      self._height.blockSignals(False)

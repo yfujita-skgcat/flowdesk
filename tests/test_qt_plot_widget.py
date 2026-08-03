@@ -26,9 +26,11 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
   QApplication,
   QCheckBox,
+  QComboBox,
   QLabel,
   QMenu,
   QPushButton,
+  QSpinBox,
   QSplitter,
 )
 
@@ -292,9 +294,40 @@ def test_plot_export_dialog_returns_display_only_options() -> None:
   _app()
   dialog = PlotExportDialog("JPEG")
   assert dialog.objectName() == "plotExportOptionsDialog"
-  assert dialog.findChild(QCheckBox, "plotExportIncludeGatesCheckBox") is not None
+  for object_name in (
+    "plotExportIncludeTitleCheckBox", "plotExportIncludeAxisLabelsCheckBox",
+    "plotExportIncludeTicksCheckBox", "plotExportIncludeGatesCheckBox",
+    "plotExportIncludeLegendCheckBox", "plotExportIncludeStatusCheckBox",
+    "plotExportAspectCheckBox",
+  ):
+    assert dialog.findChild(QCheckBox, object_name) is not None
+  for object_name in (
+    "plotExportFormatCombo", "plotExportWidthSpinBox", "plotExportHeightSpinBox",
+    "plotExportDpiSpinBox", "plotExportRasterResolutionCombo",
+  ):
+    widget_type = QComboBox if object_name in (
+      "plotExportFormatCombo", "plotExportRasterResolutionCombo"
+    ) else QSpinBox
+    assert dialog.findChild(widget_type, object_name) is not None
+  dpi = dialog.findChild(QSpinBox, "plotExportDpiSpinBox")
+  assert dpi is not None
+  dpi.setValue(300)
+  aspect = dialog.findChild(QCheckBox, "plotExportAspectCheckBox")
+  width = dialog.findChild(QSpinBox, "plotExportWidthSpinBox")
+  height = dialog.findChild(QSpinBox, "plotExportHeightSpinBox")
+  assert aspect is not None and width is not None and height is not None
+  aspect.setChecked(True)
+  assert height.isEnabled() is False
+  width.setValue(920)
+  assert height.value() == 920
+  aspect.setChecked(False)
+  assert height.isEnabled() is True
   request = dialog.request()
   assert request.format_name == "JPEG"
+  assert request.dpi == 300
+  assert request.raster_resolution_mode == "dpi_scaled"
+  assert request.metadata()["dpi"] == 300
+  assert request.metadata()["raster_resolution_mode"] == "dpi_scaled"
   assert request.layout_policy == "current_view"
   dialog.deleteLater()
 

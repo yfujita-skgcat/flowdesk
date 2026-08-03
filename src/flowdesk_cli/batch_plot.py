@@ -46,13 +46,15 @@ from flowdesk_core.plot_export import (
   LayerValues,
   PreparedPlotExport,
   VectorRenderCache,
-  prepare_plot_export,
   prepare_vector_render_cache,
   resolve_export_canvas,
   write_plot_jpg,
   write_plot_pdf,
   write_plot_png,
   write_plot_svg,
+)
+from flowdesk_core.plot_export import (
+  prepare_display_export as prepare_plot_export,
 )
 from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.processed_display import ProcessedDisplayLayer, ProcessedDisplayRequest
@@ -1104,7 +1106,12 @@ def batch_plot_command(
         spec.plot_view_id, cast(PlotType, str(view.get("plot_type", "scatter"))),
         tuple(sources), tuple(OverlaySourceResolution(source_id, "compatible")
                               for source_id in source_ids),
-        view_presentation=presentation,
+        presentation=presentation,
+        active_source_id=sample_id,
+        manual_overlay_colors=(
+          manual_colors if isinstance(manual_colors, Mapping) else None
+        ),
+        source_style_overrides=source_styles,
         gate_overlays=gate_overlays,
         scene=scene,
       )

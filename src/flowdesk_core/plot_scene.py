@@ -43,8 +43,13 @@ class PlotScene:
       raise ValueError("plot scene source IDs must be non-empty strings")
     if len(set(self.source_order)) != len(self.source_order):
       raise ValueError("plot scene source IDs must be unique")
-    if len(self.plot_area) != 4 or any(float(value) < 0 for value in self.plot_area):
+    if (
+      len(self.plot_area) != 4
+      or any(not isfinite(float(value)) or float(value) < 0 for value in self.plot_area)
+    ):
       raise ValueError("plot scene plot area must contain four non-negative margins")
+    if self.title_baseline_y is not None and not isfinite(float(self.title_baseline_y)):
+      raise ValueError("plot scene title baseline must be finite")
     if self.view_range is not None:
       if len(self.view_range) != 2 or any(len(axis) != 2 for axis in self.view_range):
         raise ValueError("plot scene view range must contain X and Y pairs")
@@ -70,24 +75,39 @@ class PlotScene:
         (float(raw_range[1][0]), float(raw_range[1][1])),
       )
     area = raw.get("plot_area", (60.0, 50.0, 20.0, 60.0))
+    try:
+      area_values = tuple(float(item) for item in area)
+    except (TypeError, ValueError):
+      area_values = ()
+    if (
+      len(area_values) != 4
+      or any(not isfinite(item) or item < 0 for item in area_values)
+    ):
+      area_values = (60.0, 50.0, 20.0, 60.0)
+    raw_line_count = raw.get("layout_title_line_count")
+    try:
+      line_count = None if raw_line_count is None else max(1, int(raw_line_count))
+    except (TypeError, ValueError, OverflowError):
+      line_count = None
+    raw_baseline = raw.get("title_baseline_y")
+    try:
+      baseline = None if raw_baseline is None else float(raw_baseline)
+    except (TypeError, ValueError):
+      baseline = None
+    if baseline is not None and not isfinite(baseline):
+      baseline = None
     return cls(
       x_parameter=str(raw.get("x_parameter", "")),
       y_parameter=None if raw.get("y_parameter") is None else str(raw["y_parameter"]),
       x_transform_id=None if raw.get("x_transform_id") is None else str(raw["x_transform_id"]),
       y_transform_id=None if raw.get("y_transform_id") is None else str(raw["y_transform_id"]),
       view_range=view_range,
-      plot_area=tuple(float(item) for item in area),
+      plot_area=area_values,
       x_ticks=tuple(dict(tick) for tick in raw.get("x_ticks", ()) if isinstance(tick, Mapping)),
       y_ticks=tuple(dict(tick) for tick in raw.get("y_ticks", ()) if isinstance(tick, Mapping)),
       title_lines=tuple(str(item) for item in raw.get("title_lines", ()) if str(item)),
-      layout_title_line_count=(
-        None if raw.get("layout_title_line_count") is None
-        else max(1, int(raw["layout_title_line_count"]))
-      ),
-      title_baseline_y=(
-        None if raw.get("title_baseline_y") is None
-        else float(raw["title_baseline_y"])
-      ),
+      layout_title_line_count=line_count,
+      title_baseline_y=baseline,
       title_colors=tuple(str(item) for item in raw.get("title_colors", ())),
       x_axis_label=str(raw.get("x_axis_label", "")),
       y_axis_label=str(raw.get("y_axis_label", "")),

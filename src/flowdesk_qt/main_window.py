@@ -82,7 +82,9 @@ from flowdesk_core.parameter_catalog import (
 )
 from flowdesk_core.parameter_display import parameter_display_label
 from flowdesk_core.pipeline_runner import PipelineError, PipelineRunner
+from flowdesk_core.plot_export import prepare_display_export
 from flowdesk_core.plot_presentation import (
+    OverlaySourceResolution,
     SamplePresentationContext,
     resolve_overlay_sources,
     resolve_presentation_layers,
@@ -5826,6 +5828,31 @@ class MainWindow(QMainWindow):
         if view_range is None:
             raise ValueError("plot view range is unavailable")
         scene = metadata.get("scene", {})
+        source_definitions = tuple({
+            "source_id": source_id,
+            "sample_id": source_id,
+            "population_id": str(scene.get("population_id", "all_events")),
+            "display_name": self._sample_title_for(source_id),
+            "visible": True,
+            "order": index,
+        } for index, source_id in enumerate(source_ids))
+        prepared = prepare_display_export(
+            str(metadata.get("plot_id") or "qt-export"),
+            str(metadata.get("plot_type") or "scatter"),
+            source_definitions,
+            tuple(
+                OverlaySourceResolution(source_id, "compatible", index)
+                for index, source_id in enumerate(source_ids)
+            ),
+            presentation=presentation,
+            active_source_id=source_ids[0],
+            manual_overlay_colors=self._sample_browser.overlay_state().get(
+                "manual_overlay_colors", {}
+            ),
+            source_style_overrides=source_styles,
+            gate_overlays=tuple(scene.get("gates", ())),
+            scene=scene,
+        )
         render_batch_plot_qt(
             path,
             raw_layers={
@@ -5852,9 +5879,14 @@ class MainWindow(QMainWindow):
             height=int(request.height or self._plot_widget.canvas_size()[1]),
             options=BatchPlotExportSpec(
                 id="single-export", name="Single plot export",
-                formats=(Path(path).suffix.lower().lstrip("."),),
+                formats=(
+                    "jpg" if request.format_name == "JPEG"
+                    else request.format_name.lower(),
+                ),
                 width=int(request.width or self._plot_widget.canvas_size()[0]),
                 height=int(request.height or self._plot_widget.canvas_size()[1]),
+                dpi=int(request.dpi),
+                raster_resolution_mode=str(request.raster_resolution_mode),
                 aspect_1_to_1=bool(request.aspect_1_to_1),
                 include_title=bool(request.include_title),
                 include_axis_labels=bool(request.include_axis_labels),
@@ -5866,6 +5898,7 @@ class MainWindow(QMainWindow):
             plot_area=self._plot_widget.plot_area_margins(),
             scene_metadata=scene,
             export_metadata=metadata,
+            prepared=prepared,
         )
 
     def _on_export_request(self, format_name: str) -> None:
@@ -5888,6 +5921,12 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        path_obj = Path(path)
+        accepted_suffixes = {f".{suffix}"}
+        if suffix == "jpg":
+            accepted_suffixes.add(".jpeg")
+        if path_obj.suffix.lower() not in accepted_suffixes:
+            path = str(path_obj.with_suffix(f".{suffix}"))
         try:
             metadata = self._current_plot_export_metadata()
             metadata["export_options"] = request.metadata()

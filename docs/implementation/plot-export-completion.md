@@ -773,6 +773,48 @@ plots can still be CPU-bound by design, so performance claims must report event
 count, canvas size, DPI, scatter mode, and worker count. Reuse the vector cache
 when the same resolved scene is exported to SVG/PDF.
 
+## Current-view and Batch parity repair
+
+### Observed failure
+
+The current-view context-menu export reaches the core format writers through
+`render_batch_plot_qt()`, but it reconstructs its `sources`, resolved
+presentation, title colors, and axis labels inside a Qt compatibility adapter.
+Batch/CLI constructs those values separately in `batch_plot.py`. Consequently,
+the two paths can pass different `PlotScene` and `source_styles` mappings to
+the same PNG/SVG/PDF writer. Calling the same writer is therefore not evidence
+of parity: the renderer input must be identical for an identical view.
+
+### Implementation plan
+
+1. Move the source-style merge rules into one GUI-independent core helper. It
+   must apply active-source color, manual overlay color, advanced overlay style,
+   alpha, marker shape/size, title colors, and axis display labels once.
+2. Make Batch/CLI call that helper after data/range preparation, and make the
+   current-view export call it with its rendered layer order and current Sample
+   Sheet titles. Qt may provide display arrays and ViewBox range only; it must
+   not recreate title/color precedence.
+3. Let the current-view adapter accept the resulting `PreparedPlotExport` (or
+   an equivalent typed render payload) instead of constructing a second scene.
+   Both paths must call the same core writer dispatch with that payload.
+4. Validate and drop non-finite display points before raster/vector coordinate
+   conversion, retaining a sidecar count of input and displayed events. This
+   is display-only and must not change gates, compensation, derived values, or
+   statistics.
+5. Add an image/sidecar parity test for a three-source overlay with distinct
+   active/manual colors, Sample Sheet titles, custom axis labels, ticks, and a
+   gate. Compare source order, title text/colors, labels, scene hash, options,
+   and normalized image geometry. A right-click PNG and an equivalent Batch
+   PNG must agree except for documented font rasterisation tolerance.
+
+### Acceptance criteria
+
+- A current-view export has the same source-order/title colors/axis labels/gate
+  style as the equivalent Batch export.
+- A NaN display value cannot reach integer pixel-coordinate conversion.
+- No Qt widget contains scientific execution; only display snapshots and core
+  render-payload construction cross the GUI boundary.
+
 ## Non-goals
 
 - Report/layout editing belongs to Phase C2.

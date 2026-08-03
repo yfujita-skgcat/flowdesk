@@ -279,6 +279,92 @@ def prepare_plot_export(
   )
 
 
+def prepare_display_export(
+  plot_id: str,
+  plot_type: PlotType,
+  sources: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+  resolutions: tuple[OverlaySourceResolution, ...],
+  *,
+  presentation: Mapping[str, Any],
+  active_source_id: str,
+  manual_overlay_colors: Mapping[str, Any] | None = None,
+  source_style_overrides: Mapping[str, Mapping[str, Any]] | None = None,
+  gate_overlays: tuple[dict[str, Any], ...] = (),
+  scene: Mapping[str, Any] | None = None,
+) -> PreparedPlotExport:
+  """Prepare one renderer-neutral scene with the shared overlay style contract.
+
+  Batch/CLI and current-view exports have different data acquisition paths, but
+  must resolve source colors, labels, title colors, and axis labels exactly
+  once before entering a format writer.
+  """
+  effective_presentation = dict(presentation)
+  style_by_id = {
+    str(style.get("source_id")): dict(style)
+    for style in effective_presentation.get("source_styles", ())
+    if isinstance(style, Mapping) and style.get("source_id")
+  }
+  overrides = source_style_overrides or {}
+  manual_colors = manual_overlay_colors or {}
+  ordered_sources = sorted(
+    (dict(source) for source in sources),
+    key=lambda value: (int(value.get("order", 0)), str(value.get("source_id", ""))),
+  )
+  for source in ordered_sources:
+    source_id = str(source.get("source_id", ""))
+    style = {
+      **style_by_id.get(source_id, {}),
+      **dict(overrides.get(source_id, {})),
+      "source_id": source_id,
+    }
+    explicit_color = manual_colors.get(source_id)
+    if explicit_color:
+      style["color"] = str(explicit_color)
+    if source_id == active_source_id:
+      style["color"] = str(effective_presentation.get("single_color") or "#000000")
+      style["marker_size"] = float(
+        effective_presentation.get("single_dot_size") or 1.5
+      )
+      style["alpha"] = 0.60
+    manual_fields = set(style.get("manual_fields", ()))
+    if not style.get("color"):
+      style["color"] = (
+        str(effective_presentation.get("single_color") or "#000000")
+        if source_id == active_source_id else "#4c78a8"
+      )
+    if "alpha" not in manual_fields:
+      style["alpha"] = 0.60
+    if "marker_shape" not in manual_fields:
+      style["marker_shape"] = "circle"
+    if "marker_size" not in manual_fields:
+      style["marker_size"] = 1.5
+    style_by_id[source_id] = style
+  effective_presentation["source_styles"] = list(style_by_id.values())
+  scene_value = dict(scene or {})
+  for scene_key, presentation_key in (
+    ("x_axis_label", "x_axis_display_label"),
+    ("y_axis_label", "y_axis_display_label"),
+  ):
+    if scene_value.get(scene_key):
+      effective_presentation[presentation_key] = str(scene_value[scene_key])
+  scene_value.setdefault(
+    "x_axis_label", effective_presentation.get("x_axis_display_label") or ""
+  )
+  scene_value.setdefault(
+    "y_axis_label", effective_presentation.get("y_axis_display_label") or ""
+  )
+  scene_value["title_colors"] = [
+    str(style_by_id[str(source.get("source_id", ""))].get("color") or "#000000")
+    for source in ordered_sources
+    if source.get("visible", True)
+  ]
+  return prepare_plot_export(
+    plot_id, plot_type, ordered_sources, resolutions,
+    view_presentation=effective_presentation, gate_overlays=gate_overlays,
+    scene=scene_value,
+  )
+
+
 def write_plot_svg(
   path: str | Path,
   prepared: PreparedPlotExport,
