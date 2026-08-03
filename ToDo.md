@@ -1982,7 +1982,8 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 
 ## Bug follow-up: session and statistics usability
 
-`docs/bug.md`の現行4件を、科学的計算を変更しない独立incrementとして整理した。
+`docs/bug.md`の現行4件と、derived outputを対象にしたStatisticsのsource stage整合性を、
+明示的な検証・diagnosticを伴う独立incrementとして整理した。
 実装時は`docs/implementation/bug-follow-up-session-and-statistics.md`を全文読み、
 一度のLLM実行で下記の一項目だけを実装する。`docs/bug.md`は報告の原文として残し、
 完了時はこのToDoのチェックボックス、guideの検証記録、ユーザーマニュアルを更新する。
@@ -2001,6 +2002,15 @@ overlayなし・一source・共有範囲なしだけが単純な独立ケース�
 - [x] Increment 4: `Open Directory...`/`Open Files...`はFCS import機能として維持し、
   current sessionへ追加する意味が明確な名称・tooltipへ変更する。Open Projectとの違い、
   dirty-state、Close Project後の挙動をtestする。詳細はguideのIncrement 4に従う。
+- [ ] Increment 5: `docs/implementation/statistic-value-selection.md`を正として、Statisticsの
+  `Parameter`、`Value domain`、`Transform`という三つの独立controlを、ユーザーが「どの値を
+  集計するか」を一度だけ選ぶ`Statistic value` selectorへ統合する。内部では既存のstable
+  `parameter_id + source_stage + transform_id`を維持し、raw acquired、compensated acquired、
+  transformed value、derived output（raw/compensated inputsのprovenance付き）を明瞭に表示する。
+  raw由来derived outputを`raw` tableから読む不整合、missing transform/parameter、headlessの
+  silent skipをstructured diagnostic/error resultへ置換し、既存のderived計算、acquired statistic、
+  transform、gate、Results、save/load、CLIの数値とIDを非退行testで固定する。guideの4 incrementを
+  一回のLLM実行で一つずつ実装し、全increment完了までこの項目を完了扱いにしない。
 
 ## Release E: OS配布とリリース自動化 [P1]
 

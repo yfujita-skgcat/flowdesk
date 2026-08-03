@@ -2,10 +2,11 @@
 
 ## Scope
 
-This guide converts the current entries in `docs/bug.md` into four isolated,
-implementable increments.  Each increment is GUI/session behavior only unless
-explicitly stated otherwise.  It must not alter raw events, compensation,
-transforms, gate membership, or statistic numerical formulas.
+This guide converts the current entries in `docs/bug.md` into four completed
+GUI/session increments and links the later Statistics value-selection defect to
+one dedicated multi-increment guide.  Each increment must not alter raw events,
+compensation, transforms, gate membership, or valid statistic numerical formulas
+unless its authoritative guide explicitly defines and tests a typed error result.
 
 Read `AGENTS.md`, `docs/implementation/llm-task-protocol.md`, this guide, and
 the listed files before editing.  Implement exactly one increment per LLM run.
@@ -190,6 +191,180 @@ saved `.flowdesk` bundle.  Do not remove their functionality.
 - Labels/tooltips distinguish FCS import from Open Project.
 - Add-directory/add-files preserve existing samples and produce the documented
   dirty-state behavior.
+
+## Increment 5 — Make derived-output statistic domains explicit
+
+> **Superseding implementation guide:** the investigation and root cause below
+> remain valid, but the user-facing design has been expanded after review.
+> Implement this work only through
+> [`statistic-value-selection.md`](statistic-value-selection.md).  Its unified
+> `Statistic value` selector, four increments, compatibility matrix, and
+> non-regression requirements are authoritative.  Do not implement the older
+> three-control GUI instructions below independently.
+
+### Reproduced problem and root cause
+
+A statistic can select a valid derived output and still produce a `-` cell for
+every sample/population after a successful `Run Pipeline`.  The reported
+configuration has a derived definition whose **input source stage** is `raw`,
+and a `mean` statistic whose **value domain** is also `raw`.
+
+Those settings do not mean the same thing:
+
+```text
+derived source_stage = raw
+  -> read the definition's input channels from immutable raw FCS events
+  -> append the calculated output after compensation/derived processing
+
+statistic source_stage = raw
+  -> read only immutable raw FCS channels
+  -> derived output channel does not exist in this table
+```
+
+The current runner reaches `_step_statistics()`, cannot find the derived
+`parameter_id` in `data_by_stage["raw"].channel_ids`, and executes `continue`.
+It therefore emits no `StatisticResult` and no diagnostic.  Results renders a
+missing result as `-`, making this indistinguishable from an empty population
+or a numerical undefined value.  The current Statistics editor also accepts
+the incompatible combination and shows the unhelpful generic text `Select a
+valid acquired or derived parameter...` even when the selected derived entry
+is structurally valid.
+
+This is a statistics-domain compatibility defect.  It is not solved by
+rerunning the pipeline, changing the derived definition's input stage, or
+using the definition ID instead of the output channel ID.  Downstream
+statistics must continue to bind the derived **output channel ID**.
+
+### Scientific and persistence contract
+
+1. A derived definition with `source_stage="raw"` reads raw inputs, but its
+   output remains a derived channel materialized after compensation.  Its
+   output is valid for Statistics `compensated` and, with an explicit matching
+   transform, `transformed`; it is never valid for Statistics `raw`.
+2. Acquired parameters retain their existing domains: raw acquired channels
+   may be measured in `raw`, compensated acquired channels in `compensated`,
+   and transformed statistics require their explicit transform ID.  Do not
+   change their values or silently coerce their selected domain.
+3. A newly edited incompatible derived/raw statistic must not be saved.  The
+   editor should select `compensated` automatically when the user selects a
+   derived parameter while `raw` is active, and explain why.  The user may then
+   intentionally select a valid transformed domain/transform where applicable.
+4. Existing persisted derived/raw statistic definitions must **not** silently
+   migrate to `compensated`: that would change a stored scientific definition.
+   They remain loadable for repair, but headless execution must report an
+   explicit per-statistic error rather than omit all results.
+5. Every requested statistic/population/sample combination must produce either
+   a `StatisticResult` or a structured execution failure.  A missing column
+   must never be represented by a bare `continue`.
+
+### Inspect first
+
+- `src/flowdesk_core/models.py` (`StatisticSource`, `StatisticResult`, and
+  undefined/error reason types)
+- `src/flowdesk_core/parameter_catalog.py` (`ParameterCatalogEntry.kind`,
+  `parameter_id`, `definition_id`, `source_stage`, and availability semantics)
+- `src/flowdesk_core/pipeline_runner.py` (`_step_derived_parameters`,
+  `_step_statistics`, and report/diagnostic merge)
+- `src/flowdesk_core/statistics.py`
+- `src/flowdesk_qt/statistics_editor.py` (parameter and value-domain combos,
+  status text, persisted-definition loading, and validation)
+- `src/flowdesk_qt/results_workspace.py` (missing/error cell formatting and
+  tooltips)
+- `src/flowdesk_qt/main_window.py` (`_open_statistics_editor` and manifest
+  construction)
+- `tests/test_pipeline_runner.py`, `tests/test_population_statistics.py`,
+  `tests/gui/test_parameter_catalog_gui.py`, and
+  `tests/gui/test_statistics_entrypoints.py`
+
+Read `derived-parameter-editor.md`, `statistics-definitions.md`,
+`analysis-workflow-integration.md`, `pipeline-runner.md`, and
+`.codex/skills/derived-parameters/SKILL.md` before editing.  Also read
+`.codex/skills/scientific-review/SKILL.md`: this change must make an invalid
+domain explicit without modifying raw events, derived values, gates, or valid
+statistic values.
+
+### Required implementation
+
+1. Add one GUI-independent compatibility resolver for a statistic parameter
+   and requested value domain.  It must use stable `parameter_id`, not a
+   display label or derived definition ID.  It returns the allowed domains and
+   a stable reason/message.  Acquired entries preserve current rules; derived
+   outputs allow `compensated` and `transformed`, never `raw`.
+2. Apply that resolver in `StatisticsEditorDialog`.
+   - When a valid derived parameter is selected while the domain is `raw`, set
+     the draft domain to `compensated` before saving and show a clear status:
+     `Derived outputs are evaluated from compensated/derived data; raw is an
+     input source, not an output value domain.`
+   - Disable or otherwise prevent selecting `raw` for a selected derived
+     output.  Keep a stable object name and accessible tooltip/reason.
+   - For an existing persisted incompatible definition, keep the selected
+     values visible, mark the row invalid, and require repair before `OK`; do
+     not overwrite it merely by opening the dialog.
+   - Replace the generic valid-parameter status with a positive ready message
+     that names the selected parameter and compatible domain.  Preserve the
+     existing explanatory messages for count/frequency and invalid catalog
+     entries.
+3. Enforce the same contract in core/headless execution, not just Qt.
+   - Remove the silent `col_idx is None: continue` behavior for a requested
+     value statistic.
+   - For an unavailable parameter/domain combination, append one result for
+     each requested population with `status="error"`, `value=None`, and a
+     precise stable reason such as `parameter_unavailable_at_source_stage`.
+     Add the reason to the typed model/schema as needed; do not overload
+     `empty_population` or `calculation_error`.
+   - Emit a structured `ExecutionDiagnostic` with a stable code such as
+     `statistic_parameter_unavailable_at_source_stage`, including sample ID,
+     statistic ID, parameter ID, requested source stage, available channel IDs,
+     and derived definition/output provenance.
+   - Keep running other statistics and samples.  This invalid configuration is
+     reportable per-statistic data, not a reason to discard unrelated results.
+4. Make Results distinguish a missing historic result from an explicit error.
+   The cell may still display `-`, but error color/status and tooltip must state
+   the exact incompatibility and diagnostic/reason.  Do not calculate values in
+   Qt or infer a zero.
+5. Preserve project/CLI behavior.
+   - New valid definitions persist their selected output channel ID and value
+     domain unchanged through save/load.
+   - Legacy incompatible derived/raw definitions load unchanged and are
+     reported/repairable; no automatic scientific reinterpretation occurs.
+   - CLI/Python API and GUI `Run Pipeline` produce the same result count,
+     status, diagnostic code, and valid numeric values.
+6. Update `docs/user-manual/user_manual.md`, this guide's implementation
+   record, and the ToDo checkbox in the implementation commit.  Explain the
+   distinction between a derived definition's input source and a statistic's
+   value domain in user-facing terms.
+
+### Required tests
+
+- Core: raw-source ratio derived from two acquired channels, with a
+  `compensated` mean statistic on its output ID, yields the hand-computed value.
+- Core: that same ratio with a `raw` statistic produces exactly one error
+  `StatisticResult` per targeted population/sample plus the stable diagnostic;
+  it never disappears from the report.
+- Core: acquired raw mean remains valid and numerically unchanged.
+- Core: transformed derived statistic requires and uses its explicit transform;
+  no double transform occurs.
+- GUI: selecting a derived parameter changes an active raw draft to
+  compensated, disables/rejects raw, and shows the specific ready/help text.
+- GUI: an existing incompatible saved definition remains visible for repair and
+  cannot be silently accepted unchanged.
+- Results: explicit error cells have an error state and tooltip containing the
+  source-stage incompatibility; a valid derived statistic displays a number.
+- Save/load/CLI/Python API: output channel ID (not definition ID), domain,
+  result values, error status, and diagnostics round-trip identically.
+- Regression: a derived definition using raw *inputs* still computes correctly
+  when its statistic uses the compensated value domain.
+
+### Acceptance criteria
+
+- The screenshot configuration cannot silently yield an all-`-` column after a
+  successful pipeline.
+- A user can see, before accepting the dialog, that `raw` is invalid for a
+  derived output and why.
+- Existing invalid projects remain recoverable and diagnostically explicit;
+  valid scientific results are unchanged.
+- No Qt widget performs derived expression evaluation, statistics calculation,
+  or raw-event mutation.
 
 ## Implementation verification (2026-08-02)
 

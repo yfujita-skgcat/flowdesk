@@ -21,6 +21,13 @@ full population membership in the headless pipeline.
 > derived outputs, come from the shared Parameter Catalog described in
 > [`analysis-workflow-integration.md`](analysis-workflow-integration.md).
 
+> **Current UI follow-up:** the persisted `parameter_id + source_stage + transform_id`
+> contract remains authoritative, but the three corresponding editor controls are to be
+> presented as one virtual `Statistic value` selector. Implement that work only through
+> [`statistic-value-selection.md`](statistic-value-selection.md), which also defines how
+> to preserve all existing acquired/derived values and eliminate silent missing-column
+> skips.
+
 ## Inspect first
 
 - `src/flowdesk_core/statistics.py`

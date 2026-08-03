@@ -238,6 +238,13 @@ appear in Parameter Information, X/Y axes, transforms, gates, Results statistics
 compatible overlays, and export; its live plot must use the canonical compensated and
 derived stage rather than a Qt calculation or raw-event fallback.
 
+For the Statistics UI, do not expose a derived definition's input `source_stage` as if it
+were the statistic value domain. A raw-input derived output is still materialized after
+the derived stage. The unified selection and non-regression contract is defined in
+[`statistic-value-selection.md`](statistic-value-selection.md); it must preserve the safe
+expression, output ID, dependency order, failure policy, and numerical results described
+in this guide.
+
 ## Confirmed persistence and CLI diagnostic contract
 
 - Save/load round trips preserve all three derived failure policies exactly;
