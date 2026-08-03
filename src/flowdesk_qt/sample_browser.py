@@ -207,8 +207,17 @@ class SampleBrowser(QWidget):
 
     def overlay_state(self) -> dict[str, object]:
         """Return display-only manual overlay state for the current plot view."""
+        known_ids = {sample.id for sample in self._samples}
+        ordered_ids = [
+            sample.id for sample in self._samples
+            if sample.id in self._manual_overlay_sample_ids
+        ]
+        ordered_ids.extend(sorted(self._manual_overlay_sample_ids - known_ids))
         return {
-            "manual_overlay_sample_ids": sorted(self._manual_overlay_sample_ids),
+            # Persist a deterministic list, but derive its order from the visible
+            # Samples list rather than sample IDs.  The renderer reverses this
+            # order so the upper row is the frontmost overlay.
+            "manual_overlay_sample_ids": ordered_ids,
             "manual_overlay_colors": dict(self._manual_overlay_colors),
             "overlay_roles": dict(self._overlay_roles),
             "comparison_sets": [dict(value) for value in self._comparison_sets],

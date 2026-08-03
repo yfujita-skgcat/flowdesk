@@ -22,6 +22,7 @@ from numpy.typing import NDArray
 from PySide6.QtCore import QSettings, Qt, QThread, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -416,7 +417,7 @@ class MainWindow(QMainWindow):
         self._results_stale = False
         self._results_stale_reason: str | None = None
         self._pending_results_export: tuple[
-            ResultsExportOptions, str, str
+            ResultsExportOptions, str | None, str
         ] | None = None
         self._auto_recalculate_timer = QTimer(self)
         self._auto_recalculate_timer.setSingleShot(True)
@@ -2463,7 +2464,10 @@ class MainWindow(QMainWindow):
             dict(source) for source in (view or {}).get("overlay_sources", [])
             if bool(source.get("visible", True))
         ]
-        selected = set(state.get("manual_overlay_sample_ids", []))
+        ordered_selected = [
+            str(value) for value in state.get("manual_overlay_sample_ids", [])
+        ]
+        selected = set(ordered_selected)
         selected.update(
             self._sample_browser.comparison_overlay_sample_ids(self._current_sample_id)
         )
@@ -2490,6 +2494,13 @@ class MainWindow(QMainWindow):
         diagnostics: list[str] = []
         x_transform = self._active_plot_transform(x_parameter_id)
         y_transform = self._active_plot_transform(y_parameter_id)
+        manual_order = list(dict.fromkeys(ordered_selected + [
+            str(value) for value in
+            self._sample_browser.comparison_overlay_sample_ids(self._current_sample_id)
+        ]))
+        # pyqtgraph paints later items on top.  Samples list order is top-to-bottom,
+        # therefore reverse it so rows near the top remain visually frontmost.
+        manual_order.reverse()
         source_definitions: list[dict[str, Any]] = advanced_sources or [
             {
                 "source_id": f"manual:{sample_id}",
@@ -2502,7 +2513,8 @@ class MainWindow(QMainWindow):
                 "y_transform_id": None if y_transform is None else y_transform.id,
                 "order": order,
             }
-            for order, sample_id in enumerate(sorted(selected))
+            for order, sample_id in enumerate(manual_order)
+            if sample_id in selected
         ]
         source_statuses = self._overlay_status_resolver(source_definitions)
         for source in source_definitions:
@@ -6119,15 +6131,22 @@ class MainWindow(QMainWindow):
         if options_dialog.exec() != QDialog.DialogCode.Accepted:
             return
         options = options_dialog.options()
-        path_str, selected_filter = QFileDialog.getSaveFileName(
-            self,
-            "Export Results",
-            "",
-            "TSV files (*.tsv);;CSV files (*.csv);;All files (*)",
-        )
-        if not path_str:
-            return
-        delimiter = "," if selected_filter.startswith("CSV") or path_str.endswith(".csv") else "\t"
+        if options.destination == "clipboard":
+            path_str = None
+            delimiter = "\t"
+        else:
+            path_str, selected_filter = QFileDialog.getSaveFileName(
+                self,
+                "Export Results",
+                "",
+                "TSV files (*.tsv);;CSV files (*.csv);;All files (*)",
+            )
+            if not path_str:
+                return
+            delimiter = (
+                "," if selected_filter.startswith("CSV") or path_str.endswith(".csv")
+                else "\t"
+            )
         pipeline_running = self._worker is not None and self._worker.isRunning()
         needs_pipeline = (
             pipeline_running
@@ -6175,17 +6194,35 @@ class MainWindow(QMainWindow):
                 from flowdesk_core.export import write_results_long as writer
             else:
                 from flowdesk_core.export import write_results_wide as writer
-            writer(
-                report,
-                project,
-                path_str,
-                delimiter=delimiter,
-                include_population_metrics=options.include_population_metrics,
-                include_custom_statistics=options.include_custom_statistics,
-                include_internal_ids=options.include_internal_ids,
-                include_qc=options.include_qc,
-            )
-            self._update_status(f"Results exported to {path_str}")
+            if options.destination == "clipboard":
+                from flowdesk_core.export import (
+                    results_long_to_text,
+                    results_wide_to_text,
+                )
+                to_text = results_long_to_text if options.layout == "long" else results_wide_to_text
+                text = to_text(
+                    report,
+                    project,
+                    delimiter="\t",
+                    include_population_metrics=options.include_population_metrics,
+                    include_custom_statistics=options.include_custom_statistics,
+                    include_internal_ids=options.include_internal_ids,
+                    include_qc=options.include_qc,
+                )
+                QApplication.clipboard().setText(text)
+                self._update_status("Results copied to clipboard as TSV")
+            else:
+                writer(
+                    report,
+                    project,
+                    path_str,
+                    delimiter=delimiter,
+                    include_population_metrics=options.include_population_metrics,
+                    include_custom_statistics=options.include_custom_statistics,
+                    include_internal_ids=options.include_internal_ids,
+                    include_qc=options.include_qc,
+                )
+                self._update_status(f"Results exported to {path_str}")
         except Exception as exc:
             logger.error("Results export failed: %s", exc)
             QMessageBox.critical(self, "Export Error", str(exc))

@@ -10,6 +10,8 @@ import pytest
 from flowdesk_core.execution_report import ExecutionReport
 from flowdesk_core.export import (
   build_results_wide_rows,
+  results_long_to_text,
+  results_wide_to_text,
   write_results_long,
   write_results_wide,
 )
@@ -110,6 +112,17 @@ def test_unified_long_export_contains_both_result_types(tmp_path: Path) -> None:
   statistic = next(row for row in rows if row["Result Type"] == "statistic")
   assert statistic["Population"] == "All Events/Live/GFP+"
   assert statistic["Population ID"] == "gfp_pos"
+
+
+def test_results_text_helpers_match_delimited_writer(tmp_path: Path) -> None:
+  project = _project()
+  report = _report()
+  wide_path = tmp_path / "wide.tsv"
+  long_path = tmp_path / "long.tsv"
+  write_results_wide(report, project, wide_path)
+  write_results_long(report, project, long_path)
+  assert results_wide_to_text(report, project).replace("\r\n", "\n") == wide_path.read_text()
+  assert results_long_to_text(report, project).replace("\r\n", "\n") == long_path.read_text()
 
 
 def test_export_resolves_strategy_per_sample() -> None:

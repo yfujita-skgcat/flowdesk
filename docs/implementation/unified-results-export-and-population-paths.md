@@ -72,8 +72,12 @@ fields (`n valid`, `n total`, `n invalid`, invalid fraction, non-finite policy).
 
 Remove the two user-facing Results export actions and any hidden dead action;
 keep old core writers only as compatibility APIs after reference audit. The
-new dialog supports Wide/Long, population metrics, custom statistics, internal
-IDs, QC/status metadata, and TSV/CSV. At least one result category is required.
+new dialog supports File or Clipboard (TSV) destinations, Wide/Long, population
+metrics, custom statistics, internal IDs, QC/status metadata, and TSV/CSV. At least
+one result category is required. Clipboard output uses the same core row model and
+writer as file output with a `StringIO` target and tab delimiter; Qt only places the
+resulting text on `QApplication.clipboard()` and never reconstructs values from
+table cells.
 If no samples are loaded, export must remain unavailable with an understandable
 dialog. When authoritative results are absent or stale but samples are loaded,
 the GUI must retain the selected export options and destination, run the

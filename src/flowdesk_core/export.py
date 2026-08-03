@@ -9,9 +9,11 @@ from __future__ import annotations
 import csv
 import math
 from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass, field
+from io import StringIO
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TextIO
 
 from flowdesk_core.annotations import resolve_sample_title
 from flowdesk_core.errors import FlowdeskError
@@ -249,10 +251,17 @@ def _format_export_number(value: int | float | None, nan_policy: NaNPolicy) -> s
   return str(value)
 
 
+def _export_target(path: str | Path | TextIO):
+  """Return a text target for a file path or an existing text stream."""
+  if hasattr(path, "write"):
+    return nullcontext(path)
+  return Path(path).open("w", encoding="utf-8", newline="")
+
+
 def write_results_wide(
   report: ExecutionReport,
   project: Mapping[str, Any],
-  path: str | Path,
+  path: str | Path | TextIO,
   *,
   delimiter: str = "\t",
   execution_profile_id: str = "default",
@@ -291,7 +300,7 @@ def write_results_wide(
         f"{statistic_header} non-finite policy",
       ])
   try:
-    with Path(path).open("w", encoding="utf-8", newline="") as fh:
+    with _export_target(path) as fh:
       writer = csv.writer(fh, delimiter=delimiter)
       writer.writerow(header)
       for row in rows:
@@ -340,7 +349,7 @@ def write_results_wide(
 def write_results_long(
   report: ExecutionReport,
   project: Mapping[str, Any],
-  path: str | Path,
+  path: str | Path | TextIO,
   *,
   delimiter: str = "\t",
   execution_profile_id: str = "default",
@@ -369,7 +378,7 @@ def write_results_long(
   if include_qc:
     header.extend(["n valid", "n total", "n invalid", "invalid fraction", "non-finite policy"])
   try:
-    with Path(path).open("w", encoding="utf-8", newline="") as fh:
+    with _export_target(path) as fh:
       writer = csv.writer(fh, delimiter=delimiter)
       writer.writerow(header)
       for row in rows:
@@ -429,6 +438,64 @@ def write_results_long(
           writer.writerow(values)
   except OSError as exc:
     raise ExportError(f"Failed to write export file: {path}") from exc
+
+
+def results_wide_to_text(
+  report: ExecutionReport,
+  project: Mapping[str, Any],
+  *,
+  delimiter: str = "\t",
+  execution_profile_id: str = "default",
+  include_population_metrics: bool = True,
+  include_custom_statistics: bool = True,
+  include_internal_ids: bool = False,
+  include_qc: bool = False,
+  nan_policy: NaNPolicy = "empty",
+) -> str:
+  """Return the wide Results table as delimited text without touching disk."""
+  buffer = StringIO()
+  write_results_wide(
+    report,
+    project,
+    buffer,
+    delimiter=delimiter,
+    execution_profile_id=execution_profile_id,
+    include_population_metrics=include_population_metrics,
+    include_custom_statistics=include_custom_statistics,
+    include_internal_ids=include_internal_ids,
+    include_qc=include_qc,
+    nan_policy=nan_policy,
+  )
+  return buffer.getvalue()
+
+
+def results_long_to_text(
+  report: ExecutionReport,
+  project: Mapping[str, Any],
+  *,
+  delimiter: str = "\t",
+  execution_profile_id: str = "default",
+  include_population_metrics: bool = True,
+  include_custom_statistics: bool = True,
+  include_internal_ids: bool = False,
+  include_qc: bool = True,
+  nan_policy: NaNPolicy = "empty",
+) -> str:
+  """Return the long Results table as delimited text without touching disk."""
+  buffer = StringIO()
+  write_results_long(
+    report,
+    project,
+    buffer,
+    delimiter=delimiter,
+    execution_profile_id=execution_profile_id,
+    include_population_metrics=include_population_metrics,
+    include_custom_statistics=include_custom_statistics,
+    include_internal_ids=include_internal_ids,
+    include_qc=include_qc,
+    nan_policy=nan_policy,
+  )
+  return buffer.getvalue()
 
 
 # ---------------------------------------------------------------------------

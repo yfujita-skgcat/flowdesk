@@ -10,7 +10,7 @@
 
 ## Batch Plot Export
 
-`Results -> Batch Plot Export...` またはプロット領域の右クリックメニューから、同じダイアログを開いてバッチ出力を設定できます。保存済み定義を選択して編集するか、`New` で新しい定義を作成します。対象サンプル（全件、明示選択、グループ）、plot view、PNG/JPEG/SVG/PDF、サイズ・DPI・1:1、表示要素、ファイル名テンプレート、既存ファイルの扱い、strict exportを指定できます。
+`Results -> Batch Plot Export...` またはプロット領域の右クリックメニューから、同じダイアログを開いてバッチ出力を設定できます。保存済み定義を選択して編集するか、`New` で新しい定義を作成します。対象サンプル（全件、明示選択、グループ）、plot view、PNG/JPEG/SVG/PDF、サイズ・DPI・1:1、表示要素、ファイル名テンプレート、既存ファイルの扱い、strict exportを指定できます。Samplesリストのmanual overlayはリスト下側のサンプルから描画されるため、上側のサンプルが前面になります。前後関係を変えるにはSamplesリストを並べ替えます。
 
 `Save Definition` は設定だけをprojectへ保存し、`Run Export` は設定を保存した後に出力先ディレクトリへ書き出します。出力先はprojectには保存されないため、projectを別の場所へ移動しても、実行時に新しい出力先を指定できます。projectが未保存の場合は、定義を保存または実行すると通常のproject保存ダイアログが開きます。キャンセルやproject保存失敗では、定義は変更されません。
 
@@ -242,7 +242,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |項目|説明|
 |---|---|
 |Edit Statistic...|統計定義を作成・編集する。初期 population は All Events。|
-|Export Results...|population metrics と custom statistics を wide/long TSV/CSV に書き出す。Results が stale または未計算の場合は、保存先と形式を確認した後に Pipeline を自動実行し、完了後に最新結果を出力する。Pipeline が失敗した場合は出力しない。|
+|Export Results...|population metrics と custom statistics を wide/long TSV/CSV に書き出す。DestinationでFileまたはClipboard (TSV)を選べる。Clipboardを選ぶとタブ区切りの表をシステムクリップボードへコピーし、ExcelやGoogle Sheetsへそのまま貼り付けられる。Results が stale または未計算の場合は、保存先と形式を確認した後に Pipeline を自動実行し、完了後に最新結果を出力する。Pipeline が失敗した場合は出力しない。|
 |Batch Plot Export...|Batch Plot Export定義を作成・編集・選択し、保存または指定output directoryへbatch exportする。|
 
 ### 5.5 Data

@@ -1847,7 +1847,7 @@ def _build_overlay_dependency_graph(
       advanced.append((order, str(source.get("source_id", "")), str(source_id)))
   advanced_ids = tuple(item[2] for item in sorted(advanced, key=lambda item: item[:2]))
   manual_ids = (
-    tuple(str(value) for value in manual_overlay_sample_ids)
+    tuple(reversed(tuple(str(value) for value in manual_overlay_sample_ids)))
     if isinstance(manual_overlay_sample_ids, Sequence)
     and not isinstance(manual_overlay_sample_ids, (str, bytes))
     else ()

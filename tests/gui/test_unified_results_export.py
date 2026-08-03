@@ -14,12 +14,16 @@ def test_results_export_dialog_defaults(qapp) -> None:
   dialog = ResultsExportDialog()
   try:
     options = dialog.options()
+    assert options.destination == "file"
     assert options.layout == "wide"
     assert options.include_population_metrics is True
     assert options.include_custom_statistics is True
     assert options.include_internal_ids is False
     assert options.include_qc is False
     assert dialog.objectName() == "resultsExportDialog"
+    assert dialog.findChild(
+      type(dialog._destination), "resultsExportDestinationCombo"
+    ) is dialog._destination
   finally:
     dialog.close()
     dialog.deleteLater()
@@ -83,6 +87,43 @@ def test_stale_results_export_queues_export_and_runs_pipeline(qapp, monkeypatch,
     assert pipeline_calls == [True]
     assert window._pending_results_export is not None
     assert window._pending_results_export[1].endswith("results.tsv")
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_clipboard_results_export_does_not_open_file_picker(qapp, monkeypatch) -> None:
+  window = MainWindow()
+  try:
+    window._sample_data = {"sample-1": object()}
+    window._results_stale = True
+
+    class FakeExportDialog:
+      def __init__(self, parent) -> None:
+        self.parent = parent
+
+      def exec(self) -> int:
+        return 1
+
+      def options(self) -> ResultsExportOptions:
+        return ResultsExportOptions(destination="clipboard")
+
+    monkeypatch.setattr(
+      "flowdesk_qt.results_export_dialog.ResultsExportDialog",
+      FakeExportDialog,
+    )
+    monkeypatch.setattr(
+      "flowdesk_qt.main_window.QFileDialog.getSaveFileName",
+      lambda *_args: (_ for _ in ()).throw(AssertionError("file picker opened")),
+    )
+    monkeypatch.setattr(window, "_on_run_pipeline", lambda: None)
+
+    window._on_export_results()
+
+    assert window._pending_results_export is not None
+    assert window._pending_results_export[1] is None
+    assert window._pending_results_export[2] == "\t"
   finally:
     window.close()
     window.deleteLater()

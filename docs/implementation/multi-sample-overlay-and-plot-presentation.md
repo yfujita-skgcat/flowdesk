@@ -142,6 +142,23 @@ sources are invalid unless an explicit use case and unique source IDs are suppor
 The overlay source list is independent of `active_sample_id`. Changing the active sample
 must not rewrite source sample IDs, source order, visibility, or style.
 
+### Manual overlay z-order
+
+The Samples pane is authoritative for manual overlay order. Persisted
+`manual_overlay_sample_ids` are normalized to the current Samples list order (legacy
+unordered values are made deterministic). Because the plot backend paints later layers
+on top, the renderer consumes this list in reverse: lower rows are painted first and
+the upper row is frontmost. The active sample remains the base layer. GUI and batch
+PNG/SVG/PDF must use the same reversal; IDs must never be lexicographically sorted.
+Explicit advanced `overlay_sources` retain their persisted numeric `order`.
+
+Acceptance criteria:
+
+- moving manual overlay rows changes only visual z-order;
+- GUI and batch outputs use identical layer order;
+- project reload preserves ordered overlay IDs;
+- a regression test verifies that the upper Samples row is painted last.
+
 Population identity may be an explicit population ID. Template-oriented definitions may
 also carry a mapping role/path, but must not silently replace an explicit missing ID at
 runtime. The mapping result and evidence must be explicit.

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 @dataclass(frozen=True)
 class ResultsExportOptions:
+  destination: str = "file"
   layout: str = "wide"
   include_population_metrics: bool = True
   include_custom_statistics: bool = True
@@ -37,6 +38,15 @@ class ResultsExportDialog(QDialog):
     self._layout.addItem("Wide table", "wide")
     self._layout.addItem("Long detail table", "long")
     form.addRow("Layout:", self._layout)
+
+    self._destination = QComboBox(self)
+    self._destination.setObjectName("resultsExportDestinationCombo")
+    self._destination.addItem("File", "file")
+    self._destination.addItem("Clipboard (TSV)", "clipboard")
+    self._destination.setToolTip(
+      "Copy tab-separated results for direct paste into Excel or Google Sheets"
+    )
+    form.insertRow(0, "Destination:", self._destination)
 
     self._population = QCheckBox("Population counts and frequencies", self)
     self._population.setObjectName("resultsExportPopulationCheck")
@@ -72,6 +82,7 @@ class ResultsExportDialog(QDialog):
 
   def options(self) -> ResultsExportOptions:
     return ResultsExportOptions(
+      destination=str(self._destination.currentData()),
       layout=str(self._layout.currentData()),
       include_population_metrics=self._population.isChecked(),
       include_custom_statistics=self._statistics.isChecked(),
