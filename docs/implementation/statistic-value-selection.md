@@ -39,8 +39,10 @@ The core choice/resolver contract and headless error handling are implemented:
   error cells are distinguishable from missing rows and numerical undefined
   values.
 
-The remaining end-to-end parity fixture and CLI/GUI evidence are tracked by
-Increment 4 below; do not mark the ToDo item complete until those checks pass.
+The end-to-end parity checks described by Increment 4 are now covered by the
+core, CLI, and GUI regression tests listed below.  Platform-specific package
+validation remains a separate release task and is not inferred from these
+Linux test results.
 
 Read `AGENTS.md`, `docs/implementation/llm-task-protocol.md`, this guide, and
 the matching skills before production edits.  Implement exactly one numbered
@@ -332,7 +334,7 @@ Do not calculate values in Qt.
   non-finite policy, format, and notes retain their working behavior.
 - Stable Qt object names are used; tests do not click screen coordinates.
 
-## Increment 4 — End-to-end parity, documentation, and cleanup
+## Increment 4 — End-to-end parity, documentation, and cleanup (completed)
 
 ### Scope
 
@@ -369,6 +371,23 @@ remove obsolete GUI-only code.  Do not change numerical algorithms.
 - Save-load-save preserves valid triples and unknown extension fields.
 - No test or production code selects a statistic by display text or channel
   position.
+
+### Verification record (2026-08-03)
+
+- `test_end_to_end_value_domains_and_derived_statistics` exercises raw and
+  compensated acquired values, raw-input and compensated-input derived
+  outputs, an explicit transformed statistic, two populations, a non-finite
+  derived event, hand-computed means, and raw-event immutability.
+- `test_gui_derived_definitions_and_statistics_match_headless` runs the same
+  value-domain coverage through the GUI `Run Pipeline` path and compares every
+  statistic value, status, and undefined reason with a direct
+  `PipelineRunner` report.
+- `test_cli_and_core_export_match_for_nonfinite_derived_statistics` compares
+  core and CLI TSV rows, including compensated derived and transformed values,
+  explicit invalid-domain errors, and non-finite QC fields.
+- The unified selector and unavailable-saved-triple GUI suites cover stable
+  triple persistence, repair blocking, cancel safety, and transform identity;
+  no obsolete `statisticSourceCombo` or `statisticTransformCombo` remains.
 
 ## Non-goals
 

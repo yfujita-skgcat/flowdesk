@@ -405,6 +405,15 @@ def test_cli_and_core_export_match_for_nonfinite_derived_statistics(
       "input_parameters": ["signal", "reference"],
       "invalid_value_policy": "emit_nan_with_warning",
       "non_finite_policy": "strict",
+    }, {
+      "id": "sum_definition", "name": "Sum", "output_channel_id": "signal_plus_reference",
+      "expression": "signal + reference", "source_stage": "compensated",
+      "input_parameters": ["signal", "reference"],
+      "invalid_value_policy": "fail_run",
+    }],
+    "transforms": [{
+      "id": "log_signal", "name": "Log signal", "transform_type": "log",
+      "parameter": "signal", "role": "analysis", "settings": {"base": 10.0},
     }],
     "statistics": [
       {
@@ -420,6 +429,16 @@ def test_cli_and_core_export_match_for_nonfinite_derived_statistics(
       {
         "id": "ratio_invalid_raw", "name": "Ratio invalid raw", "population_id": "all_events",
         "parameter_id": "ratio", "metric": "mean", "source_stage": "raw",
+      },
+      {
+        "id": "sum_compensated", "name": "Sum compensated", "population_id": "all_events",
+        "parameter_id": "signal_plus_reference", "metric": "mean",
+        "source_stage": "compensated",
+      },
+      {
+        "id": "signal_transformed", "name": "Signal transformed", "population_id": "all_events",
+        "parameter_id": "signal", "metric": "mean", "source_stage": "transformed",
+        "transform_id": "log_signal",
       },
     ],
   }
@@ -455,6 +474,8 @@ def test_cli_and_core_export_match_for_nonfinite_derived_statistics(
   assert row_map["ratio_invalid_raw"]["undefined_reason"] == (
     "parameter_unavailable_at_source_stage"
   )
+  assert row_map["sum_compensated"]["value"] == "5.333333333333333"
+  assert row_map["signal_transformed"]["status"] == "ok"
   assert "derived_parameter_nonfinite_values" in capsys.readouterr().err
   np.testing.assert_array_equal(sample.events, original)
 

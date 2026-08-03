@@ -1900,6 +1900,151 @@ def test_invalid_derived_statistic_parallel_order_matches_sequential() -> None:
   assert threaded.diagnostics == sequential.diagnostics
 
 
+def test_end_to_end_value_domains_and_derived_statistics() -> None:
+  """All statistic value representations share canonical stage results."""
+  sample = SampleData(
+    "s1",
+    np.array(
+      [[2.0, 1.0], [1.0, 2.0], [6.0, 3.0], [4.0, 0.0]],
+      dtype=np.float64,
+    ),
+    (
+      ChannelSpec(id="signal", name="Signal"),
+      ChannelSpec(id="reference", name="Reference"),
+    ),
+  )
+  strategy = GatingStrategySpec(
+    id="value_domain_strategy",
+    name="Value domain strategy",
+    gates=(GateSpec(
+      id="ratio_positive",
+      name="Ratio positive",
+      gate_type="range",
+      parent_population_id="all_events",
+      x_parameter="ratio",
+      thresholds={"min": 1.5, "max": 10.0},
+    ),),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    execution_profiles=[{"id": "default", "gating_strategy_id": strategy.id}],
+    gating_strategies_data={strategy.id: strategy},
+    derived_parameters=[
+      {
+        "id": "ratio_definition",
+        "output_channel_id": "ratio",
+        "name": "Signal ratio",
+        "expression": "signal / reference",
+        "source_stage": "raw",
+        "input_parameters": ["signal", "reference"],
+        "invalid_value_policy": "emit_nan_with_warning",
+        "non_finite_policy": "strict",
+      },
+      {
+        "id": "sum_definition",
+        "output_channel_id": "signal_plus_reference",
+        "name": "Signal plus reference",
+        "expression": "signal + reference",
+        "source_stage": "compensated",
+        "input_parameters": ["signal", "reference"],
+        "invalid_value_policy": "fail_run",
+      },
+    ],
+    transforms=[{
+      "id": "log_signal",
+      "name": "Log signal",
+      "transform_type": "log",
+      "parameter": "signal",
+      "settings": {"base": 10.0, "invalid_value_policy": "to_nan"},
+    }],
+    statistics=[
+      {
+        "id": "signal_raw_mean",
+        "name": "Signal raw mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "parameter_id": "signal",
+        "metric": "mean",
+        "source_stage": "raw",
+      },
+      {
+        "id": "reference_compensated_mean",
+        "name": "Reference compensated mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "parameter_id": "reference",
+        "metric": "mean",
+        "source_stage": "compensated",
+      },
+      {
+        "id": "ratio_excluded_mean",
+        "name": "Ratio excluded mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "parameter_id": "ratio",
+        "metric": "mean",
+        "source_stage": "compensated",
+        "non_finite_policy": "exclude_invalid",
+      },
+      {
+        "id": "sum_compensated_mean",
+        "name": "Sum compensated mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "parameter_id": "signal_plus_reference",
+        "metric": "mean",
+        "source_stage": "compensated",
+      },
+      {
+        "id": "signal_log_mean",
+        "name": "Signal log mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "parameter_id": "signal",
+        "metric": "mean",
+        "source_stage": "transformed",
+        "transform_id": "log_signal",
+      },
+      {
+        "id": "ratio_strict_mean",
+        "name": "Ratio strict mean",
+        "population_ids": ["all_events"],
+        "parameter_id": "ratio",
+        "metric": "mean",
+        "source_stage": "compensated",
+        "non_finite_policy": "strict",
+      },
+    ],
+  )
+
+  report = PipelineRunner(project).run_samples(ExecutionContext(), (sample,))
+  result_map = {
+    (result.statistic_id, result.population_id): result
+    for result in report.statistic_results
+  }
+  assert result_map[("signal_raw_mean", "all_events")].value == pytest.approx(3.25)
+  assert result_map[("signal_raw_mean", "ratio_positive")].value == pytest.approx(4.0)
+  assert result_map[("reference_compensated_mean", "all_events")].value == pytest.approx(1.5)
+  assert result_map[("reference_compensated_mean", "ratio_positive")].value == pytest.approx(2.0)
+  assert result_map[("ratio_excluded_mean", "all_events")].value == pytest.approx(1.5)
+  assert result_map[("ratio_excluded_mean", "ratio_positive")].value == pytest.approx(2.0)
+  assert result_map[("sum_compensated_mean", "all_events")].value == pytest.approx(4.75)
+  assert result_map[("sum_compensated_mean", "ratio_positive")].value == pytest.approx(6.0)
+  assert result_map[("signal_log_mean", "all_events")].value == pytest.approx(
+    np.mean(np.log10([2.0, 1.0, 6.0, 4.0])
+  ))
+  assert result_map[("signal_log_mean", "ratio_positive")].value == pytest.approx(
+    np.mean(np.log10([2.0, 6.0]))
+  )
+  strict = result_map[("ratio_strict_mean", "all_events")]
+  assert strict.status == "undefined"
+  assert strict.undefined_reason == "nonfinite_values"
+  assert strict.n_invalid == 1
+  assert any(
+    diagnostic.code == "derived_parameter_nonfinite_values"
+    for diagnostic in report.diagnostics
+  )
+  np.testing.assert_array_equal(
+    sample.events,
+    np.array([[2.0, 1.0], [1.0, 2.0], [6.0, 3.0], [4.0, 0.0]]),
+  )
+
+
 def test_raw_and_compensated_derived_sources_use_explicit_stage_views() -> None:
   source_events = np.array([[15.0, 10.0]], dtype=np.float64)
   sample = SampleData(

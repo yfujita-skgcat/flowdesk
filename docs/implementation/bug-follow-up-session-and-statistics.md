@@ -385,3 +385,8 @@ statistic values.
   Qt GUI suite still has an existing intermittent native Qt teardown
   segmentation fault in an unrelated batch-export cancellation test; rerun
   that suite on the target CI platforms before release.
+- Increment 5 is implemented through `statistic-value-selection.md`: the
+  unified value selector, typed headless incompatibility results, and explicit
+  raw/compensated/transformed/derived value-domain contract are covered by
+  core, CLI, and GUI parity tests.  The remaining native OS/package checks are
+  tracked separately and are not claimed by this statistics verification.

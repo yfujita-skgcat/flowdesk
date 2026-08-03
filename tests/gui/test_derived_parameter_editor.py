@@ -405,14 +405,17 @@ def test_main_window_derived_definitions_survive_project_save_load(
     qapp.processEvents()
 
 
-def test_gui_derived_definition_matches_headless_gate_count(
+def test_gui_derived_definitions_and_statistics_match_headless(
   qapp,
   tmp_path: Path,
 ) -> None:
   fcs_path = tmp_path / "derived-gui.fcs"
   write_fcs_file(
     fcs_path,
-    np.array([[2.0, 1.0], [1.0, 2.0], [6.0, 3.0]], dtype=np.float64),
+    np.array(
+      [[2.0, 1.0], [1.0, 2.0], [6.0, 3.0], [4.0, 0.0]],
+      dtype=np.float64,
+    ),
     ["Signal", "Reference"],
   )
   window = MainWindow()
@@ -430,9 +433,92 @@ def test_gui_derived_definition_matches_headless_gate_count(
       "unit": "ratio",
       "source_stage": "raw",
       "input_parameters": [signal_id, reference_id],
+      "invalid_value_policy": "emit_nan_with_warning",
+      "non_finite_policy": "strict",
+      "notes": "",
+    }, {
+      "id": "sum_definition",
+      "name": "Signal plus reference",
+      "expression": f"{signal_id} + {reference_id}",
+      "output_channel_id": "signal_plus_reference",
+      "output_label": None,
+      "unit": "sum",
+      "source_stage": "compensated",
+      "input_parameters": [signal_id, reference_id],
       "invalid_value_policy": "fail_run",
       "notes": "",
     }]
+    window._transforms = [{
+      "id": "log_signal",
+      "name": "Log signal",
+      "transform_type": "log",
+      "parameter": signal_id,
+      "role": "analysis",
+      "settings": {"base": 10.0, "invalid_value_policy": "to_nan"},
+    }]
+    window._statistics = [
+      {
+        "id": "signal_mean",
+        "name": "Signal mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "population_id": "all_events",
+        "parameter_id": signal_id,
+        "metric": "mean",
+        "source_stage": "compensated",
+        "non_finite_policy": "strict",
+      },
+      {
+        "id": "ratio_mean",
+        "name": "Ratio mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "population_id": "all_events",
+        "parameter_id": "ratio",
+        "metric": "mean",
+        "source_stage": "compensated",
+        "non_finite_policy": "strict",
+      },
+      {
+        "id": "ratio_excluded_mean",
+        "name": "Ratio excluded mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "population_id": "all_events",
+        "parameter_id": "ratio",
+        "metric": "mean",
+        "source_stage": "compensated",
+        "non_finite_policy": "exclude_invalid",
+      },
+      {
+        "id": "sum_compensated_mean",
+        "name": "Sum compensated mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "population_id": "all_events",
+        "parameter_id": "signal_plus_reference",
+        "metric": "mean",
+        "source_stage": "compensated",
+        "non_finite_policy": "strict",
+      },
+      {
+        "id": "signal_log_mean",
+        "name": "Signal log mean",
+        "population_ids": ["all_events", "ratio_positive"],
+        "population_id": "all_events",
+        "parameter_id": signal_id,
+        "metric": "mean",
+        "source_stage": "transformed",
+        "transform_id": "log_signal",
+        "non_finite_policy": "strict",
+      },
+      {
+        "id": "ratio_strict_mean",
+        "name": "Ratio strict mean",
+        "population_ids": ["all_events"],
+        "population_id": "all_events",
+        "parameter_id": "ratio",
+        "metric": "mean",
+        "source_stage": "compensated",
+        "non_finite_policy": "strict",
+      },
+    ]
     window._gate_editor.set_gates([GateSpec(
       id="ratio_positive",
       name="Ratio positive",
@@ -467,9 +553,56 @@ def test_gui_derived_definition_matches_headless_gate_count(
       for result in headless_report.population_results
     }
     assert gui_counts == headless_counts == {
-      "all_events": 3,
+      "all_events": 4,
       "ratio_positive": 2,
     }
+    gui_statistics = sorted(
+      (
+        result.statistic_id,
+        result.population_id,
+        result.value,
+        result.status,
+        result.undefined_reason,
+      )
+      for result in gui_report.statistic_results
+    )
+    headless_statistics = sorted(
+      (
+        result.statistic_id,
+        result.population_id,
+        result.value,
+        result.status,
+        result.undefined_reason,
+      )
+      for result in headless_report.statistic_results
+    )
+    assert gui_statistics == headless_statistics
+    gui_by_key = {
+      (statistic_id, population_id): (value, status, reason)
+      for statistic_id, population_id, value, status, reason in gui_statistics
+    }
+    assert gui_by_key[("signal_mean", "all_events")] == (
+      pytest.approx(3.25), "ok", None,
+    )
+    assert gui_by_key[("signal_mean", "ratio_positive")] == (
+      pytest.approx(4.0), "ok", None,
+    )
+    assert gui_by_key[("ratio_mean", "all_events")] == (
+      None, "undefined", "nonfinite_values",
+    )
+    assert gui_by_key[("ratio_mean", "ratio_positive")] == (
+      pytest.approx(2.0), "ok", None,
+    )
+    assert gui_by_key[("ratio_excluded_mean", "all_events")] == (
+      pytest.approx(1.5), "ok", None,
+    )
+    assert gui_by_key[("sum_compensated_mean", "all_events")] == (
+      pytest.approx(4.75), "ok", None,
+    )
+    assert gui_by_key[("signal_log_mean", "all_events")][1:] == ("ok", None)
+    assert gui_by_key[("ratio_strict_mean", "all_events")] == (
+      None, "undefined", "nonfinite_values",
+    )
   finally:
     window.close()
     window.deleteLater()
