@@ -148,8 +148,10 @@ The Samples pane is authoritative for manual overlay order. Persisted
 `manual_overlay_sample_ids` are normalized to the current Samples list order (legacy
 unordered values are made deterministic). Because the plot backend paints later layers
 on top, the renderer consumes this list in reverse: lower rows are painted first and
-the upper row is frontmost. The active sample remains the base layer. GUI and batch
-PNG/SVG/PDF must use the same reversal; IDs must never be lexicographically sorted.
+the upper row is frontmost. GUI scatter items also receive explicit increasing
+`zValue`s, so this contract does not depend on Qt sibling insertion behavior. The
+active sample remains the base layer. GUI and batch PNG/SVG/PDF must use the same
+reversal; IDs must never be lexicographically sorted.
 Explicit advanced `overlay_sources` retain their persisted numeric `order`.
 
 Acceptance criteria:

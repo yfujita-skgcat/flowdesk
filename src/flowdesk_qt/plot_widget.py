@@ -915,7 +915,10 @@ class PlotWidget(QWidget):
         """Display prepared core overlay layers with persisted styles."""
         self.clear_overlay_layers()
         self._export_overlay_layers.clear()
-        for layer in layers:
+        # Layers are supplied back-to-front.  Do not rely on Qt's sibling
+        # insertion order: QGraphicsItem stacking differs across pyqtgraph/Qt
+        # versions and previously made the upper Samples row appear underneath.
+        for z_index, layer in enumerate(layers, start=1):
             style = dict(getattr(layer, "style", {}))
             x_values = np.asarray(layer.x)
             y_values = np.asarray(layer.y)
@@ -939,6 +942,7 @@ class PlotWidget(QWidget):
                     float(style.get("alpha", self._style.dot_opacity)),
                 ),
             )
+            item.setZValue(float(z_index))
             self._overlay_scatter_items.append(item)
             # Keep single-plot export pixel-for-pixel aligned with the live
             # preview.  Overlay arrays have already passed the analytical
