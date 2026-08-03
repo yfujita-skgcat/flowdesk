@@ -178,8 +178,10 @@ statisticsを変更しない。
 |Plot area|scatter/histogram、gate overlay、右クリック表示設定|
 |Gating|gate 作成・階層・親・geometry・色|
 |Results|population/statistic 結果、表示 population、sample navigation|
-|Channels|parameter catalog と FCS channel metadata|
+|Channels|選択中サンプルのparameter catalog/FCS metadataと、実験セット共通の表示名マッピング|
 |Status bar|処理状態と compensation 状態|
+
+Channelsタブ上部の表は選択中サンプルに実在する acquired/derived parameterと、取得元FCSのmetadataを統合表示する。下部の `Project-wide parameter display labels` は実験セット全体の表示名設定で、`Plot display name` と `Biological label / note` を編集できる。例えば `FL2-A`、`APC-A`、`iRFP670` を登録すると、plot上では `iRFP670 (APC-A)` と表示される。`Samples` は遅延ロード済みデータ数ではなく、そのstable parameterが実験セットで適用されるサンプル数を示すため、サンプルを切り替えても変化しない。式、gate、transform、statisticsが使うstable parameter IDは変わらない。サンプル間でidentityが一致しないチャンネルは別行として扱われる。
 
 ウィンドウ幅が不足すると、plot toolbar の右端に `»` が表示され、収まらない項目が overflow menu に入る。
 

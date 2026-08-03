@@ -514,7 +514,8 @@ def test_channels_tab_tracks_selected_sample_metadata(qapp, tmp_path) -> None:
     qapp.processEvents()
 
     metadata = window._channel_metadata
-    assert metadata.findChild(QTableWidget, "channelMetadataTable").rowCount() == 2
+    assert metadata.findChild(QTableWidget, "parameterCatalogTable").rowCount() == 2
+    assert metadata.findChild(QTableWidget, "channelMetadataTable").rowCount() == 3
     assert metadata.findChild(QWidget, "channelMetadataSampleLabel").text() == (
       f"Sample: {samples[1].name} ({samples[1].id})"
     )

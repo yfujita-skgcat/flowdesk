@@ -77,8 +77,9 @@ from flowdesk_core.overrides import (
 from flowdesk_core.parameter_catalog import (
     ParameterCatalogDiagnostic,
     ParameterCatalogEntry,
-    build_parameter_catalog,
+  build_parameter_catalog,
 )
+from flowdesk_core.parameter_display import parameter_display_label
 from flowdesk_core.pipeline_runner import PipelineError, PipelineRunner
 from flowdesk_core.plot_presentation import (
     SamplePresentationContext,
@@ -439,6 +440,7 @@ class MainWindow(QMainWindow):
         self._project_id = "flowdesk_session"
         self._project_path: Path | None = None
         self._derived_parameters: list[dict[str, Any]] = []
+        self._parameter_display_mappings: list[dict[str, Any]] = []
         self._parameter_catalog: tuple[ParameterCatalogEntry, ...] = ()
         self._compensation_matrices: list[dict[str, Any]] = []
         self._compensation_bindings: list[dict[str, Any]] = []
@@ -995,6 +997,9 @@ class MainWindow(QMainWindow):
         self._population_tree = PopulationTree()
         self._results_workspace = ResultsWorkspace()
         self._channel_metadata = ChannelMetadataWorkspace()
+        self._channel_metadata.project_mapping_changed.connect(
+            self._on_project_parameter_mapping_changed
+        )
         self._workspace_tree = WorkspaceTree()
         self._diagnostics_panel = DiagnosticsPanel()
         self._workspace_navigation = self._create_workspace_navigation()
@@ -1344,6 +1349,9 @@ class MainWindow(QMainWindow):
         self._channel_names = [ch.name for ch in sample.info.channels]
         self._parameter_catalog = self._catalog_for_sample(sample)
         self._channel_metadata.set_parameter_catalog(self._parameter_catalog)
+        self._channel_metadata.set_project_parameter_mappings(
+            tuple(self._project_parameter_mapping_rows())
+        )
         x_preserved, y_preserved = self._channel_selector.set_parameter_catalog(
             self._parameter_catalog, allow_derived=True
         )
@@ -3115,6 +3123,7 @@ class MainWindow(QMainWindow):
             "annotations": deepcopy(self._annotations),
             "gate_overrides": deepcopy(self._gate_overrides),
             "derived_parameters": deepcopy(self._derived_parameters),
+            "parameter_display_mappings": deepcopy(self._parameter_display_mappings),
             "transforms": deepcopy(self._transforms),
             "compensation_matrices": deepcopy(self._compensation_matrices),
             "compensation_bindings": deepcopy(self._compensation_bindings),
@@ -3932,6 +3941,9 @@ class MainWindow(QMainWindow):
         )
 
         self._derived_parameters = deepcopy(manifest.get("derived_parameters", []))
+        self._parameter_display_mappings = deepcopy(
+            manifest.get("parameter_display_mappings", [])
+        )
         self._transforms = deepcopy(manifest.get("transforms", []))
         self._compensation_matrices = deepcopy(
             manifest.get("compensation_matrices", [])
@@ -4121,6 +4133,14 @@ class MainWindow(QMainWindow):
             self._derived_parameters,
             tuple(channels_by_id.values()),
             preview_callback=preview_callback,
+            parameter_display_labels={
+                str(row["parameter_id"]): parameter_display_label(
+                    str(row["parameter_id"]),
+                    str(row["plot_label"]),
+                    self._parameter_display_mappings,
+                )
+                for row in self._project_parameter_mapping_rows()
+            },
             fixed_output_channel_ids=tuple(sorted(fixed_output_ids)),
             parent=self,
         )
@@ -4254,12 +4274,102 @@ class MainWindow(QMainWindow):
         if sample is None:
             self._parameter_catalog = ()
             self._channel_metadata.set_parameter_catalog(())
+            self._channel_metadata.set_project_parameter_mappings(
+                tuple(self._project_parameter_mapping_rows())
+            )
             return
         self._parameter_catalog = self._catalog_for_sample(sample)
         self._channel_metadata.set_parameter_catalog(self._parameter_catalog)
         self._channel_selector.set_parameter_catalog(
             self._parameter_catalog, allow_derived=True
         )
+        self._channel_metadata.set_project_parameter_mappings(
+            tuple(self._project_parameter_mapping_rows())
+        )
+
+    def _project_parameter_mapping_rows(self) -> list[dict[str, Any]]:
+        """Build one editable display row for every project parameter identity."""
+        persisted = {
+            str(value.get("parameter_id")): value
+            for value in self._parameter_display_mappings
+            if isinstance(value, dict) and value.get("parameter_id")
+        }
+        identities: dict[str, dict[str, Any]] = {}
+        for sample in self._sample_browser.samples():
+            for channel in sample.info.channels:
+                row = identities.setdefault(channel.id, {
+                    "parameter_id": channel.id,
+                    "actual_parameter": channel.name,
+                    "default_plot_label": channel.short_name or channel.name,
+                    "sample_ids": set(),
+                })
+                row["sample_ids"].add(sample.id)
+        for definition in self._derived_parameters:
+            output_id = str(definition.get("output_channel_id") or definition.get("id") or "")
+            if not output_id:
+                continue
+            identities.setdefault(output_id, {
+                "parameter_id": output_id,
+                "actual_parameter": output_id,
+                "default_plot_label": str(definition.get("name") or output_id),
+                # Derived definitions are project-level and are evaluated for
+                # every project sample by the pipeline.  Do not use
+                # ``_sample_data`` here: that cache is populated lazily as the
+                # user changes samples and would make the displayed coverage
+                # change merely because a sample was viewed.
+                "sample_ids": {
+                    sample.id for sample in self._sample_browser.samples()
+                },
+            })
+        for parameter_id, _value in persisted.items():
+            identities.setdefault(parameter_id, {
+                "parameter_id": parameter_id,
+                "actual_parameter": parameter_id,
+                "default_plot_label": parameter_id,
+                "sample_ids": set(),
+            })
+        rows: list[dict[str, Any]] = []
+        for parameter_id, identity in sorted(
+            identities.items(), key=lambda item: item[1]["actual_parameter"]
+        ):
+            saved = persisted.get(parameter_id, {})
+            rows.append({
+                "parameter_id": parameter_id,
+                "actual_parameter": identity["actual_parameter"],
+                "plot_label": str(saved.get("plot_label") or identity["default_plot_label"]),
+                "annotation": str(saved.get("annotation") or ""),
+                "sample_count": (
+                    f"{len(identity['sample_ids'])}/"
+                    f"{len(self._sample_browser.samples())}"
+                ),
+            })
+        return rows
+
+    def _on_project_parameter_mapping_changed(self, change: object) -> None:
+        """Persist one display-only project mapping edited in Channels."""
+        if not isinstance(change, dict):
+            return
+        parameter_id = str(change.get("parameter_id", "")).strip()
+        if not parameter_id:
+            return
+        existing = next(
+            (value for value in self._parameter_display_mappings
+             if str(value.get("parameter_id", "")) == parameter_id),
+            None,
+        )
+        if existing is None:
+            existing = {"parameter_id": parameter_id}
+            self._parameter_display_mappings.append(existing)
+        existing["plot_label"] = str(change.get("plot_label", "")).strip()
+        existing["annotation"] = str(change.get("annotation", "")).strip()
+        if not existing["plot_label"] and not existing["annotation"]:
+            self._parameter_display_mappings = [
+                value for value in self._parameter_display_mappings
+                if value is not existing
+            ]
+        self._project_dirty = True
+        self._refresh_parameter_catalog()
+        self._replot()
 
     def _catalog_for_sample(
         self, sample: _SampleInfo
@@ -4269,6 +4379,16 @@ class MainWindow(QMainWindow):
             sample.info.channels,
             self._derived_parameters,
             sample_id=sample.id,
+        )
+        mapping_rows = self._parameter_display_mappings
+        catalog = tuple(
+            replace(
+                entry,
+                display_name=parameter_display_label(
+                    entry.parameter_id, entry.display_name, mapping_rows
+                ),
+            )
+            for entry in catalog
         )
         report = self._last_result_report
         if report is None:

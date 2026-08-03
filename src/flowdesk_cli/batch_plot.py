@@ -40,6 +40,7 @@ from flowdesk_core.models import (
   PlotViewSpec,
   TransformSpec,
 )
+from flowdesk_core.parameter_display import parameter_display_label
 from flowdesk_core.pipeline_runner import PipelineRunner
 from flowdesk_core.plot_export import (
   LayerValues,
@@ -577,6 +578,9 @@ def batch_plot_command(
         (channel.name for channel in processed.channels if channel.id == y_id),
         y_id,
       )
+      display_mappings = project.get("parameter_display_mappings", [])
+      x_label = parameter_display_label(x_id, x_label, display_mappings)
+      y_label = parameter_display_label(y_id, y_label, display_mappings)
       return x_values[finite], y_values[finite], {
         "x_id": x_id, "y_id": y_id, "x_label": x_label, "y_label": y_label,
         "event_colors": event_colors,

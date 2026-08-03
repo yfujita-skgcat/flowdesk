@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
@@ -46,6 +46,7 @@ class DerivedParameterEditorDialog(QDialog):
     available_channels: Sequence[ChannelSpec],
     *,
     preview_callback: PreviewCallback | None = None,
+    parameter_display_labels: Mapping[str, str] | None = None,
     fixed_definition_ids: Sequence[str] = (),
     fixed_output_channel_ids: Sequence[str] = (),
     parent: QWidget | None = None,
@@ -57,6 +58,9 @@ class DerivedParameterEditorDialog(QDialog):
     self._definitions = deepcopy(list(definitions))
     self._available_channels = tuple(available_channels)
     self._preview_callback = preview_callback
+    self._parameter_display_labels = {
+      str(key): str(value) for key, value in (parameter_display_labels or {}).items()
+    }
     self._fixed_definition_ids = {str(value) for value in fixed_definition_ids}
     self._fixed_output_channel_ids = {
       str(value) for value in fixed_output_channel_ids
@@ -220,6 +224,10 @@ class DerivedParameterEditorDialog(QDialog):
   def _parameter_choices(self) -> list[tuple[str, str]]:
     labels: dict[str, str] = {}
     for channel in self._available_channels:
+      mapped = self._parameter_display_labels.get(channel.id)
+      if mapped:
+        labels[channel.id] = mapped
+        continue
       display_name = channel.short_name or channel.name
       if channel.short_name and channel.short_name != channel.name:
         display_name = f"{display_name} [{channel.name}]"
@@ -227,8 +235,12 @@ class DerivedParameterEditorDialog(QDialog):
     for definition in self._definitions:
       output_id = str(definition.get("output_channel_id", ""))
       if output_id:
-        name = str(definition.get("name", "Derived"))
-        labels.setdefault(output_id, f"{name} [{output_id}]")
+        labels.setdefault(
+          output_id,
+          self._parameter_display_labels.get(
+            output_id, f"{definition.get('name', 'Derived')} [{output_id}]"
+          ),
+        )
     return list(labels.items())
 
   @staticmethod

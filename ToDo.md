@@ -2066,6 +2066,13 @@ PNG/JPEG/SVG/PDF、worker cancel/close、Unicode/path、科学結果parityが検
 
 ## 各Phaseの最終確認template
 
+### Project-wide parameter display labels
+
+- [x] 済み: 選択中サンプルのParameter/FCS metadataを統合表示し、derived行ではFCS由来でない列を空欄にする。
+- [x] 済み: 実験セット全体のstable parameter IDを下部の共通マッピング表へ集約し、Plot display nameとBiological label / noteを編集可能にする。
+- [x] 済み: `annotation (plot_label)`形式の表示をPlot、Channels、Derived Parameters、Batch Exportへ反映し、解析IDと結果を変更しない。
+- [x] 済み: マッピングのproject save/load、表示更新、stable ID分離をGUI/core testで確認する。
+
 Phaseを完了扱いにする前に、次を実行して結果を作業報告へ記載する。
 
 ```bash

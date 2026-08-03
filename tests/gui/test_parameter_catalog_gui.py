@@ -99,6 +99,63 @@ def test_parameter_information_shows_catalog_provenance_and_status(qapp) -> None
     workspace.deleteLater()
 
 
+def test_project_parameter_mapping_table_is_editable(qapp) -> None:
+  workspace = ChannelMetadataWorkspace()
+  changes: list[dict[str, str]] = []
+  workspace.project_mapping_changed.connect(changes.append)
+  try:
+    workspace.set_project_parameter_mappings(({
+      "parameter_id": "stable-fl1",
+      "actual_parameter": "FL1-A",
+      "plot_label": "FITC-A",
+      "annotation": "GFP",
+      "sample_count": "2/2",
+    },))
+    table = workspace.table
+    assert table.item(0, 0).text() == "FL1-A"
+    assert table.item(0, 1).text() == "FITC-A"
+    table.item(0, 2).setText("GFP protein")
+    assert changes[-1] == {
+      "parameter_id": "stable-fl1",
+      "plot_label": "FITC-A",
+      "annotation": "GFP protein",
+    }
+  finally:
+    workspace.close()
+    workspace.deleteLater()
+
+
+def test_project_mapping_derived_sample_count_is_not_lazy_load_count(qapp, tmp_path) -> None:
+  paths = []
+  for name in ("first.fcs", "second.fcs"):
+    path = tmp_path / name
+    write_fcs_file(path, np.ones((2, 2), dtype=np.float64), ["FL1-A", "FL2-A"])
+    paths.append(str(path))
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths(paths) == 2
+    window._derived_parameters = [{
+      "id": "ratio-definition",
+      "name": "Ratio",
+      "output_channel_id": "ratio",
+      "expression": "FL1-A / FL2-A",
+      "input_parameters": ["FL1-A", "FL2-A"],
+      "source_stage": "raw",
+    }]
+    rows = window._project_parameter_mapping_rows()
+    ratio = next(row for row in rows if row["parameter_id"] == "ratio")
+    assert ratio["sample_count"] == "2/2"
+    window._sample_data.clear()
+    assert next(
+      row for row in window._project_parameter_mapping_rows()
+      if row["parameter_id"] == "ratio"
+    )["sample_count"] == "2/2"
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 def test_main_window_plots_derived_parameter_from_canonical_result(qapp, tmp_path) -> None:
   path = tmp_path / "ratio.fcs"
   write_fcs_file(
@@ -134,6 +191,29 @@ def test_main_window_plots_derived_parameter_from_canonical_result(qapp, tmp_pat
       break
     assert window._plot_widget._scatter is not None
     np.testing.assert_allclose(window._plot_widget._rendered_x, [2.0, 4.0])
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_project_parameter_mapping_updates_plot_selector_label(qapp, tmp_path) -> None:
+  path = tmp_path / "labels.fcs"
+  write_fcs_file(path, np.ones((2, 2), dtype=np.float64), ["FL1-A", "FL2-A"])
+  window = MainWindow()
+  try:
+    assert window._sample_browser.add_samples_from_paths([str(path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    assert window._sample_browser.select_sample(sample.id)
+    channel = sample.info.channels[0]
+    window._parameter_display_mappings = [{
+      "parameter_id": channel.id,
+      "plot_label": "FITC-A",
+      "annotation": "GFP",
+    }]
+    window._refresh_parameter_catalog()
+    index = window._channel_selector._x_combo.findData(channel.id)
+    assert window._channel_selector._x_combo.itemText(index) == "GFP (FITC-A)"
   finally:
     window.close()
     window.deleteLater()
