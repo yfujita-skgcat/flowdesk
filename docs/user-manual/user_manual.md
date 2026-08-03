@@ -736,7 +736,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 |button|説明|
 |---|---|
-|New|pending defaults を使って新規 statistic を作る。|
+|New|pending defaults を使って新規 statistic を作る。既定Metricは`mean`で、Parameterを選択できる状態から開始する。|
 |Delete|選択 definition を削除。downstream reference がある場合は保護される。|
 |Duplicate|選択 definition を新 ID 用に複製。|
 |Clear All|全 definition を削除。|

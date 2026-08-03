@@ -140,6 +140,9 @@ New definitions receive a readable initial name such as `FSC-A_mean` from the pa
 and metric. A suggested Statistic ID is generated for editing (for example
 `stat_fsc_a_mean`). Metrics without a parameter use the metric name itself. The ID becomes stable and read-only when the dialog is accepted;
 changing the display name or target in a later edit does not rewrite the ID.
+When no entry-point defaults are supplied, a new definition starts with the `mean` metric
+so the Parameter selector is enabled immediately. Existing definitions and explicit metric
+defaults are not changed.
 
 ```text
 Parameter / Metric / Source stage / Transform / Non-finite policy / Format

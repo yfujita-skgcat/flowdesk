@@ -82,6 +82,19 @@ def test_dialog_open_does_not_create_statistic_until_new_is_clicked(qapp) -> Non
   assert dialog._id_edit.isReadOnly()
 
 
+def test_new_statistic_defaults_to_value_metric_with_parameter_enabled(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[],
+    available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
+    population_ids=("all_events",),
+  )
+
+  dialog._new_button.click()
+
+  assert dialog._metric_combo.currentText() == "mean"
+  assert dialog._parameter_combo.isEnabled()
+
+
 def test_new_statistic_id_is_editable_until_dialog_accept(qapp) -> None:
   dialog = StatisticsEditorDialog(
     statistics=[],

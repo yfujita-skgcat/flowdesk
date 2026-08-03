@@ -127,7 +127,7 @@ def _empty_statistic(
         "population_id": "",
         "population_ids": [],
         "parameter_id": None,
-        "metric": "count",
+        "metric": "mean",
         "source_stage": "compensated",
         "transform_id": None,
         "value_policy": "full_events",
