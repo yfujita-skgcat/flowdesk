@@ -641,7 +641,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 |Non-finite policy|`Strict (report invalid events)` / `Exclude invalid values explicitly`。前者は invalid event を報告し、後者は invalid value を明示的に除外する。|
 |Expression|安全な式。placeholder は `signal / reference`。|
 |Detected inputs|Expressionから安全なparserで自動検出した依存parameter。読み取り専用で、式が未完成・不正な間はその状態を表示する。|
-|Insert parameter|acquired parameter とderived outputの候補を一つ選び、`Insert parameter`でcursor位置へstable parameter IDを挿入する。複数の選択欄はない。|
+|Insert parameter|acquired parameter とderived outputの候補を一つ選ぶ。acquired parameterは短縮表示名と正式名を`APC-A [FL2-A]`のように表示し、`Insert parameter`でcursor位置へ内部のstable parameter IDを挿入する。複数の選択欄はない。|
 |Validate|syntax、dependency、cycle、output ID 等を core validator で検査。|
 |Preview|current sample の最大 200 event 程度を canonical processing path で評価する診断 preview。|
 |diagnostic label|validation code と message。|

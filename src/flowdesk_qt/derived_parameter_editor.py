@@ -218,7 +218,12 @@ class DerivedParameterEditorDialog(QDialog):
     }
 
   def _parameter_choices(self) -> list[tuple[str, str]]:
-    labels = {channel.id: channel.name for channel in self._available_channels}
+    labels: dict[str, str] = {}
+    for channel in self._available_channels:
+      display_name = channel.short_name or channel.name
+      if channel.short_name and channel.short_name != channel.name:
+        display_name = f"{display_name} [{channel.name}]"
+      labels[channel.id] = display_name
     for definition in self._definitions:
       output_id = str(definition.get("output_channel_id", ""))
       if output_id:
@@ -287,7 +292,7 @@ class DerivedParameterEditorDialog(QDialog):
     choices = self._parameter_choices()
     self._insert_parameter_combo.clear()
     for parameter_id, label in choices:
-      self._insert_parameter_combo.addItem(f"{label} [{parameter_id}]", parameter_id)
+      self._insert_parameter_combo.addItem(label, parameter_id)
 
   def _detected_input_parameters(self, expression: str) -> tuple[str, ...] | None:
     try:

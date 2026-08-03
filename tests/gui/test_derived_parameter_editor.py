@@ -119,7 +119,7 @@ def test_generated_ids_use_collision_suffixes(qapp) -> None:
 
 def test_editor_persists_all_fields_and_inserts_parameter(qapp) -> None:
   channels = (
-    ChannelSpec(id="signal", name="Signal"),
+    ChannelSpec(id="signal", name="Signal", short_name="Signal"),
     ChannelSpec(id="reference", name="Reference"),
   )
   dialog = DerivedParameterEditorDialog([], channels)
@@ -172,6 +172,21 @@ def test_editor_persists_all_fields_and_inserts_parameter(qapp) -> None:
       "non_finite_policy": "strict",
       "notes": "",
     }]
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_insert_parameter_shows_short_and_canonical_names(qapp) -> None:
+  dialog = DerivedParameterEditorDialog(
+    [],
+    (ChannelSpec(id="stable-fl2", name="FL2-A", short_name="APC-A"),),
+  )
+  try:
+    dialog._new_button.click()
+    assert dialog._insert_parameter_combo.itemText(0) == "APC-A [FL2-A]"
+    assert dialog._insert_parameter_combo.itemData(0) == "stable-fl2"
   finally:
     dialog.close()
     dialog.deleteLater()
