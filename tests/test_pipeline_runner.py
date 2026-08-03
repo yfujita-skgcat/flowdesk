@@ -1863,6 +1863,43 @@ def test_incompatible_raw_derived_statistic_is_reported_per_population() -> None
   assert diagnostic.details["derived_definition_id"] == "ratio-definition"
 
 
+def test_invalid_derived_statistic_parallel_order_matches_sequential() -> None:
+  project = _make_project(
+    samples=[{"id": "s1"}, {"id": "s2"}],
+    derived_parameters=[{
+      "id": "ratio-definition", "output_channel_id": "ratio",
+      "name": "Signal ratio", "expression": "signal / reference",
+      "input_parameters": ["signal", "reference"], "source_stage": "raw",
+    }],
+    statistics=[{
+      "id": "ratio_raw_mean", "name": "Ratio raw mean",
+      "population_id": "all_events", "parameter_id": "ratio",
+      "metric": "mean", "source_stage": "raw",
+    }],
+  )
+  channels = (
+    ChannelSpec(id="signal", name="Signal"),
+    ChannelSpec(id="reference", name="Reference"),
+  )
+  samples = (
+    SampleData("s1", np.array([[2.0, 1.0]], dtype=np.float64), channels),
+    SampleData("s2", np.array([[4.0, 1.0]], dtype=np.float64), channels),
+  )
+
+  sequential = PipelineRunner(project).run_samples(
+    ExecutionContext(), samples
+  )
+  threaded = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_control=ExecutionControl(options=ExecutionOptions(
+      backend="thread", max_workers=2,
+    ))),
+    samples,
+  )
+
+  assert threaded.statistic_results == sequential.statistic_results
+  assert threaded.diagnostics == sequential.diagnostics
+
+
 def test_raw_and_compensated_derived_sources_use_explicit_stage_views() -> None:
   source_events = np.array([[15.0, 10.0]], dtype=np.float64)
   sample = SampleData(
