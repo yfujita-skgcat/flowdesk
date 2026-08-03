@@ -2145,10 +2145,9 @@ def test_sample_browser_metadata_columns_filter_and_mismatch_badges(
     assert label is not None and "[≠]" in label.text()
     assert [
       browser._sample_header.findChild(QLabel, object_name).text()
-      for object_name in (
-        "sampleHeaderOv", "sampleHeaderCol", "sampleHeaderName", "sampleHeaderRel"
-      )
-    ] == ["Ov", "Col", "Name", "Rel"]
+      for object_name in ("sampleHeaderOv", "sampleHeaderCol", "sampleHeaderName")
+    ] == ["Ov", "Col", "Name"]
+    assert browser._sample_header.findChild(QLabel, "sampleHeaderRel") is None
     assert browser._list_widget.item(1).text() == ""
 
     metadata.set_sample(browser.samples()[0])
@@ -2193,7 +2192,7 @@ def test_sample_browser_manual_overlay_column_is_separate_from_active_selection(
     assert active_swatch is not None and not active_swatch.isEnabled()
     assert active_row.findChild(
       QLabel, f"overlayRelation_{browser.samples()[1].id}"
-    ).text() == "active"
+    ) is None
     assert browser.overlay_state()["manual_overlay_sample_ids"] == [browser.samples()[1].id]
   finally:
     browser.close()

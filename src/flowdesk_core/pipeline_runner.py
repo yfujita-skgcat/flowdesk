@@ -1272,7 +1272,7 @@ class PipelineRunner:
       "compensated": _AnalysisData(enriched.events, enriched.channels),
       "transformed": transformed,
     }
-    stat_results = self._step_statistics(
+    stat_results, statistic_diagnostics = self._step_statistics(
       sample_id=sid,
       data_by_stage=statistic_data_by_stage,
       population_results=pop_results,
@@ -1280,6 +1280,7 @@ class PipelineRunner:
       population_parent_ids=population_parent_ids,
       statistic_ids=statistic_ids,
     )
+    diagnostics.extend(statistic_diagnostics)
     messages.append(f"sample={sid} statistics=done n={len(stat_results)}")
     self._pipeline_checkpoint(
       context, operation_id, "sample_complete",
@@ -2281,7 +2282,7 @@ class PipelineRunner:
     membership: list[PopulationMembership],
     population_parent_ids: Mapping[str, str | None],
     statistic_ids: tuple[str, ...] = (),
-  ) -> list[StatisticResult]:
+  ) -> tuple[list[StatisticResult], tuple[ExecutionDiagnostic, ...]]:
     """Evaluate statistic definitions for a single sample.
 
     Each definition chooses raw, compensated, or materialized transformed
@@ -2293,7 +2294,7 @@ class PipelineRunner:
       allowed = set(statistic_ids)
       specs = tuple(spec for spec in specs if spec.id in allowed)
     if not specs:
-      return []
+      return [], ()
 
     # Build lookup tables.
     parent_by_population: dict[str, PopulationResult] = {
@@ -2311,6 +2312,10 @@ class PipelineRunner:
     }
 
     results: list[StatisticResult] = []
+    diagnostics: list[ExecutionDiagnostic] = []
+    derived_by_output_id = {
+      spec.output_id: spec for spec in self._derived_parameter_specs()
+    }
 
     for spec in specs:
       source_data: _AnalysisData | None = None
@@ -2327,15 +2332,92 @@ class PipelineRunner:
               source_data, spec.transform_id, spec.parameter_id
             )
           except TransformError as exc:
-            raise PipelineError(
-              f"statistics_transform_failed: {spec.transform_id!r}: {exc}"
-            ) from exc
+            diagnostics.append(ExecutionDiagnostic(
+              code="statistic_transform_unavailable",
+              message=(
+                f"Statistic {spec.id!r} cannot apply transform "
+                f"{spec.transform_id!r} to parameter {spec.parameter_id!r}: {exc}"
+              ),
+              severity="error",
+              stage="statistics",
+              sample_id=sample_id,
+              parameter_id=spec.parameter_id,
+              details={
+                "statistic_id": spec.id,
+                "source_stage": spec.source_stage,
+                "transform_id": spec.transform_id,
+                "available_transform_ids": tuple(
+                  transform.id for transform in source_data.transforms
+                ),
+                "available_channel_ids": tuple(source_data.channel_ids),
+              },
+            ))
+            for population_id in spec.population_ids:
+              if population_id not in parent_by_population:
+                continue
+              results.append(StatisticResult(
+                sample_id=sample_id,
+                statistic_id=spec.id,
+                population_id=population_id,
+                metric=spec.metric,
+                value=None,
+                status="error",
+                undefined_reason="statistic_transform_unavailable",
+                statistic_name=spec.name,
+                n_total=parent_by_population[population_id].event_count,
+                non_finite_policy=spec.non_finite_policy,
+              ))
+            continue
         column_index = {
           channel_id: index
           for index, channel_id in enumerate(source_data.channel_ids)
         }
         col_idx = column_index.get(spec.parameter_id)
         if col_idx is None:
+          derived_spec = derived_by_output_id.get(spec.parameter_id)
+          details: dict[str, object] = {
+            "statistic_id": spec.id,
+            "source_stage": spec.source_stage,
+            "available_channel_ids": tuple(source_data.channel_ids),
+            "transform_id": spec.transform_id,
+          }
+          if derived_spec is not None:
+            details.update({
+              "derived_definition_id": derived_spec.id,
+              "derived_output_channel_id": derived_spec.output_id,
+              "derived_input_source_stage": derived_spec.source_stage,
+              "derived_input_parameters": tuple(derived_spec.input_parameters),
+            })
+          diagnostics.append(ExecutionDiagnostic(
+            code="statistic_parameter_unavailable_at_source_stage",
+            message=(
+              f"Statistic {spec.id!r} cannot read parameter "
+              f"{spec.parameter_id!r} from source stage {spec.source_stage!r}"
+            ),
+            severity="error",
+            stage="statistics",
+            sample_id=sample_id,
+            parameter_id=spec.parameter_id,
+            details=details,
+          ))
+          for population_id in spec.population_ids:
+            if population_id not in parent_by_population:
+              continue
+            results.append(StatisticResult(
+              sample_id=sample_id,
+              statistic_id=spec.id,
+              population_id=population_id,
+              metric=spec.metric,
+              value=None,
+              status="error",
+              undefined_reason="parameter_unavailable_at_source_stage",
+              statistic_name=spec.name,
+              n_total=parent_by_population[population_id].event_count,
+              n_valid=None,
+              n_invalid=None,
+              invalid_fraction=None,
+              non_finite_policy=spec.non_finite_policy,
+            ))
           continue
         if source_data is None:
           raise PipelineError("statistics source data is unavailable")
@@ -2418,7 +2500,7 @@ class PipelineRunner:
           )
         )
 
-    return results
+    return results, tuple(diagnostics)
 
   @staticmethod
   def _materialize_statistic_transform_data(

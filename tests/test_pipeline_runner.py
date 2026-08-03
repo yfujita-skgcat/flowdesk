@@ -1818,6 +1818,51 @@ def test_derived_parameter_drives_all_gate_shapes_and_statistic_export() -> None
   assert any(record.population_id == "ratio_rectangle" for record in exported)
 
 
+def test_incompatible_raw_derived_statistic_is_reported_per_population() -> None:
+  """A derived output requested from raw is explicit, never silently omitted."""
+  sample = SampleData(
+    "s1",
+    np.array([[2.0, 1.0], [4.0, 1.0]], dtype=np.float64),
+    (ChannelSpec(id="signal", name="Signal"),
+     ChannelSpec(id="reference", name="Reference")),
+  )
+  project = _make_project(
+    samples=[{"id": "s1"}],
+    derived_parameters=[{
+      "id": "ratio-definition", "output_channel_id": "ratio",
+      "name": "Signal ratio", "expression": "signal / reference",
+      "input_parameters": ["signal", "reference"], "source_stage": "raw",
+    }],
+    statistics=[{
+      "id": "ratio_raw_mean", "name": "Ratio raw mean",
+      "population_id": "all_events", "parameter_id": "ratio",
+      "metric": "mean", "source_stage": "raw",
+    }],
+  )
+
+  report = PipelineRunner(project).run_samples(
+    ExecutionContext(execution_profile_id="default"), (sample,)
+  )
+
+  results = [
+    result for result in report.statistic_results
+    if result.statistic_id == "ratio_raw_mean"
+  ]
+  assert len(results) == 1
+  assert results[0].population_id == "all_events"
+  assert results[0].status == "error"
+  assert results[0].value is None
+  assert results[0].undefined_reason == "parameter_unavailable_at_source_stage"
+  diagnostic = next(
+    item for item in report.diagnostics
+    if item.code == "statistic_parameter_unavailable_at_source_stage"
+  )
+  assert diagnostic.sample_id == "s1"
+  assert diagnostic.parameter_id == "ratio"
+  assert diagnostic.details["source_stage"] == "raw"
+  assert diagnostic.details["derived_definition_id"] == "ratio-definition"
+
+
 def test_raw_and_compensated_derived_sources_use_explicit_stage_views() -> None:
   source_events = np.array([[15.0, 10.0]], dtype=np.float64)
   sample = SampleData(

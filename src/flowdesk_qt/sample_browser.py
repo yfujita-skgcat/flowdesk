@@ -636,21 +636,15 @@ class SampleBrowser(QWidget):
             name.setToolTip(item.toolTip())
             name.setWordWrap(False)
             name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-            relation = QLabel(self._overlay_roles.get(sample.id, "manual"))
-            relation.setObjectName(f"overlayRelation_{sample.id}")
-            relation.setFixedWidth(68)
-            relation.setToolTip("Overlay relation or diagnostic status")
             if active is not None and active.id == sample.id:
                 swatch.setEnabled(False)
                 swatch.setToolTip(
                     "Active sample uses the base-layer event style; "
                     "choose an overlay color on a different sample"
                 )
-                relation.setText("active")
             row_layout.addWidget(overlay)
             row_layout.addWidget(swatch)
             row_layout.addWidget(name, 1)
-            row_layout.addWidget(relation)
             item.setSizeHint(QSize(0, 30))
             self._list_widget.setItemWidget(item, row)
         self._list_widget.blockSignals(False)
@@ -697,11 +691,6 @@ class SampleBrowser(QWidget):
                     "Active sample uses the base-layer event style; "
                     "choose an overlay color on a different sample"
                     if is_active else "Choose overlay source color"
-                )
-            relation = row.findChild(QLabel, f"overlayRelation_{sample.id}")
-            if relation is not None:
-                relation.setText(
-                    "active" if is_active else self._overlay_roles.get(sample.id, "manual")
                 )
 
     def _set_manual_overlay(self, sample_id: str, enabled: bool) -> None:
@@ -917,13 +906,9 @@ class SampleBrowser(QWidget):
         col_header.setFixedWidth(24)
         name_header = QLabel("Name")
         name_header.setObjectName("sampleHeaderName")
-        rel_header = QLabel("Rel")
-        rel_header.setObjectName("sampleHeaderRel")
-        rel_header.setFixedWidth(68)
         header_layout.addWidget(ov_header)
         header_layout.addWidget(col_header)
         header_layout.addWidget(name_header, 1)
-        header_layout.addWidget(rel_header)
 
         self._filter_edit = QLineEdit()
         self._filter_edit.setObjectName("sampleFilterEdit")

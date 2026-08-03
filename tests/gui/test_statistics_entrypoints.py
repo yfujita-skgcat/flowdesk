@@ -17,6 +17,21 @@ from flowdesk_qt.statistics_editor import StatisticsEditorDialog
 pytestmark = pytest.mark.gui
 
 
+def _select_value(
+  dialog: StatisticsEditorDialog,
+  parameter_id: str,
+  source_stage: str,
+  transform_id: str | None = None,
+) -> None:
+  role = Qt.ItemDataRole.UserRole + 1
+  key = (parameter_id, source_stage, transform_id)
+  for index in range(dialog._value_combo.count()):
+    if dialog._value_combo.itemData(index, role) == key:
+      dialog._value_combo.setCurrentIndex(index)
+      return
+  raise AssertionError(f"value choice not found: {key!r}")
+
+
 def test_population_tree_add_statistic_uses_selected_population(qapp) -> None:
   tree = PopulationTree()
   report = ExecutionReport(
@@ -89,7 +104,7 @@ def test_new_statistic_defaults_to_value_metric_with_parameter_enabled(qapp) -> 
   dialog._new_button.click()
 
   assert dialog._metric_combo.currentText() == "mean"
-  assert dialog._parameter_combo.isEnabled()
+  assert dialog._value_combo.isEnabled()
 
 
 def test_new_statistic_id_is_editable_until_dialog_accept(qapp) -> None:
@@ -128,25 +143,22 @@ def test_new_statistic_id_tracks_targets_metric_and_value_domain(qapp, monkeypat
     available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
     population_ids=("all_events", "rect_1"),
     population_labels={"all_events": "All Events", "rect_1": "rect_1"},
-    transforms=({"id": "log10", "name": "Log10"},),
+    transforms=({"id": "log10", "name": "Log10", "parameter": "FL1-A"},),
   )
 
   dialog._new_button.click()
   assert dialog._id_edit.text() == "all_events_rect_1_mean_compensated"
+  _select_value(dialog, "FL1-A", "compensated")
 
   dialog._metric_combo.setCurrentText("median")
   assert dialog._id_edit.text() == "all_events_rect_1_median_compensated"
 
-  dialog._source_combo.setCurrentText("raw")
+  _select_value(dialog, "FL1-A", "raw")
   assert dialog._id_edit.text() == "all_events_rect_1_median_raw"
 
-  dialog._source_combo.setCurrentText("transformed")
-  assert dialog._id_edit.text() == "all_events_rect_1_median_transformed"
-  dialog._transform_combo.setCurrentIndex(
-    dialog._transform_combo.findData("log10")
-  )
+  _select_value(dialog, "FL1-A", "transformed", "log10")
   assert dialog._id_edit.text() == "all_events_rect_1_median_transformed_log10"
-  dialog._source_combo.setCurrentText("raw")
+  _select_value(dialog, "FL1-A", "raw")
 
   monkeypatch.setattr(
     "flowdesk_qt.statistics_editor.choose_population_targets",
@@ -174,7 +186,7 @@ def test_existing_statistic_id_is_unchanged_after_definition_edits(qapp, monkeyp
 
   assert dialog._id_edit.isReadOnly()
   dialog._metric_combo.setCurrentText("median")
-  dialog._source_combo.setCurrentText("raw")
+  _select_value(dialog, "FL1-A", "raw")
   monkeypatch.setattr(
     "flowdesk_qt.statistics_editor.choose_population_targets",
     lambda *_args: ("rect_1",),
@@ -191,12 +203,12 @@ def test_value_metric_enables_parameter_selector(qapp) -> None:
     available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
     population_ids=("all_events",),
   )
-  assert not dialog._parameter_combo.isEnabled()
+  assert not dialog._value_combo.isEnabled()
   dialog._metric_combo.setCurrentText("mean")
-  assert dialog._parameter_combo.isEnabled()
+  assert dialog._value_combo.isEnabled()
   assert "Select a valid" in dialog._parameter_status_label.text()
   dialog._metric_combo.setCurrentText("count")
-  assert not dialog._parameter_combo.isEnabled()
+  assert not dialog._value_combo.isEnabled()
   assert "does not use a parameter" in dialog._parameter_status_label.text()
 
 
@@ -211,7 +223,7 @@ def test_new_statistics_default_to_all_populations_and_always_compute(qapp) -> N
   dialog._id_edit.setText("live_mean")
   dialog._name_edit.setText("Live mean")
   dialog._metric_combo.setCurrentText("mean")
-  dialog._parameter_combo.setCurrentText("FL1-A [FL1-A]")
+  _select_value(dialog, "FL1-A", "compensated")
 
   definition = dialog.definitions()[0]
   assert definition["population_id"] == "all_events"
@@ -485,11 +497,8 @@ def test_statistic_definition_fields_are_editable(qapp) -> None:
     population_ids=("all_events",),
   )
   dialog._name_edit.setText("Renamed statistic")
-  dialog._parameter_combo.setCurrentIndex(
-    dialog._parameter_combo.findData("FL1-A")
-  )
   dialog._metric_combo.setCurrentText("median")
-  dialog._source_combo.setCurrentText("compensated")
+  _select_value(dialog, "FL1-A", "compensated")
 
   definition = dialog.definitions()[0]
   assert definition["id"] == "stat_mean"

@@ -68,6 +68,8 @@ StatisticUndefinedReason = Literal[
     "all_nonpositive_geometric_mean",
     "zero_mean_for_cv",
     "invalid_percentile",
+    "parameter_unavailable_at_source_stage",
+    "statistic_transform_unavailable",
     "calculation_error",
 ]
 

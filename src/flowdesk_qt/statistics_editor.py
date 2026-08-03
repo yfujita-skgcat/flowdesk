@@ -33,10 +33,17 @@ from PySide6.QtWidgets import (
 )
 
 from flowdesk_core.models import (
-    ChannelSpec,
-    StatisticSpec,
+  ChannelSpec,
+  StatisticSpec,
 )
-from flowdesk_core.parameter_catalog import ParameterCatalogEntry
+from flowdesk_core.parameter_catalog import (
+  ParameterCatalogEntry,
+  build_parameter_catalog,
+)
+from flowdesk_core.statistic_values import (
+  build_statistic_value_choices,
+  resolve_statistic_value_choice,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -65,9 +72,6 @@ _VALUE_METRICS = frozenset([
     "mad",
     "percentile",
 ])
-
-_SOURCE_STAGES = ["raw", "compensated", "transformed"]
-
 
 def choose_population_targets(
     parent: QWidget,
@@ -263,6 +267,14 @@ class StatisticsEditorDialog(QDialog):
             if str(value.get("id") or "").strip()
         }
         self._channels = tuple(available_channels)
+        self._catalog = tuple(
+          available_channels
+          if all(isinstance(value, ParameterCatalogEntry) for value in available_channels)
+          else build_parameter_catalog(
+            tuple(value for value in available_channels if isinstance(value, ChannelSpec)),
+            (),
+          )
+        )
         self._parameter_labels = {
             (
                 channel.parameter_id
@@ -283,6 +295,10 @@ class StatisticsEditorDialog(QDialog):
             for statistic_id, references in (statistic_references or {}).items()
         }
         self._transforms = tuple(dict(value) for value in transforms)
+        self._value_choices = build_statistic_value_choices(
+          self._catalog, self._transforms
+        )
+        self._unavailable_value_key: tuple[str, str, str | None] | None = None
         # Defaults supplied by an entry point (for example Results -> Add
         # Statistic...) are applied only when the user explicitly clicks New.
         # Opening the editor must be side-effect free and must not create an
@@ -292,7 +308,6 @@ class StatisticsEditorDialog(QDialog):
             if new_statistic_defaults is not None else None
         )
         self._current_row = -1
-        self._last_valid_parameter_id = ""
         self._target_population_ids: tuple[str, ...] = ()
         self._loading = False
         self._undo_history: list[list[dict[str, Any]]] = []
@@ -366,32 +381,27 @@ class StatisticsEditorDialog(QDialog):
         self._target_button = QPushButton("Select populations...")
         self._target_button.setObjectName("statisticPopulationTargetsButton")
 
-        self._parameter_combo = QComboBox()
-        self._parameter_combo.setObjectName("statisticParameterCombo")
-        self._parameter_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._parameter_combo.addItem("(none)", "")
-        for channel in self._channels:
-            if isinstance(channel, ParameterCatalogEntry):
-                label = channel.selector_label
-                enabled = channel.is_definition_valid
-                tooltip = "; ".join(
-                    diagnostic.message for diagnostic in channel.diagnostics
-                ) or channel.availability
-                parameter_id = channel.parameter_id
-            else:
-                label = f"{channel.name} [{channel.id}]"
-                enabled = True
-                tooltip = ""
-                parameter_id = channel.id
-            self._parameter_combo.addItem(
-                label, parameter_id
+        # The visible selector is the only user-facing value-domain control.
+        self._value_combo = QComboBox()
+        self._value_combo.setObjectName("statisticValueCombo")
+        self._value_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._value_combo.addItem("(none)", "")
+        for choice in self._value_choices:
+            self._value_combo.addItem(choice.display_label, choice.parameter_id)
+            index = self._value_combo.count() - 1
+            self._value_combo.setItemData(
+              index, choice.key, Qt.ItemDataRole.UserRole + 1
             )
-            index = self._parameter_combo.count() - 1
-            self._parameter_combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
-            model = self._parameter_combo.model()
-            item = model.item(index) if hasattr(model, "item") else None
+            self._value_combo.setItemData(
+              index,
+              f"{choice.provenance_label}; parameter_id={choice.parameter_id}; "
+              f"source_stage={choice.source_stage}; transform_id={choice.transform_id or '(none)'}"
+              + (f"; {choice.diagnostic_message}" if choice.diagnostic_message else ""),
+              Qt.ItemDataRole.ToolTipRole,
+            )
+            item = self._value_combo.model().item(index)
             if item is not None:
-                item.setEnabled(enabled)
+                item.setEnabled(choice.available)
 
         self._parameter_status_label = QLabel("")
         self._parameter_status_label.setObjectName("statisticParameterStatusLabel")
@@ -401,18 +411,6 @@ class StatisticsEditorDialog(QDialog):
         self._metric_combo.setObjectName("statisticMetricCombo")
         self._metric_combo.addItems(_METRICS)
 
-        self._source_combo = QComboBox()
-        self._source_combo.setObjectName("statisticSourceCombo")
-        self._source_combo.addItems(_SOURCE_STAGES)
-
-        self._transform_combo = QComboBox()
-        self._transform_combo.setObjectName("statisticTransformCombo")
-        self._transform_combo.addItem("(native value space)", "")
-        for transform in self._transforms:
-            self._transform_combo.addItem(
-                f"{transform.get('name', transform.get('id'))} [{transform.get('id')}]",
-                transform.get("id"),
-            )
         self._nonfinite_combo = QComboBox()
         self._nonfinite_combo.setObjectName("statisticNonFinitePolicyCombo")
         self._nonfinite_combo.addItem("Strict (undefined on any NaN/Inf)", "strict")
@@ -434,11 +432,9 @@ class StatisticsEditorDialog(QDialog):
         form.addRow("Statistic ID (fixed):", self._id_edit)
         form.addRow("Name:", self._name_edit)
         form.addRow("Population targets:", self._target_button)
-        form.addRow("Parameter:", self._parameter_combo)
+        form.addRow("Statistic value:", self._value_combo)
         form.addRow("Parameter status:", self._parameter_status_label)
         form.addRow("Metric:", self._metric_combo)
-        form.addRow("Value domain:", self._source_combo)
-        form.addRow("Transform:", self._transform_combo)
         form.addRow("Non-finite policy:", self._nonfinite_combo)
         form.addRow(self._percentile_q_label, self._percentile_q_edit)
         form.addRow("Format:", self._format_edit)
@@ -477,19 +473,13 @@ class StatisticsEditorDialog(QDialog):
         self._metric_combo.currentTextChanged.connect(self._on_metric_changed)
         self._metric_combo.currentTextChanged.connect(self._update_draft_identity)
         self._metric_combo.currentIndexChanged.connect(self._on_metric_changed)
-        self._parameter_combo.currentIndexChanged.connect(
-            lambda _index: self._update_parameter_status()
-        )
-        self._source_combo.currentTextChanged.connect(self._on_source_changed)
-        self._source_combo.currentTextChanged.connect(self._update_draft_identity)
-        self._transform_combo.currentIndexChanged.connect(self._update_draft_identity)
+        self._value_combo.currentIndexChanged.connect(self._on_value_changed)
         self._target_button.clicked.connect(self._select_population_targets)
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
 
         # Initial visibility of percentile q field
         self._on_metric_changed()
-        self._on_source_changed()
         self._update_history_buttons()
 
     # -- Row management ------------------------------------------------------
@@ -567,18 +557,30 @@ class StatisticsEditorDialog(QDialog):
             )
             self._update_population_targets_label()
 
-            param_id = value.get("parameter_id") or ""
-            pidx = self._parameter_combo.findData(str(param_id))
-            if pidx >= 0:
-                self._parameter_combo.setCurrentIndex(pidx)
-
             metric = str(value.get("metric", "count"))
             self._metric_combo.setCurrentText(metric)
 
             source = str(value.get("source_stage", "compensated"))
-            self._source_combo.setCurrentText(source)
-            transform_index = self._transform_combo.findData(value.get("transform_id"))
-            self._transform_combo.setCurrentIndex(max(0, transform_index))
+            param_id = str(value.get("parameter_id") or "")
+            transform_id = value.get("transform_id")
+            self._unavailable_value_key = None
+            if param_id:
+                resolution = resolve_statistic_value_choice(
+                  self._catalog, self._transforms,
+                  param_id, source, transform_id,
+                )
+                if resolution.is_valid:
+                    self._select_value_key(resolution.choice.key)
+                else:
+                    self._unavailable_value_key = (
+                      param_id, source, None if transform_id is None else str(transform_id)
+                    )
+                    self._add_unavailable_value_item(
+                      self._unavailable_value_key,
+                      resolution.message or "Saved statistic value is unavailable; repair it.",
+                    )
+            else:
+                self._value_combo.setCurrentIndex(0)
             policy_index = self._nonfinite_combo.findData(
                 value.get("non_finite_policy", "strict")
             )
@@ -609,9 +611,10 @@ class StatisticsEditorDialog(QDialog):
             return
 
         metric = self._metric_combo.currentText()
-        param_id = str(self._parameter_combo.currentData() or "")
-        if not param_id:
-            param_id = None
+        value_key = self._selected_value_key()
+        if value_key is None:
+            value_key = self._unavailable_value_key
+        param_id = None if value_key is None else value_key[0]
 
         settings: dict[str, Any] = {}
         if metric == "percentile":
@@ -640,8 +643,14 @@ class StatisticsEditorDialog(QDialog):
             "population_ids": list(target_ids),
             "parameter_id": param_id,
             "metric": metric,
-            "source_stage": self._source_combo.currentText(),
-            "transform_id": str(self._transform_combo.currentData() or "") or None,
+            "source_stage": (
+              str(current.get("source_stage") or "compensated")
+              if value_key is None else value_key[1]
+            ),
+            "transform_id": (
+              current.get("transform_id")
+              if value_key is None else value_key[2]
+            ),
             "value_policy": "full_events",
             "non_finite_policy": self._nonfinite_combo.currentData() or "strict",
             "settings": settings,
@@ -773,6 +782,64 @@ class StatisticsEditorDialog(QDialog):
 
     # -- Metric-dependent UI -------------------------------------------------
 
+    _VALUE_KEY_ROLE = Qt.ItemDataRole.UserRole + 1
+
+    def _selected_value_key(self) -> tuple[str, str, str | None] | None:
+        value = self._value_combo.currentData(self._VALUE_KEY_ROLE)
+        if not isinstance(value, tuple) or len(value) != 3:
+            return None
+        parameter_id, source_stage, transform_id = value
+        if not isinstance(parameter_id, str) or not parameter_id:
+            return None
+        return (
+          parameter_id,
+          str(source_stage),
+          None if transform_id is None else str(transform_id),
+        )
+
+    def _remove_unavailable_value_item(self) -> None:
+        if self._unavailable_value_key is None:
+            return
+        for index in range(self._value_combo.count() - 1, -1, -1):
+            if (
+              self._value_combo.itemData(index, self._VALUE_KEY_ROLE)
+              == self._unavailable_value_key
+            ):
+                self._value_combo.removeItem(index)
+        self._unavailable_value_key = None
+
+    def _add_unavailable_value_item(
+      self,
+      key: tuple[str, str, str | None],
+      message: str,
+    ) -> None:
+        self._remove_unavailable_value_item()
+        self._value_combo.addItem(
+          f"Unavailable: {key[0]} — {key[1]} (repair required)", key[0]
+        )
+        index = self._value_combo.count() - 1
+        self._value_combo.setItemData(index, key, self._VALUE_KEY_ROLE)
+        self._value_combo.setItemData(index, message, Qt.ItemDataRole.ToolTipRole)
+        item = self._value_combo.model().item(index)
+        if item is not None:
+            item.setEnabled(False)
+        self._value_combo.setCurrentIndex(index)
+
+    def _select_value_key(self, key: tuple[str, str, str | None]) -> bool:
+        for index in range(self._value_combo.count()):
+            if self._value_combo.itemData(index, self._VALUE_KEY_ROLE) == key:
+                self._remove_unavailable_value_item()
+                self._value_combo.setCurrentIndex(index)
+                return True
+        return False
+
+    def _on_value_changed(self, _index: int = -1) -> None:
+        if self._loading:
+            return
+        self._unavailable_value_key = None
+        self._update_parameter_status()
+        self._update_draft_identity()
+
     def _on_metric_changed(self) -> None:
         """Show/hide the percentile q field and adjust parameter requirement."""
         metric = self._metric_combo.currentText()
@@ -782,36 +849,19 @@ class StatisticsEditorDialog(QDialog):
         self._percentile_q_label.setVisible(is_percentile)
         self._percentile_q_edit.setVisible(is_percentile)
 
-        current_parameter = str(self._parameter_combo.currentData() or "")
         if is_value_metric:
-            if self._parameter_item_enabled(current_parameter):
-                self._last_valid_parameter_id = current_parameter
-            elif self._parameter_item_enabled(self._last_valid_parameter_id):
-                self._parameter_combo.setCurrentIndex(
-                    self._parameter_combo.findData(self._last_valid_parameter_id)
-                )
-            self._parameter_combo.setEnabled(self._has_valid_parameter())
+            self._value_combo.setEnabled(self._has_valid_value())
         else:
-            if current_parameter:
-                self._last_valid_parameter_id = current_parameter
-            self._parameter_combo.setCurrentIndex(0)
-            self._parameter_combo.setEnabled(False)
+            self._remove_unavailable_value_item()
+            self._value_combo.setCurrentIndex(0)
+            self._value_combo.setEnabled(False)
         self._update_parameter_status(is_value_metric)
 
-    def _parameter_item_enabled(self, parameter_id: str) -> bool:
-        if not parameter_id:
-            return False
-        index = self._parameter_combo.findData(parameter_id)
-        if index < 0:
-            return False
-        item = self._parameter_combo.model().item(index)
-        return item is not None and item.isEnabled()
-
-    def _has_valid_parameter(self) -> bool:
-        model = self._parameter_combo.model()
+    def _has_valid_value(self) -> bool:
+        model = self._value_combo.model()
         return any(
-            index > 0 and model.item(index) is not None and model.item(index).isEnabled()
-            for index in range(self._parameter_combo.count())
+          index > 0 and model.item(index) is not None and model.item(index).isEnabled()
+          for index in range(self._value_combo.count())
         )
 
     def _update_parameter_status(self, is_value_metric: bool | None = None) -> None:
@@ -822,25 +872,20 @@ class StatisticsEditorDialog(QDialog):
                 "This metric counts events or frequency; it does not use a parameter."
             )
             return
-        if not self._has_valid_parameter():
+        if not self._has_valid_value():
             self._parameter_status_label.setText(
                 "No valid parameters are available. Check acquired channels and "
                 "derived-parameter diagnostics."
             )
             return
-        current = str(self._parameter_combo.currentData() or "")
-        if current and not self._parameter_item_enabled(current):
+        if self._unavailable_value_key is not None:
             self._parameter_status_label.setText(
-                "The saved parameter is unavailable; choose an enabled parameter."
+              "The saved statistic value is unavailable at this source stage; "
+              "choose a valid value representation."
             )
             return
         self._parameter_status_label.setText(
-            "Select a valid acquired or derived parameter for this value metric."
-        )
-
-    def _on_source_changed(self) -> None:
-        self._transform_combo.setEnabled(
-            self._source_combo.currentText() == "transformed"
+            "Select a valid parameter representation and value domain to measure."
         )
 
     def _update_population_targets_label(self) -> None:
@@ -916,6 +961,19 @@ class StatisticsEditorDialog(QDialog):
                 raise ValueError(
                     f"Statistic '{spec.name}' metric '{spec.metric}' requires a parameter"
                 )
+            if spec.metric in _VALUE_METRICS:
+                resolution = resolve_statistic_value_choice(
+                  self._catalog,
+                  self._transforms,
+                  spec.parameter_id,
+                  spec.source_stage,
+                  spec.transform_id,
+                )
+                if not resolution.is_valid:
+                    raise ValueError(
+                      f"Statistic '{spec.name}' has an unavailable value: "
+                      f"{resolution.message or resolution.code}"
+                    )
 
             if spec.id in ids:
                 raise ValueError(f"Duplicate statistic ID: {spec.id}")

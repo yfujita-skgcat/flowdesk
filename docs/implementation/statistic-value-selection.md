@@ -22,6 +22,26 @@ This is a UI and validation unification, not a new scientific execution path.
 Do not persist synthetic IDs such as `comp_FL1-A` or `log10_FL1-A`, and do not
 materialize duplicate event columns in the project file.
 
+## Current implementation status
+
+The core choice/resolver contract and headless error handling are implemented:
+
+- `flowdesk_core.statistic_values` builds acquired raw/compensated choices,
+  derived compensated-stage choices with input provenance, and matching
+  transformed choices without importing Qt.
+- `PipelineRunner._step_statistics()` emits one explicit error result per
+  requested population when a parameter or transform is unavailable, together
+  with a structured `ExecutionDiagnostic`; valid statistics continue to run.
+- `StatisticsEditorDialog` exposes the single `statisticValueCombo` and saves
+  the existing `parameter_id + source_stage + transform_id` triple. Incompatible
+  persisted triples remain visible and cannot be accepted until repaired.
+- Results state preserves `StatisticResult.status` and `undefined_reason`, so
+  error cells are distinguishable from missing rows and numerical undefined
+  values.
+
+The remaining end-to-end parity fixture and CLI/GUI evidence are tracked by
+Increment 4 below; do not mark the ToDo item complete until those checks pass.
+
 Read `AGENTS.md`, `docs/implementation/llm-task-protocol.md`, this guide, and
 the matching skills before production edits.  Implement exactly one numbered
 increment per LLM run.

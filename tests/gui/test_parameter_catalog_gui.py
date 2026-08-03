@@ -74,11 +74,35 @@ def test_transform_and_statistics_can_define_valid_derived_parameter(qapp) -> No
   try:
     assert _item_enabled(transform._parameter_combo, "ratio")
     assert not _item_enabled(transform._parameter_combo, "broken")
-    assert _item_enabled(statistics._parameter_combo, "ratio")
-    assert not _item_enabled(statistics._parameter_combo, "broken")
+    assert _item_enabled(statistics._value_combo, "ratio")
+    assert not _item_enabled(statistics._value_combo, "broken")
   finally:
     transform.close()
     transform.deleteLater()
+    statistics.close()
+    statistics.deleteLater()
+
+
+def test_statistics_editor_keeps_incompatible_derived_raw_value_visible(qapp) -> None:
+  statistics = StatisticsEditorDialog(
+    [{
+      "id": "ratio_raw_mean",
+      "name": "Ratio raw mean",
+      "population_id": "all_events",
+      "population_ids": ["all_events"],
+      "parameter_id": "ratio",
+      "metric": "mean",
+      "source_stage": "raw",
+      "transform_id": None,
+    }],
+    _catalog(),
+    ("all_events",),
+  )
+  try:
+    assert "Unavailable" in statistics._value_combo.currentText()
+    with pytest.raises(ValueError, match="unavailable value"):
+      statistics.definitions()
+  finally:
     statistics.close()
     statistics.deleteLater()
 

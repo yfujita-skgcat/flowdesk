@@ -296,7 +296,6 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |Ov|checkbox|その sample を manual overlay として追加・削除する。active sample 自身は overlay にできず disabled。|
 |Col|color button|overlay color を QColorDialog で選ぶ。active sample の base layer 色には使わない。未選択時は自動色を塗りつぶし表示せず、破線枠で「明示色なし」を示す。右クリックの `Clear Overlay Color` で明示色を削除し、共通の自動色（`#4c78a8`）へ戻せる。|
 |Name|sample row selection|クリックすると active sample になる。先頭記号は channel/file status。|
-|Rel|表示ラベル|`active`、manual、reference、positive_control 等の relation/status。ラベル自体はクリック操作を持たない。|
 
 status 記号は概ね `✓`=channel match、`↕`=order differs、`≠`=channel mismatch、`!`=fingerprint mismatch、`?`=missing である。tooltip には display title、元の name、path、event count、status が表示される。
 
@@ -752,11 +751,10 @@ source event count、candidate event count、gained、lost、scientific equivale
 |Name|Results column/detail に表示する名称。新規作成時は`<Population名>_<Metric>`（例:`rect_1_mean`）を初期値にする。後から編集可能。|
 |Population targets|`Select populations...` で統計量を計算するpopulationを明示選択する。新規作成時は全populationが選択される。|
 |Select populations...|population hierarchyのcheckboxで対象を選ぶ。対象を絞ると不要な統計計算を避けられる。|
-|Parameter|value metric の parameter。count/frequency では `(none)` 可。|
-|Parameter status|parameter が選べない場合の理由を表示する。count/frequency は parameter を使わず、invalid derived parameter や互換 parameter 不在も明示する。|
+|Statistic value|value metric で測定する表現を一つ選ぶ。取得parameterは `Raw FCS value` と `Compensated analysis value`、derived outputは `Derived value (raw inputs)` または `Derived value (compensated inputs)` として表示され、analysis transformは対象parameterに紐づく選択肢として表示される。選択時は内部で既存の `parameter_id`、`source_stage`、`transform_id` に保存される。|
+|Parameter status|選択した値表現のstable ID、source stage、transform、derived input provenanceをtooltipで確認できる。count/frequency は値表現を使わず、invalid derived や互換性のない保存済み指定は理由付きで表示され、修復するまで保存できない。derived outputを`raw`で測る指定はできず、rawは入力source、出力値はcompensated/derived stageに存在する。|
 |Metric|count / frequency_of_parent / frequency_of_total / mean / median / geometric_mean / stddev / cv / mad / percentile|
-|Source Stage|raw / compensated / transformed|
-|Transform|`(native value space)`、または persisted transform ID。|
+|Source Stage / Transform|ユーザーは個別に編集せず、`Statistic value` の選択から決まる。既存projectの永続形式には従来どおり保存され、未知または不整合な組み合わせは明示的なエラーになる。|
 |Non-finite policy|`Strict (undefined on any NaN/Inf)` / `Exclude invalid values (explicit)`。前者は NaN/Inf が一つでもあれば未定義とし、後者は invalid value を明示的に除外する。|
 |Percentile q|metric が percentile の時だけ使用。|
 |Format|display/export formatting hint。|
@@ -1373,7 +1371,6 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`sample_browser.py`|`f'overlayCheck_{sample.id}'`|
 |`sample_browser.py`|`f'overlayColor_{sample.id}'`|
 |`sample_browser.py`|`f'sampleName_{sample.id}'`|
-|`sample_browser.py`|`f'overlayRelation_{sample.id}'`|
 |`sample_browser.py`|`pairSelectedSamplesAction`|
 |`sample_browser.py`|`createComparisonSetAction`|
 |`sample_browser.py`|`addToComparisonSetAction`|
@@ -1388,7 +1385,6 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`sample_browser.py`|`sampleHeaderOv`|
 |`sample_browser.py`|`sampleHeaderCol`|
 |`sample_browser.py`|`sampleHeaderName`|
-|`sample_browser.py`|`sampleHeaderRel`|
 |`sample_browser.py`|`sampleFilterEdit`|
 |`sample_browser.py`|`sampleSortCombo`|
 |`sample_browser.py`|`addFcsFilesButton`|
