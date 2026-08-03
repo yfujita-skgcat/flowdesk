@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import csv
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from io import StringIO
@@ -269,12 +269,16 @@ def write_results_wide(
   include_custom_statistics: bool = True,
   include_internal_ids: bool = False,
   include_qc: bool = False,
+  population_ids: Sequence[str] | None = None,
   nan_policy: NaNPolicy = "empty",
 ) -> None:
   """Write the integrated sample-by-population wide table."""
   rows = build_results_wide_rows(
     report, project, execution_profile_id=execution_profile_id
   )
+  if population_ids is not None:
+    selected_ids = set(population_ids)
+    rows = tuple(row for row in rows if row.population_id in selected_ids)
   stat_results = list(report.statistic_results)
   stat_headers = _statistic_headers(stat_results, project) if include_custom_statistics else {}
   header: list[str] = ["Sample", "Population"]
@@ -357,12 +361,16 @@ def write_results_long(
   include_custom_statistics: bool = True,
   include_internal_ids: bool = False,
   include_qc: bool = True,
+  population_ids: Sequence[str] | None = None,
   nan_policy: NaNPolicy = "empty",
 ) -> None:
   """Write population metrics and custom statistics as one long table."""
   rows = build_results_wide_rows(
     report, project, execution_profile_id=execution_profile_id
   )
+  if population_ids is not None:
+    selected_ids = set(population_ids)
+    rows = tuple(row for row in rows if row.population_id in selected_ids)
   statistic_ids = (
     _statistic_headers(list(report.statistic_results), project)
     if include_custom_statistics else {}
@@ -450,6 +458,7 @@ def results_wide_to_text(
   include_custom_statistics: bool = True,
   include_internal_ids: bool = False,
   include_qc: bool = False,
+  population_ids: Sequence[str] | None = None,
   nan_policy: NaNPolicy = "empty",
 ) -> str:
   """Return the wide Results table as delimited text without touching disk."""
@@ -464,6 +473,7 @@ def results_wide_to_text(
     include_custom_statistics=include_custom_statistics,
     include_internal_ids=include_internal_ids,
     include_qc=include_qc,
+    population_ids=population_ids,
     nan_policy=nan_policy,
   )
   return buffer.getvalue()
@@ -479,6 +489,7 @@ def results_long_to_text(
   include_custom_statistics: bool = True,
   include_internal_ids: bool = False,
   include_qc: bool = True,
+  population_ids: Sequence[str] | None = None,
   nan_policy: NaNPolicy = "empty",
 ) -> str:
   """Return the long Results table as delimited text without touching disk."""
@@ -493,6 +504,7 @@ def results_long_to_text(
     include_custom_statistics=include_custom_statistics,
     include_internal_ids=include_internal_ids,
     include_qc=include_qc,
+    population_ids=population_ids,
     nan_policy=nan_policy,
   )
   return buffer.getvalue()

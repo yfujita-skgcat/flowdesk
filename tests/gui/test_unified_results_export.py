@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from PySide6.QtCore import Qt
 
 from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.results_export_dialog import ResultsExportDialog, ResultsExportOptions
@@ -24,6 +25,23 @@ def test_results_export_dialog_defaults(qapp) -> None:
     assert dialog.findChild(
       type(dialog._destination), "resultsExportDestinationCombo"
     ) is dialog._destination
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_results_export_dialog_selects_population_ids(qapp) -> None:
+  dialog = ResultsExportDialog(
+    population_options=(
+      ("all_events", "All Events"),
+      ("gate_polygon", "All Events/gate_polygon"),
+    )
+  )
+  try:
+    dialog._populations.item(0).setCheckState(Qt.CheckState.Unchecked)
+    options = dialog.options()
+    assert options.population_ids == ("gate_polygon",)
   finally:
     dialog.close()
     dialog.deleteLater()
@@ -59,7 +77,7 @@ def test_stale_results_export_queues_export_and_runs_pipeline(qapp, monkeypatch,
     pipeline_calls: list[bool] = []
 
     class FakeExportDialog:
-      def __init__(self, parent) -> None:
+      def __init__(self, parent, *args) -> None:
         self.parent = parent
 
       def exec(self) -> int:
@@ -100,7 +118,7 @@ def test_clipboard_results_export_does_not_open_file_picker(qapp, monkeypatch) -
     window._results_stale = True
 
     class FakeExportDialog:
-      def __init__(self, parent) -> None:
+      def __init__(self, parent, *args) -> None:
         self.parent = parent
 
       def exec(self) -> int:

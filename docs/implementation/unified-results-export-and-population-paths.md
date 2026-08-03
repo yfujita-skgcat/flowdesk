@@ -73,8 +73,11 @@ fields (`n valid`, `n total`, `n invalid`, invalid fraction, non-finite policy).
 Remove the two user-facing Results export actions and any hidden dead action;
 keep old core writers only as compatibility APIs after reference audit. The
 new dialog supports File or Clipboard (TSV) destinations, Wide/Long, population
-metrics, custom statistics, internal IDs, QC/status metadata, and TSV/CSV. At least
-one result category is required. Clipboard output uses the same core row model and
+selection by stable population ID/full path, population metrics, custom statistics,
+internal IDs, QC/status metadata, and TSV/CSV. All populations are checked by default;
+an empty selection is rejected. Filtering is applied after the authoritative unified
+row model is built, so it cannot alter gate membership or statistic calculations.
+Clipboard output uses the same core row model and
 writer as file output with a `StringIO` target and tab delimiter; Qt only places the
 resulting text on `QApplication.clipboard()` and never reconstructs values from
 table cells.

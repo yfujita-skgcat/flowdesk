@@ -6136,7 +6136,24 @@ class MainWindow(QMainWindow):
 
         from flowdesk_qt.results_export_dialog import ResultsExportDialog
 
-        options_dialog = ResultsExportDialog(self)
+        population_options: tuple[tuple[str, str], ...] = ()
+        if report is not None:
+            try:
+                from flowdesk_core.export import build_results_wide_rows
+
+                population_options = tuple(dict.fromkeys(
+                    (row.population_id, row.population_path)
+                    for row in build_results_wide_rows(
+                        report, self._build_project_manifest()
+                    )
+                ))
+            except Exception as exc:
+                logger.warning("Could not resolve export populations: %s", exc)
+                population_options = tuple(dict.fromkeys(
+                    (result.population_id, result.population_id)
+                    for result in report.population_results
+                ))
+        options_dialog = ResultsExportDialog(self, population_options)
         if options_dialog.exec() != QDialog.DialogCode.Accepted:
             return
         options = options_dialog.options()
@@ -6217,6 +6234,7 @@ class MainWindow(QMainWindow):
                     include_custom_statistics=options.include_custom_statistics,
                     include_internal_ids=options.include_internal_ids,
                     include_qc=options.include_qc,
+                    population_ids=options.population_ids,
                 )
                 QApplication.clipboard().setText(text)
                 self._update_status("Results copied to clipboard as TSV")
@@ -6230,6 +6248,7 @@ class MainWindow(QMainWindow):
                     include_custom_statistics=options.include_custom_statistics,
                     include_internal_ids=options.include_internal_ids,
                     include_qc=options.include_qc,
+                    population_ids=options.population_ids,
                 )
                 self._update_status(f"Results exported to {path_str}")
         except Exception as exc:

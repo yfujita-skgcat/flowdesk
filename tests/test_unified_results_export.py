@@ -103,6 +103,16 @@ def test_unified_wide_export_combines_metrics_and_statistics(tmp_path: Path) -> 
   assert rows[2]["FSC-A Mean"] == "594405.6"
 
 
+def test_unified_export_filters_selected_population_ids(tmp_path: Path) -> None:
+  path = tmp_path / "selected.tsv"
+  write_results_wide(
+    _report(), _project(), path, population_ids=("gfp_pos",)
+  )
+  with path.open(encoding="utf-8") as handle:
+    rows = list(csv.DictReader(handle, delimiter="\t"))
+  assert [row["Population"] for row in rows] == ["All Events/Live/GFP+"]
+
+
 def test_unified_long_export_contains_both_result_types(tmp_path: Path) -> None:
   path = tmp_path / "results.tsv"
   write_results_long(_report(), _project(), path, include_internal_ids=True)
