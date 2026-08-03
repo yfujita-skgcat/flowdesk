@@ -417,6 +417,10 @@ def test_cli_and_core_export_match_for_nonfinite_derived_statistics(
         "parameter_id": "ratio", "metric": "mean", "source_stage": "compensated",
         "non_finite_policy": "exclude_invalid",
       },
+      {
+        "id": "ratio_invalid_raw", "name": "Ratio invalid raw", "population_id": "all_events",
+        "parameter_id": "ratio", "metric": "mean", "source_stage": "raw",
+      },
     ],
   }
   project_path = tmp_path / "nonfinite-e2e.flowdesk"
@@ -447,6 +451,10 @@ def test_cli_and_core_export_match_for_nonfinite_derived_statistics(
   assert row_map["ratio_strict"]["status"] == "undefined"
   assert row_map["ratio_strict"]["n_invalid"] == "1"
   assert row_map["ratio_excluded"]["value"] == "2.0"
+  assert row_map["ratio_invalid_raw"]["status"] == "error"
+  assert row_map["ratio_invalid_raw"]["undefined_reason"] == (
+    "parameter_unavailable_at_source_stage"
+  )
   assert "derived_parameter_nonfinite_values" in capsys.readouterr().err
   np.testing.assert_array_equal(sample.events, original)
 
