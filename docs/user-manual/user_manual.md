@@ -748,11 +748,8 @@ source event count、candidate event count、gained、lost、scientific equivale
 |---|---|
 |Statistic ID (fixed)|新規作成時に候補が自動入力される。OKで登録した後はstable definition IDとして固定され、変更できない。|
 |Name|Results column/detail に表示する名称。新規作成時は`<Population名>_<Metric>`（例:`rect_1_mean`）を初期値にする。後から編集可能。|
-|Population targets|base population、scope、Targets... の組み合わせ。|
-|scope: Current population|base population のみ。|
-|scope: Current population and descendants|base と全 descendants。|
-|scope: Selected populations...|Targets... tree で明示選択。|
-|scope: All current populations|現在存在する全 population。|
+|Population targets|`Select populations...` で統計量を計算するpopulationを明示選択する。新規作成時は全populationが選択される。|
+|Select populations...|population hierarchyのcheckboxで対象を選ぶ。対象を絞ると不要な統計計算を避けられる。|
 |Parameter|value metric の parameter。count/frequency では `(none)` 可。|
 |Parameter status|parameter が選べない場合の理由を表示する。count/frequency は parameter を使わず、invalid derived parameter や互換 parameter 不在も明示する。|
 |Metric|count / frequency_of_parent / frequency_of_total / mean / median / geometric_mean / stddev / cv / mad / percentile|
@@ -1436,8 +1433,6 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`statistics_editor.py`|`statisticRedoButton`|
 |`statistics_editor.py`|`statisticIdEdit`|
 |`statistics_editor.py`|`statisticNameEdit`|
-|`statistics_editor.py`|`statisticPopulationCombo`|
-|`statistics_editor.py`|`statisticPopulationScopeCombo`|
 |`statistics_editor.py`|`statisticPopulationTargetsButton`|
 |`statistics_editor.py`|`statisticParameterCombo`|
 |`statistics_editor.py`|`statisticMetricCombo`|

@@ -1065,9 +1065,9 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 - [x] unassigned、disabled、not run、stale、undefined/error、valid zero、currentをcell単位で区別し、header/cell tooltipへstable ID、parameter、metric、value domain、unit、QC count、reason、revisionを表示する。色だけに依存しない。
 - [x] standard列固定、横scroll、column chooser、順序/幅/visibility保存とlong-form Statistics Detailを、同じ`StatisticResult` snapshotの表示として実装する。Qtで値を再計算しない。
 
-#### Increment 4: Population scopeとCompute/Show管理
+#### Increment 4: Population targetとCompute/Show管理
 
-- [x] Add/Manage Statisticへ`Current population`、`Current and descendants`、`Selected populations...`、`All current populations`を追加し、checkbox hierarchyで明示targetを編集する。既定は呼出元Populationとする。
+- [x] Add/Manage Statisticのtarget指定を`Select populations...`へ統一し、新規definitionは全populationを初期選択する。checkbox hierarchyで対象を絞り込める。
 - [x] Manage Statisticsへ`Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to | Status`表と、Resultsの`Columns...`を追加する。`Compute`はanalysis revisionと該当resultを更新し、`Show`はdisplay stateだけを変更してpipelineを実行しない。
 - [x] Newの明示操作、cancel、duplicate、remove dependency、Undo/Redo、save/reload、missing target、empty selection、stable objectNameをGUI testする。
   - [x] Newの明示操作、cancel、duplicate、save/reload、および主要ウィジェットのstable objectNameをGUI testする。

@@ -347,27 +347,8 @@ class StatisticsEditorDialog(QDialog):
         self._name_edit = QLineEdit()
         self._name_edit.setObjectName("statisticNameEdit")
 
-        self._population_combo = QComboBox()
-        self._population_combo.setObjectName("statisticPopulationCombo")
-        self._population_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        for pid in self._population_ids:
-            self._population_combo.addItem(pid, pid)
-        self._population_scope_combo = QComboBox()
-        self._population_scope_combo.setObjectName("statisticPopulationScopeCombo")
-        self._population_scope_combo.addItem("Current population", "current")
-        self._population_scope_combo.addItem(
-            "Current population and descendants", "descendants"
-        )
-        self._population_scope_combo.addItem("Selected populations...", "selected")
-        self._population_scope_combo.addItem("All current populations", "all")
-        self._target_button = QPushButton("Targets...")
+        self._target_button = QPushButton("Select populations...")
         self._target_button.setObjectName("statisticPopulationTargetsButton")
-        population_row = QWidget()
-        population_layout = QHBoxLayout(population_row)
-        population_layout.setContentsMargins(0, 0, 0, 0)
-        population_layout.addWidget(self._population_combo)
-        population_layout.addWidget(self._population_scope_combo)
-        population_layout.addWidget(self._target_button)
 
         self._parameter_combo = QComboBox()
         self._parameter_combo.setObjectName("statisticParameterCombo")
@@ -439,7 +420,7 @@ class StatisticsEditorDialog(QDialog):
         )
         form.addRow("Statistic ID (fixed):", self._id_edit)
         form.addRow("Name:", self._name_edit)
-        form.addRow("Population targets:", population_row)
+        form.addRow("Population targets:", self._target_button)
         form.addRow("Parameter:", self._parameter_combo)
         form.addRow("Parameter status:", self._parameter_status_label)
         form.addRow("Metric:", self._metric_combo)
@@ -486,12 +467,6 @@ class StatisticsEditorDialog(QDialog):
             lambda _index: self._update_parameter_status()
         )
         self._source_combo.currentTextChanged.connect(self._on_source_changed)
-        self._population_scope_combo.currentIndexChanged.connect(
-            self._on_population_scope_changed
-        )
-        self._population_combo.currentIndexChanged.connect(
-            self._on_population_base_changed
-        )
         self._target_button.clicked.connect(self._select_population_targets)
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
@@ -541,16 +516,13 @@ class StatisticsEditorDialog(QDialog):
             self._name_edit.setText(str(value.get("name", "")))
 
             pop_id = str(value.get("population_id", ""))
-            idx = self._population_combo.findData(pop_id)
-            if idx >= 0:
-                self._population_combo.setCurrentIndex(idx)
             raw_targets = value.get("population_ids")
             if not isinstance(raw_targets, list) or not raw_targets:
                 raw_targets = [pop_id] if pop_id else []
             self._target_population_ids = tuple(
                 str(population_id) for population_id in raw_targets
             )
-            self._update_population_scope_label()
+            self._update_population_targets_label()
 
             param_id = value.get("parameter_id") or ""
             pidx = self._parameter_combo.findData(str(param_id))
@@ -611,10 +583,6 @@ class StatisticsEditorDialog(QDialog):
             fmt_text = None
 
         target_ids = self._target_population_ids
-        scope = self._population_scope_combo.currentData()
-        if not target_ids and scope != "selected":
-            current_population = str(self._population_combo.currentData() or "")
-            target_ids = (current_population,) if current_population else ()
         current = self._statistics[self._current_row]
         if not str(current.get("id") or "").strip():
             self._initialize_statistic_identity(current)
@@ -653,6 +621,9 @@ class StatisticsEditorDialog(QDialog):
         self._pending_new_defaults = None
         value = _empty_statistic(defaults)
         self._initialize_statistic_identity(value)
+        value["population_ids"] = list(self._population_ids)
+        value["population_id"] = self._population_ids[0] if self._population_ids else ""
+        self._target_population_ids = tuple(self._population_ids)
         self._statistics.append(value)
         self._refresh_list(len(self._statistics) - 1)
 
@@ -714,6 +685,11 @@ class StatisticsEditorDialog(QDialog):
         self._current_row = -1
         value = _empty_statistic()
         self._initialize_statistic_identity(value)
+        value["population_ids"] = list(self._population_ids)
+        value["population_id"] = (
+            self._population_ids[0] if self._population_ids else ""
+        )
+        self._target_population_ids = tuple(self._population_ids)
         self._statistics.append(value)
         self._refresh_list(0)
 
@@ -817,49 +793,9 @@ class StatisticsEditorDialog(QDialog):
             self._source_combo.currentText() == "transformed"
         )
 
-    def _descendant_population_ids(self, population_id: str) -> tuple[str, ...]:
-        targets = [population_id]
-        changed = True
-        while changed:
-            changed = False
-            for candidate, parent in self._population_parents.items():
-                if candidate not in targets and parent in targets:
-                    targets.append(candidate)
-                    changed = True
-        return tuple(
-            candidate for candidate in self._population_ids if candidate in targets
-        )
-
-    def _on_population_scope_changed(self, _index: int) -> None:
-        if self._loading:
-            return
-        scope = self._population_scope_combo.currentData()
-        current = str(self._population_combo.currentData() or "")
-        if scope == "current":
-            self._target_population_ids = (current,) if current else ()
-        elif scope == "descendants":
-            self._target_population_ids = self._descendant_population_ids(current)
-        elif scope == "all":
-            self._target_population_ids = tuple(self._population_ids)
-        elif scope == "selected":
-            self._select_population_targets()
-        self._update_population_scope_label()
-
-    def _on_population_base_changed(self, _index: int) -> None:
-        """Recompute an implicit scope when its anchor population changes."""
-        if self._loading:
-            return
-        scope = self._population_scope_combo.currentData()
-        current = str(self._population_combo.currentData() or "")
-        if scope == "current":
-            self._target_population_ids = (current,) if current else ()
-        elif scope == "descendants":
-            self._target_population_ids = self._descendant_population_ids(current)
-        self._update_population_scope_label()
-
-    def _update_population_scope_label(self) -> None:
+    def _update_population_targets_label(self) -> None:
         count = len(self._target_population_ids)
-        self._target_button.setText(f"Targets ({count})...")
+        self._target_button.setText(f"Select populations ({count})...")
         missing = sorted(
             set(self._target_population_ids) - set(self._population_ids)
         )
@@ -878,7 +814,7 @@ class StatisticsEditorDialog(QDialog):
         if selected is None:
             return
         self._target_population_ids = selected
-        self._update_population_scope_label()
+        self._update_population_targets_label()
 
     # -- Validation ----------------------------------------------------------
 

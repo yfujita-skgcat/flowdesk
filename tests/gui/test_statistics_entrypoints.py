@@ -69,7 +69,8 @@ def test_dialog_open_does_not_create_statistic_until_new_is_clicked(qapp) -> Non
   assert dialog._statistics == []
   dialog._new_button.click()
   definition = dialog._statistics[-1]
-  assert definition["population_id"] == "live"
+  assert definition["population_id"] == "all_events"
+  assert definition["population_ids"] == ["all_events", "live"]
   assert definition["parameter_id"] == "FL1-A"
   assert definition["metric"] == "mean"
   assert definition["value_policy"] == "full_events"
@@ -119,7 +120,7 @@ def test_value_metric_enables_parameter_selector(qapp) -> None:
   assert "does not use a parameter" in dialog._parameter_status_label.text()
 
 
-def test_statistics_editor_persists_population_scope_and_compute_flag(qapp) -> None:
+def test_new_statistics_default_to_all_populations_and_compute_flag(qapp) -> None:
   dialog = StatisticsEditorDialog(
     statistics=[],
     available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
@@ -129,10 +130,6 @@ def test_statistics_editor_persists_population_scope_and_compute_flag(qapp) -> N
   dialog._new_button.click()
   dialog._id_edit.setText("live_mean")
   dialog._name_edit.setText("Live mean")
-  dialog._population_combo.setCurrentText("all_events")
-  dialog._population_scope_combo.setCurrentText(
-    "Current population and descendants"
-  )
   dialog._metric_combo.setCurrentText("mean")
   dialog._parameter_combo.setCurrentText("FL1-A [FL1-A]")
   dialog._compute_check.setChecked(False)
@@ -153,7 +150,7 @@ def test_statistics_editor_undo_redo_and_missing_target_diagnostic(qapp) -> None
   dialog._id_edit.setText("missing")
   dialog._name_edit.setText("Missing target")
   dialog._target_population_ids = ("deleted_gate",)
-  dialog._update_population_scope_label()
+  dialog._update_population_targets_label()
   assert "deleted_gate" in dialog._diag_label.text()
   with pytest.raises(ValueError, match="missing population target"):
     dialog.definitions()
@@ -233,7 +230,7 @@ def test_statistics_editor_blocks_delete_with_downstream_reference(qapp, monkeyp
   assert "binding-1" in messages[0]
 
 
-def test_statistics_editor_rejects_empty_selected_scope(qapp) -> None:
+def test_statistics_editor_rejects_empty_population_targets(qapp) -> None:
   dialog = StatisticsEditorDialog(
     statistics=[],
     available_channels=(ChannelSpec(id="FL1-A", name="FL1-A"),),
@@ -242,9 +239,6 @@ def test_statistics_editor_rejects_empty_selected_scope(qapp) -> None:
   dialog._new_button.click()
   dialog._id_edit.setText("empty")
   dialog._name_edit.setText("Empty target")
-  dialog._population_scope_combo.blockSignals(True)
-  dialog._population_scope_combo.setCurrentText("Selected populations...")
-  dialog._population_scope_combo.blockSignals(False)
   dialog._target_population_ids = ()
   with pytest.raises(ValueError, match="no population targets"):
     dialog.definitions()

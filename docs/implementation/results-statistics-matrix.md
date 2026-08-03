@@ -96,10 +96,10 @@ Compatibility and identity rules:
   for different populations cannot overwrite each other.
 - Population target order is deterministic and persisted. Duplicate or unknown IDs are
   rejected by the project validator before execution.
-- `All populations` and `Current population and descendants` in the GUI resolve to an
-  explicit snapshot of stable population IDs when the user accepts the edit. Adding a new
-  gate later does not silently expand an existing statistic. An explicit `Update targets`
-  action may refresh the snapshot.
+- The GUI edits one explicit ordered snapshot of stable population IDs through the shared
+  target chooser. Adding a new gate later does not silently expand an existing statistic.
+  New definitions initially target every population currently in the project; the user can
+  reduce the set when avoiding unnecessary computation is useful.
 - Sample/Group applicability remains separate from population applicability. Existing
   Group statistic bindings continue to reference the statistic ID; they must not be
   inferred from Results column visibility.
@@ -144,17 +144,15 @@ changing the display name or target in a later edit does not rewrite the ID.
 ```text
 Parameter / Metric / Source stage / Transform / Non-finite policy / Format
 
-Apply to:
-  Current population
-  Current population and descendants
-  Selected populations...
-  All current populations
+Population targets: Select populations...
 ```
 
-`Selected populations...` uses a stable-ID population hierarchy with checkboxes. It must
-show missing/incompatible populations and reject an empty target selection. The default
-is the Results population from which the command was invoked; a graph shortcut may also
-prefill the active parameter ID.
+`Select populations...` uses a stable-ID population hierarchy with checkboxes. It must show
+missing/incompatible populations and reject an empty target selection. A new definition
+starts with every currently available population selected; users can reduce this set when
+the statistic is only scientifically meaningful for a subset or when avoiding unnecessary
+work matters. A graph shortcut may prefill the active parameter ID, but it does not change
+the all-populations target default.
 
 `Manage Statistics...` presents:
 
@@ -173,9 +171,8 @@ Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to
   fixed after the definition has been accepted.
 - `Parameter` shows the user-facing parameter name (for example `FSC-A`), not only
   the stable internal parameter ID.
-- `Applies to` shows the user-facing names of the explicit target populations. A
-  statistic may target multiple populations through `Selected populations...`,
-  descendant scope, or all-current-populations scope; it is not limited to one.
+- `Applies to` shows the user-facing names of the explicit target populations selected in
+  the shared chooser; it is not limited to one population.
 - Result-level status is shown in the Results table, not duplicated in this
   Compute/Show management table.
 - Edit of a shared definition changes all its assigned population cells atomically.
