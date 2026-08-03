@@ -201,6 +201,8 @@ statisticsを変更しない。
 |Load Analysis Settings...|—|`.flowdesk-settings` または既存 `.flowdesk` project から解析定義を読み込み、現在のサンプルを維持したまま定義を置換する。|
 |Exit|Ctrl+Q|Flowdesk を終了する。|
 
+ファイル選択ダイアログの最後のディレクトリは操作ごとに個別保存される。FCS入力、ProjectのOpen、ProjectのSave As、Analysis Settingsの保存・読込、Recovery copyの保存先は互いに影響しない。ダイアログをキャンセルした場合は履歴を更新せず、履歴がない初回は現在のProjectディレクトリまたはカレントディレクトリから開始する。
+
 `Add FCS Samples` toolbar button はディレクトリ直下の FCS を現在のセッションへ追加する。これは **Open Project...** と異なり、既存サンプルを消去しない。
 
 ### 5.2 Edit

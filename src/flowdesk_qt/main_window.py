@@ -3574,15 +3574,55 @@ class MainWindow(QMainWindow):
 
     # -- file handling -------------------------------------------------------
 
+    _FILE_DIALOG_DIRECTORY_KEYS = {
+        "add_fcs_directory": "file_dialog/last_directory/add_fcs_directory",
+        "add_fcs_files": "file_dialog/last_directory/add_fcs_files",
+        "open_project": "file_dialog/last_directory/open_project",
+        "save_project": "file_dialog/last_directory/save_project",
+        "save_analysis_settings": "file_dialog/last_directory/save_analysis_settings",
+        "load_analysis_settings": "file_dialog/last_directory/load_analysis_settings",
+        "recovery_destination": "file_dialog/last_directory/recovery_destination",
+    }
+
+    def _file_dialog_directory(
+        self, operation: str, fallback: str | Path | None = None,
+    ) -> str:
+        """Return the last directory for an operation, with a safe fallback."""
+        key = self._FILE_DIALOG_DIRECTORY_KEYS[operation]
+        stored = str(QSettings().value(key, "") or "").strip()
+        if stored and Path(stored).is_dir():
+            return stored
+        if fallback is not None:
+            candidate = Path(fallback).expanduser()
+            if not candidate.is_dir():
+                candidate = candidate.parent
+            if candidate.is_dir():
+                return str(candidate)
+        return str(Path.cwd())
+
+    def _remember_file_dialog_directory(self, operation: str, directory: str | Path) -> None:
+        """Persist a successfully selected directory for one file operation."""
+        path = Path(directory).expanduser()
+        if not path.is_dir():
+            path = path.parent
+        if not path.is_dir():
+            return
+        settings = QSettings()
+        settings.setValue(
+            self._FILE_DIALOG_DIRECTORY_KEYS[operation], str(path.resolve())
+        )
+        settings.sync()
+
     def _on_open_directory(self) -> None:
         """Open a directory dialog and load FCS files."""
         directory = QFileDialog.getExistingDirectory(
             self,
             "Select directory containing FCS files",
-            "",
+            self._file_dialog_directory("add_fcs_directory"),
         )
         if not directory:
             return
+        self._remember_file_dialog_directory("add_fcs_directory", directory)
 
         count = self._sample_browser.add_samples_from_directory(directory)
         if count:
@@ -3594,11 +3634,12 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Select FCS files",
-            "",
+            self._file_dialog_directory("add_fcs_files"),
             "FCS files (*.fcs);;All files (*)",
         )
         if not paths:
             return
+        self._remember_file_dialog_directory("add_fcs_files", Path(paths[0]).parent)
 
         count = self._sample_browser.add_samples_from_paths(paths)
         if count:
@@ -3623,7 +3664,12 @@ class MainWindow(QMainWindow):
 
     def _save_project_interactively(self) -> bool:
         """Ask for a project name and save it as a bundle directory."""
-        initial = str(self._project_path or (Path.cwd() / "project.flowdesk"))
+        initial_directory = self._file_dialog_directory(
+            "save_project",
+            self._project_path or Path.cwd(),
+        )
+        project_name = self._project_path.name if self._project_path else "project.flowdesk"
+        initial = str(Path(initial_directory) / project_name)
         path_str, _filter = QFileDialog.getSaveFileName(
             self,
             "Save project",
@@ -3632,6 +3678,7 @@ class MainWindow(QMainWindow):
         )
         if not path_str:
             return False
+        self._remember_file_dialog_directory("save_project", Path(path_str).parent)
         path = _project_bundle_path(path_str)
         if path.exists():
             answer = QMessageBox.question(
@@ -3681,10 +3728,14 @@ class MainWindow(QMainWindow):
         path_str = QFileDialog.getExistingDirectory(
             self,
             "Select analysis settings bundle directory",
-            str(self._project_path.parent if self._project_path else Path.cwd()),
+            self._file_dialog_directory(
+                "save_analysis_settings",
+                self._project_path.parent if self._project_path else Path.cwd(),
+            ),
         )
         if not path_str:
             return
+        self._remember_file_dialog_directory("save_analysis_settings", path_str)
         path = Path(path_str)
         if path.suffix != ".flowdesk-settings":
             path = path.with_suffix(".flowdesk-settings")
@@ -3700,10 +3751,14 @@ class MainWindow(QMainWindow):
         path_str = QFileDialog.getExistingDirectory(
             self,
             "Open Analysis Settings or Flowdesk Project",
-            str(self._project_path.parent if self._project_path else Path.cwd()),
+            self._file_dialog_directory(
+                "load_analysis_settings",
+                self._project_path.parent if self._project_path else Path.cwd(),
+            ),
         )
         if not path_str:
             return
+        self._remember_file_dialog_directory("load_analysis_settings", path_str)
         try:
             settings = load_analysis_settings(path_str)
             current = self._build_project_manifest()
@@ -3793,10 +3848,11 @@ class MainWindow(QMainWindow):
         path_str = QFileDialog.getExistingDirectory(
             self,
             "Open Flowdesk Project",
-            str(self._project_path or Path.cwd()),
+            self._file_dialog_directory("open_project", self._project_path or Path.cwd()),
         )
         if not path_str:
             return
+        self._remember_file_dialog_directory("open_project", path_str)
         try:
             self._load_project_from_path(path_str)
             self._update_status(f"Project loaded from {path_str}")
@@ -3830,9 +3886,16 @@ class MainWindow(QMainWindow):
             )
             if choice == QMessageBox.StandardButton.Yes:
                 destination = QFileDialog.getExistingDirectory(
-                    self, "Select recovery copy destination", str(project_path.parent)
+                    self,
+                    "Select recovery copy destination",
+                    self._file_dialog_directory(
+                        "recovery_destination", project_path.parent
+                    ),
                 )
                 if destination:
+                    self._remember_file_dialog_directory(
+                        "recovery_destination", destination
+                    )
                     recovered_path = Path(destination)
                     if recovered_path.suffix != ".flowdesk":
                         recovered_path = recovered_path.with_suffix(".flowdesk")
