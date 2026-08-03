@@ -190,11 +190,20 @@ not silently reinterpret it.
 ## Confirmed contract after increment 5
 
 - **Analysis → Derived Parameters** opens a project-state editor with stable Qt
-  object names. Definitions can be added, selected, edited, and deleted; closing
-  with Cancel leaves project state unchanged.
-- The dialog edits definition ID, name, stable output channel ID, expression,
-  explicit inputs, raw/compensated source, unit, and failure policy. Unknown
-  definition fields, output label, and notes survive editing.
+  object names. The initial list is empty; definitions are created only by `New`.
+  Definitions can be selected, edited, and deleted; closing with Cancel leaves
+  project state unchanged.
+- New definitions receive short generated Definition and Output channel IDs. The
+  Definition ID is based on Name, source stage, and a shortened expression; the
+  Output channel ID is based on the expression. Editable draft IDs regenerate when
+  their identifying fields change, and numeric suffixes resolve collisions.
+  Output channel IDs referenced by transforms, gates, statistics, plot views, or
+  derived inputs are read-only when the dialog is reopened. Definition IDs are
+  provenance identifiers and currently have no downstream semantic references, so
+  persisted Definition IDs remain editable unless a future reference is added.
+  Unknown definition fields, output label, and notes survive editing.
+- The left definition list summarizes Name, source stage, expression, and output ID,
+  so each definition can be identified without opening it.
 - Measured and derived output IDs are available for insertion at the expression
   cursor and for explicit input selection. Validation calls the core model and
   dependency planner, showing the stable diagnostic code and core-provided line

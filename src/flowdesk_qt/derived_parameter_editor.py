@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import Any
@@ -45,6 +46,8 @@ class DerivedParameterEditorDialog(QDialog):
     available_channels: Sequence[ChannelSpec],
     *,
     preview_callback: PreviewCallback | None = None,
+    fixed_definition_ids: Sequence[str] = (),
+    fixed_output_channel_ids: Sequence[str] = (),
     parent: QWidget | None = None,
   ) -> None:
     super().__init__(parent)
@@ -54,12 +57,14 @@ class DerivedParameterEditorDialog(QDialog):
     self._definitions = deepcopy(list(definitions))
     self._available_channels = tuple(available_channels)
     self._preview_callback = preview_callback
+    self._fixed_definition_ids = {str(value) for value in fixed_definition_ids}
+    self._fixed_output_channel_ids = {
+      str(value) for value in fixed_output_channel_ids
+    }
     self._loading = False
     self._current_row = -1
     self._build_ui()
-    if not self._definitions:
-      self._definitions.append(self._empty_definition())
-    self._refresh_definition_list(0)
+    self._refresh_definition_list(len(self._definitions) - 1)
 
   def definitions(self) -> list[dict[str, Any]]:
     """Return a deep copy of the current persisted project definitions."""
@@ -186,6 +191,11 @@ class DerivedParameterEditorDialog(QDialog):
     self._delete_button.clicked.connect(self._delete_definition)
     self._insert_parameter_button.clicked.connect(self._insert_parameter)
     self._expression_edit.textChanged.connect(self._refresh_detected_inputs)
+    self._name_edit.textChanged.connect(self._update_generated_ids)
+    self._source_combo.currentTextChanged.connect(self._update_generated_ids)
+    self._expression_edit.textChanged.connect(self._update_generated_ids)
+    self._id_edit.editingFinished.connect(self._commit_current)
+    self._output_id_edit.editingFinished.connect(self._commit_current)
     self._validate_button.clicked.connect(self._validate_current)
     self._preview_button.clicked.connect(self._preview_current)
     buttons.accepted.connect(self._accept_if_valid)
@@ -214,6 +224,64 @@ class DerivedParameterEditorDialog(QDialog):
       if output_id:
         labels.setdefault(output_id, str(definition.get("name", "Derived")))
     return list(labels.items())
+
+  @staticmethod
+  def _expression_token(expression: str) -> str:
+    """Create a short, readable identifier fragment from an expression."""
+    text = expression.strip().lower()
+    if not text:
+      return "expression"
+    for operator, word in (
+      ("**", "_power_"),
+      ("/", "_over_"),
+      ("*", "_times_"),
+      ("+", "_plus_"),
+      ("-", "_minus_"),
+    ):
+      text = text.replace(operator, word)
+    token = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    token = re.sub(r"_+", "_", token)
+    return (token or "expression")[:48].rstrip("_")
+
+  @staticmethod
+  def _id_token(value: object, fallback: str) -> str:
+    token = re.sub(r"[^a-zA-Z0-9]+", "_", str(value).strip()).strip("_")
+    return token.lower() or fallback
+
+  def _definition_id_base(self, definition: dict[str, Any]) -> str:
+    name = self._id_token(definition.get("name"), "derived_parameter")
+    source = self._id_token(definition.get("source_stage"), "compensated")
+    expression = self._expression_token(str(definition.get("expression", "")))
+    return f"{name}_{source}_{expression}"
+
+  def _output_id_base(self, definition: dict[str, Any]) -> str:
+    return self._expression_token(str(definition.get("expression", "")))
+
+  def _unique_id(
+    self, base: str, values: Sequence[str], *, exclude: str = "",
+  ) -> str:
+    used = {str(value) for value in values if str(value) and str(value) != exclude}
+    candidate = base
+    suffix = 2
+    while candidate in used:
+      candidate = f"{base}_{suffix}"
+      suffix += 1
+    return candidate
+
+  def _generated_definition_id(self, definition: dict[str, Any]) -> str:
+    used = [str(value.get("id", "")) for value in self._definitions]
+    return self._unique_id(
+      self._definition_id_base(definition), used,
+      exclude=str(definition.get("id", "")),
+    )
+
+  def _generated_output_id(self, definition: dict[str, Any]) -> str:
+    used = [channel.id for channel in self._available_channels]
+    used.extend(str(value.get("output_channel_id", "")) for value in self._definitions)
+    return self._unique_id(
+      self._output_id_base(definition), used,
+      exclude=str(definition.get("output_channel_id", "")),
+    )
 
   def _refresh_parameter_widgets(self) -> None:
     choices = self._parameter_choices()
@@ -252,9 +320,7 @@ class DerivedParameterEditorDialog(QDialog):
     try:
       self._definition_list.clear()
       for definition in self._definitions:
-        label = definition.get("name") or definition.get("id") or "New definition"
-        output_id = definition.get("output_channel_id") or "unset"
-        self._definition_list.addItem(f"{label} [{output_id}]")
+        self._definition_list.addItem(self._definition_summary(definition))
       if self._definitions:
         self._definition_list.setCurrentRow(
           min(max(selected_row, 0), len(self._definitions) - 1)
@@ -265,6 +331,15 @@ class DerivedParameterEditorDialog(QDialog):
       self._load_row(self._definition_list.currentRow())
     else:
       self._clear_fields()
+
+  def _definition_summary(self, definition: dict[str, Any]) -> str:
+    label = str(definition.get("name") or definition.get("id") or "New definition")
+    source = str(definition.get("source_stage") or "compensated")
+    expression = str(definition.get("expression") or "(empty)").replace("\n", " ")
+    if len(expression) > 40:
+      expression = expression[:37] + "..."
+    output_id = str(definition.get("output_channel_id") or "unset")
+    return f"{label} | {source} | {expression} => {output_id}"
 
   def _clear_fields(self) -> None:
     self._loading = True
@@ -290,9 +365,16 @@ class DerivedParameterEditorDialog(QDialog):
       definition = self._definitions[row]
       self._current_row = row
       self._id_edit.setText(str(definition.get("id", "")))
+      self._id_edit.setReadOnly(
+        str(definition.get("id", "")) in self._fixed_definition_ids
+      )
       self._name_edit.setText(str(definition.get("name", "")))
       self._output_id_edit.setText(
         str(definition.get("output_channel_id", definition.get("id", "")))
+      )
+      self._output_id_edit.setReadOnly(
+        str(definition.get("output_channel_id", definition.get("id", "")))
+        in self._fixed_output_channel_ids
       )
       self._unit_edit.setText(str(definition.get("unit") or ""))
       self._source_combo.setCurrentText(
@@ -313,17 +395,41 @@ class DerivedParameterEditorDialog(QDialog):
       self._loading = False
     self._refresh_detected_inputs()
 
+  def _update_generated_ids(self, *_args: object) -> None:
+    """Update only IDs that are still editable draft identities."""
+    if self._loading or not (0 <= self._current_row < len(self._definitions)):
+      return
+    self._commit_current()
+    definition = self._definitions[self._current_row]
+    definition_id = str(definition.get("id", ""))
+    output_id = str(definition.get("output_channel_id", ""))
+    if definition_id not in self._fixed_definition_ids:
+      definition["id"] = self._generated_definition_id(definition)
+      self._id_edit.setText(definition["id"])
+    if output_id not in self._fixed_output_channel_ids:
+      definition["output_channel_id"] = self._generated_output_id(definition)
+      self._output_id_edit.setText(definition["output_channel_id"])
+    item = self._definition_list.item(self._current_row)
+    if item is not None:
+      item.setText(self._definition_summary(definition))
+
   def _commit_current(self) -> None:
     if self._loading or not (0 <= self._current_row < len(self._definitions)):
       return
     original = self._definitions[self._current_row]
     expression = self._expression_edit.toPlainText().strip()
     references = self._detected_input_parameters(expression)
+    definition_id = self._id_edit.text().strip()
+    if str(original.get("id", "")) in self._fixed_definition_ids:
+      definition_id = str(original.get("id", ""))
+    output_channel_id = self._output_id_edit.text().strip()
+    if str(original.get("output_channel_id", "")) in self._fixed_output_channel_ids:
+      output_channel_id = str(original.get("output_channel_id", ""))
     original.update({
-      "id": self._id_edit.text().strip(),
+      "id": definition_id,
       "name": self._name_edit.text().strip(),
       "expression": expression,
-      "output_channel_id": self._output_id_edit.text().strip(),
+      "output_channel_id": output_channel_id,
       "output_label": original.get("output_label"),
       "unit": self._unit_edit.text().strip() or None,
       "source_stage": self._source_combo.currentText(),
@@ -343,7 +449,10 @@ class DerivedParameterEditorDialog(QDialog):
 
   def _add_definition(self) -> None:
     self._commit_current()
-    self._definitions.append(self._empty_definition())
+    definition = self._empty_definition()
+    self._definitions.append(definition)
+    definition["id"] = self._generated_definition_id(definition)
+    definition["output_channel_id"] = self._generated_output_id(definition)
     self._refresh_definition_list(len(self._definitions) - 1)
 
   def _delete_definition(self) -> None:

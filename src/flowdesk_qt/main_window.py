@@ -4108,10 +4108,20 @@ class MainWindow(QMainWindow):
                 sample, output_channel_id, max_events=200
             )
 
+        existing_outputs = {
+            str(value.get("output_channel_id") or value.get("id"))
+            for value in self._derived_parameters
+        }
+        fixed_output_ids = {
+            output_id for output_id in existing_outputs
+            if self._derived_parameter_references({output_id})
+        }
+
         dialog = DerivedParameterEditorDialog(
             self._derived_parameters,
             tuple(channels_by_id.values()),
             preview_callback=preview_callback,
+            fixed_output_channel_ids=tuple(sorted(fixed_output_ids)),
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:

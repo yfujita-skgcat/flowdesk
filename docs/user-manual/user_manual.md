@@ -628,13 +628,13 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 ### 14.4 Derived Parameters
 
-左に definition list と `New` / `Delete`、右に次の form がある。
+初期状態では definition list は空で、`New` を押したときだけ新しい定義が追加される。左のリストには Name、Source stage、Expressionの概要、Output channel ID が表示される。右に次の form がある。
 
 |control|説明|
 |---|---|
-|Definition ID|definition の stable ID。|
+|Definition ID|New直後は`<Name>_<Source stage>_<expression-summary>`形式の候補を自動生成する。Name、Source stage、Expressionを変更すると、未確定の定義では候補も更新される。現在このIDを参照する処理はないため、確定後も編集できる。将来参照を追加したIDは読み取り専用にする。|
 |Name|display name。|
-|Output channel ID|後続 transform/gate/statistic から参照する stable parameter ID。|
+|Output channel ID|後続 transform/gate/statistic から参照する stable parameter ID。New直後に自動生成し、未確定の定義ではExpression変更に追随する。既存の参照がある場合は読み取り専用になる。|
 |Unit|optional unit。|
 |Source stage|compensated / raw。既存 project に legacy `transformed` がある場合のみ表示。|
 |Failure policy|emit_nan_with_warning / fail_sample / fail_run|
@@ -646,7 +646,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 |Preview|current sample の最大 200 event 程度を canonical processing path で評価する診断 preview。|
 |diagnostic label|validation code と message。|
 |preview label|finite count、min/median/max、invalid fraction 等の summary。|
-|OK / Cancel|全定義 validation 後に commit、または変更破棄。|
+|OK / Cancel|全定義 validation 後にcommit、または変更破棄。確定後も参照されていないIDは次回編集時に変更できる。|
 
 ### 14.5 Compensation Matrices
 

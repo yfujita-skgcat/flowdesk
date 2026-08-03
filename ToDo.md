@@ -151,6 +151,7 @@ git status --short
 - [x] 済み: channel/derived parameter挿入、syntax validation、error位置、small previewを提供する。
 - [x] 済み: previewはcore evaluatorを使用し、GUI独自計算をしない。
 - [x] 済み: `Inputs`の手動選択を廃止し、式から検出した依存parameterを読み取り専用で表示する。挿入操作は単一のparameter選択欄に統一する。
+- [x] 済み: 初期definition listを空にし、Newでのみ追加する。未確定definitionのIDとOutput channel IDをName/source/expressionから自動生成し、参照済みOutput IDは再編集時に固定する。
 
 #### 必須test
 
@@ -160,6 +161,7 @@ git status --short
 - [x] 済み: save/load/CLI runでpolicyとdiagnosticが維持される。
 - [x] 済み: raw値参照とcompensated値参照が、derived stage後・transform前のcanonical順序を壊さないことをtestする。
 - [x] 済み: derived parameterを後続transform、gate、statisticsで安定ID参照できることをtestする。
+- [x] 済み: 未確定IDの自動更新、衝突postfix、左リスト概要、参照済みIDの読み取り専用化をGUI testする。
 
 ### Phase A3: 正式なLogicleとtransform model [S05]
 
