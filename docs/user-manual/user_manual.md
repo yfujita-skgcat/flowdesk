@@ -472,7 +472,7 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 |Auto|checkbox|analysis definition change 後、300 ms coalescing を経て canonical full-sample pipeline を自動再実行する。|
 |view mode|combo|Hierarchy / Flat table / Statistics detail。|
 |Edit Statistic...|button|選択 population を初期 target として statistic editor を開く。statistic row 選択時は対応 population を推定する。|
-|Columns...|instant popup|常時計算される統計定義の列表示/非表示。分析定義や計算結果は変更しない。statistics がない時は disabled。|
+|Columns...|instant popup|常時計算される統計定義の列表示/非表示。分析定義や計算結果は変更しない。statistics がない時は disabled。Edit Statistic... で新しく追加した統計列は、既存列を手動で非表示にしていても自動的にチェックされ、Results に表示される。|
 
 ### 11.3 Results view modes
 

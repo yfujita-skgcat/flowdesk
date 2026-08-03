@@ -5349,9 +5349,23 @@ class MainWindow(QMainWindow):
             ),
             parent=self,
         )
+        existing_statistic_ids = {
+            str(value.get("id"))
+            for value in self._statistics
+            if value.get("id")
+        }
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        self._statistics = dialog.definitions()
+        updated_statistics = dialog.definitions()
+        new_statistic_ids = {
+            str(value.get("id"))
+            for value in updated_statistics
+            if value.get("id")
+        } - existing_statistic_ids
+        self._statistics = updated_statistics
+        self._results_workspace.ensure_statistic_columns_visible(
+            tuple(new_statistic_ids)
+        )
         self._mark_results_stale("Statistics changed")
 
     def _statistic_reference_map(self) -> dict[str, tuple[str, ...]]:

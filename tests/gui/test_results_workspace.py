@@ -181,17 +181,31 @@ def test_results_workspace_column_chooser_and_statistics_detail_share_state(qapp
           PopulationResult("sample-1", "all_events", 10, None, 1.0),
         ),
         statistic_results=(
-          StatisticResult(
-            "sample-1", "fsc-mean", "all_events", "mean", 123.5,
-            unit="AU", statistic_name="FSC-A mean", n_valid=10, n_total=10,
-          ),
+        StatisticResult(
+          "sample-1", "fsc-mean", "all_events", "mean", 123.5,
+          unit="AU", statistic_name="FSC-A mean", n_valid=10, n_total=10,
+        ),
+        StatisticResult(
+          "sample-1", "new-mean", "all_events", "mean", 45.0,
+          unit="AU", statistic_name="New mean", n_valid=10, n_total=10,
+        ),
         ),
       )
     )
-    assert workspace.statistic_column_visibility() == {"fsc-mean": True}
+    assert workspace.statistic_column_visibility() == {
+      "fsc-mean": True,
+      "new-mean": True,
+    }
     workspace.set_statistic_column_visibility({"fsc-mean": False})
     assert workspace.tree().columnCount() == 5
     workspace.set_statistic_column_visibility({"fsc-mean": True})
+    workspace.set_statistic_column_visibility({"fsc-mean": False})
+    workspace.ensure_statistic_columns_visible(("new-mean",))
+    assert workspace.statistic_column_visibility() == {
+      "fsc-mean": False,
+      "new-mean": True,
+    }
+    workspace.set_statistic_column_visibility({"fsc-mean": True, "new-mean": True})
     workspace.set_statistic_column_widths({"fsc-mean": 180})
     assert workspace.statistic_column_widths() == {"fsc-mean": 180}
     workspace.set_mode("Statistics detail")

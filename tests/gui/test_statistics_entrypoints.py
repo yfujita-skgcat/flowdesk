@@ -364,6 +364,53 @@ def test_results_add_statistic_defaults_to_active_x_parameter(qapp, monkeypatch)
     window.deleteLater()
 
 
+def test_main_window_shows_new_statistic_column_by_default(qapp, monkeypatch) -> None:
+  window = MainWindow()
+  existing = {
+    "id": "old-mean",
+    "name": "Old mean",
+    "population_id": "all_events",
+    "population_ids": ["all_events"],
+    "parameter_id": "FL1-A",
+    "metric": "mean",
+    "source_stage": "compensated",
+  }
+  added = {
+    "id": "new-mean",
+    "name": "New mean",
+    "population_id": "all_events",
+    "population_ids": ["all_events"],
+    "parameter_id": "FL1-A",
+    "metric": "mean",
+    "source_stage": "compensated",
+  }
+  window._statistics = [existing]
+  window._results_workspace._visible_statistic_ids = {"old-mean"}
+
+  class AcceptedDialog:
+    def __init__(self, *_args, **_kwargs):
+      pass
+
+    def exec(self):
+      return QDialog.DialogCode.Accepted
+
+    def definitions(self):
+      return [existing, added]
+
+  monkeypatch.setattr(
+    "flowdesk_qt.statistics_editor.StatisticsEditorDialog", AcceptedDialog,
+  )
+  try:
+    window._open_statistics_editor(population_id="all_events", parameter_id="FL1-A")
+    assert window._results_workspace._visible_statistic_ids == {
+      "old-mean", "new-mean",
+    }
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
 def test_statistics_editor_duplicate_creates_new_definition(qapp) -> None:
   dialog = StatisticsEditorDialog(
     statistics=[{

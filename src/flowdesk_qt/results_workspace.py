@@ -263,6 +263,26 @@ class ResultsWorkspace(QWidget):
     }
     self._rebuild()
 
+  def ensure_statistic_columns_visible(
+    self, statistic_ids: Sequence[str]
+  ) -> None:
+    """Make newly added statistic columns visible by default.
+
+    ``None`` means the user has never customized column visibility, so all
+    columns are already visible.  Once a custom visibility set exists, only
+    the supplied new IDs are added; existing hidden columns remain hidden.
+    This is display state only and never changes which statistics are
+    calculated by the pipeline.
+    """
+    ids = {str(statistic_id) for statistic_id in statistic_ids if str(statistic_id)}
+    if not ids or self._visible_statistic_ids is None:
+      return
+    updated = self._visible_statistic_ids | ids
+    if updated == self._visible_statistic_ids:
+      return
+    self._visible_statistic_ids = updated
+    self._rebuild()
+
   def statistic_column_order(self) -> tuple[str, ...]:
     return tuple(self._statistic_column_order)
 
