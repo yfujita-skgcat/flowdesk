@@ -931,7 +931,7 @@ Population IDは変わらない。
 
 current view、presentation、visible overlays、population colors、display sampling definition 等を使って export する。`Export 1:1` は export-only aspect option。visible advanced overlay が incompatible なら export は拒否される。
 
-plot areaの右クリック `Export` submenu と toolbar は同じ `Plot Export Options` dialogを使用する。PNG/JPEG/SVG/PDF、出力サイズ、1:1 aspect、title、axis labels、ticks、gates、legend、status bannerの出力有無を選択できる。`Batch Plot Export...` は保存済み定義をheadless runnerへ渡す。
+plot areaの右クリック `Export` submenu と toolbar は同じ `Plot Export Options` dialogを使用する。PNG/JPEG/SVG/PDF、出力サイズ、1:1 aspect、title、axis labels、ticks、gates、legend、status bannerの出力有無を選択できる。ここでのPNG/JPEG/SVG/PDFは、現在GUIに表示されているplotだけを出力する。`Batch Plot Export...` はこの現在ビュー出力とは別に、保存済み定義をheadless runnerへ渡す。右クリックExportでは、現在表示中のrendered plotがない場合は出力できない。
 
 export画像では、解析中の編集用gateハンドルを表示せず、gate outlineを実線で描画する。これは出力時だけの表示変更であり、通常画面のgate編集表示（ハンドル・点線）やgate geometry、解析結果は変更しない。
 

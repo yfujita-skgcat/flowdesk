@@ -10,10 +10,29 @@ from PIL import Image
 
 from flowdesk_core.models import BatchPlotExportSpec
 from flowdesk_core.plot_scene import PlotScene, resolve_plot_layout
+from flowdesk_qt.main_window import MainWindow
 from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 
 pytestmark = pytest.mark.gui
+
+
+def test_live_export_metadata_includes_manual_overlay_layers(qapp) -> None:
+  window = MainWindow()
+  try:
+    window._current_sample_id = "s1"
+    window._plot_views = [{
+      "id": "main-view", "plot_type": "scatter",
+      "x_parameter": "x", "y_parameter": "y",
+      "presentation": {}, "display_scene": {},
+    }]
+    window._sample_browser._manual_overlay_sample_ids = {"s2", "s3"}
+    metadata = window._current_plot_export_metadata()
+    assert metadata["ordered_source_ids"] == ["s1", "s3", "s2"]
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
 
 
 def test_qt_batch_renderer_writes_the_shared_scene_and_image(qapp, tmp_path) -> None:

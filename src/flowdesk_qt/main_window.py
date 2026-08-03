@@ -2584,6 +2584,7 @@ class MainWindow(QMainWindow):
                         ),
                         "alpha": float(style.get("alpha", 0.65)),
                         "label": style.get("legend_label", source.get("display_name", sample_id)),
+                        "source_id": sample_id,
                         "z_value": float(sample_order.get(sample_id, 0)),
                     },
                 )
@@ -5970,12 +5971,12 @@ class MainWindow(QMainWindow):
         )
         if view is None:
             return {}
-        sources = sorted(
+        advanced_sources = sorted(
             view.get("overlay_sources", []),
             key=lambda item: (int(item.get("order", 0)), str(item.get("source_id", ""))),
         )
-        statuses = self._overlay_status_resolver(sources)
-        visible = [source for source in sources if source.get("visible", True)]
+        statuses = self._overlay_status_resolver(advanced_sources)
+        visible = [source for source in advanced_sources if source.get("visible", True)]
         invalid = [
             source.get("source_id", "") for source in visible
             if statuses.get(source.get("source_id", ""), ("missing", ()))[0]
@@ -5986,11 +5987,58 @@ class MainWindow(QMainWindow):
                 "cannot export with incompatible visible overlay source(s): "
                 + ", ".join(str(source_id) for source_id in invalid)
             )
-        source_ids = tuple(str(source.get("source_id", "")) for source in visible)
+        # The live widget always stores the active layer first, followed by
+        # overlay layers.  Manual Samples overlays are not persisted in
+        # ``overlay_sources``, so reconstruct their same back-to-front order.
+        state = self._sample_browser.overlay_state()
+        manual_ids = [str(value) for value in state.get("manual_overlay_sample_ids", [])]
+        manual_ids.extend(
+            str(value) for value in
+            self._sample_browser.comparison_overlay_sample_ids(self._current_sample_id)
+        )
+        manual_ids = list(dict.fromkeys(manual_ids))
+        manual_ids.reverse()
+        rendered_overlay_ids = [
+            str(style.get("source_id"))
+            for _x, _y, style in self._plot_widget.export_data_layers()["layers"][1:]
+            if style.get("source_id")
+        ]
+        overlay_ids = (
+            [str(source.get("source_id", "")) for source in visible]
+            if visible else manual_ids
+        )
+        if rendered_overlay_ids:
+            overlay_ids = rendered_overlay_ids
+        source_ids = tuple(
+            [self._current_sample_id]
+            + [value for value in overlay_ids
+               if value and value != self._current_sample_id]
+        ) if self._current_sample_id else ()
+        if not source_ids:
+            raise ValueError("no active sample is available for export")
         resolved = resolve_presentation_layers(
             view.get("presentation", {}), source_ids=source_ids
         )
         resolved_presentation = asdict(resolved.presentation)
+        source_styles = {
+            str(style.get("source_id")): dict(style)
+            for style in resolved_presentation.get("source_styles", ())
+            if isinstance(style, dict) and style.get("source_id")
+        }
+        for source_id in source_ids:
+            if source_id in source_styles:
+                continue
+            if source_id == self._current_sample_id:
+                color = resolved_presentation.get("single_color", "#000000")
+            else:
+                color = state.get("manual_overlay_colors", {}).get(source_id)
+                color = color or self._sample_overlay_color(source_id)
+            source_styles[source_id] = {
+                "source_id": source_id,
+                "color": color,
+                "marker_size": resolved_presentation.get("single_dot_size", 1.5),
+            }
+        resolved_presentation["source_styles"] = list(source_styles.values())
         resolved_presentation["title"] = resolve_presentation_title(
             resolved.presentation, self._current_plot_sample_titles()
         )
