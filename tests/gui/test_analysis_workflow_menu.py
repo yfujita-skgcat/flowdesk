@@ -30,8 +30,8 @@ def test_analysis_workflow_actions_have_one_menu_owner(qapp) -> None:
     assert "Sample &Annotations..." not in analysis
     assert "Sample &Sheet..." not in analysis
     assert "Overlay &Sources..." not in analysis
-    assert "&Add Statistic..." in results
-    assert "Manage &Statistics..." in results
+    assert "&Edit Statistic..." in results
+    assert "Manage &Statistics..." not in results
     assert "Batch Plot E&xport..." in results
     assert "Sample &Sheet..." in data
     assert "Channel / Parameter &Information" in data

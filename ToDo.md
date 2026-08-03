@@ -720,7 +720,7 @@ increment一つだけを実装する。
 
 #### Increment 3: Results statistic management
 
-- [x] Results workspaceから`Add Statistic...`、edit、duplicate、remove、選択metric/parameter/population/percentile/source-stageを提供し、既存`StatisticSpec` editorと同一のGUI-independent command/validationを使う。mean、median、SD、CV、MAD、percentile等のmetricはcore定義に列挙されたものだけを選択可能にする。
+- [x] Results workspaceから`Edit Statistic...`、edit、duplicate、remove、選択metric/parameter/population/percentile/source-stageを提供し、既存`StatisticSpec` editorと同一のGUI-independent command/validationを使う。mean、median、SD、CV、MAD、percentile等のmetricはcore定義に列挙されたものだけを選択可能にする。
 - [x] Resultsにpopulation rowとは独立した統計detail/tableを追加し、値、unit、status、undefined reason、analysis revisionを表示する。empty/NaN/Inf/geometric-mean policyをQtで再計算・丸め判定しない。
 - [x] `all_events`を対象にしたStatisticResultもResultsのAll Events行の直下へ表示し、計算済みなのにUIから見えない状態を防ぐ回帰テストを追加する。
 - [x] statistic definitionの追加・変更・削除で結果をstale化し、`Run Pipeline`または既存current-sample preview経路でのみ更新する。統計の追加操作がgate/transform/compensation定義を変更しないことを保証する。
@@ -1050,25 +1050,26 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 #### Increment 1: Model、migration、runtime identity
 
 - [x] `StatisticSpec.population_id`を後方互換な明示的`population_ids`へ拡張し、一つのstable Statistic IDを複数Populationへ割り当てられるようにする。GUIのAll/Subtree選択はaccept時点のstable ID集合として保存し、後から追加したgateを暗黙に含めない。
-- [x] `compute_enabled`を保存可能なanalysis stateとして追加する。legacy definitionは単一targetかつenabledとして移行し、同名definitionを自動mergeしない。
+- [x] legacy `compute_enabled`は常に有効として扱い、現在の定義編集UIから計算停止の切替を除去する。
 - [x] `(sample_id, statistic_id, population_id)`をResult/preview/runtime cacheの一意keyにし、同じStatisticを複数Populationへ適用しても上書きされないcore testを追加する。
 
 #### Increment 2: Headless multi-population executionと局所invalidation
 
-- [x] `PipelineRunner`がenabled Statisticだけを明示target Populationごとにfull-resolution membershipで計算し、Group binding、preview、CLI/Python、disabled provenanceへ同じ定義を適用する。
+- [x] `PipelineRunner`が全Statisticを明示target Populationごとにfull-resolution membershipで計算し、Group binding、preview、CLI/Pythonへ同じ定義を適用する。
 - [x] sample/stage/parameter/transformの値列とmembershipを再利用し、analysis revision、upstream dependency、Statistic ID、Population ID、non-finite policyを含むcache keyと局所invalidationを実装する。display downsampleやviewport visibilityを計算条件にしない。
-- [x] mean/median/percentile、overlapping hierarchy、empty/undefined/non-finite、disabled、複数sampleのknown-value testと計測fixtureを追加する。
+- [x] mean/median/percentile、overlapping hierarchy、empty/undefined/non-finite、複数sampleのknown-value testと計測fixtureを追加する。
 
 #### Increment 3: Results wide matrixとQC detail
 
 - [x] statistic child rowを廃止し、`Sample/Population | Events | % Parent | % Total | Population Status | <Statistic columns...>`へ変更する。mean等の値を割合列へ表示しない。
-- [x] unassigned、disabled、not run、stale、undefined/error、valid zero、currentをcell単位で区別し、header/cell tooltipへstable ID、parameter、metric、value domain、unit、QC count、reason、revisionを表示する。色だけに依存しない。
+- [x] unassigned、not run、stale、undefined/error、valid zero、currentをcell単位で区別し、header/cell tooltipへstable ID、parameter、metric、value domain、unit、QC count、reason、revisionを表示する。色だけに依存しない。
 - [x] standard列固定、横scroll、column chooser、順序/幅/visibility保存とlong-form Statistics Detailを、同じ`StatisticResult` snapshotの表示として実装する。Qtで値を再計算しない。
 
-#### Increment 4: Population targetとCompute/Show管理
+#### Increment 4: Population targetとdefinition管理
 
-- [x] Add/Manage Statisticのtarget指定を`Select populations...`へ統一し、新規definitionは全populationを初期選択する。checkbox hierarchyで対象を絞り込める。
-- [x] Manage Statisticsへ`Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to | Status`表と、Resultsの`Columns...`を追加する。`Compute`はanalysis revisionと該当resultを更新し、`Show`はdisplay stateだけを変更してpipelineを実行しない。
+- [x] Add Statisticのtarget指定を`Select populations...`へ統一し、新規definitionは全populationを初期選択する。checkbox hierarchyで対象を絞り込める。
+- [x] Resultsの`Columns...`で表示だけを管理し、Statistic定義は共有editorから作成・編集する。全definitionを常に計算する。
+- [x] New直後の編集可能なStatistic IDを`<population>_<metric>_<value-domain>`で生成し、target、metric、domain変更に追随させる。OK後のstable IDは編集変更で書き換えない。
 - [x] Newの明示操作、cancel、duplicate、remove dependency、Undo/Redo、save/reload、missing target、empty selection、stable objectNameをGUI testする。
   - [x] Newの明示操作、cancel、duplicate、save/reload、および主要ウィジェットのstable objectNameをGUI testする。
   - [x] remove dependency、Undo/Redo、missing target、empty selectionの専用UIとGUI testを追加する。
@@ -1076,15 +1077,15 @@ value domainはprojectに保存し、GUI/headless/CLI/exportで同じ結果とQC
 #### Increment 5: Export、preview、migration cleanup、E2E
 
 - [x] GUI wide/detail、authoritative Run Pipeline、current-sample preview、Python API、long/wide CSV/TSVが全`(sample, statistic, population)` key、値、unit、status、QC、revisionで一致するようにする。wide statistic exportはstable Statistic ID metadata blockとPopulation行を保持し、long形式はQCを保持する。
-- [x] legacy child-row Results view stateを移行して旧描画経路を削除し、hiddenとdisabledを混同しない。disabled definitionを削除せず、exportで値を捏造しない。
+- [x] legacy child-row Results view stateを移行して旧描画経路を削除し、hidden columnとdefinitionを混同しない。exportで値を捏造しない。
 - [x] column hide/reorder、scroll、display downsampleがmembership/statisticsを変えないE2E test、full core/GUI test、thread shutdown、mean/median/percentile matrix benchmarkを完了する。
 
 #### Phase B7.5 必須受け入れtest
 
 - [x] 同一StatisticをAll Eventsと複数gateへ割り当てると、sampleごとに一つの共有列とPopulation別の独立cellが表示され、値が`% Parent`/`% Total`へ入らない。
-- [x] `Show`変更はanalysis revision、headless/export値、gate membershipを変更せず、`Compute`変更は該当Statisticだけを再計算する。
-- [x] Population target、source stage/transform、non-finite policy、unit、QC、disabled provenanceがsave/reload後もGUI/CLI/Pythonで一致する。
-- [x] unassigned、disabled、not run、stale、undefined/error、zero/currentを色以外でも識別でき、表示操作やdownsamplingが科学計算を変更しない。
+- [x] `Columns...`変更はanalysis revision、headless/export値、gate membershipを変更しない。
+- [x] Population target、source stage/transform、non-finite policy、unit、QCがsave/reload後もGUI/CLI/Pythonで一致する。
+- [x] unassigned、not run、stale、undefined/error、zero/currentを色以外でも識別でき、表示操作やdownsamplingが科学計算を変更しない。
 
 ### Phase B7.6: Population full path と統合 Results Export [S17]
 

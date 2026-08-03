@@ -235,26 +235,3 @@ def test_multi_population_statistic_keys_do_not_collide() -> None:
   assert all_events.result.value == 10.0
   assert child.result.value == 20.0
   assert len([row for row in state.rows() if row.key.kind == "statistic"]) == 2
-
-
-def test_disabled_statistic_row_is_distinct_from_missing() -> None:
-  state = RuntimeResultState(
-    _report(PopulationResult("sample-1", "all_events", 10, None, 1.0)),
-    authoritative_revision=1,
-    sample_ids=("sample-1",),
-    population_ids=("all_events",),
-    statistic_definitions=(("disabled-mean", "all_events", False),),
-  )
-  row = state.row(
-    ResultRowKey.statistic("sample-1", "disabled-mean", "all_events")
-  )
-  assert row.result is None
-  assert row.freshness == "disabled"
-  state.invalidate(
-    revision=2,
-    active_sample_id="sample-1",
-    affected_population_ids=("all_events",),
-  )
-  assert state.row(
-    ResultRowKey.statistic("sample-1", "disabled-mean", "all_events")
-  ).freshness == "disabled"

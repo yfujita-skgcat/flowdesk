@@ -20,7 +20,6 @@ ResultFreshness = Literal[
   "stale",
   "error",
   "missing",
-  "disabled",
 ]
 ResultSource = Literal["authoritative_batch", "active_sample_preview"]
 ResultKind = Literal["population", "statistic"]
@@ -74,7 +73,7 @@ class RuntimeResultState:
     authoritative_revision: int | None = None,
     sample_ids: Sequence[str] = (),
     population_ids: Sequence[str] = (),
-    statistic_definitions: Sequence[tuple[str, str] | tuple[str, str, bool]] = (),
+    statistic_definitions: Sequence[tuple[str, str]] = (),
   ) -> None:
     self._authoritative_report = authoritative_report
     self._authoritative_revision = authoritative_revision
@@ -84,7 +83,6 @@ class RuntimeResultState:
     self._defined_sample_ids = set(sample_ids)
     self._defined_population_ids = set(population_ids)
     self._statistic_population_ids: dict[str, tuple[str, ...]] = {}
-    self._disabled_statistic_keys: set[tuple[str, str]] = set()
     self._register_statistic_definitions(statistic_definitions)
     self._rows: dict[ResultRowKey, ResultRowState] = {}
     self._rebuild_from_authoritative()
@@ -142,9 +140,6 @@ class RuntimeResultState:
       in self._statistic_population_ids.items()
       if population_ids_for_statistic
     }
-    self._disabled_statistic_keys = {
-      key for key in self._disabled_statistic_keys if key[1] not in removed
-    }
     self._rows = {
       key: row
       for key, row in self._rows.items()
@@ -173,17 +168,14 @@ class RuntimeResultState:
 
   def _register_statistic_definitions(
     self,
-    statistic_definitions: Sequence[tuple[str, str] | tuple[str, str, bool]],
+    statistic_definitions: Sequence[tuple[str, str]],
   ) -> None:
     grouped: dict[str, list[str]] = {}
     for definition in statistic_definitions:
       statistic_id, population_id = definition[:2]
       if population_id not in self._defined_population_ids:
         continue
-      compute_enabled = len(definition) < 3 or bool(definition[2])
       grouped.setdefault(statistic_id, []).append(population_id)
-      if not compute_enabled:
-        self._disabled_statistic_keys.add((statistic_id, population_id))
     for statistic_id, population_ids in grouped.items():
       merged = list(self._statistic_population_ids.get(statistic_id, ()))
       for population_id in population_ids:
@@ -198,7 +190,7 @@ class RuntimeResultState:
     *,
     sample_ids: Sequence[str] = (),
     population_ids: Sequence[str] = (),
-    statistic_definitions: Sequence[tuple[str, str] | tuple[str, str, bool]] = (),
+    statistic_definitions: Sequence[tuple[str, str]] = (),
   ) -> None:
     """Replace the baseline after a successful authoritative pipeline run."""
     self._authoritative_report = report
@@ -207,7 +199,6 @@ class RuntimeResultState:
     self._batch_stale = False
     self._defined_sample_ids.update(sample_ids)
     self._defined_population_ids.update(population_ids)
-    self._disabled_statistic_keys.clear()
     self._register_statistic_definitions(statistic_definitions)
     self._rows = {}
     self._rebuild_from_authoritative()
@@ -217,7 +208,7 @@ class RuntimeResultState:
     *,
     sample_ids: Sequence[str] = (),
     population_ids: Sequence[str] = (),
-    statistic_definitions: Sequence[tuple[str, str] | tuple[str, str, bool]] = (),
+    statistic_definitions: Sequence[tuple[str, str]] = (),
   ) -> None:
     """Register newly defined rows without inventing scientific values."""
     self._defined_sample_ids.update(sample_ids)
@@ -251,10 +242,6 @@ class RuntimeResultState:
           targets = self._statistic_population_ids.get(key.result_id, ())
           population_id = targets[0] if len(targets) == 1 else ""
       if population_id not in affected:
-        continue
-      if key.kind == "statistic" and (
-        key.result_id, key.population_id
-      ) in self._disabled_statistic_keys:
         continue
       freshness: ResultFreshness = (
         "recalculating" if key.sample_id == active_sample_id else "stale"
@@ -353,13 +340,7 @@ class RuntimeResultState:
     self, key: ResultRowKey, result: ResultValue | None
   ) -> ResultRowState:
     outcome_status = self._outcome_status(result)
-    disabled = (
-      key.kind == "statistic"
-      and (key.result_id, key.population_id) in self._disabled_statistic_keys
-    )
-    freshness: ResultFreshness = (
-      "disabled" if disabled else "current" if result is not None else "missing"
-    )
+    freshness: ResultFreshness = "current" if result is not None else "missing"
     return ResultRowState(
       key=key,
       result=result,
@@ -385,18 +366,13 @@ class RuntimeResultState:
     }
     for key in set(population_by_key) | set(statistic_by_key) | set(self._rows):
       result = population_by_key.get(key) or statistic_by_key.get(key)
-      disabled = (
-        key.kind == "statistic"
-        and (key.result_id, key.population_id) in self._disabled_statistic_keys
-        and result is None
-      )
       self._rows[key] = ResultRowState(
         key=key,
         result=result,
         revision=self._authoritative_revision,
         source="authoritative_batch",
-        freshness="disabled" if disabled else "current" if result is not None else "missing",
-        outcome_status="disabled" if disabled else self._outcome_status(result),
+        freshness="current" if result is not None else "missing",
+        outcome_status=self._outcome_status(result),
       )
 
   def _ensure_defined_rows(self) -> None:
@@ -419,11 +395,9 @@ class RuntimeResultState:
         for population_id in self._statistic_population_ids[statistic_id]:
           key = ResultRowKey.statistic(sample_id, statistic_id, population_id)
           if key not in self._rows:
-            disabled = (statistic_id, population_id) in self._disabled_statistic_keys
             self._rows[key] = ResultRowState(
               key, None, self._authoritative_revision,
-              "authoritative_batch", "disabled" if disabled else "missing",
-              "disabled" if disabled else None,
+              "authoritative_batch", "missing", None,
             )
 
   @staticmethod

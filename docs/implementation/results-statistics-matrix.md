@@ -82,10 +82,12 @@ non_finite_policy
 settings
 format
 notes
-compute_enabled            persisted analysis state; default true
 ```
 
 Compatibility and identity rules:
+
+- Legacy `compute_enabled` fields may remain in manifests but are ignored and normalized
+  to `true`; the current interface has no per-statistic compute switch.
 
 - Load legacy `population_id` as `population_ids = [population_id]` without changing the
   metric, value domain, non-finite policy, or numeric result.
@@ -104,42 +106,35 @@ Compatibility and identity rules:
   Group statistic bindings continue to reference the statistic ID; they must not be
   inferred from Results column visibility.
 
-## Computation versus presentation state
+## Computation and presentation state
 
-Two controls have different scientific effects and must use different state paths:
+Statistic definitions are always computed by the canonical pipeline. Results `Columns...`
+controls only the presentation state:
 
 ```text
-Compute / Enabled for analysis
-  persisted in StatisticSpec
-  changes authoritative and preview results
-  increments the analysis revision and invalidates only affected statistic results
-  is honored identically by GUI, CLI, and Python PipelineRunner
-
-Show / Visible in Results
+Visible in Results
   persisted in Results view/display state
   changes only column visibility/order/width
   does not run the pipeline, change analysis revision, membership, values, or export
 ```
 
-The runner skips disabled statistics. Disabled definitions remain in the project and are
-shown as `Disabled` when their column is visible. The authoritative report/provenance must
-record which definitions were disabled or otherwise make the omission unambiguous.
-Default CSV/TSV statistic export includes computed results only; an explicit metadata
-option may include disabled definitions, but it must never fabricate values.
-
 Never make authoritative computation depend on viewport visibility or whether the user
 has scrolled to a cell. Current-sample preview may request a subset for responsiveness,
 but it remains labelled preview and cannot replace missing authoritative batch results.
 
-## Add and Manage Statistics UX
+## Statistic definition editor UX
 
-`Add Statistic...` opens the existing side-effect-free editor. A definition is created
+`Edit Statistic...` opens the existing side-effect-free editor. A definition is created
 only after explicit `New`. The form includes:
 
 New definitions receive a readable initial name such as `FSC-A_mean` from the parameter
-and metric. A suggested Statistic ID is generated for editing (for example
-`stat_fsc_a_mean`). Metrics without a parameter use the metric name itself. The ID becomes stable and read-only when the dialog is accepted;
-changing the display name or target in a later edit does not rewrite the ID.
+and metric. While the definition is uncommitted, its editable ID is generated as
+`<population>_<metric>_<value-domain>` (for example
+`all_events_mean_compensated`) and is regenerated when Population targets, Metric, Value
+domain, or a transformed-domain Transform changes. A numeric postfix is added only to
+avoid an existing ID collision. Metrics without a parameter use the metric name itself.
+The ID becomes stable and read-only when the dialog is accepted; changing the display
+name, target, metric, or domain in a later edit does not rewrite the ID.
 When no entry-point defaults are supplied, a new definition starts with the `mean` metric
 so the Parameter selector is enabled immediately. Existing definitions and explicit metric
 defaults are not changed.
@@ -157,27 +152,15 @@ the statistic is only scientifically meaningful for a subset or when avoiding un
 work matters. A graph shortcut may prefill the active parameter ID, but it does not change
 the all-populations target default.
 
-`Manage Statistics...` presents:
-
-```text
-Compute | Show | Statistic | Parameter | Metric | Value domain | Applies to
-```
-
-- `Compute` changes persisted analytical state and requires canonical recalculation.
-- `Show` changes Results view state only.
-- `Applies to` is editable from Manage Statistics through the shared stable-ID
-  population chooser; changing targets invalidates the affected statistic cells
-  and requires canonical recalculation.
-- Manage Statistics opens the shared definition editor from `Edit Definition...`
-  or a double-click on a definition row. Name, parameter, metric, source/value
-  domain, and transform can be edited there; the persisted statistic ID remains
-  fixed after the definition has been accepted.
+There is one shared definition editor. `Edit Statistic...` opens it for both creating
+and editing definitions; the persisted statistic ID remains fixed after acceptance.
+All definitions are computed by the pipeline. Results `Columns...` controls display
+visibility independently and does not change analysis definitions or calculation.
 - `Parameter` shows the user-facing parameter name (for example `FSC-A`), not only
   the stable internal parameter ID.
 - `Applies to` shows the user-facing names of the explicit target populations selected in
   the shared chooser; it is not limited to one population.
-- Result-level status is shown in the Results table, not duplicated in this
-  Compute/Show management table.
+- Result-level status is shown in the Results table.
 - Edit of a shared definition changes all its assigned population cells atomically.
 - Duplicate creates a new stable statistic ID and copies targets only after explicit user
   confirmation/default selection.
@@ -190,7 +173,7 @@ Scientific correctness comes before speculative optimization. First measure the 
 sample count, event count, target population count, parameter, metric family, and source
 stage. Then implement optimizations that preserve exact results:
 
-- execute only `compute_enabled` definitions and their explicit population targets;
+- execute every statistic definition and its explicit population targets;
 - reuse full-resolution population membership masks;
 - resolve/extract a parameter and value-space column once per sample/stage/transform;
 - share finite-value masks and sufficient statistics where metric definitions permit it;
@@ -208,18 +191,18 @@ automatic warning threshold is chosen.
 
 ### Increment 1: Model, schema, migration, and runtime identity
 
-- Add explicit `population_ids` and `compute_enabled` to the typed statistic model,
-  schema, validator, commands, and project migration.
+- Add explicit `population_ids` to the typed statistic model, schema, validator,
+  commands, and project migration.
 - Extend runtime/result keys with population ID and prove two populations with the same
   statistic ID cannot collide.
 - Preserve legacy one-population results and project round trips exactly.
 
 ### Increment 2: Canonical multi-population execution and invalidation
 
-- Execute one enabled definition over each explicit population target in
+- Execute every definition over each explicit population target in
   `PipelineRunner`; keep GUI free of scientific computation.
-- Connect group binding, preview requests, disabled provenance, dependency invalidation,
-  and revision-safe cache keys.
+- Connect group binding, preview requests, dependency invalidation, and revision-safe
+  cache keys.
 - Add known-value and performance-characterization fixtures for mean, median, percentile,
   empty, undefined, and non-finite cases.
 
@@ -230,16 +213,14 @@ automatic warning threshold is chosen.
   pinned standard columns where supported, and the long-form detail view.
 - Keep hierarchy and flat modes backed by the same result-state snapshot.
 
-### Increment 4: Population target selection and Compute/Show management
+### Increment 4: Population target selection and definition management
 
 - Implemented current/subtree/selected/all-current population targeting in the shared
   statistic editor. Targets are materialized as an explicit ordered `population_ids`
   list at commit time; a later gate is not implicitly added.
-- `Compute enabled` is persisted in the statistic definition and is honored by the
-  headless runner. Results `Columns...` controls `Show` as display-only state, while
-  `Manage Statistics...` presents a table with `Compute`, `Show`, `Statistic`,
-  `Parameter`, `Metric`, `Value domain`, `Applies to`, and `Status` columns. Detailed
-  target/expression editing remains in the shared Add/definition editor.
+- Statistic definitions are always computed by the headless runner. Results `Columns...`
+  controls display visibility only; it does not change calculation or persisted analysis
+  definitions. Detailed definition and target editing is done in the shared editor.
 - Cancel, duplicate, save/reload, stable object-name coverage, statistics editor
   Undo/Redo, and missing-target/empty-selection validation are implemented. Removing a
   gate leaves its statistic definition intact but surfaces a blocking dependency
@@ -261,10 +242,9 @@ in Qt.
   export retains status and non-finite QC fields; the new wide helper emits one row per
   sample/population and one stable statistic-ID metadata block per definition
   (value, unit, status, undefined reason, QC counts, non-finite policy, and optional
-  runtime revision). Missing metadata remains blank; no disabled value is fabricated.
+  runtime revision). Missing metadata remains blank; no value is fabricated.
 - The legacy statistic-child rendering path is removed; saved Results display state
-  migrates through mode/visibility/order/width settings, with hidden columns kept
-  distinct from disabled definitions.
+  migrates through mode/visibility/order/width settings.
 - Full core and GUI suites pass with strict callback handling and thread-shutdown
   coverage already in the repository. Display column operations and downsampling stay
   outside the scientific execution path.
@@ -275,11 +255,10 @@ in Qt.
   `% Total`.
 - One definition assigned to All Events and two gates produces three independently keyed
   results per applicable sample and one shared column.
-- Unassigned, disabled, not-run, stale, undefined/error, zero, and valid cells are
+- Unassigned, not-run, stale, undefined/error, zero, and valid cells are
   distinguishable without color alone.
-- Toggling `Show` changes no project analysis revision or headless/exported value.
-- Toggling `Compute` persists, skips/runs the same definitions in GUI/CLI/Python, and does
-  not change gates, memberships, or unrelated statistic results.
+- Toggling `Columns...` visibility changes no project analysis revision or headless/exported
+  value.
 - Current/subtree/selected/all-current targeting saves explicit stable IDs and does not
   silently include a gate created later.
 - Native/transformed domain, unit, non-finite QC counts, reason, and revision match the
@@ -301,7 +280,7 @@ in Qt.
 - Do not calculate, filter, aggregate, or repair statistic values in Qt.
 - Do not use one global `Status` cell to hide per-statistic failure/QC state.
 - Do not infer target populations from visible rows at run time.
-- Do not treat hidden as disabled or disabled as deleted.
+- Do not treat hidden columns as deleted statistic definitions.
 - Do not merge legacy definitions by display name or formatted header.
 - Do not use dynamic column position as statistic identity.
 

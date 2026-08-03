@@ -2486,7 +2486,7 @@ def test_pipeline_statistics_empty() -> None:
   assert report.statistic_results == ()
 
 
-def test_pipeline_statistics_with_gating_strategy() -> None:
+def test_pipeline_statistics_with_gating_strategy_and_legacy_compute_flag() -> None:
   """Statistics are computed per-gated population."""
   # Create a gating strategy with a threshold gate on FSC-H.
   strategy = GatingStrategySpec(
@@ -2620,11 +2620,8 @@ def test_pipeline_statistics_with_gating_strategy() -> None:
     ("g1", pytest.approx(4.0)),
     ("g2", pytest.approx(5.0)),
   ]
-  assert not any(
-    result.statistic_id == "stat_disabled"
-    for result in report.statistic_results
-  )
-  assert "statistics=disabled ids=stat_disabled" in report.messages
+  assert by_id["stat_disabled"].value == pytest.approx(3.0)
+  assert "statistics=disabled ids=stat_disabled" not in report.messages
   assert mean_live.status == "ok"
 
   assert by_id["stat_frequency_high_live_parent"].value == pytest.approx(0.5)

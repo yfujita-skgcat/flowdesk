@@ -45,7 +45,6 @@ class ResultsWorkspace(QWidget):
     "undefined": "#6a1b9a",
     "missing": "#757575",
     "not run": "#757575",
-    "disabled": "#9e9e9e",
   }
 
   _HEADERS = [
@@ -80,7 +79,6 @@ class ResultsWorkspace(QWidget):
     self._statistic_column_widths: dict[str, int] = {}
     self._callbacks: list[Callable[[str, str, str], None]] = []
     self._add_statistic_callbacks: list[Callable[[str], None]] = []
-    self._manage_statistic_callbacks: list[Callable[[], None]] = []
     self._auto_recalculate_callbacks: list[Callable[[bool], None]] = []
 
     self._tree = QTreeWidget()
@@ -114,15 +112,10 @@ class ResultsWorkspace(QWidget):
     self._mode_selector.currentTextChanged.connect(self.set_mode)
     layout.addWidget(self._mode_selector)
     self._add_statistic_button = QToolButton()
-    self._add_statistic_button.setObjectName("resultsAddStatisticButton")
-    self._add_statistic_button.setText("Add Statistic...")
+    self._add_statistic_button.setObjectName("resultsEditStatisticButton")
+    self._add_statistic_button.setText("Edit Statistic...")
     self._add_statistic_button.clicked.connect(self._on_add_statistic)
     layout.addWidget(self._add_statistic_button)
-    self._manage_statistics_button = QToolButton()
-    self._manage_statistics_button.setObjectName("resultsManageStatisticsButton")
-    self._manage_statistics_button.setText("Manage Statistics...")
-    self._manage_statistics_button.clicked.connect(self._on_manage_statistics)
-    layout.addWidget(self._manage_statistics_button)
     self._column_button = QToolButton()
     self._column_button.setObjectName("resultsStatisticColumnsButton")
     self._column_button.setText("Columns...")
@@ -142,10 +135,6 @@ class ResultsWorkspace(QWidget):
     """Register the Results entry point for persisted statistic definitions."""
     self._add_statistic_callbacks.append(callback)
 
-  def on_manage_statistics_requested(self, callback: Callable[[], None]) -> None:
-    """Register the shared editor entry point for existing definitions."""
-    self._manage_statistic_callbacks.append(callback)
-
   def on_auto_recalculate_changed(self, callback: Callable[[bool], None]) -> None:
     """Register the Results auto-recalculation preference callback."""
     self._auto_recalculate_callbacks.append(callback)
@@ -161,10 +150,6 @@ class ResultsWorkspace(QWidget):
   def _on_auto_recalculate_toggled(self, enabled: bool) -> None:
     for callback in self._auto_recalculate_callbacks:
       invoke_callback(callback, enabled)
-
-  def _on_manage_statistics(self) -> None:
-    for callback in self._manage_statistic_callbacks:
-      invoke_callback(callback)
 
   def _on_add_statistic(self) -> None:
     item = self._tree.currentItem()

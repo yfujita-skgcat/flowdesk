@@ -811,15 +811,6 @@ class PipelineRunner:
     input_files: list[dict[str, Any]] = []
     diagnostics: list[ExecutionDiagnostic] = []
     failed_sample_count = 0
-    disabled_statistic_ids = tuple(
-      spec.id for spec in self._statistic_specs()
-      if not spec.compute_enabled
-    )
-    if disabled_statistic_ids:
-      messages.append(
-        "statistics=disabled ids=" + ",".join(disabled_statistic_ids)
-      )
-
     self._pipeline_checkpoint(
       context, operation_id, "compensation_controls", completed_units=0,
       total_units=total_samples,
@@ -2322,9 +2313,6 @@ class PipelineRunner:
     results: list[StatisticResult] = []
 
     for spec in specs:
-      if not spec.compute_enabled:
-        continue
-
       source_data: _AnalysisData | None = None
       col_idx: int | None = None
       if spec.metric not in ("count", "frequency_of_parent", "frequency_of_total"):
@@ -2497,7 +2485,7 @@ class PipelineRunner:
             settings=dict(definition.get("settings", {})),
             format=definition.get("format"),
             notes=str(definition.get("notes", "")),
-            compute_enabled=definition.get("compute_enabled", True),
+            compute_enabled=True,
           )
         )
       except (KeyError, TypeError, ValueError) as exc:

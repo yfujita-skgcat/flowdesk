@@ -15,25 +15,21 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QMessageBox,
-    QPushButton,
-    QSplitter,
-    QTableWidget,
-    QTableWidgetItem,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QVBoxLayout,
-    QWidget,
+  QComboBox,
+  QDialog,
+  QDialogButtonBox,
+  QFormLayout,
+  QHBoxLayout,
+  QLabel,
+  QLineEdit,
+  QListWidget,
+  QMessageBox,
+  QPushButton,
+  QSplitter,
+  QTreeWidget,
+  QTreeWidgetItem,
+  QVBoxLayout,
+  QWidget,
 )
 
 from flowdesk_core.models import (
@@ -165,6 +161,26 @@ def _statistic_identity_parts(
         name = _slug_identity(metric)
         identity = name
     return name, f"stat_{identity}"
+
+
+def _statistic_id_base(
+    value: Mapping[str, Any],
+    population_labels: Mapping[str, str],
+) -> str:
+    """Build the editable ID base from targets, metric, and value domain."""
+    raw_targets = value.get("population_ids") or [value.get("population_id", "")]
+    target_tokens = [
+        _slug_identity(population_labels.get(str(target), str(target)))
+        for target in raw_targets
+        if str(target)
+    ]
+    population_token = "_".join(target_tokens) or "population"
+    metric_token = _slug_identity(value.get("metric") or "count")
+    source_stage = str(value.get("source_stage") or "compensated")
+    value_domain = _slug_identity(source_stage)
+    if source_stage == "transformed" and value.get("transform_id"):
+        value_domain += "_" + _slug_identity(value["transform_id"])
+    return f"{population_token}_{metric_token}_{value_domain}"
 
 
 def _is_blank_statistic(value: Mapping[str, Any]) -> bool:
@@ -411,9 +427,6 @@ class StatisticsEditorDialog(QDialog):
         self._format_edit.setObjectName("statisticFormatEdit")
         self._notes_edit = QLineEdit()
         self._notes_edit.setObjectName("statisticNotesEdit")
-        self._compute_check = QCheckBox("Compute enabled")
-        self._compute_check.setObjectName("statisticComputeEnabledCheck")
-        self._compute_check.setChecked(True)
 
         self._id_edit.setToolTip(
             "Generated once when the statistic is created; fixed thereafter."
@@ -430,7 +443,6 @@ class StatisticsEditorDialog(QDialog):
         form.addRow(self._percentile_q_label, self._percentile_q_edit)
         form.addRow("Format:", self._format_edit)
         form.addRow("Notes:", self._notes_edit)
-        form.addRow("Analysis:", self._compute_check)
 
         right_layout.addLayout(form)
 
@@ -461,12 +473,16 @@ class StatisticsEditorDialog(QDialog):
         self._clear_button.clicked.connect(self._clear_all)
         self._undo_button.clicked.connect(self._undo)
         self._redo_button.clicked.connect(self._redo)
+        self._name_edit.textChanged.connect(self._update_current_summary)
         self._metric_combo.currentTextChanged.connect(self._on_metric_changed)
+        self._metric_combo.currentTextChanged.connect(self._update_draft_identity)
         self._metric_combo.currentIndexChanged.connect(self._on_metric_changed)
         self._parameter_combo.currentIndexChanged.connect(
             lambda _index: self._update_parameter_status()
         )
         self._source_combo.currentTextChanged.connect(self._on_source_changed)
+        self._source_combo.currentTextChanged.connect(self._update_draft_identity)
+        self._transform_combo.currentIndexChanged.connect(self._update_draft_identity)
         self._target_button.clicked.connect(self._select_population_targets)
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
@@ -483,14 +499,7 @@ class StatisticsEditorDialog(QDialog):
         try:
             self._list.clear()
             for stat in self._statistics:
-                label = stat.get("name") or stat.get("id") or "New statistic"
-                metric = stat.get("metric", "count")
-                populations = stat.get("population_ids") or [
-                    stat.get("population_id", "")
-                ]
-                populations = [str(value) for value in populations if value]
-                scope = ", ".join(populations) or "(none)"
-                self._list.addItem(f"{label} ({metric}, pop={scope})")
+                self._list.addItem(self._statistic_summary(stat))
             if self._statistics:
                 self._list.setCurrentRow(
                     min(selected_row, len(self._statistics) - 1)
@@ -499,6 +508,40 @@ class StatisticsEditorDialog(QDialog):
             self._loading = False
         if self._statistics:
             self._load_row(self._list.currentRow())
+
+    @staticmethod
+    def _statistic_summary(stat: Mapping[str, Any]) -> str:
+        label = stat.get("name") or stat.get("id") or "New statistic"
+        metric = stat.get("metric", "count")
+        populations = stat.get("population_ids") or [
+            stat.get("population_id", "")
+        ]
+        populations = [str(value) for value in populations if value]
+        scope = ", ".join(populations) or "(none)"
+        return f"{label} ({metric}, pop={scope})"
+
+    def _update_current_summary(self, *_args: object) -> None:
+        """Keep the selected definition summary synchronized with the form."""
+        if self._loading or not (0 <= self._current_row < len(self._statistics)):
+            return
+        self._commit_current()
+        item = self._list.item(self._current_row)
+        if item is not None:
+            item.setText(self._statistic_summary(self._statistics[self._current_row]))
+
+    def _update_draft_identity(self, *_args: object) -> None:
+        """Regenerate an uncommitted ID when its identifying fields change."""
+        if self._loading or not (0 <= self._current_row < len(self._statistics)):
+            return
+        self._commit_current()
+        current = self._statistics[self._current_row]
+        statistic_id = str(current.get("id") or "")
+        if statistic_id in self._fixed_statistic_ids:
+            self._update_current_summary()
+            return
+        self._assign_generated_id(current, exclude_row=self._current_row)
+        self._id_edit.setText(str(current["id"]))
+        self._update_current_summary()
 
     def _load_row(self, row: int) -> None:
         if row < 0 or row >= len(self._statistics):
@@ -553,7 +596,6 @@ class StatisticsEditorDialog(QDialog):
                 self._format_edit.clear()
 
             self._notes_edit.setText(str(value.get("notes", "")))
-            self._compute_check.setChecked(bool(value.get("compute_enabled", True)))
             self._on_metric_changed()
             # Reapply after all row fields and enabled states have settled.  This
             # prevents a persisted count definition from leaving the Parameter
@@ -605,7 +647,7 @@ class StatisticsEditorDialog(QDialog):
             "settings": settings,
             "format": fmt_text,
             "notes": self._notes_edit.text().strip(),
-            "compute_enabled": self._compute_check.isChecked(),
+            "compute_enabled": True,
         }
 
     def _on_row_changed(self, row: int) -> None:
@@ -620,30 +662,38 @@ class StatisticsEditorDialog(QDialog):
         defaults = self._pending_new_defaults
         self._pending_new_defaults = None
         value = _empty_statistic(defaults)
-        self._initialize_statistic_identity(value)
         value["population_ids"] = list(self._population_ids)
         value["population_id"] = self._population_ids[0] if self._population_ids else ""
+        self._initialize_statistic_identity(value)
         self._target_population_ids = tuple(self._population_ids)
         self._statistics.append(value)
         self._refresh_list(len(self._statistics) - 1)
 
     def _initialize_statistic_identity(self, value: dict[str, Any]) -> None:
         """Assign a collision-free immutable ID and a readable initial name."""
-        suggested_name, suggested_id = _statistic_identity_parts(
+        suggested_name, _suggested_id = _statistic_identity_parts(
             value, self._parameter_labels
         )
         if not str(value.get("name") or "").strip():
             value["name"] = suggested_name
         if str(value.get("id") or "").strip():
             return
+        self._assign_generated_id(value)
+
+    def _assign_generated_id(
+        self, value: dict[str, Any], *, exclude_row: int | None = None,
+    ) -> None:
+        """Assign a unique draft ID from target, metric, and value domain."""
+        base_id = _statistic_id_base(value, self._population_labels)
         used_ids = {
-            str(item.get("id")) for item in self._statistics
-            if str(item.get("id") or "").strip() and item is not value
+            str(item.get("id"))
+            for index, item in enumerate(self._statistics)
+            if index != exclude_row and str(item.get("id") or "").strip()
         }
-        statistic_id = suggested_id
+        statistic_id = base_id
         suffix = 2
         while statistic_id in used_ids:
-            statistic_id = f"{suggested_id}_{suffix}"
+            statistic_id = f"{base_id}_{suffix}"
             suffix += 1
         value["id"] = statistic_id
 
@@ -684,11 +734,11 @@ class StatisticsEditorDialog(QDialog):
         self._statistics.clear()
         self._current_row = -1
         value = _empty_statistic()
-        self._initialize_statistic_identity(value)
         value["population_ids"] = list(self._population_ids)
         value["population_id"] = (
             self._population_ids[0] if self._population_ids else ""
         )
+        self._initialize_statistic_identity(value)
         self._target_population_ids = tuple(self._population_ids)
         self._statistics.append(value)
         self._refresh_list(0)
@@ -815,6 +865,7 @@ class StatisticsEditorDialog(QDialog):
             return
         self._target_population_ids = selected
         self._update_population_targets_label()
+        self._update_draft_identity()
 
     # -- Validation ----------------------------------------------------------
 
@@ -879,201 +930,3 @@ class StatisticsEditorDialog(QDialog):
             QMessageBox.warning(self, "Invalid statistic definition", str(exc))
             return
         self.accept()
-
-
-class StatisticManagementDialog(QDialog):
-    """Compact Compute/Show management table for persisted statistics.
-
-    This dialog only edits analysis flags and Results display state. Scientific
-    values are never calculated here; detailed definition editing remains in
-    :class:`StatisticsEditorDialog`.
-    """
-
-    _HEADERS = (
-        "Compute", "Show", "Statistic", "Parameter", "Metric",
-        "Value domain", "Applies to",
-    )
-
-    def __init__(
-        self,
-        statistics: Sequence[dict[str, Any]],
-        visibility: Mapping[str, bool] | None = None,
-        *,
-        parameter_labels: Mapping[str, str] | None = None,
-        population_labels: Mapping[str, str] | None = None,
-        population_ids: Sequence[str] = (),
-        population_parents: Mapping[str, str | None] | None = None,
-        available_channels: Sequence[ChannelSpec | ParameterCatalogEntry] = (),
-        transforms: Sequence[Mapping[str, Any]] = (),
-        statistic_references: Mapping[str, Sequence[str]] | None = None,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self.setObjectName("statisticManagementDialog")
-        self.setWindowTitle("Manage Statistics")
-        self.resize(900, 420)
-        self._statistics = deepcopy(list(statistics))
-        self._visibility = dict(visibility or {})
-        self._parameter_labels = dict(parameter_labels or {})
-        self._population_labels = dict(population_labels or {})
-        self._population_ids = tuple(str(value) for value in population_ids)
-        self._population_parents = dict(population_parents or {})
-        self._available_channels = tuple(available_channels)
-        self._transforms = tuple(dict(value) for value in transforms)
-        self._statistic_references = dict(statistic_references or {})
-        self._compute_checks: dict[str, QCheckBox] = {}
-        self._show_checks: dict[str, QCheckBox] = {}
-        self._target_ids: dict[str, tuple[str, ...]] = {}
-
-        layout = QVBoxLayout(self)
-        self._table = QTableWidget(0, len(self._HEADERS))
-        self._table.setObjectName("statisticManagementTable")
-        self._table.setHorizontalHeaderLabels(list(self._HEADERS))
-        self._table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Interactive
-        )
-        self._table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
-        )
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.cellDoubleClicked.connect(self._edit_row_at)
-        layout.addWidget(self._table)
-
-        edit_definition = QPushButton("Edit Definition...")
-        edit_definition.setObjectName("statisticEditDefinitionButton")
-        edit_definition.clicked.connect(self._edit_selected_definition)
-        layout.addWidget(edit_definition)
-
-        edit_targets = QPushButton("Edit Applies to...")
-        edit_targets.setObjectName("statisticEditTargetsButton")
-        edit_targets.clicked.connect(self._edit_selected_targets)
-        layout.addWidget(edit_targets)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.setObjectName("statisticManagementDialogButtons")
-        layout.addWidget(buttons)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        self._statistics = repair_statistic_definitions(self._statistics)
-        self._populate()
-
-    def _populate(self) -> None:
-        self._table.setRowCount(len(self._statistics))
-        for row, value in enumerate(self._statistics):
-            statistic_id = str(value.get("id", ""))
-            compute = QCheckBox()
-            compute.setObjectName(f"statisticComputeCheck_{statistic_id}")
-            compute.setChecked(bool(value.get("compute_enabled", True)))
-            show = QCheckBox()
-            show.setObjectName(f"statisticShowCheck_{statistic_id}")
-            show.setChecked(self._visibility.get(statistic_id, True))
-            self._compute_checks[statistic_id] = compute
-            self._show_checks[statistic_id] = show
-            self._table.setCellWidget(row, 0, compute)
-            self._table.setCellWidget(row, 1, show)
-            self._set_item(row, 2, value.get("name") or statistic_id)
-            self._table.item(row, 2).setToolTip(
-                f"name={value.get('name') or statistic_id}; "
-                f"metric={value.get('metric', 'count')}; ID={statistic_id}"
-            )
-            parameter_id = str(value.get("parameter_id") or "")
-            self._set_item(
-                row, 3,
-                self._parameter_labels.get(parameter_id, parameter_id) or "(none)",
-            )
-            self._set_item(row, 4, value.get("metric", "count"))
-            self._set_item(row, 5, value.get("transform_id") or value.get("source_stage", ""))
-            targets = value.get("population_ids") or [value.get("population_id", "")]
-            target_ids = tuple(str(target) for target in targets if target)
-            self._target_ids[statistic_id] = target_ids
-            target_labels = [
-                self._population_labels.get(str(target), str(target))
-                for target in targets if target
-            ]
-            applies_to = ", ".join(target_labels) or "(none)"
-            self._set_item(row, 6, applies_to)
-            self._table.item(row, 6).setToolTip(applies_to)
-
-    def _edit_selected_targets(self) -> None:
-        row = self._table.currentRow()
-        if row >= 0:
-            self._edit_targets(row)
-
-    def _edit_row_at(self, row: int, column: int) -> None:
-        if column == 6:
-            self._edit_targets(row)
-        else:
-            self._edit_definition(row)
-
-    def _edit_selected_definition(self) -> None:
-        row = self._table.currentRow()
-        if row >= 0:
-            self._edit_definition(row)
-
-    def _edit_definition(self, row: int) -> None:
-        if not (0 <= row < len(self._statistics)):
-            return
-        statistic_id = str(self._statistics[row].get("id", ""))
-        dialog = StatisticsEditorDialog(
-            [self._statistics[row]],
-            self._available_channels,
-            self._population_ids,
-            population_parents=self._population_parents,
-            population_labels=self._population_labels,
-            statistic_references={
-                statistic_id: self._statistic_references.get(statistic_id, ())
-            },
-            transforms=self._transforms,
-            parent=self,
-        )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        updated = dialog.definitions()
-        if updated:
-            self._statistics[row] = updated[0]
-            self._populate()
-            self._table.selectRow(row)
-
-    def _edit_targets(self, row: int) -> None:
-        if not self._population_ids or not (0 <= row < len(self._statistics)):
-            return
-        statistic_id = str(self._statistics[row].get("id", ""))
-        selected = choose_population_targets(
-            self,
-            self._population_ids,
-            self._population_parents,
-            self._target_ids.get(statistic_id, ()),
-        )
-        if selected is None:
-            return
-        self._target_ids[statistic_id] = selected
-        labels = [self._population_labels.get(target, target) for target in selected]
-        applies_to = ", ".join(labels) or "(none)"
-        item = self._table.item(row, 6)
-        if item is not None:
-            item.setText(applies_to)
-            item.setToolTip(applies_to)
-
-    def _set_item(self, row: int, column: int, value: object) -> None:
-        self._table.setItem(row, column, QTableWidgetItem(str(value)))
-
-    def definitions(self) -> list[dict[str, Any]]:
-        result = deepcopy(self._statistics)
-        result = repair_statistic_definitions(result)
-        for value in result:
-            statistic_id = str(value.get("id", ""))
-            value["compute_enabled"] = self._compute_checks[statistic_id].isChecked()
-            if self._population_ids:
-                targets = list(self._target_ids.get(statistic_id, ()))
-                value["population_ids"] = targets
-                value["population_id"] = targets[0] if targets else ""
-        return result
-
-    def visibility(self) -> dict[str, bool]:
-        return {
-            statistic_id: check.isChecked()
-            for statistic_id, check in self._show_checks.items()
-        }

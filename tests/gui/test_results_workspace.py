@@ -313,6 +313,8 @@ def test_results_workspace_add_statistic_button_uses_selected_population(qapp) -
       {"all_events": None, "rect-1": "all_events"},
       {"all_events": "All Events", "rect-1": "rect_1"},
     )
+    assert workspace._add_statistic_button.text() == "Edit Statistic..."
+    assert workspace._add_statistic_button.objectName() == "resultsEditStatisticButton"
     workspace.tree().setCurrentItem(workspace.tree().topLevelItem(0).child(0).child(0))
     workspace._add_statistic_button.click()
     assert requested == ["rect-1"]
@@ -421,7 +423,7 @@ def test_results_status_distinguishes_missing_zero_stale_and_statistic_errors(qa
     qapp.processEvents()
 
 
-def test_results_workspace_marks_disabled_statistic_without_fabricating_value(qapp) -> None:
+def test_results_workspace_marks_missing_statistic_without_fabricating_value(qapp) -> None:
   workspace = ResultsWorkspace()
   try:
     report = ExecutionReport(
@@ -437,14 +439,14 @@ def test_results_workspace_marks_disabled_statistic_without_fabricating_value(qa
       authoritative_revision=4,
       sample_ids=("sample-1",),
       population_ids=("all_events",),
-      statistic_definitions=(("disabled-mean", "all_events", False),),
+      statistic_definitions=(("missing-mean", "all_events"),),
     )
     workspace.set_samples([("sample-1", "1_A1")])
     workspace.set_population_hierarchy({"all_events": None})
     workspace.set_result_state(state)
     item = workspace.tree().topLevelItem(0).child(0)
     assert item.text(4) == "-"
-    assert "status=disabled" in item.toolTip(4)
+    assert "status=missing" in item.toolTip(4)
   finally:
     workspace.close()
     workspace.deleteLater()

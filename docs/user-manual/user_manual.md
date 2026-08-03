@@ -119,7 +119,7 @@ OSごとのユーザー書込み可能なアプリケーションデータ領域
 3. `X axis`、`Y axis`、必要なら analysis transform を選ぶ。
 4. Gating タブで gate type と parent population を選び、`Create Gate` を実行する。
 5. 子 gate は Gate hierarchy で親gateを選択して `Create Gate` を使う。何も選択していない場合は `All Events` の下に作成される。
-6. Results → `Add Statistic...` または `Manage Statistics...` で統計定義を作る。
+6. Results → `Edit Statistic...` で統計定義を作成・編集する。
 7. **Run Pipeline** を実行する。status barでphaseとsample数を確認でき、必要なら Analysis の **Cancel Pipeline** を使う。
 8. Results タブで event count、frequency、統計値、status を確認する。
 9. **Export Results...**、またはプロットの PNG/SVG/PDF export を行う。
@@ -237,8 +237,7 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 
 |項目|説明|
 |---|---|
-|Add Statistic...|新しい persisted statistic definition を作成する。初期 population は All Events。|
-|Manage Statistics...|既存 statistics の Compute/Show と適用 population をまとめて管理する。|
+|Edit Statistic...|統計定義を作成・編集する。初期 population は All Events。|
 |Export Results...|population metrics と custom statistics を wide/long TSV/CSV に書き出す。Results が stale または未計算の場合は、保存先と形式を確認した後に Pipeline を自動実行し、完了後に最新結果を出力する。Pipeline が失敗した場合は出力しない。|
 |Batch Plot Export...|Batch Plot Export定義を作成・編集・選択し、保存または指定output directoryへbatch exportする。|
 
@@ -469,9 +468,8 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 |---|---|---|
 |Auto|checkbox|analysis definition change 後、300 ms coalescing を経て canonical full-sample pipeline を自動再実行する。|
 |view mode|combo|Hierarchy / Flat table / Statistics detail。|
-|Add Statistic...|button|選択 population を初期 target として statistic editor を開く。statistic row 選択時は対応 population を推定する。|
-|Manage Statistics...|button|Compute、Show、Applies to を compact table で管理する。|
-|Columns...|instant popup|dynamic statistic columns の表示/非表示。analysis の Compute flag は変えない。statistics がない時は disabled。|
+|Edit Statistic...|button|選択 population を初期 target として statistic editor を開く。statistic row 選択時は対応 population を推定する。|
+|Columns...|instant popup|常時計算される統計定義の列表示/非表示。分析定義や計算結果は変更しない。statistics がない時は disabled。|
 
 ### 11.3 Results view modes
 
@@ -490,7 +488,7 @@ sample/population を階層化せず row として表示する。列は基本的
 |% Parent|parent population に対する割合|
 |% Total|All Events に対する割合|
 |dynamic statistic columns|Show が有効な statistic 値|
-|Status|current、stale、recalculating、zero events、undefined、missing、not run、disabled、error 等|
+|Status|current、stale、recalculating、zero events、undefined、missing、not run、error 等|
 
 #### Statistics detail
 
@@ -746,7 +744,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 |control|説明|
 |---|---|
-|Statistic ID (fixed)|新規作成時に候補が自動入力される。OKで登録した後はstable definition IDとして固定され、変更できない。|
+|Statistic ID (fixed)|New直後は`<population>_<metric>_<value-domain>`形式の候補が自動入力される。Population targets、Metric、Value domain（transformedではTransformを含む）を変更すると候補も更新され、既存IDと重複する場合だけ`_2`、`_3`…を付ける。手入力も可能。OKで登録した後はstable definition IDとして固定され、後から編集しても変更されない。|
 |Name|Results column/detail に表示する名称。新規作成時は`<Population名>_<Metric>`（例:`rect_1_mean`）を初期値にする。後から編集可能。|
 |Population targets|`Select populations...` で統計量を計算するpopulationを明示選択する。新規作成時は全populationが選択される。|
 |Select populations...|population hierarchyのcheckboxで対象を選ぶ。対象を絞ると不要な統計計算を避けられる。|
@@ -759,7 +757,6 @@ source event count、candidate event count、gained、lost、scientific equivale
 |Percentile q|metric が percentile の時だけ使用。|
 |Format|display/export formatting hint。|
 |Notes|任意メモ。|
-|Compute enabled|pipeline で計算するか。オフは definition を残して計算停止。|
 |diagnostic label|missing target、invalid parameter/metric setting 等。|
 |OK / Cancel|全 definition を validate して保存、または破棄。|
 
@@ -767,22 +764,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 population hierarchy の各 row に checkbox があり、statistic target を stable ID で複数選択する。`OK` で確定、`Cancel` で変更しない。
 
-### 14.10 Manage Statistics
-
-|列・control|説明|
-|---|---|
-|Compute checkbox|analysis pipeline で計算するか。変更すると Results stale。|
-|Show checkbox|Results dynamic column を表示するか。表示専用で再計算不要。|
-|Statistic|name。|
-|Parameter|parameter label。|
-|Metric|metric。|
-|Value domain|transform ID または source stage。|
-|Edit Definition...|選択 row の定義 editor を開く。Statistic ID は固定のまま、Name、Parameter、Metric、Value domain（source stage / transform）を変更できる。|
-|Applies to|target population 一覧。double click または Edit Applies to... で変更。|
-|Edit Applies to...|選択 row の target chooser を開く。|
-|OK / Cancel|Compute/Show/targets を commit、または破棄。|
-
-### 14.11 Sample Sheet
+### 14.10 Sample Sheet
 
 |control|説明|
 |---|---|
@@ -1272,7 +1254,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`main_window.py`|`actionTransforms`|
 |`main_window.py`|`actionAdvancedGroups`|
 |`main_window.py`|`actionClearGates`|
-|`main_window.py`|`actionAddStatistic`|
+|`main_window.py`|`actionEditStatistic`|
 |`main_window.py`|`actionStatistics`|
 |`main_window.py`|`actionBatchPlotExport`|
 |`results_export_dialog.py`|`resultsExportDialog`, `resultsExportLayoutCombo`, `resultsExportPopulationCheck`, `resultsExportStatisticsCheck`, `resultsExportInternalIdsCheck`, `resultsExportQcCheck`, `resultsExportDialogButtons`|
@@ -1381,8 +1363,7 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`results_workspace.py`|`resultsWorkspaceTree`|
 |`results_workspace.py`|`resultsAutoRecalculateCheck`|
 |`results_workspace.py`|`resultsViewModeSelector`|
-|`results_workspace.py`|`resultsAddStatisticButton`|
-|`results_workspace.py`|`resultsManageStatisticsButton`|
+|`results_workspace.py`|`resultsEditStatisticButton`|
 |`results_workspace.py`|`resultsStatisticColumnsButton`|
 |`sample_browser.py`|`f'sampleRow_{sample.id}'`|
 |`sample_browser.py`|`f'overlayCheck_{sample.id}'`|
@@ -1443,16 +1424,8 @@ formal analysis transform を使う gate は transform ID を保存する。使�
 |`statistics_editor.py`|`statisticPercentileQLabel`|
 |`statistics_editor.py`|`statisticFormatEdit`|
 |`statistics_editor.py`|`statisticNotesEdit`|
-|`statistics_editor.py`|`statisticComputeEnabledCheck`|
 |`statistics_editor.py`|`statisticDiagnosticLabel`|
 |`statistics_editor.py`|`statisticDialogButtons`|
-|`statistics_editor.py`|`statisticManagementDialog`|
-|`statistics_editor.py`|`statisticManagementTable`|
-|`statistics_editor.py`|`statisticEditDefinitionButton`|
-|`statistics_editor.py`|`statisticEditTargetsButton`|
-|`statistics_editor.py`|`statisticManagementDialogButtons`|
-|`statistics_editor.py`|`f'statisticComputeCheck_{statistic_id}'`|
-|`statistics_editor.py`|`f'statisticShowCheck_{statistic_id}'`|
 |`transform_editor.py`|`transformEditorDialog`|
 |`transform_editor.py`|`transformDefinitionList`|
 |`transform_editor.py`|`transformNewButton`|
