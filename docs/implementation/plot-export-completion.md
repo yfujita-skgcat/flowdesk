@@ -775,6 +775,12 @@ when the same resolved scene is exported to SVG/PDF.
 
 ## Current-view and Batch parity repair
 
+The detailed and current implementation order, confirmed root causes, Batch
+regression guard, and acceptance criteria are defined in
+[`current-view-export-batch-parity.md`](current-view-export-batch-parity.md).
+The summary below is historical context only; the dedicated guide is
+authoritative for the reopened work.
+
 ### Observed failure
 
 The current-view context-menu export reaches the core format writers through
