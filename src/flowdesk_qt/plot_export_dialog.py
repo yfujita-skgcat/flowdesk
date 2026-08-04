@@ -22,9 +22,9 @@ class PlotExportRequest:
   format_name: str
   width: int = 800
   height: int = 600
-  dpi: int = 96
+  dpi: int = 300
   raster_resolution_mode: str = "dpi_scaled"
-  aspect_1_to_1: bool = False
+  aspect_1_to_1: bool = True
   include_title: bool = True
   include_axis_labels: bool = True
   include_ticks: bool = True
@@ -54,7 +54,16 @@ class PlotExportRequest:
 class PlotExportDialog(QDialog):
   """Collect export-layer visibility options without changing the view."""
 
-  def __init__(self, format_name: str, parent: QWidget | None = None) -> None:
+  def __init__(
+    self,
+    format_name: str,
+    parent: QWidget | None = None,
+    *,
+    width: int = 800,
+    height: int = 600,
+    dpi: int = 300,
+    aspect_1_to_1: bool = True,
+  ) -> None:
     super().__init__(parent)
     self.setObjectName("plotExportOptionsDialog")
     self.setWindowTitle("Plot Export Options")
@@ -65,15 +74,15 @@ class PlotExportDialog(QDialog):
     self._width = QSpinBox()
     self._width.setObjectName("plotExportWidthSpinBox")
     self._width.setRange(1, 20_000)
-    self._width.setValue(800)
+    self._width.setValue(max(1, int(width)))
     self._height = QSpinBox()
     self._height.setObjectName("plotExportHeightSpinBox")
     self._height.setRange(1, 20_000)
-    self._height.setValue(600)
+    self._height.setValue(max(1, int(height)))
     self._dpi = QSpinBox()
     self._dpi.setObjectName("plotExportDpiSpinBox")
     self._dpi.setRange(1, 1200)
-    self._dpi.setValue(96)
+    self._dpi.setValue(max(1, int(dpi)))
     self._resolution_mode = QComboBox()
     self._resolution_mode.setObjectName("plotExportRasterResolutionCombo")
     self._resolution_mode.addItem("Scale pixels by DPI", "dpi_scaled")
@@ -82,6 +91,8 @@ class PlotExportDialog(QDialog):
     self._aspect.setObjectName("plotExportAspectCheckBox")
     self._aspect.toggled.connect(self._update_aspect_widgets)
     self._width.valueChanged.connect(self._sync_aspect_height)
+    self._aspect.setChecked(bool(aspect_1_to_1))
+    self._update_aspect_widgets()
     self._title = self._check("Include title", "plotExportIncludeTitleCheckBox", True)
     self._labels = self._check(
       "Include axis labels", "plotExportIncludeAxisLabelsCheckBox", True

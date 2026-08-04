@@ -292,7 +292,7 @@ def test_plot_widget_exports_jpeg_with_display_metadata(tmp_path: Path) -> None:
 
 def test_plot_export_dialog_returns_display_only_options() -> None:
   _app()
-  dialog = PlotExportDialog("JPEG")
+  dialog = PlotExportDialog("JPEG", width=640, height=480)
   assert dialog.objectName() == "plotExportOptionsDialog"
   for object_name in (
     "plotExportIncludeTitleCheckBox", "plotExportIncludeAxisLabelsCheckBox",
@@ -311,11 +311,16 @@ def test_plot_export_dialog_returns_display_only_options() -> None:
     assert dialog.findChild(widget_type, object_name) is not None
   dpi = dialog.findChild(QSpinBox, "plotExportDpiSpinBox")
   assert dpi is not None
+  assert dpi.value() == 300
   dpi.setValue(300)
   aspect = dialog.findChild(QCheckBox, "plotExportAspectCheckBox")
   width = dialog.findChild(QSpinBox, "plotExportWidthSpinBox")
   height = dialog.findChild(QSpinBox, "plotExportHeightSpinBox")
   assert aspect is not None and width is not None and height is not None
+  assert aspect.isChecked() is True
+  assert width.value() == 640
+  assert height.value() == 640
+  assert height.isEnabled() is False
   aspect.setChecked(True)
   assert height.isEnabled() is False
   width.setValue(920)
@@ -1231,6 +1236,37 @@ def test_selected_gate_uses_contrast_safe_outline_and_fill() -> None:
 
     assert item.pen.color().name() == "#0057b8"
     assert item.pen.style() == Qt.PenStyle.SolidLine
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
+def test_selected_gate_preserves_population_outline_color_after_deselect() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    gate = GateSpec(
+      id="colored-gate",
+      name="colored",
+      gate_type="polygon",
+      x_parameter="X",
+      y_parameter="Y",
+      coordinates=((1.0, 1.0), (3.0, 1.0), (2.0, 3.0)),
+    )
+    widget.add_gate_overlay(gate, gate_index=0, outline_color="#123456")
+    item = widget._gate_items[0]
+
+    widget.highlight_gate_index(0)
+    assert item.pen.color().name() == "#123456"
+    assert item.pen.width() == 3
+
+    widget.set_style(replace(widget.style(), gate_outline_color="#abcdef"))
+    assert item.pen.color().name() == "#123456"
+
+    widget.highlight_gate_index(-1)
+    assert item.pen.color().name() == "#123456"
+    assert item.pen.widthF() == pytest.approx(widget.style().gate_outline_width)
   finally:
     widget.close()
     widget.deleteLater()

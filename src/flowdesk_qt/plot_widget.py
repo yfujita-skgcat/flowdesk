@@ -127,6 +127,9 @@ class PlotWidget(QWidget):
         # not allocate a thread pool merely because a PlotWidget exists.
         self._density_scheduler: DensityColorScheduler | None = None
         self._gate_items: list[Any] = []
+        # Resolved per-gate colors must survive selection and global style
+        # refreshes; keep them parallel to the live geometry items.
+        self._gate_item_outline_colors: list[str | None] = []
         self._retired_plot_items: list[Any] = []
         self._gate_item_callbacks: dict[int, Any] = {}
         self._hidden_gate_reasons: list[str] = []
@@ -1005,6 +1008,7 @@ class PlotWidget(QWidget):
         if item is not None:
             self._plot_item.addItem(item)
             self._gate_items.append(item)
+            self._gate_item_outline_colors.append(outline_color)
         elif not self._gate_matches_current_axes(gate):
             self._hidden_gate_reasons.append(
                 f"{gate.name} [{gate.id}] uses different axis transforms"
@@ -1031,17 +1035,7 @@ class PlotWidget(QWidget):
         from PySide6.QtGui import QBrush, QColor
 
         s = self._style
-        default_pen = mkPen(
-            color=s.gate_outline_color,
-            width=2,
-            style=self._qt_line_style(s.gate_outline_style),
-        )
         selected_color = self._contrast_gate_color()
-        highlight_pen = mkPen(
-            color=selected_color,
-            width=3,
-            style=Qt.SolidLine,
-        )
         selected_brush_color = QColor(selected_color)
         selected_brush_color.setAlphaF(0.12)
         selected_brush = QBrush(selected_brush_color)
@@ -1050,13 +1044,29 @@ class PlotWidget(QWidget):
         default_brush = QBrush(default_brush_color)
 
         for idx, item in enumerate(self._gate_items):
+            override_color = (
+                self._gate_item_outline_colors[idx]
+                if idx < len(self._gate_item_outline_colors)
+                else None
+            )
+            outline_color = override_color or s.gate_outline_color
             try:
                 if idx == index:
-                    item.setPen(highlight_pen)
+                    # Selection is shown by width/fill, not by replacing the
+                    # user-selected outline color.
+                    item.setPen(mkPen(
+                        color=override_color or selected_color,
+                        width=3,
+                        style=Qt.SolidLine,
+                    ))
                     if hasattr(item, "setBrush"):
                         item.setBrush(selected_brush)
                 else:
-                    item.setPen(default_pen)
+                    item.setPen(mkPen(
+                        color=outline_color,
+                        width=s.gate_outline_width,
+                        style=self._qt_line_style(s.gate_outline_style),
+                    ))
                     if hasattr(item, "setBrush"):
                         item.setBrush(default_brush)
             except Exception:
@@ -1792,15 +1802,18 @@ class PlotWidget(QWidget):
         except Exception:
             fill_color = None
 
-        pen = mkPen(
-            color=s.gate_outline_color,
-            width=s.gate_outline_width,
-            style=self._qt_line_style(s.gate_outline_style),
-        )
-
-        for item in self._gate_items:
+        for index, item in enumerate(self._gate_items):
+            outline_color = (
+                self._gate_item_outline_colors[index]
+                if index < len(self._gate_item_outline_colors)
+                else None
+            ) or s.gate_outline_color
             try:
-                item.setPen(pen)
+                item.setPen(mkPen(
+                    color=outline_color,
+                    width=s.gate_outline_width,
+                    style=self._qt_line_style(s.gate_outline_style),
+                ))
             except Exception:
                 pass
             try:
@@ -2213,6 +2226,7 @@ class PlotWidget(QWidget):
     def _clear_gates(self) -> None:
         items = self._gate_items
         self._gate_items = []
+        self._gate_item_outline_colors = []
         for item in items:
             callback = self._gate_item_callbacks.pop(id(item), None)
             if callback is not None:

@@ -5936,7 +5936,15 @@ class MainWindow(QMainWindow):
         if format_name == "BATCH":
             self._on_batch_plot_export()
             return
-        dialog = PlotExportDialog(format_name, self)
+        canvas_width, canvas_height = self._plot_widget.canvas_size()
+        dialog = PlotExportDialog(
+            format_name,
+            self,
+            width=canvas_width,
+            height=canvas_height,
+            dpi=300,
+            aspect_1_to_1=True,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         request = dialog.request()
