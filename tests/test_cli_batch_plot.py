@@ -823,15 +823,17 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
     "samples": [
       {"id": "s1", "path": "a.fcs", "name": "A", "channels": []},
       {"id": "s2", "path": "b.fcs", "name": "B", "channels": []},
+      {"id": "s3", "path": "c.fcs", "name": "C", "channels": []},
     ],
     "plot_views": [{
       "id": "overlay-view", "plot_type": "scatter", "population_id": "all_events",
       "x_parameter": "x", "y_parameter": "y", "rendering_downsample": {"max_points": 0},
-      "manual_overlay_sample_ids": ["s2"],
+      "manual_overlay_sample_ids": ["s2", "s3"],
       "presentation": {"title": "Overlay", "single_color": "#00aa66",
         "source_styles": [
         {"source_id": "s1", "color": "#4c78a8"},
         {"source_id": "s2", "color": "#ff0000"},
+        {"source_id": "s3", "color": "#00aa66"},
       ]},
     }],
     "annotations": [
@@ -842,6 +844,10 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
       {
         "sample_id": "s2", "keyword": "sample_title",
         "value": "Overlay title", "source": "workspace",
+      },
+      {
+        "sample_id": "s3", "keyword": "sample_title",
+        "value": "Green title", "source": "workspace",
       },
     ],
     "gating_strategies_data": {"default": {
@@ -865,11 +871,13 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
                      (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y"))),
     "s2": SampleData("s2", np.array([[3.0, 3.0], [4.0, 4.0]]),
                      (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y"))),
+    "s3": SampleData("s3", np.array([[5.0, 5.0], [6.0, 6.0]]),
+                     (ChannelSpec(id="x", name="X"), ChannelSpec(id="y", name="Y"))),
   }
   monkeypatch.setattr(
     "flowdesk_cli.batch_plot.resolve_sample_paths",
     lambda *_args: [{"id": key, "path": f"{key}.fcs", "name": key.upper()}
-                    for key in ("s1", "s2")],
+                    for key in ("s1", "s2", "s3")],
   )
   monkeypatch.setattr(
     "flowdesk_cli.batch_plot.read_fcs_sample",
@@ -910,14 +918,17 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
   assert 'fill="#ff0000"' in text
   assert "Active title" in text
   assert "Overlay title" in text
+  assert "Green title" in text
+  assert text.index("Active title") < text.index("Overlay title") < text.index("Green title")
   assert 'stroke="#00ff00"' in text
   # Both target scenes use the same shared range.  Each source is normalized
   # once (X/Y), then reused when it appears as the other target's overlay.
-  assert normalize_calls == 4
+  assert normalize_calls == 6
   assert gate_overlay_calls == 1
   assert tick_calls == 2
   metadata = json.loads(next(output_dir.glob("*s1*.svg.json")).read_text(encoding="utf-8"))
-  assert metadata["ordered_source_ids"] == ["s1", "s2"]
+  assert metadata["ordered_source_ids"] == ["s1", "s2", "s3"]
+  assert metadata["scene"]["source_draw_order"] == ["s1", "s3", "s2"]
 
   # current_view uses the same cache when every target has the same persisted
   # bounds.  This must not depend on the layout policy name.
@@ -932,9 +943,17 @@ def test_batch_plot_renders_manual_overlay_sources_in_order(
     str(project_path), "overlay-export", str(current_output),
     execution_options=ExecutionOptions(backend="thread", max_workers=2),
   ) == 0
-  assert normalize_calls == 4
+  assert normalize_calls == 6
   assert gate_overlay_calls == 2
   assert tick_calls == 4
+
+
+def test_batch_overlay_graph_keeps_semantic_sample_order() -> None:
+  """Manual overlay reversal belongs to painter order, not title order."""
+  graph = _build_overlay_dependency_graph(
+    ("active", "red", "green"), (), ("red", "green"),
+  )
+  assert graph["active"] == ("red", "green")
 
 
 def test_batch_plot_prepares_only_target_and_overlay_sources(

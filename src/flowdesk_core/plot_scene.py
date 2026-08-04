@@ -33,6 +33,7 @@ class PlotScene:
   x_axis_label: str = ""
   y_axis_label: str = ""
   source_order: tuple[str, ...] = ()
+  source_draw_order: tuple[str, ...] = ()
   gates: tuple[dict[str, Any], ...] = ()
   clip_to_plot_area: bool = True
   z_order: tuple[str, ...] = ("grid", "points", "gates", "text")
@@ -43,6 +44,11 @@ class PlotScene:
       raise ValueError("plot scene source IDs must be non-empty strings")
     if len(set(self.source_order)) != len(self.source_order):
       raise ValueError("plot scene source IDs must be unique")
+    if self.source_draw_order:
+      if len(set(self.source_draw_order)) != len(self.source_draw_order):
+        raise ValueError("plot scene draw source IDs must be unique")
+      if set(self.source_draw_order) != set(self.source_order):
+        raise ValueError("plot scene draw order must match source order")
     if (
       len(self.plot_area) != 4
       or any(not isfinite(float(value)) or float(value) < 0 for value in self.plot_area)
@@ -112,6 +118,7 @@ class PlotScene:
       x_axis_label=str(raw.get("x_axis_label", "")),
       y_axis_label=str(raw.get("y_axis_label", "")),
       source_order=tuple(str(item) for item in raw.get("source_order", ())),
+      source_draw_order=tuple(str(item) for item in raw.get("source_draw_order", ())),
       gates=tuple(dict(gate) for gate in raw.get("gates", ()) if isinstance(gate, Mapping)),
       clip_to_plot_area=bool(raw.get("clip_to_plot_area", True)),
       z_order=tuple(str(item) for item in raw.get("z_order", ("grid", "points", "gates", "text"))),
@@ -136,6 +143,7 @@ class PlotScene:
       "x_axis_label": self.x_axis_label,
       "y_axis_label": self.y_axis_label,
       "source_order": list(self.source_order),
+      "source_draw_order": list(self.source_draw_order),
       "gates": [dict(gate) for gate in self.gates],
       "clip_to_plot_area": self.clip_to_plot_area,
       "z_order": list(self.z_order),

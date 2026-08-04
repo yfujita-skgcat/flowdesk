@@ -23,6 +23,76 @@ from flowdesk_core.plot_presentation import OverlaySourceResolution
 from flowdesk_core.transforms import apply_transform
 
 
+def render_prepared_plot_qt(
+  path: str | Path,
+  *,
+  prepared: PreparedPlotExport,
+  layers: Mapping[str, tuple[Any, Any]],
+  event_colors: Mapping[str, NDArray[np.str_]] | None = None,
+  options: BatchPlotExportSpec,
+  export_metadata: Mapping[str, Any] | None = None,
+  input_event_count: int | None = None,
+) -> None:
+  """Dispatch an already prepared renderer-neutral plot to a format writer.
+
+  This is the only entry point used by the live current-view export path.
+  Coordinates in ``layers`` must already be normalized to the scene view
+  range; no Qt state, transform, title, gate, or layout information is
+  reconstructed here.  The older ``render_batch_plot_qt`` wrapper below is
+  retained solely for callers/tests that still provide raw Qt-shaped inputs.
+  """
+  source_ids = tuple(prepared.source_order)
+  if set(layers) != set(source_ids):
+    missing = [source_id for source_id in source_ids if source_id not in layers]
+    extra = [source_id for source_id in layers if source_id not in source_ids]
+    detail = []
+    if missing:
+      detail.append("missing=" + ",".join(missing))
+    if extra:
+      detail.append("extra=" + ",".join(extra))
+    raise ValueError(
+      "prepared plot layers do not match source order ("
+      + "; ".join(detail) + ")"
+    )
+  suffix = Path(path).suffix.lower()
+  if suffix == ".png":
+    writer = write_plot_png
+  elif suffix in {".jpg", ".jpeg"}:
+    writer = write_plot_jpg
+  elif suffix == ".svg":
+    writer = write_plot_svg
+  elif suffix == ".pdf":
+    writer = write_plot_pdf
+  else:
+    raise ValueError(f"plot renderer does not support {suffix!r}")
+  writer(
+    path, prepared, layers=layers, event_colors=event_colors, options=options,
+    width=options.width, height=options.height,
+  )
+  if export_metadata:
+    sidecar = Path(path).with_suffix(Path(path).suffix + ".json")
+    metadata = json.loads(sidecar.read_text(encoding="utf-8"))
+    metadata.update(dict(export_metadata))
+    # The prepared core payload is authoritative.  Provenance from the GUI
+    # must never overwrite its resolved source/style/scene contract.
+    metadata["ordered_source_ids"] = list(prepared.source_order)
+    metadata["source_draw_order"] = list(prepared.draw_order)
+    metadata["presentation"] = dict(prepared.metadata["presentation"])
+    metadata["scene"] = prepared.scene.to_mapping()
+    metadata["scene_hash"] = prepared.scene.scene_hash()
+    displayed_count = sum(len(layers[source_id][0]) for source_id in source_ids)
+    metadata["display_state"] = {
+      "mode": "scatter",
+      "input_event_count": (
+        displayed_count if input_event_count is None else input_event_count
+      ),
+      "displayed_event_count": displayed_count,
+    }
+    sidecar.write_text(
+      json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+
+
 def render_batch_plot_qt(
   path: str | Path,
   *,
@@ -128,38 +198,12 @@ def render_batch_plot_qt(
       colors = np.asarray(event_colors[source_id])
       count = min(len(finite), len(colors))
       normalized_event_colors[source_id] = colors[:count][finite[:count]]
-  suffix = Path(path).suffix.lower()
-  if suffix == ".png":
-    write_plot_png(path, prepared, layers=normalized_layers,
-                   event_colors=normalized_event_colors, options=options,
-                   width=options.width, height=options.height)
-  elif suffix in {".jpg", ".jpeg"}:
-    write_plot_jpg(path, prepared, layers=normalized_layers,
-                   event_colors=normalized_event_colors, options=options,
-                   width=options.width, height=options.height)
-  elif suffix in {".svg", ".pdf"}:
-    writer = write_plot_svg if suffix == ".svg" else write_plot_pdf
-    writer(path, prepared, layers=normalized_layers,
-           event_colors=normalized_event_colors, options=options,
-           width=options.width, height=options.height)
-  else:
-    raise ValueError(f"plot renderer does not support {suffix!r}")
-  if export_metadata:
-    sidecar = Path(path).with_suffix(Path(path).suffix + ".json")
-    metadata = json.loads(sidecar.read_text(encoding="utf-8"))
-    metadata.update(dict(export_metadata))
-    # The prepared core payload is authoritative.  ``export_metadata`` is
-    # provenance from the live widget and must not restore its pre-resolution
-    # scene, source colors, or title labels over the shared Batch payload.
-    metadata["ordered_source_ids"] = list(prepared.source_order)
-    metadata["presentation"] = dict(prepared.metadata["presentation"])
-    metadata["scene"] = prepared.scene.to_mapping()
-    metadata["scene_hash"] = prepared.scene.scene_hash()
-    metadata["display_state"] = {
-      "mode": "scatter", "input_event_count": sum(len(raw_layers[s][0]) for s in source_ids),
-      "displayed_event_count": sum(len(normalized_layers[s][0]) for s in source_ids),
-    }
-    sidecar.write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+  render_prepared_plot_qt(
+    path, prepared=prepared, layers=normalized_layers,
+    event_colors=normalized_event_colors, options=options,
+    export_metadata=export_metadata,
+    input_event_count=sum(len(raw_layers[source_id][0]) for source_id in source_ids),
+  )
 
 
 def _transform_spec(value: Mapping[str, Any] | None) -> TransformSpec | None:

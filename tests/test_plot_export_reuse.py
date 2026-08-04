@@ -24,6 +24,7 @@ from flowdesk_core.plot_export import (
   _font,
   _hybrid_scatter_raster,
   _vertical_text_image,
+  normalize_gate_overlays,
   prepare_plot_export,
   prepare_vector_render_cache,
   resolve_export_canvas,
@@ -44,6 +45,74 @@ from flowdesk_core.plot_reuse import (
 from flowdesk_core.plot_scene import PlotScene, resolve_plot_layout
 from flowdesk_core.vector_scatter import VectorScatterLayer, compact_scatter_batches
 from flowdesk_storage.project import load_project, save_project
+
+
+def test_current_view_payload_separates_semantic_and_draw_order() -> None:
+  prepared = prepare_plot_export(
+    "overlay", "scatter",
+    tuple({"source_id": source_id, "display_name": source_id, "visible": True, "order": index}
+          for index, source_id in enumerate(("blue", "red", "green"))),
+    tuple(OverlaySourceResolution(source_id, "compatible", index)
+          for index, source_id in enumerate(("blue", "red", "green"))),
+    view_presentation={"title_mode": "overlay_sample_titles"},
+    scene={"source_draw_order": ["green", "red", "blue"]},
+  )
+  assert prepared.source_order == ("blue", "red", "green")
+  assert prepared.draw_order == ("green", "red", "blue")
+  assert prepared.scene.source_draw_order == ("green", "red", "blue")
+  assert prepared.scene.title_lines == ("blue", "red", "green")
+
+
+def test_current_view_gate_normalization_matches_renderer_contract() -> None:
+  gates = normalize_gate_overlays(
+    ({
+      "id": "rect", "gate_type": "rectangle",
+      "thresholds": {"x_min": 2.0, "x_max": 8.0, "y_min": 3.0, "y_max": 9.0},
+      "x_parameter": "x", "y_parameter": "y",
+      "x_transform_id": "log", "y_transform_id": "log",
+      "color": "#ff0000", "width": 2.0, "style": "dashed",
+    },),
+    x_range=(0.0, 10.0), y_range=(0.0, 10.0),
+    x_parameter="x", y_parameter="y", x_transform_id="log", y_transform_id="log",
+  )
+  assert gates == ({
+    "id": "rect", "points": ((0.2, 0.3), (0.8, 0.3), (0.8, 0.9), (0.2, 0.9)),
+    "color": "#ff0000", "width": 2.0, "style": "dashed",
+  },)
+
+
+def test_writer_keeps_title_order_separate_from_overlay_draw_order(tmp_path) -> None:
+  prepared = prepare_plot_export(
+    "overlay", "scatter",
+    tuple({"source_id": source_id, "display_name": title, "visible": True, "order": index}
+          for index, (source_id, title) in enumerate(
+            (("blue", "Blue"), ("red", "Red"), ("green", "Green")))),
+    tuple(OverlaySourceResolution(source_id, "compatible", index)
+          for index, source_id in enumerate(("blue", "red", "green"))),
+    view_presentation={
+      "title_mode": "overlay_sample_titles", "single_color": "#0000ff",
+      "source_styles": [
+        {"source_id": "red", "color": "#ff0000"},
+        {"source_id": "green", "color": "#00ff00"},
+      ],
+    },
+    scene={
+      "source_draw_order": ["green", "red", "blue"],
+      "title_colors": ["#0000ff", "#ff0000", "#00ff00"],
+    },
+  )
+  path = tmp_path / "overlay.svg"
+  write_plot_svg(
+    path, prepared,
+    layers={source_id: ((0.5,), (0.5,)) for source_id in ("blue", "red", "green")},
+    options=BatchPlotExportSpec(
+      id="order", name="order", formats=("svg",), vector_scatter_mode="full_vector",
+    ),
+  )
+  svg = path.read_text(encoding="utf-8")
+  assert svg.index(">Blue</text>") < svg.index(">Red</text>") < svg.index(">Green</text>")
+  uses = [svg.index(f'href="#scatter-marker-{index}"') for index in range(3)]
+  assert uses == sorted(uses)
 
 
 def test_vertical_axis_label_keeps_the_complete_pillow_glyph_bbox() -> None:

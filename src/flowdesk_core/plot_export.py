@@ -115,6 +115,7 @@ class PreparedPlotExport:
   plot_id: str
   plot_type: PlotType
   source_order: tuple[str, ...]
+  draw_order: tuple[str, ...]
   metadata: dict[str, Any]
   resolved_presentation: ResolvedPresentation
   gate_overlays: tuple[dict[str, Any], ...] = ()
@@ -136,6 +137,11 @@ class VectorRenderCache:
   layers: tuple[VectorScatterLayer, ...]
   compact_batches: tuple[CompactScatterBatch, ...] = ()
   hybrid_info: Mapping[str, Any] | None = None
+
+
+def _draw_source_order(prepared: PreparedPlotExport) -> tuple[str, ...]:
+  """Return back-to-front order while keeping semantic order separate."""
+  return prepared.draw_order or prepared.source_order
 
 
 def _diagnostic_mapping(value: PresentationDiagnostic) -> dict[str, Any]:
@@ -232,6 +238,12 @@ def prepare_plot_export(
       for source_id in visible_order
     ],
   )
+  raw_draw_order = scene_value.get("source_draw_order", visible_order)
+  draw_order = tuple(str(source_id) for source_id in raw_draw_order)
+  if set(draw_order) != set(visible_order) or len(draw_order) != len(visible_order):
+    raise PlotExportError("source draw order must contain each visible source exactly once")
+  if "source_draw_order" in scene_value:
+    scene_value["source_draw_order"] = list(draw_order)
   scene_model = PlotScene.from_mapping(scene_value)
   validate_presentation(plot_type, resolved.presentation)
   metadata = {
@@ -273,8 +285,9 @@ def prepare_plot_export(
       "Presentation settings and display sampling do not alter scientific results."
     ),
   }
+  metadata["source_draw_order"] = list(draw_order)
   return PreparedPlotExport(
-    plot_id, plot_type, tuple(visible_order), metadata, resolved,
+    plot_id, plot_type, tuple(visible_order), draw_order, metadata, resolved,
     tuple(dict(gate) for gate in gate_overlays), scene_model,
   )
 
@@ -363,6 +376,101 @@ def prepare_display_export(
     view_presentation=effective_presentation, gate_overlays=gate_overlays,
     scene=scene_value,
   )
+
+
+def normalize_gate_overlays(
+  gates: tuple[dict[str, Any], ...] | list[Mapping[str, Any]],
+  *,
+  x_range: tuple[float, float],
+  y_range: tuple[float, float],
+  x_parameter: str | None = None,
+  y_parameter: str | None = None,
+  x_transform_id: str | None = None,
+  y_transform_id: str | None = None,
+) -> tuple[dict[str, Any], ...]:
+  """Convert analytical gate geometry to normalized renderer coordinates.
+
+  Gate membership is never evaluated here.  The function only converts the
+  stored rectangle/polygon geometry used by the GUI to the unit plot square
+  consumed by the format writers.
+  """
+  x_low, x_high = (float(value) for value in x_range)
+  y_low, y_high = (float(value) for value in y_range)
+  if not (x_low < x_high and y_low < y_high):
+    return ()
+  result: list[dict[str, Any]] = []
+  for raw_gate in gates:
+    gate = dict(raw_gate)
+    if x_parameter is not None and gate.get("x_parameter") not in {None, x_parameter}:
+      continue
+    if y_parameter is not None and gate.get("y_parameter") not in {None, y_parameter}:
+      continue
+    if gate.get("x_transform_id") != x_transform_id:
+      continue
+    if gate.get("y_transform_id") != y_transform_id:
+      continue
+    points = gate.get("points") or gate.get("coordinates") or ()
+    if not points and gate.get("gate_type") == "rectangle":
+      thresholds = gate.get("thresholds", {})
+      if isinstance(thresholds, Mapping):
+        x_min = thresholds.get("x_min", thresholds.get("min"))
+        x_max = thresholds.get("x_max", thresholds.get("max"))
+        y_min = thresholds.get("y_min", thresholds.get("min"))
+        y_max = thresholds.get("y_max", thresholds.get("max"))
+        if all(isinstance(value, (int, float)) for value in (x_min, x_max, y_min, y_max)):
+          points = ((x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max))
+    normalized: list[tuple[float, float]] = []
+    for point in points:
+      if not isinstance(point, (list, tuple)) or len(point) < 2:
+        continue
+      try:
+        x_value, y_value = float(point[0]), float(point[1])
+      except (TypeError, ValueError):
+        continue
+      if not (math.isfinite(x_value) and math.isfinite(y_value)):
+        continue
+      normalized.append(((x_value - x_low) / (x_high - x_low),
+                         (y_value - y_low) / (y_high - y_low)))
+    clipped = _clip_gate_polygon(tuple(normalized))
+    if len(clipped) < 2:
+      continue
+    result.append({
+      "id": str(gate.get("id", "gate")),
+      "points": clipped,
+      "color": str(gate.get("color", "#555555")),
+      "width": float(gate.get("width", 2.0)),
+      "style": str(gate.get("style", "solid")),
+    })
+  return tuple(result)
+
+
+def _clip_gate_polygon(
+  points: tuple[tuple[float, float], ...],
+) -> tuple[tuple[float, float], ...]:
+  """Clip a gate polygon against the unit plot square."""
+  clipped = list(points)
+  for axis, boundary, keep_greater in (
+    (0, 0.0, True), (0, 1.0, False), (1, 0.0, True), (1, 1.0, False),
+  ):
+    output: list[tuple[float, float]] = []
+    if not clipped:
+      break
+    previous = clipped[-1]
+    previous_inside = previous[axis] >= boundary if keep_greater else previous[axis] <= boundary
+    for current in clipped:
+      current_inside = current[axis] >= boundary if keep_greater else current[axis] <= boundary
+      if current_inside != previous_inside:
+        delta = current[axis] - previous[axis]
+        fraction = 0.0 if abs(delta) < 1e-12 else (boundary - previous[axis]) / delta
+        output.append((
+          previous[0] + fraction * (current[0] - previous[0]),
+          previous[1] + fraction * (current[1] - previous[1]),
+        ))
+      if current_inside:
+        output.append(current)
+      previous, previous_inside = current, current_inside
+    clipped = output
+  return tuple(clipped)
 
 
 def write_plot_svg(
@@ -463,7 +571,7 @@ def write_plot_svg(
     defs: list[str] = ['<defs><clipPath id="plot-clip">'
                        f'<rect x="{left:g}" y="{top:g}" width="{plot_width:g}" '
                        f'height="{plot_height:g}"/></clipPath>']
-    for index, source_id in enumerate(prepared.source_order):
+    for index, source_id in enumerate(_draw_source_order(prepared)):
       if cancel_check is not None:
         cancel_check()
       style = style_by_id.get(source_id)
@@ -482,7 +590,7 @@ def write_plot_svg(
   compact_batches: tuple[CompactScatterBatch, ...] = ()
   if compact_vector:
     compact_batches = vector_cache.compact_batches if vector_cache else ()
-  for index, source_id in enumerate(prepared.source_order):
+  for index, source_id in enumerate(_draw_source_order(prepared)):
     style = style_by_id.get(source_id)
     color = "#000000" if style is None or style.color is None else style.color
     alpha = 1.0 if style is None else style.alpha
@@ -610,7 +718,7 @@ def write_plot_png(
       draw, prepared, selected, left, top, plot_width, plot_height, device_scale
     )
   style_by_id = {style.source_id: style for style in selected.source_styles}
-  for source_id in prepared.source_order:
+  for source_id in _draw_source_order(prepared):
     style = style_by_id.get(source_id)
     color_text = "#000000" if style is None or style.color is None else style.color
     alpha = 1.0 if style is None else style.alpha
@@ -708,7 +816,7 @@ def write_plot_pdf(
   form_specs: list[tuple[tuple[int, int, int], float, str, float]] = []
   marker_refs: dict[tuple[str, str], int] = {}
   if full_vector:
-    for source_id in prepared.source_order:
+    for source_id in _draw_source_order(prepared):
       style = style_by_id.get(source_id)
       default_color = "#4c78a8" if style is None or style.color is None else style.color
       alpha = 1.0 if style is None else style.alpha
@@ -752,7 +860,7 @@ def write_plot_pdf(
     if preserve_event_colors:
       # Do not regroup different per-event colors: doing so can reorder
       # translucent overlaps and change the visual density.
-      for source_id in prepared.source_order:
+      for source_id in _draw_source_order(prepared):
         style = style_by_id.get(source_id)
         alpha = 1.0 if style is None else style.alpha
         marker_size = 3.0 if style is None else style.marker_size
@@ -788,7 +896,7 @@ def write_plot_pdf(
     commands.extend(("q", f"{plot_width:g} 0 0 {plot_height:g} {left:g} {height - top - plot_height:g} cm",
                      "/ImScatter Do", "Q"))
   elif not full_vector:
-    for source_id in prepared.source_order:
+    for source_id in _draw_source_order(prepared):
       if cancel_check is not None:
         cancel_check()
       style = style_by_id.get(source_id)
@@ -802,7 +910,7 @@ def write_plot_pdf(
         )
         commands.append(f"{x:g} {y:g} 2 2 re f")
   elif full_vector:
-    for source_id in prepared.source_order:
+    for source_id in _draw_source_order(prepared):
       if cancel_check is not None:
         cancel_check()
       style = style_by_id.get(source_id)
@@ -1141,7 +1249,7 @@ def _vector_layers(
 ) -> tuple[VectorScatterLayer, ...]:
   style_by_id = {style.source_id: style for style in selected.source_styles}
   result: list[VectorScatterLayer] = []
-  for z_index, source_id in enumerate(prepared.source_order):
+  for z_index, source_id in enumerate(_draw_source_order(prepared)):
     style = style_by_id.get(source_id)
     color = "#000000" if style is None or style.color is None else style.color
     points = tuple(
@@ -2061,7 +2169,7 @@ def _hybrid_scatter_raster(
     rgba[pixel_y, pixel_x, :3] = np.rint(output_rgb).astype(np.uint8)
     rgba[pixel_y, pixel_x, 3] = np.rint(combined_alpha * 255.0).astype(np.uint8)
 
-  for z_index, source_id in enumerate(prepared.source_order):
+  for z_index, source_id in enumerate(_draw_source_order(prepared)):
     style = style_by_id.get(source_id)
     color_text = "#000000" if style is None or style.color is None else style.color
     alpha = 1.0 if style is None else style.alpha

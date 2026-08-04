@@ -82,7 +82,7 @@ from flowdesk_core.parameter_catalog import (
 )
 from flowdesk_core.parameter_display import parameter_display_label
 from flowdesk_core.pipeline_runner import PipelineError, PipelineRunner
-from flowdesk_core.plot_export import prepare_display_export
+from flowdesk_core.plot_export import normalize_gate_overlays, prepare_display_export
 from flowdesk_core.plot_presentation import (
     OverlaySourceResolution,
     SamplePresentationContext,
@@ -128,7 +128,7 @@ from flowdesk_qt.plot_widget import PlotWidget
 from flowdesk_qt.population_tree import PopulationTree
 from flowdesk_qt.preview_scheduler import PreviewScheduler
 from flowdesk_qt.processed_display_scheduler import ProcessedDisplayScheduler
-from flowdesk_qt.qt_plot_export import render_batch_plot_qt
+from flowdesk_qt.qt_plot_export import render_prepared_plot_qt
 from flowdesk_qt.results_export_dialog import ResultsExportOptions
 from flowdesk_qt.results_state import RuntimeResultState
 from flowdesk_qt.results_workspace import ResultsWorkspace
@@ -5806,10 +5806,20 @@ class MainWindow(QMainWindow):
         if not source_ids or not payload["layers"]:
             raise ValueError("no rendered plot data available for export")
         layers = payload["layers"]
-        if len(layers) != len(source_ids):
+        if not layers:
+            raise ValueError("rendered plot contains no data layers")
+        layers_by_source_id: dict[str, tuple[Any, Any]] = {}
+        for index, (x_values, y_values, style) in enumerate(layers):
+            source_id = str(style.get("source_id", ""))
+            if not source_id and index == 0:
+                source_id = self._current_sample_id or ""
+            if source_id and source_id in source_ids:
+                layers_by_source_id[source_id] = (x_values, y_values)
+        missing_layers = [source_id for source_id in source_ids
+                          if source_id not in layers_by_source_id]
+        if missing_layers:
             raise ValueError(
-                "rendered source count does not match export scene: "
-                f"{len(layers)} != {len(source_ids)}"
+                "rendered source layers are missing: " + ", ".join(missing_layers)
             )
         source_styles = {
             str(style.get("source_id")): dict(style)
@@ -5828,14 +5838,29 @@ class MainWindow(QMainWindow):
         if view_range is None:
             raise ValueError("plot view range is unavailable")
         scene = metadata.get("scene", {})
+        source_metadata_by_id = {
+            str(source.get("source_id")): source
+            for source in metadata.get("sources", ())
+            if isinstance(source, dict) and source.get("source_id")
+        }
         source_definitions = tuple({
             "source_id": source_id,
-            "sample_id": source_id,
-            "population_id": str(scene.get("population_id", "all_events")),
-            "display_name": self._sample_title_for(source_id),
+            "sample_id": str(source_metadata_by_id.get(source_id, {}).get(
+                "sample_id", source_id
+            )),
+            "population_id": str(source_metadata_by_id.get(source_id, {}).get(
+                "population_id", scene.get("population_id", "all_events")
+            )),
+            "display_name": str(source_metadata_by_id.get(source_id, {}).get(
+                "display_name", source_id
+            )),
             "visible": True,
             "order": index,
         } for index, source_id in enumerate(source_ids))
+        scene_for_export = dict(scene)
+        scene_for_export["source_draw_order"] = list(
+            metadata.get("source_draw_order", source_ids)
+        )
         prepared = prepare_display_export(
             str(metadata.get("plot_id") or "qt-export"),
             str(metadata.get("plot_type") or "scatter"),
@@ -5851,32 +5876,39 @@ class MainWindow(QMainWindow):
             ),
             source_style_overrides=source_styles,
             gate_overlays=tuple(scene.get("gates", ())),
-            scene=scene,
+            scene=scene_for_export,
         )
-        render_batch_plot_qt(
+        normalized_layers: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] = {}
+        x_low, x_high = (float(value) for value in view_range[0])
+        y_low, y_high = (float(value) for value in view_range[1])
+        x_span = x_high - x_low
+        y_span = y_high - y_low
+        if x_span <= 0 or y_span <= 0:
+            raise ValueError("plot view range is invalid for export")
+        for source_id, (x_values, y_values) in layers_by_source_id.items():
+            x_array = np.asarray(x_values, dtype=np.float64)
+            y_array = np.asarray(y_values, dtype=np.float64)
+            count = min(len(x_array), len(y_array))
+            finite = np.isfinite(x_array[:count]) & np.isfinite(y_array[:count])
+            normalized_layers[source_id] = (
+                tuple(((x_array[:count][finite] - x_low) / x_span).tolist()),
+                tuple(((y_array[:count][finite] - y_low) / y_span).tolist()),
+            )
+        normalized_event_colors = None
+        if payload.get("event_colors") is not None:
+            colors = np.asarray(payload["event_colors"])
+            active_id = source_ids[0]
+            active_x, active_y = layers_by_source_id[active_id]
+            count = min(len(active_x), len(active_y), len(colors))
+            finite = np.isfinite(np.asarray(active_x[:count], dtype=np.float64)) & np.isfinite(
+                np.asarray(active_y[:count], dtype=np.float64)
+            )
+            normalized_event_colors = {active_id: colors[:count][finite]}
+        render_prepared_plot_qt(
             path,
-            raw_layers={
-                source_id: (layers[index][0], layers[index][1])
-                for index, source_id in enumerate(source_ids)
-            },
-            event_colors=(
-                {source_ids[0]: payload["event_colors"]}
-                if payload.get("event_colors") is not None else None
-            ),
-            source_ids=source_ids,
-            source_styles=source_styles,
-            presentation=presentation,
-            x_parameter=str(scene.get("x_parameter", "")),
-            y_parameter=str(scene.get("y_parameter", "")),
-            title_lines=tuple(scene.get("title_lines", ())),
-            title_colors=tuple(scene.get("title_colors", ())),
-            x_transform=None,
-            y_transform=None,
-            x_range=tuple(view_range[0]),
-            y_range=tuple(view_range[1]),
-            gates=tuple(scene.get("gates", ())),
-            width=int(request.width or self._plot_widget.canvas_size()[0]),
-            height=int(request.height or self._plot_widget.canvas_size()[1]),
+            prepared=prepared,
+            layers=normalized_layers,
+            event_colors=normalized_event_colors,
             options=BatchPlotExportSpec(
                 id="single-export", name="Single plot export",
                 formats=(
@@ -5895,10 +5927,8 @@ class MainWindow(QMainWindow):
                 include_legend=bool(request.include_legend),
                 include_status_banner=bool(request.include_status_banner),
             ),
-            plot_area=self._plot_widget.plot_area_margins(),
-            scene_metadata=scene,
             export_metadata=metadata,
-            prepared=prepared,
+            input_event_count=sum(len(values[0]) for values in layers_by_source_id.values()),
         )
 
     def _on_export_request(self, format_name: str) -> None:
@@ -6037,22 +6067,33 @@ class MainWindow(QMainWindow):
         )
         manual_ids = list(dict.fromkeys(manual_ids))
         manual_ids.reverse()
-        rendered_overlay_ids = [
-            str(style.get("source_id"))
-            for _x, _y, style in self._plot_widget.export_data_layers()["layers"][1:]
-            if style.get("source_id")
-        ]
+        rendered_layers = self._plot_widget.export_data_layers().get("layers", ())
+        source_id_by_sample: dict[str, str] = {}
+        for source in visible:
+            sample_id = str(source.get("sample_id", ""))
+            source_id = str(source.get("source_id", ""))
+            if sample_id and source_id:
+                source_id_by_sample[sample_id] = source_id
+        for index, (_x_values, _y_values, style) in enumerate(rendered_layers):
+            source_id = str(style.get("source_id", ""))
+            if index == 0 and self._current_sample_id:
+                source_id_by_sample.setdefault(
+                    self._current_sample_id, source_id or self._current_sample_id
+                )
+            elif source_id.startswith("manual:"):
+                source_id_by_sample.setdefault(source_id.removeprefix("manual:"), source_id)
         overlay_ids = (
-            [str(source.get("source_id", "")) for source in visible]
+            [str(source.get("sample_id", source.get("source_id", ""))) for source in visible]
             if visible else manual_ids
         )
-        if rendered_overlay_ids:
-            overlay_ids = rendered_overlay_ids
-        source_ids = tuple(
-            [self._current_sample_id]
-            + [value for value in overlay_ids
-               if value and value != self._current_sample_id]
-        ) if self._current_sample_id else ()
+        semantic_ids = list(self._current_plot_sample_ids())
+        if self._current_sample_id and self._current_sample_id not in semantic_ids:
+            semantic_ids.insert(0, self._current_sample_id)
+        for value in overlay_ids:
+            if value and value not in semantic_ids:
+                semantic_ids.append(value)
+        source_ids = tuple(source_id_by_sample.get(sample_id, sample_id)
+                           for sample_id in semantic_ids)
         if not source_ids:
             raise ValueError("no active sample is available for export")
         resolved = resolve_presentation_layers(
@@ -6064,14 +6105,19 @@ class MainWindow(QMainWindow):
             for style in resolved_presentation.get("source_styles", ())
             if isinstance(style, dict) and style.get("source_id")
         }
+        sample_by_source_id = {
+            source_id_by_sample.get(sample_id, sample_id): sample_id
+            for sample_id in semantic_ids
+        }
         for source_id in source_ids:
             if source_id in source_styles:
                 continue
-            if source_id == self._current_sample_id:
+            sample_id = sample_by_source_id.get(source_id, source_id)
+            if sample_id == self._current_sample_id:
                 color = resolved_presentation.get("single_color", "#000000")
             else:
-                color = state.get("manual_overlay_colors", {}).get(source_id)
-                color = color or self._sample_overlay_color(source_id)
+                color = state.get("manual_overlay_colors", {}).get(sample_id)
+                color = color or self._sample_overlay_color(sample_id)
             source_styles[source_id] = {
                 "source_id": source_id,
                 "color": color,
@@ -6081,7 +6127,18 @@ class MainWindow(QMainWindow):
         resolved_presentation["title"] = resolve_presentation_title(
             resolved.presentation, self._current_plot_sample_titles()
         )
+        # Capture the live display contract. Persisted display_scene can lag
+        # behind a Sample Sheet edit or a ViewBox/tick update.
         display_scene = view.get("display_scene", {})
+        live_range = self._plot_widget.view_range()
+        if live_range is None:
+            live_range = display_scene.get("view_range")
+        live_ticks = self._plot_widget.scene_ticks()
+        x_axis_label, y_axis_label = self._plot_widget.axis_display_labels()
+        live_plot_area = self._plot_widget.plot_area_margins()
+        live_title_baseline = self._plot_widget.title_baseline_y(
+            resolved_presentation.get("title_font", {})
+        )
         gate_mappings = []
         for gate in self._gate_editor.gates():
             gate_mapping = asdict(gate)
@@ -6092,44 +6149,71 @@ class MainWindow(QMainWindow):
             gate_mapping["width"] = resolved.presentation.gate_outline_width
             gate_mapping["style"] = resolved.presentation.gate_outline_style
             gate_mappings.append(gate_mapping)
+        normalized_gates = normalize_gate_overlays(
+            tuple(gate_mappings),
+            x_range=tuple(live_range[0]) if live_range else (0.0, 1.0),
+            y_range=tuple(live_range[1]) if live_range else (0.0, 1.0),
+            x_parameter=str(view.get("x_parameter", "")),
+            y_parameter=None if view.get("y_parameter") is None else str(view.get("y_parameter")),
+            x_transform_id=view.get("x_transform_id"),
+            y_transform_id=view.get("y_transform_id"),
+        )
+        title_colors = self._current_plot_sample_title_colors(resolved_presentation)
         scene = PlotScene.from_mapping({
             "x_parameter": view.get("x_parameter", ""),
             "y_parameter": view.get("y_parameter"),
             "x_transform_id": view.get("x_transform_id"),
             "y_transform_id": view.get("y_transform_id"),
-            "view_range": display_scene.get("view_range"),
-            "title_baseline_y": display_scene.get("title_baseline_y"),
-            "x_ticks": display_scene.get("x_ticks", ()),
-            "y_ticks": display_scene.get("y_ticks", ()),
-            "x_axis_label": display_scene.get("x_axis_label", ""),
-            "y_axis_label": display_scene.get("y_axis_label", ""),
+            "view_range": live_range or display_scene.get("view_range"),
+            "plot_area": list(live_plot_area),
+            "title_baseline_y": live_title_baseline if live_title_baseline is not None
+            else display_scene.get("title_baseline_y"),
+            "x_ticks": live_ticks.get("x_ticks", ()) or display_scene.get("x_ticks", ()),
+            "y_ticks": live_ticks.get("y_ticks", ()) or display_scene.get("y_ticks", ()),
+            "x_axis_label": x_axis_label or display_scene.get("x_axis_label", ""),
+            "y_axis_label": y_axis_label or display_scene.get("y_axis_label", ""),
             "source_order": source_ids,
-            "gates": gate_mappings,
+            "gates": normalized_gates,
             "title_lines": resolved_presentation["title"].splitlines(),
-            "title_colors": [
-                next((style.color for style in resolved.presentation.source_styles
-                      if style.source_id == source_id and style.color),
-                      resolved.presentation.single_color)
+            "title_colors": title_colors or tuple(
+                str(source_styles.get(source_id, {}).get("color") or "#000000")
                 for source_id in source_ids
-            ],
+            ),
         })
+        rendered_overlay_ids = [
+            str(style.get("source_id")) for _x, _y, style in rendered_layers
+            if style.get("source_id") and style.get("source_id") != self._current_sample_id
+        ]
+        draw_order = tuple(
+            [source_id_by_sample.get(self._current_sample_id, self._current_sample_id)]
+            + [value for value in rendered_overlay_ids
+               if value != source_id_by_sample.get(
+                   self._current_sample_id, self._current_sample_id
+               )]
+        ) if self._current_sample_id else source_ids
         return {
             "plot_id": view.get("id"),
             "definition_version": 1,
             "plot_type": view.get("plot_type", "scatter"),
             "ordered_source_ids": list(source_ids),
+            "source_draw_order": list(draw_order),
             "sources": [
                 {
-                    "source_id": source.get("source_id"),
-                    "sample_id": source.get("sample_id"),
-                    "population_id": source.get("population_id"),
-                    "x_parameter_id": source.get("x_parameter_id"),
-                    "y_parameter_id": source.get("y_parameter_id"),
-                    "x_transform_id": source.get("x_transform_id"),
-                    "y_transform_id": source.get("y_transform_id"),
-                    "visible": bool(source.get("visible", True)),
+                    "source_id": source_id,
+                    "sample_id": sample_id,
+                    "population_id": str(
+                        next((source.get("population_id") for source in visible
+                              if str(source.get("sample_id", "")) == sample_id),
+                             view.get("population_id", "all_events"))
+                    ),
+                    "display_name": self._sample_title_for(sample_id),
+                    "x_parameter_id": view.get("x_parameter", ""),
+                    "y_parameter_id": view.get("y_parameter"),
+                    "x_transform_id": view.get("x_transform_id"),
+                    "y_transform_id": view.get("y_transform_id"),
+                    "visible": True,
                 }
-                for source in visible
+                for sample_id, source_id in zip(semantic_ids, source_ids, strict=True)
             ],
             "presentation": resolved_presentation,
             "scene": scene.to_mapping(),

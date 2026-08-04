@@ -1,5 +1,37 @@
 # Current-view Export / Batch Export parity repair
 
+### Implementation status (2026-08-04)
+
+Increments 3 and 4 are implemented. The current-view adapter now snapshots
+source IDs keyed to rendered layers, semantic title order separately from
+`source_draw_order`, live ViewBox/ticks/axis labels/layout measurements, and
+normalized analytical gate geometry before calling the same core preparation
+and format writers used by Batch. A real `data/analysis.flowdesk` export was
+checked: the sidecar contains Log10 major labels, the live plot rectangle, and
+the gate, and the PNG contains the gate and superscript tick labels.
+
+The user-facing Increment 5 migration is implemented: `MainWindow` now calls
+`render_prepared_plot_qt()` with a validated `PreparedPlotExport` and normalized
+source-ID keyed layers. `render_batch_plot_qt()` remains as a compatibility
+wrapper for existing tests/callers that provide raw Qt-shaped arguments; it is
+not used by the current-view path. Removing that wrapper is intentionally left
+as a separate API cleanup so Batch output and downstream callers are not
+silently changed. Increment 6 still needs an automated GUI screenshot
+comparison; the current tests cover payload structure, writer ordering, gate
+normalization, and real-data output.
+
+### Batch overlay order correction (2026-08-04)
+
+Batch previously reversed `manual_overlay_sample_ids` while constructing
+`source_ids`. That made the same reversed tuple drive titles, source metadata,
+and painter order, so a three-source Batch title could be `blue, green, red`
+while the GUI was `blue, red, green`. The Batch builder now keeps the Samples
+list order in `source_ids` and writes a separate `scene.source_draw_order`:
+manual overlays are reversed only for painter order, while advanced overlay
+definitions retain their explicit order. This preserves existing dot
+occlusion semantics and fixes title/metadata order. A three-source SVG test
+asserts both the title sequence and `source_draw_order`.
+
 ## Purpose
 
 Make plot-area context-menu export and toolbar single-plot export use the same

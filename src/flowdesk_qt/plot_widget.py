@@ -556,6 +556,33 @@ class PlotWidget(QWidget):
         if view_range is None:
             return {"x_ticks": [], "y_ticks": []}
         result: dict[str, list[dict[str, object]]] = {}
+        core_ticks_by_axis = {"x": self._x_ticks, "y": self._y_ticks}
+        for axis_key, axis_range in (("x", view_range[0]), ("y", view_range[1])):
+            core_ticks = core_ticks_by_axis[axis_key]
+            if not core_ticks:
+                continue
+            low, high = axis_range
+            span = high - low
+            if span <= 0:
+                continue
+            ticks: list[dict[str, object]] = []
+            for tick in core_ticks:
+                position = (float(tick.coordinate) - low) / span
+                if 0.0 <= position <= 1.0:
+                    ticks.append({
+                        "position": position,
+                        # Keep the renderer-neutral scientific label (for
+                        # example ``1e5``).  The shared writers apply the
+                        # Unicode superscript formatting, so the current-view
+                        # and Batch sidecars remain semantically identical.
+                        "label": str(tick.label),
+                        "major": tick.level == "major",
+                    })
+            result[f"{axis_key}_ticks"] = ticks
+        if result.get("x_ticks") or result.get("y_ticks"):
+            result.setdefault("x_ticks", [])
+            result.setdefault("y_ticks", [])
+            return result
         for axis_name, axis_key, axis_range in (
             ("bottom", "x_ticks", view_range[0]),
             ("left", "y_ticks", view_range[1]),

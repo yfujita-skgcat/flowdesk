@@ -913,6 +913,8 @@ def batch_plot_command(
           )
         )
       )
+      # ``overlay_ids_by_sample`` is semantic Samples-list order.  Keep this
+      # order for titles/metadata; painter order is stored separately below.
       overlay_candidates = list(overlay_ids_by_sample.get(sample_id, ()))
       overlay_ids = tuple(
         value for index, value in enumerate(overlay_candidates)
@@ -920,6 +922,19 @@ def batch_plot_command(
         and value not in overlay_candidates[:index]
       )
       source_ids = (sample_id, *overlay_ids)
+      # The GUI reverses manually selected Samples-list rows before handing
+      # them to pyqtgraph so the upper row is frontmost.  Advanced overlay
+      # definitions already carry an explicit painter order and must remain
+      # unchanged.  Do not reuse this order for titles.
+      has_advanced_overlay_order = any(
+        isinstance(source, Mapping) and bool(source.get("visible", True))
+        and source.get("sample_id")
+        for source in view.get("overlay_sources", ())
+      )
+      draw_overlay_ids = (
+        overlay_ids if has_advanced_overlay_order else tuple(reversed(overlay_ids))
+      )
+      draw_source_ids = (sample_id, *draw_overlay_ids)
       sources = []
       layers: dict[str, LayerValues] = {}
       visible_masks: dict[str, np.ndarray] = {}
@@ -1101,6 +1116,7 @@ def batch_plot_command(
           )
           for source_id in source_ids
         ],
+        "source_draw_order": list(draw_source_ids),
       }
       prepared = prepare_plot_export(
         spec.plot_view_id, cast(PlotType, str(view.get("plot_type", "scatter"))),
@@ -1854,7 +1870,7 @@ def _build_overlay_dependency_graph(
       advanced.append((order, str(source.get("source_id", "")), str(source_id)))
   advanced_ids = tuple(item[2] for item in sorted(advanced, key=lambda item: item[:2]))
   manual_ids = (
-    tuple(reversed(tuple(str(value) for value in manual_overlay_sample_ids)))
+    tuple(str(value) for value in manual_overlay_sample_ids)
     if isinstance(manual_overlay_sample_ids, Sequence)
     and not isinstance(manual_overlay_sample_ids, (str, bytes))
     else ()

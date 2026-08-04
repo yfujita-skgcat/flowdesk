@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -19,7 +20,7 @@ from flowdesk_qt.qt_plot_export import render_batch_plot_qt
 pytestmark = pytest.mark.gui
 
 
-def test_live_export_metadata_includes_manual_overlay_layers(qapp) -> None:
+def test_live_export_metadata_includes_manual_overlay_layers(qapp, monkeypatch) -> None:
   window = MainWindow()
   try:
     window._current_sample_id = "s1"
@@ -29,8 +30,73 @@ def test_live_export_metadata_includes_manual_overlay_layers(qapp) -> None:
       "presentation": {}, "display_scene": {},
     }]
     window._sample_browser._manual_overlay_sample_ids = {"s2", "s3"}
+    monkeypatch.setattr(
+      window._plot_widget, "export_data_layers", lambda: {
+        "layers": [
+          (np.array([1.0]), np.array([1.0]), {}),
+          (np.array([2.0]), np.array([2.0]), {"source_id": "manual:s3"}),
+          (np.array([3.0]), np.array([3.0]), {"source_id": "manual:s2"}),
+        ],
+        "event_colors": None,
+      },
+    )
     metadata = window._current_plot_export_metadata()
-    assert metadata["ordered_source_ids"] == ["s1", "s3", "s2"]
+    assert metadata["ordered_source_ids"] == ["s1", "manual:s3", "manual:s2"]
+    assert metadata["source_draw_order"] == ["s1", "manual:s3", "manual:s2"]
+  finally:
+    window.close()
+    window.deleteLater()
+    qapp.processEvents()
+
+
+def test_current_view_export_calls_typed_prepared_dispatcher(qapp, monkeypatch) -> None:
+  """The user-facing current-view path must not call the raw Qt wrapper."""
+  window = MainWindow()
+  captured: dict[str, object] = {}
+  try:
+    window._current_sample_id = "s1"
+    monkeypatch.setattr(
+      window._plot_widget, "export_data_layers", lambda: {
+        "layers": [
+          (np.array([0.25, 0.75]), np.array([0.25, 0.75]), {}),
+        ],
+        "event_colors": None,
+      },
+    )
+    monkeypatch.setattr(window._plot_widget, "view_range", lambda: ((0.0, 1.0), (0.0, 1.0)))
+    monkeypatch.setattr(
+      window._sample_browser, "overlay_state", lambda: {"manual_overlay_colors": {}},
+    )
+
+    def capture(path, **kwargs):
+      captured["path"] = path
+      captured.update(kwargs)
+
+    monkeypatch.setattr("flowdesk_qt.main_window.render_prepared_plot_qt", capture)
+    metadata = {
+      "plot_id": "main-view", "plot_type": "scatter",
+      "ordered_source_ids": ["s1"], "source_draw_order": ["s1"],
+      "sources": [{
+        "source_id": "s1", "sample_id": "s1", "population_id": "all_events",
+        "display_name": "Sample", "visible": True,
+      }],
+      "presentation": {"single_color": "#3366cc"},
+      "scene": {
+        "x_parameter": "x", "y_parameter": "y", "view_range": [[0.0, 1.0], [0.0, 1.0]],
+        "title_lines": ["Sample"], "title_colors": ["#3366cc"], "gates": [],
+      },
+    }
+    request = SimpleNamespace(
+      format_name="PNG", width=300, height=200, dpi=96,
+      raster_resolution_mode="legacy_pixel_dimensions", aspect_1_to_1=False,
+      include_title=True, include_axis_labels=True, include_ticks=True,
+      include_gates=True, include_legend=True, include_status_banner=False,
+    )
+    window._export_current_plot_core("plot.png", request, metadata)
+    assert captured["path"] == "plot.png"
+    prepared = captured["prepared"]
+    assert prepared.source_order == ("s1",)
+    assert captured["layers"] == {"s1": ((0.25, 0.75), (0.25, 0.75))}
   finally:
     window.close()
     window.deleteLater()
