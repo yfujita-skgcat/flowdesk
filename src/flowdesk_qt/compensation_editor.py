@@ -264,9 +264,9 @@ class CompensationMatrixEditorDialog(QDialog):
         form.addRow("Channels:", self._channels_list)
 
         channel_btns = QHBoxLayout()
-        self._add_channel_btn = QPushButton("Add Channel")
+        self._add_channel_btn = QPushButton("Select All Channels")
         self._add_channel_btn.setObjectName("compensationAddChannelButton")
-        self._remove_channel_btn = QPushButton("Remove Channel")
+        self._remove_channel_btn = QPushButton("Clear All Channels")
         self._remove_channel_btn.setObjectName("compensationRemoveChannelButton")
         channel_btns.addWidget(self._add_channel_btn)
         channel_btns.addWidget(self._remove_channel_btn)
@@ -458,7 +458,7 @@ class CompensationMatrixEditorDialog(QDialog):
                 for evt in range(n_show):
                     uncomp = compensated[evt, col_idx]
                     self._preview_table.setItem(
-                        row, 0, QTableWidgetItem(ch)
+                        row, 0, QTableWidgetItem(self._channel_label(ch))
                     )
                     self._preview_table.setItem(
                         row, 1, QTableWidgetItem(
@@ -632,16 +632,46 @@ class CompensationMatrixEditorDialog(QDialog):
 
     # -- Channel selection ---------------------------------------------------
 
+    def _channel_display_name(self, channel_id: object) -> str:
+        """Return the project-facing label for a stable channel ID."""
+        target = str(channel_id)
+        for channel in self._channels:
+            if isinstance(channel, dict):
+                candidate_id = channel.get("id", channel.get("name", ""))
+                if str(candidate_id) != target:
+                    continue
+                return str(
+                    channel.get("display_name")
+                    or channel.get("name")
+                    or target
+                )
+            candidate_id = getattr(channel, "id", getattr(channel, "name", ""))
+            if str(candidate_id) != target:
+                continue
+            return str(
+                getattr(channel, "display_name", None)
+                or getattr(channel, "short_name", None)
+                or getattr(channel, "name", None)
+                or target
+            )
+        return target
+
+    def _channel_label(self, channel_id: object) -> str:
+        """Format a readable label while retaining the stable ID for clarity."""
+        stable_id = str(channel_id)
+        display_name = self._channel_display_name(stable_id)
+        if display_name == stable_id:
+            return stable_id
+        return f"{display_name} [{stable_id}]"
+
     def _refresh_channels_list(self, selected_ids: list[str]) -> None:
         self._channels_list.clear()
         for channel in self._channels:
             if isinstance(channel, dict):
                 ch_id = channel.get("id", channel.get("name", ""))
-                ch_name = channel.get("name", ch_id)
             else:
                 ch_id = getattr(channel, "id", getattr(channel, "name", ""))
-                ch_name = getattr(channel, "name", ch_id)
-            item = QListWidgetItem(f"{ch_name} [{ch_id}]")
+            item = QListWidgetItem(self._channel_label(ch_id))
             item.setData(Qt.ItemDataRole.UserRole, ch_id)
             item.setData(Qt.ItemDataRole.CheckStateRole, Qt.CheckState.Checked
                         if ch_id in selected_ids else Qt.CheckState.Unchecked)
@@ -674,10 +704,14 @@ class CompensationMatrixEditorDialog(QDialog):
 
         for row_idx in range(n):
             label = channels[row_idx] if row_idx < len(channels) else f"R{row_idx}"
-            self._heat_map.setVerticalHeaderItem(row_idx, QTableWidgetItem(label))
+            header = QTableWidgetItem(self._channel_label(label))
+            header.setToolTip(str(label))
+            self._heat_map.setVerticalHeaderItem(row_idx, header)
         for col_idx in range(n):
             label = channels[col_idx] if col_idx < len(channels) else f"C{col_idx}"
-            self._heat_map.setHorizontalHeaderItem(col_idx, QTableWidgetItem(label))
+            header = QTableWidgetItem(self._channel_label(label))
+            header.setToolTip(str(label))
+            self._heat_map.setHorizontalHeaderItem(col_idx, header)
 
         for row_idx in range(n):
             for col_idx in range(n):

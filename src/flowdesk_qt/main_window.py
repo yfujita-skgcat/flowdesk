@@ -5243,10 +5243,24 @@ class MainWindow(QMainWindow):
         sample_ids = [s.id for s in self._sample_browser.samples()]
         group_ids = []
 
+        # Pass project-scoped labels while retaining stable IDs for all
+        # persisted matrix definitions and bindings.
+        display_channels = tuple(
+            {
+                "id": channel.id,
+                "name": channel.short_name or channel.name,
+                "display_name": parameter_display_label(
+                    channel.id,
+                    channel.short_name or channel.name,
+                    self._parameter_display_mappings,
+                ),
+            }
+            for channel in channels_by_id.values()
+        )
         dialog = CompensationMatrixEditorDialog(
             self._compensation_matrices,
             self._compensation_bindings,
-            tuple(channels_by_id.values()),
+            display_channels,
             sample_ids,
             group_ids,
             parent=self,

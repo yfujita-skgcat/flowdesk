@@ -13,6 +13,7 @@ pytest.importorskip("PySide6")
 pytest.importorskip("pyqtgraph")
 pytestmark = pytest.mark.gui
 
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from flowdesk_core.models import ChannelSpec  # noqa: E402
@@ -134,6 +135,61 @@ def test_heat_map_populated_for_2x2_matrix() -> None:
         # Off-diagonal
         assert "0.1000" in heat_map.item(0, 1).text()
         assert "0.2000" in heat_map.item(1, 0).text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_channel_controls_and_labels_match_their_behavior() -> None:
+    app = _app()
+    channels = (
+        {
+            "id": "fcs_fl1_a_abc123",
+            "name": "FL1-A",
+            "display_name": "GFP (FITC-A)",
+        },
+        {
+            "id": "fcs_fl2_a_def456",
+            "name": "FL2-A",
+            "display_name": "RFP (PE-A)",
+        },
+    )
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[_empty_matrix_mapping()],
+        bindings=[],
+        available_channels=channels,
+        sample_ids=[],
+        group_ids=[],
+    )
+    try:
+        assert dialog._add_channel_btn.text() == "Select All Channels"
+        assert dialog._remove_channel_btn.text() == "Clear All Channels"
+        assert dialog._channels_list.item(0).text() == (
+            "GFP (FITC-A) [fcs_fl1_a_abc123]"
+        )
+        dialog._add_channel_btn.click()
+        assert all(
+            dialog._channels_list.item(i).checkState() == Qt.CheckState.Checked
+            for i in range(dialog._channels_list.count())
+        )
+        dialog._remove_channel_btn.click()
+        assert all(
+            dialog._channels_list.item(i).checkState() == Qt.CheckState.Unchecked
+            for i in range(dialog._channels_list.count())
+        )
+        dialog._update_heat_map(
+            {
+                "channels": ["fcs_fl1_a_abc123", "fcs_fl2_a_def456"],
+                "matrix": [[1.0, 0.0], [0.0, 1.0]],
+            }
+        )
+        assert dialog._heat_map.horizontalHeaderItem(0).text() == (
+            "GFP (FITC-A) [fcs_fl1_a_abc123]"
+        )
+        assert dialog._heat_map.verticalHeaderItem(1).text() == (
+            "RFP (PE-A) [fcs_fl2_a_def456]"
+        )
     finally:
         dialog.close()
         dialog.deleteLater()

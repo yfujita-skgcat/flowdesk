@@ -1,5 +1,11 @@
 # Compensation Workspace
 
+> **Visual review follow-on:** A4/A5のbinding、calculation、provenance基盤はこの文書に
+> 従う。係数とplotを連動させるinteractive review/fine-tuningは
+> [`visual-compensation-workspace.md`](visual-compensation-workspace.md)を唯一の
+> 実装指示書とする。現在の先頭event数値tableは互換用の基盤であり、S03が要求する
+> 補償前後plotまたはresidual plotの完成を意味しない。
+
 Spec: `S03`
 ToDo: `Phase A4`, then `Phase A5`
 

@@ -46,6 +46,7 @@ release order below.
 | A2 | `derived-parameter-editor.md` | A1 typed sample data |
 | A3 | `scientific-transforms-v2.md` | A1 |
 | A4-A5 | `compensation-workspace.md` | A1 |
+| A5.V | `visual-compensation-workspace.md` | A4-A5 |
 | A6 | `statistics-definitions.md` | A1-A3 |
 | A7, B8 | `project-migration-and-recovery.md` | project storage |
 

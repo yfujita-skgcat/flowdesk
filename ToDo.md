@@ -51,6 +51,7 @@ git status --short
 | A2 | `docs/implementation/derived-parameter-editor.md` |
 | A3 | `docs/implementation/scientific-transforms-v2.md` |
 | A4-A5 | `docs/implementation/compensation-workspace.md` |
+| A5.V | `docs/implementation/visual-compensation-workspace.md` |
 | A6 | `docs/implementation/statistics-definitions.md` |
 | A7, B8 | `docs/implementation/project-migration-and-recovery.md` |
 | B8.1 | `docs/implementation/analysis-settings-bundles.md` |
@@ -216,7 +217,7 @@ git status --short
 
 - [x] 済み: Compensation Matrix list/editorを追加する。
 - [x] 済み: matrix heat map、numeric cell editor、duplicate-before-edit、sample/Group applyを提供する。
-- [x] 済み: compensated/uncompensated previewを同じPopulationで表示する。
+- [x] 済み（基盤）: core `apply_compensation()`出力とraw値を同じsampleで比較する数値previewを追加した。分布plot、Population指定、同一range/transformのBefore/After比較はPhase A5.Vで実装する。
 - [x] 済み: applied matrix badgeとinvalid/stale statusをWorkspaceへ表示する。
 
 #### 必須test
@@ -241,6 +242,66 @@ Phase A4完了後に開始する。
 - [x] 済み: known synthetic fixturesとindependent calculationで数値検証する。
 
 AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混ぜない。
+
+### Phase A5.V: Visual Compensation Workspace [S03-P1]
+
+現在のmatrix数値表と先頭10 eventのpreview tableでは、係数変更による分布の変化を
+科学的に確認できない。`docs/implementation/visual-compensation-workspace.md`を唯一の
+実装指示書とし、一度のLLM実行では次のincrementを一つだけ実施する。既存A4/A5の
+binding、immutable matrix、calculation algorithm、diagnosticを置換・複製しない。
+
+#### Increment 1: Core preview contract
+
+- [ ] GUI非依存の`CompensationPreviewRequest`、`CompensationPreviewResult`、pair別diagnosticを追加する。
+- [ ] rawのsource/receiving値とcandidate matrix適用後の値を、stable channel IDでalignmentして返す。
+- [ ] 表示用deterministic downsampleとfull-resolution diagnosticを分離する。
+- [ ] residual slope、correlation、positive/negative receiving median差、event/outlier count、condition numberを定義済み式で計算する。
+- [ ] raw event不変、row=receiving/column=source、GUI/headless同値をsynthetic fixtureで固定する。
+
+#### Increment 2: Preview scheduler
+
+- [ ] 50–100 ms debounce、single worker、latest-wins、revision照合を行う専用schedulerを追加する。
+- [ ] workerへimmutable request snapshotだけを渡し、Qt widgetやlive projectを参照させない。
+- [ ] drag中はdisplay subset、slider release後はfull-resolution diagnosticを計算し、obsolete resultを破棄する。
+- [ ] close/cancel時にpending workを破棄し、QThreadを残さないtestを追加する。
+
+#### Increment 3: Matrix cellとBefore/After plotの連動
+
+- [ ] 通常起動経路からsample、raw events、channel specs、population masksを明示的にworkspaceへ供給する。
+- [ ] matrix headerへ`Source channel (spill from) →`と`Receiving channel (spill into) ↓`を表示する。
+- [ ] off-diagonal cell選択時にsource control sample、X=source、Y=receivingを自動選択する。
+- [ ] Uncompensated/Compensated plotを同一sample、Population、event subset、transform、axis rangeで横並び表示する。
+- [ ] negative compensated valuesを隠すLog10 fallbackを禁止し、選択transformと非有限値を明示する。
+
+#### Increment 4: Candidate coefficient editor
+
+- [ ] 選択したoff-diagonal係数だけを同期したsliderと有限数値入力で編集する。
+- [ ] UIはpercent、内部値はfractionと明示し、負値と100%超を許容し、対角成分1.0を編集不能にする。
+- [ ] automatic/source value、candidate value、difference、Reset、Undo/Redoを提供する。
+- [ ] candidate変更はproject、binding、authoritative resultsを変更せず、Save as Copy時だけimmutable matrixを作る。
+- [ ] manual edit provenanceへstable row/column ID、old/new、時刻、editor、reasonを保存する。
+
+#### Increment 5: Workspace統合と適用
+
+- [ ] `Controls`、`Matrix & Preview`、`Application & Provenance`の3領域へ既存Calculation EditorとMatrix Editorを統合する。
+- [ ] control割当→Calculate→全pair確認→Save as Copy→sample/Group binding適用を一つの明示的workflowにする。
+- [ ] Apply前にmatrix validation、condition warning、unsaved candidate、stale control populationを表示する。
+- [ ] SaveとApplyを分離し、Cancelでmatrix/binding/project revisionが変わらないことを保証する。
+- [ ] project round-trip、CLI/Python API再実行、ExecutionReport provenance一致をtestする。
+
+#### Increment 6: Pairwise overview（上記完了後のみ）
+
+- [ ] NxN overviewはread-only thumbnailとし、cell clickで単一pair editorへ移動する。
+- [ ] thumbnailごとにsliderを置かず、event objectをpair数だけ複製しないvirtualized/cache設計にする。
+- [ ] 多色sampleの生物学的相関を「補償残差ゼロ」の判定へ使用しない。
+
+#### 完了条件
+
+- [ ] GUI previewとcore APIのcandidate compensated valuesが同一である。
+- [ ] 同じrequestはGUI/headlessで同じfull-resolution diagnosticを返す。
+- [ ] display max pointsを変えても保存matrix、residual diagnostic、binding、pipeline結果が変わらない。
+- [ ] original/calculated/imported matrixとraw FCS eventsを変更しない。
+- [ ] 既存A4/A5、pipeline、storage、GUI testがすべて通り、ユーザーマニュアルを更新する。
 
 ### Phase A6: 保存可能なStatistics definitions [S11]
 

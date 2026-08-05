@@ -664,10 +664,10 @@ source event count、candidate event count、gained、lost、scientific equivale
 |Name|display name。|
 |Source|user_defined / fcs_metadata_spillover / imported / calculated|
 |Notes|任意メモ。|
-|Channels|matrix に含める fluorescence channel。multi-selection。|
-|Add Channel|selected available channel を matrix に追加。|
-|Remove Channel|matrix から channel を除く。|
-|Matrix Heat Map Preview|row/column が channel の matrix table。係数を編集・確認する。|
+|Channels|matrix に含める fluorescence channel。表示名（必要なら注釈）とstable IDを併記し、チェック状態で個別に選択する。|
+|Select All Channels|候補チャンネルをすべて選択する。ボタン名どおり、matrixへの個別追加ではなく全選択を行う。|
+|Clear All Channels|候補チャンネルをすべて解除する。ボタン名どおり、matrixから個別に除く操作ではなく全解除を行う。|
+|Matrix Heat Map Preview|row/column が表示名とstable IDを併記した channel の matrix table。stable IDはtooltipでも確認でき、係数を編集・確認する。|
 |Validate|shape、finite values、diagonal、invertibility/condition 等を inspect。|
 |diagnostic label|validity と condition number、または errors。|
 
