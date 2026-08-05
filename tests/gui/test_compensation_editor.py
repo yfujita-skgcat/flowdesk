@@ -142,6 +142,37 @@ def test_heat_map_populated_for_2x2_matrix() -> None:
         app.processEvents()
 
 
+def test_preview_applies_identical_range_to_both_plots() -> None:
+  app = _app()
+  dialog = CompensationMatrixEditorDialog(
+    matrices=[_valid_2x2_matrix()],
+    bindings=[],
+    available_channels=_sample_channels(),
+    sample_ids=["sample_1"],
+    group_ids=[],
+  )
+
+  class _RangeRecorder:
+    def __init__(self) -> None:
+      self.ranges = []
+
+    def set_manual_view_range(self, value) -> None:
+      self.ranges.append(value)
+
+  try:
+    uncompensated = _RangeRecorder()
+    compensated = _RangeRecorder()
+    dialog._uncompensated_plot = uncompensated
+    dialog._compensated_plot = compensated
+    dialog._apply_shared_preview_range((1.0, 10.0, 2.0, 20.0))
+    assert uncompensated.ranges == [((1.0, 10.0), (2.0, 20.0))]
+    assert compensated.ranges == uncompensated.ranges
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    app.processEvents()
+
+
 def test_channel_controls_and_labels_match_their_behavior() -> None:
     app = _app()
     channels = (

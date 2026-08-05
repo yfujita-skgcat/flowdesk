@@ -1127,10 +1127,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._compensated_plot.set_presentation(
             {"title": "Compensated", "background_color": "#ffffff"}
         )
-        if result.axis_limits is not None:
-            x_min, x_max, y_min, y_max = result.axis_limits
-            for plot in (self._uncompensated_plot, self._compensated_plot):
-                plot.set_manual_view_range(((x_min, x_max), (y_min, y_max)))
+        self._apply_shared_preview_range(result.axis_limits)
         diagnostic = result.diagnostics[0] if result.diagnostics else None
         if diagnostic is None:
             self._diag_label.setText(
@@ -1170,6 +1167,23 @@ class CompensationMatrixEditorDialog(QDialog):
             f"events={result.population_event_count}; "
             + "; ".join(details)
         )
+
+    def _apply_shared_preview_range(
+        self,
+        axis_limits: tuple[float, float, float, float] | None,
+    ) -> None:
+        """Apply one canonical X/Y range to both preview plots.
+
+        The core preview computes this range from the union of uncompensated and
+        compensated finite display values.  Never let either PlotWidget auto-range
+        independently, because that would make visual comparison misleading.
+        """
+        if axis_limits is None:
+            return
+        x_min, x_max, y_min, y_max = axis_limits
+        shared_range = ((x_min, x_max), (y_min, y_max))
+        for plot in (self._uncompensated_plot, self._compensated_plot):
+            plot.set_manual_view_range(shared_range)
 
     def _on_candidate_preview_failed(
         self,
