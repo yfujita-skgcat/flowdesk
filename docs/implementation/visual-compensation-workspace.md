@@ -33,6 +33,28 @@ scheduler、GUI統合を一度に変更しない。
 
 ## 3. 現行実装の監査結果
 
+### 3.0 このincrementで実装済みの範囲
+
+次の実装を完了した。後続LLMはこれらの契約を置き換えず、Increment 5以降だけを
+追加すること。
+
+- `flowdesk_core.compensation_preview`に、immutable request/result、candidate全体を
+  適用する補償前後配列、共有axis range、full-resolution pair diagnosticを追加した。
+- `flowdesk_qt.compensation_preview_scheduler`に75 ms debounce、single worker、
+  latest-wins、revision照合、shutdownを実装した。workerはQt widgetやlive projectを
+  参照しない。
+- `CompensationMatrixEditorDialog`はリサイズ可能な補償前後PlotWidget、matrix cellと
+  source→receiving説明、percent表示の係数spinbox/slider、Reset、diagnosticを持つ。
+- 通常のMainWindow起動経路からsampleのraw events、channel ID、全event population maskを
+  workspaceへ渡す。control populationは未指定時に診断をundefinedとし、任意の多色sampleの
+  相関を補償正解とは扱わない。
+- calculated matrixは引き続きread-onlyで、`Save as Copy`を編集入口とする。raw eventと
+  original matrixを変更しない。manual edit provenanceはcandidate matrixへ記録する。
+
+この段階では、controls/calculation editorの統合、control populationを自動的に選択する
+機能、Undo/Redo、bindingのApply分離は未実装である。これらはIncrement 5の課題として
+実装し、既存のA4/A5の計算・binding経路を再実装してはならない。
+
 ### 3.1 保持する基盤
 
 - `CompensationMatrixSpec`はstable channel ID、matrix、source、provenanceを保持する。

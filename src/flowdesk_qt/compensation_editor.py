@@ -10,8 +10,10 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import Any
 
+import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -29,6 +32,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSlider,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -42,11 +46,17 @@ from flowdesk_core.compensation import (
     calculate_spillover_matrix,
     inspect_compensation_matrix,
 )
+from flowdesk_core.compensation_preview import (
+    CompensationPreviewRequest,
+    CompensationPreviewResult,
+)
 from flowdesk_core.models import (
     CompensationBindingSpec,
     CompensationCalculationSpec,
     CompensationMatrixSpec,
 )
+from flowdesk_qt.compensation_preview_scheduler import CompensationPreviewScheduler
+from flowdesk_qt.plot_widget import PlotWidget
 
 # ---------------------------------------------------------------------------
 # Heatmap colour helper
@@ -153,7 +163,7 @@ class CompensationMatrixEditorDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("compensationMatrixEditorDialog")
         self.setWindowTitle("Compensation Matrices")
-        self.resize(960, 660)
+        self.resize(1200, 900)
 
         self._matrices = deepcopy(list(matrices))
         self._bindings = deepcopy(list(bindings))
@@ -164,8 +174,20 @@ class CompensationMatrixEditorDialog(QDialog):
         self._loading = False
         self._current_matrix_row = -1
         self._current_binding_row = -1
+        self._source_matrix_snapshot: dict[str, Any] | None = None
+        self._manual_source_snapshots: dict[str, dict[str, Any]] = {}
+        self._selected_pair: tuple[str, str] | None = None
+        self._preview_revision = 0
+        self._setting_coefficient = False
+        self._preview_scheduler = CompensationPreviewScheduler(self)
 
         self._build_ui()
+        self._preview_scheduler.preview_ready.connect(
+            self._on_candidate_preview_ready
+        )
+        self._preview_scheduler.preview_failed.connect(
+            self._on_candidate_preview_failed
+        )
 
         if not self._matrices:
             self._matrices.append(_empty_matrix_mapping())
@@ -184,6 +206,16 @@ class CompensationMatrixEditorDialog(QDialog):
         """Return a deep copy of the current binding definitions."""
         self._commit_current_binding()
         return deepcopy(self._bindings)
+
+    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        """Stop candidate preview work before the dialog is destroyed."""
+        self._preview_scheduler.shutdown()
+        super().closeEvent(event)
+
+    def done(self, result: int) -> None:
+        """Stop candidate preview work on both accept and reject."""
+        self._preview_scheduler.shutdown()
+        super().done(result)
 
     # -- UI construction -----------------------------------------------------
 
@@ -204,7 +236,7 @@ class CompensationMatrixEditorDialog(QDialog):
         matrix_btns = QHBoxLayout()
         self._new_matrix_btn = QPushButton("New")
         self._new_matrix_btn.setObjectName("compensationNewMatrixButton")
-        self._duplicate_matrix_btn = QPushButton("Duplicate")
+        self._duplicate_matrix_btn = QPushButton("Save as Copy")
         self._duplicate_matrix_btn.setObjectName("compensationDuplicateMatrixButton")
         self._delete_matrix_btn = QPushButton("Delete")
         self._delete_matrix_btn.setObjectName("compensationDeleteMatrixButton")
@@ -276,6 +308,13 @@ class CompensationMatrixEditorDialog(QDialog):
         # Heat map table
         heat_group = QGroupBox("Matrix Heat Map Preview")
         heat_layout = QVBoxLayout(heat_group)
+        direction_label = QLabel(
+            "Columns: Source channel (spill from) →   "
+            "Rows: Receiving channel (spill into) ↓"
+        )
+        direction_label.setObjectName("compensationMatrixDirectionLabel")
+        direction_label.setWordWrap(True)
+        heat_layout.addWidget(direction_label)
         self._heat_map = QTableWidget()
         self._heat_map.setObjectName("compensationHeatMap")
         self._heat_map.setHorizontalScrollBarPolicy(
@@ -291,6 +330,26 @@ class CompensationMatrixEditorDialog(QDialog):
         )
         heat_layout.addWidget(self._heat_map)
         right_layout.addWidget(heat_group)
+
+        coefficient_group = QGroupBox("Selected off-diagonal coefficient")
+        coefficient_form = QFormLayout(coefficient_group)
+        self._coefficient_label = QLabel("No pair selected")
+        self._coefficient_label.setObjectName("compensationCoefficientLabel")
+        self._coefficient_spin = QDoubleSpinBox()
+        self._coefficient_spin.setObjectName("compensationCoefficientSpin")
+        self._coefficient_spin.setRange(-1_000_000_000.0, 1_000_000_000.0)
+        self._coefficient_spin.setDecimals(6)
+        self._coefficient_spin.setSingleStep(0.001)
+        self._coefficient_spin.setSuffix(" %")
+        self._coefficient_slider = QSlider(Qt.Orientation.Horizontal)
+        self._coefficient_slider.setObjectName("compensationCoefficientSlider")
+        self._coefficient_reset_btn = QPushButton("Reset to source value")
+        self._coefficient_reset_btn.setObjectName("compensationCoefficientResetButton")
+        coefficient_form.addRow("Pair:", self._coefficient_label)
+        coefficient_form.addRow("Coefficient:", self._coefficient_spin)
+        coefficient_form.addRow("Fine adjustment:", self._coefficient_slider)
+        coefficient_form.addRow("", self._coefficient_reset_btn)
+        right_layout.addWidget(coefficient_group)
 
         # Validation label
         actions = QHBoxLayout()
@@ -332,6 +391,15 @@ class CompensationMatrixEditorDialog(QDialog):
         self._delete_binding_btn.clicked.connect(self._delete_binding)
         self._add_channel_btn.clicked.connect(self._add_channel)
         self._remove_channel_btn.clicked.connect(self._remove_channel)
+        self._heat_map.cellClicked.connect(self._on_heat_map_cell_clicked)
+        self._heat_map.cellChanged.connect(self._on_heat_map_cell_changed)
+        self._coefficient_spin.valueChanged.connect(
+            self._on_coefficient_spin_changed
+        )
+        self._coefficient_slider.valueChanged.connect(
+            self._on_coefficient_slider_changed
+        )
+        self._coefficient_reset_btn.clicked.connect(self._reset_coefficient)
         self._validate_btn.clicked.connect(self._validate_current)
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
@@ -398,6 +466,25 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_btn = QPushButton("Preview")
         self._preview_btn.setObjectName("compensationPreviewButton")
         preview_layout.addWidget(self._preview_btn)
+
+        self._preview_pair_label = QLabel(
+            "Select an off-diagonal matrix cell to inspect a source → receiving pair."
+        )
+        self._preview_pair_label.setObjectName("compensationPreviewPairLabel")
+        self._preview_pair_label.setWordWrap(True)
+        preview_layout.addWidget(self._preview_pair_label)
+
+        plot_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._uncompensated_plot = PlotWidget()
+        self._uncompensated_plot.setObjectName("compensationUncompensatedPlot")
+        self._compensated_plot = PlotWidget()
+        self._compensated_plot.setObjectName("compensationCompensatedPlot")
+        plot_splitter.addWidget(self._uncompensated_plot)
+        plot_splitter.addWidget(self._compensated_plot)
+        plot_splitter.setStretchFactor(0, 1)
+        plot_splitter.setStretchFactor(1, 1)
+        plot_splitter.setMinimumHeight(260)
+        preview_layout.addWidget(plot_splitter)
 
         # Preview table: columns = channel, uncompensated, compensated
         self._preview_table = QTableWidget()
@@ -476,6 +563,7 @@ class CompensationMatrixEditorDialog(QDialog):
             self._diag_label.setText(
                 f"Preview: {row} cells (matrix {spec.id}, sample {sample_id})"
             )
+            self._schedule_candidate_preview()
         except Exception as exc:
             self._diag_label.setText(f"Preview failed: {exc}")
 
@@ -523,8 +611,16 @@ class CompensationMatrixEditorDialog(QDialog):
                 str(value.get("source", "user_defined"))
             )
             self._notes_edit.setText(str(value.get("notes", "")))
+            self._source_matrix_snapshot = deepcopy(
+                self._manual_source_snapshots.get(
+                    str(value.get("id", "")), value
+                )
+            )
             self._refresh_channels_list(value.get("channels", []))
             self._update_heat_map(value)
+            self._selected_pair = self._first_off_diagonal_pair(value)
+            self._update_preview_pair_label()
+            self._load_coefficient_controls()
             self._set_calculated_matrix_editability(
                 value.get("source") == "calculated"
             )
@@ -543,6 +639,9 @@ class CompensationMatrixEditorDialog(QDialog):
             self._channels_list.clear()
             self._heat_map.setRowCount(0)
             self._heat_map.setColumnCount(0)
+            self._source_matrix_snapshot = None
+            self._selected_pair = None
+            self._update_preview_pair_label()
             self._set_calculated_matrix_editability(False)
             self._diag_label.setText("No matrix selected")
         finally:
@@ -587,6 +686,7 @@ class CompensationMatrixEditorDialog(QDialog):
         provenance["software_version"] = "flowdesk-gui"
         provenance["manual_edits"] = []
         new_matrix["provenance"] = provenance
+        self._manual_source_snapshots[str(new_matrix["id"])] = deepcopy(original)
         self._matrices.append(new_matrix)
         self._refresh_matrix_list(len(self._matrices) - 1)
 
@@ -729,9 +829,281 @@ class CompensationMatrixEditorDialog(QDialog):
                 bg = _heatmap_color(clamped_val)
                 item.setBackground(bg)
                 # Calculated matrices are immutable; cells are read-only.
-                if matrix_mapping.get("source") == "calculated":
+                if (
+                    matrix_mapping.get("source") == "calculated"
+                    or row_idx == col_idx
+                ):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._heat_map.setItem(row_idx, col_idx, item)
+        self._load_coefficient_controls()
+
+    @staticmethod
+    def _first_off_diagonal_pair(
+        matrix_mapping: dict[str, Any],
+    ) -> tuple[str, str] | None:
+        channels = [str(value) for value in matrix_mapping.get("channels", [])]
+        for receiving_index, receiving in enumerate(channels):
+            for source_index, source in enumerate(channels):
+                if receiving_index != source_index:
+                    return source, receiving
+        return None
+
+    def _update_preview_pair_label(self) -> None:
+        if self._selected_pair is None:
+            self._preview_pair_label.setText(
+                "Select an off-diagonal matrix cell to inspect a source → receiving pair."
+            )
+            return
+        source, receiving = self._selected_pair
+        self._preview_pair_label.setText(
+            f"Source channel (spill from) {self._channel_label(source)} → "
+            f"Receiving channel (spill into) {self._channel_label(receiving)}"
+        )
+
+    def _on_heat_map_cell_clicked(self, row: int, column: int) -> None:
+        if self._loading or not (0 <= self._current_matrix_row < len(self._matrices)):
+            return
+        matrix = self._matrices[self._current_matrix_row]
+        channels = [str(value) for value in matrix.get("channels", [])]
+        if row < 0 or column < 0 or row >= len(channels) or column >= len(channels):
+            return
+        if row == column:
+            self._selected_pair = None
+            self._update_preview_pair_label()
+            self._diag_label.setText("Diagonal compensation coefficients are fixed at 100%.")
+            return
+        self._selected_pair = channels[column], channels[row]
+        self._update_preview_pair_label()
+        self._load_coefficient_controls()
+        self._schedule_candidate_preview()
+
+    def _on_heat_map_cell_changed(self, _row: int, _column: int) -> None:
+        if not self._loading:
+            self._load_coefficient_controls()
+            self._schedule_candidate_preview()
+
+    def _load_coefficient_controls(self) -> None:
+        if self._selected_pair is None:
+            self._coefficient_label.setText("No pair selected")
+            self._coefficient_spin.setEnabled(False)
+            self._coefficient_slider.setEnabled(False)
+            self._coefficient_reset_btn.setEnabled(False)
+            return
+        if not (0 <= self._current_matrix_row < len(self._matrices)):
+            return
+        matrix = self._matrices[self._current_matrix_row]
+        channels = [str(value) for value in matrix.get("channels", [])]
+        source, receiving = self._selected_pair
+        if source not in channels or receiving not in channels:
+            return
+        source_index = channels.index(source)
+        receiving_index = channels.index(receiving)
+        item = self._heat_map.item(receiving_index, source_index)
+        if item is None:
+            return
+        try:
+            percent = float(item.text()) * 100.0
+        except ValueError:
+            return
+        self._setting_coefficient = True
+        try:
+            self._coefficient_label.setText(
+                f"{self._channel_label(source)} → {self._channel_label(receiving)}"
+            )
+            editable = matrix.get("source") != "calculated"
+            self._coefficient_spin.setEnabled(editable)
+            self._coefficient_slider.setEnabled(editable)
+            self._coefficient_reset_btn.setEnabled(editable)
+            self._coefficient_spin.setValue(percent)
+            center = round(percent * 1000.0)
+            self._coefficient_slider.setRange(center - 5000, center + 5000)
+            self._coefficient_slider.setValue(center)
+        finally:
+            self._setting_coefficient = False
+
+    def _set_selected_coefficient_percent(self, percent: float) -> None:
+        if self._setting_coefficient or self._selected_pair is None:
+            return
+        if not (0 <= self._current_matrix_row < len(self._matrices)):
+            return
+        matrix = self._matrices[self._current_matrix_row]
+        if matrix.get("source") == "calculated":
+            return
+        channels = [str(value) for value in matrix.get("channels", [])]
+        source, receiving = self._selected_pair
+        if source not in channels or receiving not in channels:
+            return
+        item = self._heat_map.item(channels.index(receiving), channels.index(source))
+        if item is None:
+            return
+        self._setting_coefficient = True
+        try:
+            item.setText(f"{percent / 100.0:.8g}")
+        finally:
+            self._setting_coefficient = False
+        self._schedule_candidate_preview()
+
+    def _on_coefficient_spin_changed(self, value: float) -> None:
+        self._set_selected_coefficient_percent(float(value))
+
+    def _on_coefficient_slider_changed(self, value: int) -> None:
+        if self._setting_coefficient:
+            return
+        self._set_selected_coefficient_percent(float(value) / 1000.0)
+
+    def _reset_coefficient(self) -> None:
+        if self._selected_pair is None or self._source_matrix_snapshot is None:
+            return
+        source, receiving = self._selected_pair
+        channels = [
+            str(value) for value in self._source_matrix_snapshot.get("channels", [])
+        ]
+        if source not in channels or receiving not in channels:
+            return
+        value = self._source_matrix_snapshot.get("matrix", [])[channels.index(receiving)][
+            channels.index(source)
+        ]
+        self._set_selected_coefficient_percent(float(value) * 100.0)
+
+    def _schedule_candidate_preview(self) -> None:
+        if self._selected_pair is None:
+            return
+        if not (0 <= self._current_matrix_row < len(self._matrices)):
+            return
+        sample_index = self._preview_sample_combo.currentIndex()
+        if sample_index < 0:
+            return
+        sample_id = str(self._preview_sample_combo.itemText(sample_index))
+        if sample_id == "(no data available)":
+            return
+        sample_info = self._sample_data.get(sample_id)
+        if sample_info is None:
+            return
+        self._commit_current_matrix()
+        mapping = self._matrices[self._current_matrix_row]
+        try:
+            candidate = CompensationMatrixSpec(**mapping)
+        except (TypeError, ValueError) as exc:
+            self._diag_label.setText(f"Preview waiting for valid matrix: {exc}")
+            return
+        events = np.asarray(sample_info.get("events"), dtype=np.float64)
+        channel_ids = tuple(str(value) for value in sample_info.get("channel_ids", ()))
+        population_mask = np.asarray(
+            sample_info.get("population_mask", np.ones(len(events), dtype=np.bool_)),
+            dtype=np.bool_,
+        )
+        self._preview_revision += 1
+        request = CompensationPreviewRequest(
+            revision=self._preview_revision,
+            sample_id=sample_id,
+            events=events,
+            channel_ids=channel_ids,
+            population_mask=population_mask,
+            candidate_matrix=candidate,
+            source_matrix=(
+                CompensationMatrixSpec(**self._source_matrix_snapshot)
+                if self._source_matrix_snapshot is not None
+                else None
+            ),
+            source_channel_id=self._selected_pair[0],
+            receiving_channel_id=self._selected_pair[1],
+            positive_mask=(
+                np.asarray(sample_info["positive_mask"], dtype=np.bool_)
+                if sample_info.get("positive_mask") is not None else None
+            ),
+            negative_mask=(
+                np.asarray(sample_info["negative_mask"], dtype=np.bool_)
+                if sample_info.get("negative_mask") is not None else None
+            ),
+            outlier_policy=str(sample_info.get("outlier_policy", "none")),
+            display_max_points=20_000,
+        )
+        self._diag_label.setText(
+            f"Preview pending (revision {request.revision})"
+        )
+        self._preview_scheduler.schedule(request)
+
+    def _on_candidate_preview_ready(
+        self,
+        request: CompensationPreviewRequest,
+        result: CompensationPreviewResult,
+    ) -> None:
+        if request.revision != self._preview_revision:
+            return
+        source_label = self._channel_label(result.source_channel_id)
+        receiving_label = self._channel_label(result.receiving_channel_id)
+        self._uncompensated_plot.plot_events(
+            result.uncompensated_x,
+            result.uncompensated_y,
+            x_label=source_label,
+            y_label=receiving_label,
+        )
+        self._compensated_plot.plot_events(
+            result.compensated_x,
+            result.compensated_y,
+            x_label=source_label,
+            y_label=receiving_label,
+        )
+        self._uncompensated_plot.set_presentation(
+            {"title": "Uncompensated", "background_color": "#ffffff"}
+        )
+        self._compensated_plot.set_presentation(
+            {"title": "Compensated", "background_color": "#ffffff"}
+        )
+        if result.axis_limits is not None:
+            x_min, x_max, y_min, y_max = result.axis_limits
+            for plot in (self._uncompensated_plot, self._compensated_plot):
+                plot.set_manual_view_range(((x_min, x_max), (y_min, y_max)))
+        diagnostic = result.diagnostics[0] if result.diagnostics else None
+        if diagnostic is None:
+            self._diag_label.setText(
+                f"Preview ready (revision {result.revision}); no pair diagnostic."
+            )
+            return
+        details = []
+        if diagnostic.automatic_coefficient is not None:
+            details.append(
+                f"source={diagnostic.automatic_coefficient * 100:.6g}%"
+            )
+        details.append(f"candidate={diagnostic.candidate_coefficient * 100:.6g}%")
+        if diagnostic.coefficient_difference is not None:
+            details.append(
+                f"difference={diagnostic.coefficient_difference * 100:+.6g}pp"
+            )
+        if diagnostic.residual_slope is not None:
+            details.append(f"residual slope={diagnostic.residual_slope:.5g}")
+        if diagnostic.correlation is not None:
+            details.append(f"r={diagnostic.correlation:.5g}")
+        if diagnostic.receiving_median_difference is not None:
+            details.append(
+                f"receiving median difference={diagnostic.receiving_median_difference:.5g}"
+            )
+        details.append(
+            f"control events={diagnostic.included_event_count}"
+            f" (+{diagnostic.positive_event_count}/-{diagnostic.negative_event_count})"
+        )
+        if diagnostic.excluded_event_count:
+            details.append(f"excluded={diagnostic.excluded_event_count}")
+        if diagnostic.condition_number is not None:
+            details.append(f"condition={diagnostic.condition_number:.5g}")
+        if diagnostic.undefined_reasons:
+            details.append("undefined=" + ",".join(diagnostic.undefined_reasons))
+        self._diag_label.setText(
+            f"Preview ready (revision {result.revision}); "
+            f"events={result.population_event_count}; "
+            + "; ".join(details)
+        )
+
+    def _on_candidate_preview_failed(
+        self,
+        request: CompensationPreviewRequest,
+        error: Exception,
+    ) -> None:
+        if request.revision != self._preview_revision:
+            return
+        self._diag_label.setText(
+            f"Preview failed for revision {request.revision}: {error}"
+        )
 
     # -- Matrix commit -------------------------------------------------------
 
@@ -779,6 +1151,42 @@ class CompensationMatrixEditorDialog(QDialog):
                         row_vals.append(0.0)
                 new_matrix.append(row_vals)
             original["matrix"] = new_matrix
+
+        source = self._source_matrix_snapshot
+        if (
+            source is not None
+            and str(source.get("id", "")) != str(original.get("id", ""))
+        ):
+            old_channels = [str(value) for value in source.get("channels", [])]
+            old_matrix = source.get("matrix", [])
+            new_channels = [str(value) for value in original.get("channels", [])]
+            edits: list[dict[str, Any]] = []
+            for old_row, row_channel in enumerate(old_channels):
+                for old_column, column_channel in enumerate(old_channels):
+                    if row_channel not in new_channels or column_channel not in new_channels:
+                        continue
+                    new_row = new_channels.index(row_channel)
+                    new_column = new_channels.index(column_channel)
+                    if old_row >= len(old_matrix) or old_column >= len(old_matrix[old_row]):
+                        continue
+                    old_value = float(old_matrix[old_row][old_column])
+                    new_value = float(original["matrix"][new_row][new_column])
+                    if old_value == new_value:
+                        continue
+                    edits.append({
+                        "row_channel_id": row_channel,
+                        "column_channel_id": column_channel,
+                        "old_value": old_value,
+                        "new_value": new_value,
+                        "edited_at": datetime.now(UTC).isoformat(),
+                        "edited_by": "flowdesk-gui",
+                        "reason": "interactive compensation preview adjustment",
+                    })
+            if edits:
+                provenance = dict(original.get("provenance", {}))
+                provenance["derived_from_matrix_id"] = str(source.get("id", ""))
+                provenance["manual_edits"] = edits
+                original["provenance"] = provenance
 
     # -- Validation ----------------------------------------------------------
 

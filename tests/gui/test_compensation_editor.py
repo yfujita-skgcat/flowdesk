@@ -14,6 +14,7 @@ pytest.importorskip("pyqtgraph")
 pytestmark = pytest.mark.gui
 
 from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from flowdesk_core.models import ChannelSpec  # noqa: E402
@@ -594,6 +595,54 @@ def test_preview_populates_table_with_core_output() -> None:
         assert table.item(0, 0).text() == "FL1-A"
         diag = dialog.findChild(QLabel, "compensationDiagnosticLabel")
         assert "Preview" in diag.text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_preview_renders_before_after_plots_and_coefficient_controls() -> None:
+    import numpy as np
+
+    app = _app()
+    matrix = _valid_2x2_matrix()
+    events = np.array([
+        [100.0, 200.0, 50.0],
+        [300.0, 400.0, 100.0],
+        [50.0, 60.0, 20.0],
+    ], dtype=np.float64)
+    sample_data = {
+        "sample_1": {
+            "events": events,
+            "channel_ids": ["FSC-H", "FL1-A", "FL2-A"],
+        }
+    }
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[matrix],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=[],
+        sample_data=sample_data,
+    )
+    try:
+        dialog._on_preview()
+        for _ in range(100):
+            if dialog._compensated_plot.has_rendered_data():
+                break
+            QTest.qWait(5)
+        assert dialog._uncompensated_plot.has_rendered_data()
+        assert dialog._compensated_plot.has_rendered_data()
+        assert dialog._selected_pair == ("FL2-A", "FL1-A")
+        assert "Source channel" in dialog._preview_pair_label.text()
+        assert "Columns: Source channel" in dialog.findChild(
+            QLabel, "compensationMatrixDirectionLabel"
+        ).text()
+        before = float(dialog._heat_map.item(0, 1).text())
+        dialog._coefficient_spin.setValue(25.0)
+        after = float(dialog._heat_map.item(0, 1).text())
+        assert before != after
+        assert after == pytest.approx(0.25)
     finally:
         dialog.close()
         dialog.deleteLater()

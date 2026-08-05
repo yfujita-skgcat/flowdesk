@@ -654,7 +654,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 #### Matrices list
 
-`New`、`Duplicate`、`Delete` で matrix definition を管理する。
+`New`、`Save as Copy`、`Delete` で matrix definition を管理する。保存済みmatrixを手動調整する場合は、元matrixの由来を保てるよう`Save as Copy`で複製してから編集する。
 
 #### matrix form
 
@@ -667,7 +667,9 @@ source event count、candidate event count、gained、lost、scientific equivale
 |Channels|matrix に含める fluorescence channel。表示名（必要なら注釈）とstable IDを併記し、チェック状態で個別に選択する。|
 |Select All Channels|候補チャンネルをすべて選択する。ボタン名どおり、matrixへの個別追加ではなく全選択を行う。|
 |Clear All Channels|候補チャンネルをすべて解除する。ボタン名どおり、matrixから個別に除く操作ではなく全解除を行う。|
-|Matrix Heat Map Preview|row/column が表示名とstable IDを併記した channel の matrix table。stable IDはtooltipでも確認でき、係数を編集・確認する。|
+|Matrix Heat Map Preview|row/column が表示名とstable IDを併記した channel の matrix table。stable IDはtooltipでも確認でき、係数を編集・確認する。off-diagonal cellを選ぶと、選択pairの補償前後plotも表示する。|
+|補償前後plot|同じsample、Population、event subset、transform、軸範囲でUncompensated/Compensatedを比較する。候補matrixのpreviewであり、Run Pipeline前のauthoritative結果ではない。|
+|Pair diagnostic|single-stain controlのpositive/negative Populationが指定されている場合、residual slope、相関、median差、event数、condition numberを表示する。値を計算できない場合はundefined理由を表示する。|
 |Validate|shape、finite values、diagonal、invertibility/condition 等を inspect。|
 |diagnostic label|validity と condition number、または errors。|
 
@@ -740,7 +742,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 |---|---|
 |New|pending defaults を使って新規 statistic を作る。既定Metricは`mean`で、Parameterを選択できる状態から開始する。|
 |Delete|選択 definition を削除。最後の1件も削除できる。downstream reference がある場合は保護される。削除後はResults列と保持済み統計値も直ちに除去され、次回Pipelineでは削除済み定義を計算しない。|
-|Duplicate|選択 definition を新 ID 用に複製。|
+|Save as Copy|選択matrixを新ID用に複製し、元matrixを保持する。manual editの由来をprovenanceへ記録する。|
 |Clear All|全 definition を削除。|
 |Undo / Redo|dialog 内の statistic definition edits を取り消し/やり直し。gate undo とは別。|
 

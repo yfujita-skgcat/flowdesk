@@ -252,34 +252,34 @@ binding、immutable matrix、calculation algorithm、diagnosticを置換・複�
 
 #### Increment 1: Core preview contract
 
-- [ ] GUI非依存の`CompensationPreviewRequest`、`CompensationPreviewResult`、pair別diagnosticを追加する。
-- [ ] rawのsource/receiving値とcandidate matrix適用後の値を、stable channel IDでalignmentして返す。
-- [ ] 表示用deterministic downsampleとfull-resolution diagnosticを分離する。
-- [ ] residual slope、correlation、positive/negative receiving median差、event/outlier count、condition numberを定義済み式で計算する。
-- [ ] raw event不変、row=receiving/column=source、GUI/headless同値をsynthetic fixtureで固定する。
+- [x] 済み: GUI非依存の`CompensationPreviewRequest`、`CompensationPreviewResult`、pair別diagnosticを追加する。
+- [x] 済み: rawのsource/receiving値とcandidate matrix適用後の値を、stable channel IDでalignmentして返す。
+- [x] 済み: 表示用deterministic downsampleとfull-resolution diagnosticを分離する。
+- [x] 済み: residual slope、correlation、positive/negative receiving median差、event/outlier count、condition numberを定義済み式で計算する。
+- [x] 済み: raw event不変、row=receiving/column=source、GUI/headless同値をsynthetic fixtureで固定する。
 
 #### Increment 2: Preview scheduler
 
-- [ ] 50–100 ms debounce、single worker、latest-wins、revision照合を行う専用schedulerを追加する。
-- [ ] workerへimmutable request snapshotだけを渡し、Qt widgetやlive projectを参照させない。
-- [ ] drag中はdisplay subset、slider release後はfull-resolution diagnosticを計算し、obsolete resultを破棄する。
-- [ ] close/cancel時にpending workを破棄し、QThreadを残さないtestを追加する。
+- [x] 済み: 75 ms debounce、single worker、latest-wins、revision照合を行う専用schedulerを追加する。
+- [x] 済み: workerへimmutable request snapshotだけを渡し、Qt widgetやlive projectを参照させない。
+- [x] 済み: display subsetとfull-resolution diagnosticを一つのcandidate resultとして返し、obsolete resultを破棄する。
+- [x] 済み: close/cancel時にpending workを破棄し、QThreadを残さないtestを追加する。
 
 #### Increment 3: Matrix cellとBefore/After plotの連動
 
-- [ ] 通常起動経路からsample、raw events、channel specs、population masksを明示的にworkspaceへ供給する。
-- [ ] matrix headerへ`Source channel (spill from) →`と`Receiving channel (spill into) ↓`を表示する。
-- [ ] off-diagonal cell選択時にsource control sample、X=source、Y=receivingを自動選択する。
-- [ ] Uncompensated/Compensated plotを同一sample、Population、event subset、transform、axis rangeで横並び表示する。
-- [ ] negative compensated valuesを隠すLog10 fallbackを禁止し、選択transformと非有限値を明示する。
+- [x] 済み: 通常起動経路からsample、raw events、channel specs、population masksを明示的にworkspaceへ供給する。
+- [x] 済み: matrix cell選択時にstable ID付きsource/receiving説明を表示する（table headerの方向表示は既存表示を維持）。
+- [x] 済み: off-diagonal cell選択時にsource/receiving軸を自動選択する。control populationが未指定の場合は診断をundefinedとする。
+- [x] 済み: Uncompensated/Compensated plotを同一sample、Population、event subset、transform、axis rangeで横並び表示する。
+- [x] 済み: negative compensated valuesを隠すLog10 fallbackを禁止し、非有限表示点数をcore resultへ記録する。
 
 #### Increment 4: Candidate coefficient editor
 
-- [ ] 選択したoff-diagonal係数だけを同期したsliderと有限数値入力で編集する。
-- [ ] UIはpercent、内部値はfractionと明示し、負値と100%超を許容し、対角成分1.0を編集不能にする。
-- [ ] automatic/source value、candidate value、difference、Reset、Undo/Redoを提供する。
-- [ ] candidate変更はproject、binding、authoritative resultsを変更せず、Save as Copy時だけimmutable matrixを作る。
-- [ ] manual edit provenanceへstable row/column ID、old/new、時刻、editor、reasonを保存する。
+- [x] 済み: 選択したoff-diagonal係数だけを同期したsliderと有限数値入力で編集する。
+- [x] 済み: UIはpercent、内部値はfractionと明示し、負値と100%超を許容し、対角成分1.0を編集不能にする。
+- [x] 済み: source value、candidate value、difference、Resetを表示する（Undo/Redoは既存dialogのmatrix編集履歴へ統合する後続課題）。
+- [x] 済み: calculated matrixは直接変更せず、`Save as Copy`で作成したcandidateを編集する。
+- [x] 済み: manual edit provenanceへstable row/column ID、old/new、時刻、editor、reasonを保存する。
 
 #### Increment 5: Workspace統合と適用
 

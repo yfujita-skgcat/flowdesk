@@ -5242,6 +5242,14 @@ class MainWindow(QMainWindow):
 
         sample_ids = [s.id for s in self._sample_browser.samples()]
         group_ids = []
+        sample_data = {
+            sample_id: {
+                "events": sample.events,
+                "channel_ids": [channel.id for channel in sample.channels],
+                "population_mask": np.ones(sample.event_count, dtype=np.bool_),
+            }
+            for sample_id, sample in self._sample_data.items()
+        }
 
         # Pass project-scoped labels while retaining stable IDs for all
         # persisted matrix definitions and bindings.
@@ -5263,6 +5271,7 @@ class MainWindow(QMainWindow):
             display_channels,
             sample_ids,
             group_ids,
+            sample_data=sample_data,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
