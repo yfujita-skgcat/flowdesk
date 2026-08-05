@@ -685,8 +685,8 @@ control populationの計算結果がstaleな場合は、workspaceは安全のた
 |Channels|matrix に含める fluorescence channel。表示名（必要なら注釈）とstable IDを併記し、チェック状態で個別に選択する。|
 |Select All Channels|候補チャンネルをすべて選択する。ボタン名どおり、matrixへの個別追加ではなく全選択を行う。|
 |Clear All Channels|候補チャンネルをすべて解除する。ボタン名どおり、matrixから個別に除く操作ではなく全解除を行う。|
-|Matrix Heat Map Preview|row/column が表示名とstable IDを併記した channel の matrix table。stable IDはtooltipでも確認でき、係数を編集・確認する。off-diagonal cellを選ぶと、選択pairの補償前後plotも表示する。|
-|補償前後plot|同じsample、Population、event subset、transform、軸範囲でUncompensated/Compensatedを比較する。候補matrixのpreviewであり、Run Pipeline前のauthoritative結果ではない。|
+|Matrix Heat Map Preview|row/column が表示名とstable IDを併記した channel の matrix table。stable IDはtooltipでも確認でき、係数を編集・確認する。off-diagonal cellを選ぶと、選択pairのcandidate previewを表示する。|
+|Compensated candidate plot|選択したsample、Population、event subset、transform、軸範囲で候補matrix適用後の値を表示する。係数を0にすれば未補償に相当するため、未補償値を別のplotには表示しない。候補matrixのpreviewであり、Run Pipeline前のauthoritative結果ではない。|
 |Pair diagnostic|single-stain controlのpositive/negative Populationが指定されている場合、residual slope、相関、median差、event数、condition numberを表示する。値を計算できない場合はundefined理由を表示する。|
 |Validate|shape、finite values、diagonal、invertibility/condition 等を inspect。|
 |diagnostic label|validity と condition number、または errors。|
@@ -702,13 +702,13 @@ control populationの計算結果がstaleな場合は、workspaceは安全のた
 |Target ID|scope に対応する sample/group/profile ID。|
 |Notes|任意メモ。|
 
-#### Compensated / Uncompensated Preview
+#### Compensated Preview
 
 |control|説明|
 |---|---|
 |Sample combo|event data が GUI に読み込まれている sample。|
 |Preview|current matrix を selected sample に適用する。|
-|Preview table|Channel、Uncompensated、Compensated の代表 summary。|
+|Preview table|Channel、Compensated candidate の代表 summary。未補償値はcoreのpreview計算には保持されるが、GUIでは重複表示しない。|
 
 `OK` は定義全体を validate して保存、`Cancel` は破棄する。画面サイズは利用可能なモニタ領域に合わせて初期化され、必要なら手動でリサイズできる。
 

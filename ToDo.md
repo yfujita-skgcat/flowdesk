@@ -276,7 +276,7 @@ binding、immutable matrix、calculation algorithm、diagnosticを置換・複�
 - [x] 済み: 通常起動経路からsample、raw events、channel specs、population masksを明示的にworkspaceへ供給する。
 - [x] 済み: matrix cell選択時にstable ID付きsource/receiving説明を表示する（table headerの方向表示は既存表示を維持）。
 - [x] 済み: off-diagonal cell選択時にsource/receiving軸を自動選択する。control populationが未指定の場合は診断をundefinedとする。
-- [x] 済み: Uncompensated/Compensated plotを同一sample、Population、event subset、transform、axis rangeで横並び表示する。
+- [x] 済み: Candidate Compensated plotを同一sample、Population、event subset、transform、axis rangeで表示する。Uncompensated plotは係数0で再現できるためGUIから削除した。
 - [x] 済み: negative compensated valuesを隠すLog10 fallbackを禁止し、非有限表示点数をcore resultへ記録する。
 
 #### Increment 4: Candidate coefficient editor

@@ -391,8 +391,6 @@ class CompensationMatrixEditorDialog(QDialog):
         preview = QWidget()
         preview_layout = QVBoxLayout(preview)
         self._build_preview_section(preview_layout)
-        self._preview_range_syncing = False
-        self._connect_preview_range_sync()
 
         splitter.addWidget(left)
         splitter.addWidget(details)
@@ -463,44 +461,6 @@ class CompensationMatrixEditorDialog(QDialog):
             raise RuntimeError("binding panel has not been built")
         return self._binding_panel
 
-    def _connect_preview_range_sync(self) -> None:
-        """Synchronize interactive pan/zoom between the two preview plots."""
-        for plot in (self._uncompensated_plot, self._compensated_plot):
-            view_box = plot._view_box()
-            if view_box is not None:
-                view_box.sigRangeChanged.connect(
-                    lambda _view_box, _ranges, _changed, source=plot:
-                    self._on_preview_range_changed(source)
-                )
-
-    def _on_preview_range_changed(self, source_plot: PlotWidget) -> None:
-        """Copy a ViewBox range after either preview is panned or zoomed."""
-        if self._preview_range_syncing:
-            return
-        source_view_box = source_plot._view_box()
-        if source_view_box is None:
-            return
-        ranges = source_view_box.viewRange()
-        if len(ranges) != 2:
-            return
-        target_plot = (
-            self._compensated_plot
-            if source_plot is self._uncompensated_plot
-            else self._uncompensated_plot
-        )
-        target_view_box = target_plot._view_box()
-        if target_view_box is None:
-            return
-        self._preview_range_syncing = True
-        try:
-            target_view_box.setRange(
-                xRange=tuple(float(value) for value in ranges[0]),
-                yRange=tuple(float(value) for value in ranges[1]),
-                padding=0,
-            )
-        finally:
-            self._preview_range_syncing = False
-
     def _build_binding_form(self, layout: QVBoxLayout) -> None:
         """Build the inline binding editor form."""
         binding_form_group = QGroupBox("Binding Editor")
@@ -533,8 +493,8 @@ class CompensationMatrixEditorDialog(QDialog):
     # -- Preview section -----------------------------------------------------
 
     def _build_preview_section(self, layout: QVBoxLayout) -> None:
-        """Build the compensated / uncompensated preview widget."""
-        preview_group = QGroupBox("Compensated / Uncompensated Preview")
+        """Build the candidate compensated preview widget."""
+        preview_group = QGroupBox("Compensated Preview")
         preview_layout = QVBoxLayout(preview_group)
 
         # Sample selector
@@ -606,24 +566,17 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_pair_label.setWordWrap(True)
         preview_layout.addWidget(self._preview_pair_label)
 
-        plot_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self._uncompensated_plot = PlotWidget()
-        self._uncompensated_plot.setObjectName("compensationUncompensatedPlot")
         self._compensated_plot = PlotWidget()
         self._compensated_plot.setObjectName("compensationCompensatedPlot")
-        plot_splitter.addWidget(self._uncompensated_plot)
-        plot_splitter.addWidget(self._compensated_plot)
-        plot_splitter.setStretchFactor(0, 1)
-        plot_splitter.setStretchFactor(1, 1)
-        plot_splitter.setMinimumHeight(260)
-        preview_layout.addWidget(plot_splitter)
+        self._compensated_plot.setMinimumHeight(360)
+        preview_layout.addWidget(self._compensated_plot)
 
-        # Preview table: columns = channel, uncompensated, compensated
+        # Preview table: columns = channel, compensated candidate
         self._preview_table = QTableWidget()
         self._preview_table.setObjectName("compensationPreviewTable")
-        self._preview_table.setColumnCount(3)
+        self._preview_table.setColumnCount(2)
         self._preview_table.setHorizontalHeaderLabels([
-            "Channel", "Uncompensated", "Compensated",
+            "Channel", "Compensated",
         ])
         self._preview_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
@@ -634,7 +587,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_btn.clicked.connect(self._on_preview)
 
     def _on_preview(self) -> None:
-        """Execute compensated/uncompensated preview using core apply_compensation."""
+        """Execute the candidate compensated preview using core apply_compensation."""
         idx = self._preview_sample_combo.currentIndex()
         if idx < 0:
             return
@@ -681,18 +634,12 @@ class CompensationMatrixEditorDialog(QDialog):
                 except ValueError:
                     continue
                 for evt in range(n_show):
-                    uncomp = compensated[evt, col_idx]
                     self._preview_table.setItem(
                         row, 0, QTableWidgetItem(self._channel_label(ch))
                     )
                     self._preview_table.setItem(
                         row, 1, QTableWidgetItem(
-                            f"{events[evt, col_idx]:.4f}"
-                        )
-                    )
-                    self._preview_table.setItem(
-                        row, 2, QTableWidgetItem(
-                            f"{uncomp:.4f}"
+                            f"{compensated[evt, col_idx]:.4f}"
                         )
                     )
                     row += 1
@@ -707,7 +654,7 @@ class CompensationMatrixEditorDialog(QDialog):
             self._diag_label.setText(f"Preview failed: {exc}")
 
     def _on_preview_transform_changed(self) -> None:
-        """Apply the selected display transforms to both preview plots."""
+        """Apply the selected display transforms to the preview plot."""
         self._apply_preview_axis_transforms()
         self._schedule_candidate_preview(preserve_range=False)
 
@@ -718,8 +665,7 @@ class CompensationMatrixEditorDialog(QDialog):
         y_transform = str(
             self._preview_y_transform_combo.currentData() or "linear"
         )
-        for plot in (self._uncompensated_plot, self._compensated_plot):
-            plot.set_axis_transforms(x_transform, y_transform)
+        self._compensated_plot.set_axis_transforms(x_transform, y_transform)
 
     # -- Matrix list ---------------------------------------------------------
 
@@ -1129,8 +1075,8 @@ class CompensationMatrixEditorDialog(QDialog):
         if not preserve_range:
             self._preview_preserved_view_range = None
         elif self._preview_preserved_view_range is None:
-            ranges = self._uncompensated_plot.view_range()
-            if ranges is not None and self._uncompensated_plot.has_rendered_data():
+            ranges = self._compensated_plot.view_range()
+            if ranges is not None and self._compensated_plot.has_rendered_data():
                 self._preview_preserved_view_range = ranges
         if self._selected_pair is None:
             return
@@ -1223,23 +1169,14 @@ class CompensationMatrixEditorDialog(QDialog):
         source_label = self._short_channel_label(result.source_channel_id)
         receiving_label = self._short_channel_label(result.receiving_channel_id)
         self._apply_preview_axis_transforms()
-        self._uncompensated_plot.plot_events(
-            result.uncompensated_x,
-            result.uncompensated_y,
-            x_label=source_label,
-            y_label=receiving_label,
-        )
         self._compensated_plot.plot_events(
             result.compensated_x,
             result.compensated_y,
             x_label=source_label,
             y_label=receiving_label,
         )
-        self._uncompensated_plot.set_presentation(
-            {"title": "Uncompensated", "background_color": "#ffffff"}
-        )
         self._compensated_plot.set_presentation(
-            {"title": "Compensated", "background_color": "#ffffff"}
+            {"title": "Compensated candidate", "background_color": "#ffffff"}
         )
         if self._preview_preserved_view_range is None:
             self._apply_shared_preview_range(result.axis_limits)
@@ -1289,29 +1226,28 @@ class CompensationMatrixEditorDialog(QDialog):
         self,
         axis_limits: tuple[float, float, float, float] | None,
     ) -> None:
-        """Apply one canonical X/Y range to both preview plots.
+        """Apply one canonical X/Y range to the compensated preview plot.
 
-        The core preview computes this range from the union of uncompensated and
-        compensated finite display values.  Never let either PlotWidget auto-range
-        independently, because that would make visual comparison misleading.
+        The core preview computes this range from the candidate preview data.
+        Never let PlotWidget auto-range independently after a coefficient update.
         """
         if axis_limits is None:
             return
         x_min, x_max, y_min, y_max = axis_limits
-        for plot in (self._uncompensated_plot, self._compensated_plot):
-            plot.set_manual_view_range((x_min, x_max), (y_min, y_max))
+        self._compensated_plot.set_manual_view_range(
+            (x_min, x_max), (y_min, y_max)
+        )
 
     def _apply_preserved_preview_range(
         self,
         view_range: tuple[tuple[float, float], tuple[float, float]],
     ) -> None:
         """Restore the user's current ViewBox range after coefficient edits."""
-        for plot in (self._uncompensated_plot, self._compensated_plot):
-            view_box = plot._view_box()
-            if view_box is not None:
-                view_box.setRange(
-                    xRange=view_range[0], yRange=view_range[1], padding=0
-                )
+        view_box = self._compensated_plot._view_box()
+        if view_box is not None:
+            view_box.setRange(
+                xRange=view_range[0], yRange=view_range[1], padding=0
+            )
 
     def _on_candidate_preview_failed(
         self,

@@ -173,7 +173,7 @@ def test_preview_uses_compact_labels_and_supports_display_transforms() -> None:
     assert dialog._preview_y_transform_combo.itemData(2) == "asinh"
     dialog._preview_x_transform_combo.setCurrentIndex(1)
     dialog._preview_y_transform_combo.setCurrentIndex(2)
-    assert dialog._uncompensated_plot._x_transform == "log10"
+    assert not hasattr(dialog, "_uncompensated_plot")
     assert dialog._compensated_plot._y_transform == "asinh"
   finally:
     dialog.close()
@@ -181,7 +181,7 @@ def test_preview_uses_compact_labels_and_supports_display_transforms() -> None:
     app.processEvents()
 
 
-def test_preview_applies_identical_range_to_both_plots() -> None:
+def test_preview_applies_canonical_range_to_compensated_plot() -> None:
   app = _app()
   dialog = CompensationMatrixEditorDialog(
     matrices=[_valid_2x2_matrix()],
@@ -199,20 +199,17 @@ def test_preview_applies_identical_range_to_both_plots() -> None:
       self.ranges.append((x_range, y_range))
 
   try:
-    uncompensated = _RangeRecorder()
     compensated = _RangeRecorder()
-    dialog._uncompensated_plot = uncompensated
     dialog._compensated_plot = compensated
     dialog._apply_shared_preview_range((1.0, 10.0, 2.0, 20.0))
-    assert uncompensated.ranges == [((1.0, 10.0), (2.0, 20.0))]
-    assert compensated.ranges == uncompensated.ranges
+    assert compensated.ranges == [((1.0, 10.0), (2.0, 20.0))]
   finally:
     dialog.close()
     dialog.deleteLater()
     app.processEvents()
 
 
-def test_preview_pan_and_zoom_are_synchronized() -> None:
+def test_preview_pan_and_zoom_updates_compensated_plot() -> None:
   app = _app()
   dialog = CompensationMatrixEditorDialog(
     matrices=[_valid_2x2_matrix()],
@@ -222,16 +219,13 @@ def test_preview_pan_and_zoom_are_synchronized() -> None:
     group_ids=[],
   )
   try:
-    first = dialog._uncompensated_plot._view_box()
-    second = dialog._compensated_plot._view_box()
-    assert first is not None
-    assert second is not None
-    first.setRange(xRange=(2.0, 8.0), yRange=(3.0, 9.0), padding=0)
+    view_box = dialog._compensated_plot._view_box()
+    assert view_box is not None
+    view_box.setRange(xRange=(2.0, 8.0), yRange=(3.0, 9.0), padding=0)
     app.processEvents()
-    first_range = first.viewRange()
-    second_range = second.viewRange()
-    assert second_range[0] == pytest.approx(first_range[0])
-    assert second_range[1] == pytest.approx(first_range[1])
+    ranges = view_box.viewRange()
+    assert ranges[0] == pytest.approx([2.0, 8.0])
+    assert ranges[1] == pytest.approx([3.0, 9.0])
   finally:
     dialog.close()
     dialog.deleteLater()
@@ -648,13 +642,13 @@ def test_accept_rejects_duplicate_scope_target() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Compensated / uncompensated preview
+# Compensated preview
 # ---------------------------------------------------------------------------
 
 
 def test_preview_populates_table_with_core_output() -> None:
-    """The preview table must show uncompensated and compensated values
-    derived from core's ``apply_compensation``, not a Qt-side calculation."""
+    """The preview table must show candidate values from core's
+    ``apply_compensation``, not a Qt-side calculation."""
     import numpy as np
 
     app = _app()
@@ -725,8 +719,8 @@ def test_preview_renders_before_after_plots_and_coefficient_controls() -> None:
             if dialog._compensated_plot.has_rendered_data():
                 break
             QTest.qWait(5)
-        assert dialog._uncompensated_plot.has_rendered_data()
         assert dialog._compensated_plot.has_rendered_data()
+        assert not hasattr(dialog, "_uncompensated_plot")
         assert dialog._selected_pair == ("FL2-A", "FL1-A")
         assert "Source channel" in dialog._preview_pair_label.text()
         assert "Columns: Source channel" in dialog.findChild(
@@ -789,11 +783,7 @@ def test_preview_values_match_headless_apply_compensation() -> None:
         for ch in ("FL1-A", "FL2-A"):
             col_idx = fl1_idx if ch == "FL1-A" else fl2_idx
             for evt in range(len(events)):
-                uncomp_text = table.item(row, 1).text()
-                comp_text = table.item(row, 2).text()
-                assert float(uncomp_text) == pytest.approx(
-                    events[evt, col_idx], abs=1e-3
-                )
+                comp_text = table.item(row, 1).text()
                 assert float(comp_text) == pytest.approx(
                     compensated[evt, col_idx], abs=1e-3
                 )

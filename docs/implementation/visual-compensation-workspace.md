@@ -9,7 +9,7 @@ ToDo: `Phase A5.V`
 補償前後plotが相互に連動するreview/fine-tuning workspaceへ発展させる。
 
 ユーザーが選択した一つの`source detector -> receiving detector`係数について、
-同じcontrol eventを使ったUncompensated/Compensated plot、現在値、自動計算値、
+同じcontrol eventを使ったcandidate Compensated plot、現在値、自動計算値、
 残差diagnosticを同時に確認できるようにする。visual previewは判断支援であり、
 科学計算の別実装や多色sampleの相関をゼロへ合わせる自動操作にしてはならない。
 
@@ -156,17 +156,16 @@ rows:    Receiving channel (spill into) down
   逆行列のため、選択pair以外のcompensated値にも影響し得ることを隠さない。
 - 表示名だけをidentityとして保存しない。保存・計算はstable channel IDを使う。
 
-### 5.2 Before / After plot
+### 5.2 Candidate compensated plot
 
 cell `(receiving=PE-A, source=FITC-A)`を選択した場合:
 
 - sample: FITC single-stain control
 - X: source detector `FITC-A`
 - Y: receiving detector `PE-A`
-- left: Uncompensated raw source/receiving values
-- right: candidate matrix適用後のcompensated source/receiving values
+- candidate matrix適用後のcompensated source/receiving values
 
-両plotは次を完全に共有する。
+plotは次をcandidate preview resultから設定する。
 
 - sample IDとPopulation mask
 - event identityとdisplay subset
@@ -175,18 +174,18 @@ cell `(receiving=PE-A, source=FITC-A)`を選択した場合:
 - point size、alpha、density color設定
 - non-finite handlingと表示件数
 
-軸rangeは片方ずつauto-rangeしてはならない。両側のfinite valuesのunionから一度だけ
-求めるか、ユーザーが固定した同一rangeを使う。片側だけのrange変更は禁止する。
+軸rangeはcandidate resultの有限値から一度だけ求める。係数を変更したときは、
+ユーザーがすでに操作したrangeを保持し、意図しない再auto-rangeを起こさない。
 
-### 5.3 補償前後plotの同期契約
+### 5.3 Candidate plot range contract
 
-補償前後plotは単に初期rangeを一致させるだけでは不十分である。次の項目を同一の
-preview request/resultから設定する。
+candidate plotは単に初期rangeをauto-rangeさせるだけでは不十分である。次の項目を
+同一のpreview request/resultから設定する。
 
 - sample、population mask、event identity、display subset、display max points
 - X/Y channel、表示用transform、非有限値の除外規則
-- 初期X/Y range（raw/compensatedの有限値union）
-- マウスホイールによるzoom、ドラッグによるpan、ViewBoxの現在X/Y range
+- 初期X/Y range（coreが返す有限値union）
+- マウスホイールによるzoom、ドラッグによるpan、Compensated ViewBoxの現在X/Y range
 - point size、alpha、density/single color、grid、背景、軸ラベル
 
 Sample titleとPopulation / gateをpreview selectorで選択し、不要な細胞を表示対象から
