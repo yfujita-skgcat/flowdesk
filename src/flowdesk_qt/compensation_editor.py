@@ -386,6 +386,8 @@ class CompensationMatrixEditorDialog(QDialog):
         preview = QWidget()
         preview_layout = QVBoxLayout(preview)
         self._build_preview_section(preview_layout)
+        self._preview_range_syncing = False
+        self._connect_preview_range_sync()
 
         splitter.addWidget(left)
         splitter.addWidget(details)
@@ -455,6 +457,44 @@ class CompensationMatrixEditorDialog(QDialog):
         if self._binding_panel is None:
             raise RuntimeError("binding panel has not been built")
         return self._binding_panel
+
+    def _connect_preview_range_sync(self) -> None:
+        """Synchronize interactive pan/zoom between the two preview plots."""
+        for plot in (self._uncompensated_plot, self._compensated_plot):
+            view_box = plot._view_box()
+            if view_box is not None:
+                view_box.sigRangeChanged.connect(
+                    lambda _view_box, _ranges, _changed, source=plot:
+                    self._on_preview_range_changed(source)
+                )
+
+    def _on_preview_range_changed(self, source_plot: PlotWidget) -> None:
+        """Copy a ViewBox range after either preview is panned or zoomed."""
+        if self._preview_range_syncing:
+            return
+        source_view_box = source_plot._view_box()
+        if source_view_box is None:
+            return
+        ranges = source_view_box.viewRange()
+        if len(ranges) != 2:
+            return
+        target_plot = (
+            self._compensated_plot
+            if source_plot is self._uncompensated_plot
+            else self._uncompensated_plot
+        )
+        target_view_box = target_plot._view_box()
+        if target_view_box is None:
+            return
+        self._preview_range_syncing = True
+        try:
+            target_view_box.setRange(
+                xRange=tuple(float(value) for value in ranges[0]),
+                yRange=tuple(float(value) for value in ranges[1]),
+                padding=0,
+            )
+        finally:
+            self._preview_range_syncing = False
 
     def _build_binding_form(self, layout: QVBoxLayout) -> None:
         """Build the inline binding editor form."""

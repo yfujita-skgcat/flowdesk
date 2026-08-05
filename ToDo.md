@@ -246,6 +246,7 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 ### Phase A5.V: Visual Compensation Workspace [S03-P1]
 
 - [x] 済み: Compensation Controlsの重複メニューを廃止し、単一のCompensation Workspace入口へ統合する。Controls & Calculate、Matrix Preview、Application / Bindingsの3タブで役割を分離し、Matrix Previewの中央に行列定義・チャンネル・ヒートマップ、右側に補償前後plotを配置する。sample selectorは表示名を使い、stable IDは内部データとして保持する。モニタのavailable geometryに合わせて初期サイズを制限する。
+- [x] 済み: 補償前後plotの同期契約を明示し、初期X/Y rangeだけでなくViewBoxのzoom/panを双方向同期する。同期中の再帰signalをガードし、同一sample・population・event subset・transform・表示上限・非有限値規則を共有する。
 
 現在のmatrix数値表と先頭10 eventのpreview tableでは、係数変更による分布の変化を
 科学的に確認できない。`docs/implementation/visual-compensation-workspace.md`を唯一の

@@ -658,6 +658,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 - `Matrix Preview`: Matrix ID、Name、Source、Notes、Channels、全選択/全解除、
   ヒートマップを確認し、matrix cellを選択して同じsample/event subsetの補償前後plotを比較する。
   右側のプロット領域を広く使い、サンプルはSample nameで表示する（内部ではstable IDを保持）。
+  補償前後plotは同じX/Y範囲で表示され、片方をホイールズームまたはドラッグするともう片方も同期する。
 - `Application / Bindings`: matrixをsample、group、execution profileへ適用するBindingを管理する。
   Bindingは行列係数ではなく「どの対象にどのmatrixを使うか」を定義するため、通常の係数調整画面から分離している。
   `Save and Apply`で初めてMainWindowのmatrix、calculation、bindingへ反映し、`Cancel`では

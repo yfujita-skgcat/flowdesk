@@ -173,6 +173,32 @@ def test_preview_applies_identical_range_to_both_plots() -> None:
     app.processEvents()
 
 
+def test_preview_pan_and_zoom_are_synchronized() -> None:
+  app = _app()
+  dialog = CompensationMatrixEditorDialog(
+    matrices=[_valid_2x2_matrix()],
+    bindings=[],
+    available_channels=_sample_channels(),
+    sample_ids=["sample_1"],
+    group_ids=[],
+  )
+  try:
+    first = dialog._uncompensated_plot._view_box()
+    second = dialog._compensated_plot._view_box()
+    assert first is not None
+    assert second is not None
+    first.setRange(xRange=(2.0, 8.0), yRange=(3.0, 9.0), padding=0)
+    app.processEvents()
+    first_range = first.viewRange()
+    second_range = second.viewRange()
+    assert second_range[0] == pytest.approx(first_range[0])
+    assert second_range[1] == pytest.approx(first_range[1])
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    app.processEvents()
+
+
 def test_channel_controls_and_labels_match_their_behavior() -> None:
     app = _app()
     channels = (

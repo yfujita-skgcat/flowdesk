@@ -178,6 +178,22 @@ cell `(receiving=PE-A, source=FITC-A)`を選択した場合:
 軸rangeは片方ずつauto-rangeしてはならない。両側のfinite valuesのunionから一度だけ
 求めるか、ユーザーが固定した同一rangeを使う。片側だけのrange変更は禁止する。
 
+### 5.3 補償前後plotの同期契約
+
+補償前後plotは単に初期rangeを一致させるだけでは不十分である。次の項目を同一の
+preview request/resultから設定する。
+
+- sample、population mask、event identity、display subset、display max points
+- X/Y channel、表示用transform、非有限値の除外規則
+- 初期X/Y range（raw/compensatedの有限値union）
+- マウスホイールによるzoom、ドラッグによるpan、ViewBoxの現在X/Y range
+- point size、alpha、density/single color、grid、背景、軸ラベル
+
+ViewBoxの`sigRangeChanged`は左右双方へ接続し、片側のzoom/panをもう片側へコピーする。
+同期中フラグで再帰的なsignal連鎖を防ぐ。科学計算結果やraw eventは変更せず、表示状態
+だけを同期する。将来どちらか一方だけを操作可能にする場合は、明示的なUIモードとして
+追加し、既定では同期を維持する。
+
 補償後の蛍光値は負になり得る。Log10で表示不能なeventを黙って除外して見栄えを
 改善してはならない。linear、asinh、正式Logicle等から明示的に選び、現在transformで
 表示不能なevent数をdiagnosticとして示す。
