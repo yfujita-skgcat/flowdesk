@@ -244,9 +244,15 @@ def test_fine_adjustment_moves_slider_and_updates_coefficient() -> None:
   try:
     dialog._on_heat_map_cell_clicked(0, 1)
     initial = dialog._coefficient_slider.value()
+    initial_range = (
+      dialog._coefficient_slider.minimum(), dialog._coefficient_slider.maximum()
+    )
     dialog._coefficient_slider.setValue(initial + 100)
     app.processEvents()
     assert dialog._coefficient_slider.value() == initial + 100
+    assert (
+      dialog._coefficient_slider.minimum(), dialog._coefficient_slider.maximum()
+    ) == initial_range
     assert float(dialog._heat_map.item(0, 1).text()) == pytest.approx(0.101)
   finally:
     dialog.close()

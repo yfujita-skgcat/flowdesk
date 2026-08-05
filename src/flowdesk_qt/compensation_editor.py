@@ -188,6 +188,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_revision = 0
         self._preview_preserved_view_range = None
         self._setting_coefficient = False
+        self._coefficient_slider_dragging = False
         self._preview_scheduler = CompensationPreviewScheduler(self)
 
         self._build_ui()
@@ -985,11 +986,15 @@ class CompensationMatrixEditorDialog(QDialog):
         self._selected_pair = channels[column], channels[row]
         self._update_preview_pair_label()
         self._load_coefficient_controls()
-        self._schedule_candidate_preview(preserve_range=False)
+        self._schedule_candidate_preview()
 
     def _on_heat_map_cell_changed(self, _row: int, _column: int) -> None:
         if not self._loading:
-            self._load_coefficient_controls()
+            # A slider edit updates the heat-map cell as its source of truth.
+            # Do not recenter/rebuild the slider range while the mouse is
+            # dragging; doing so makes the handle appear stationary.
+            if not self._coefficient_slider_dragging:
+                self._load_coefficient_controls()
             self._schedule_candidate_preview()
 
     def _load_coefficient_controls(self) -> None:
@@ -1059,7 +1064,11 @@ class CompensationMatrixEditorDialog(QDialog):
     def _on_coefficient_slider_changed(self, value: int) -> None:
         if self._setting_coefficient:
             return
-        self._set_selected_coefficient_percent(float(value) / 1000.0)
+        self._coefficient_slider_dragging = True
+        try:
+            self._set_selected_coefficient_percent(float(value) / 1000.0)
+        finally:
+            self._coefficient_slider_dragging = False
 
     def _reset_coefficient(self) -> None:
         if self._selected_pair is None or self._source_matrix_snapshot is None:
