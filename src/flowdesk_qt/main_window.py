@@ -5221,7 +5221,14 @@ class MainWindow(QMainWindow):
             CompensationWorkspaceDialog,
         )
 
-        channels, sample_ids, population_ids, sample_data, sample_labels = (
+        (
+            channels,
+            sample_ids,
+            population_ids,
+            sample_data,
+            sample_labels,
+            population_labels,
+        ) = (
             self._compensation_workspace_inputs()
         )
         dialog = CompensationWorkspaceDialog(
@@ -5233,6 +5240,7 @@ class MainWindow(QMainWindow):
             sample_ids,
             sample_data=sample_data,
             sample_labels=sample_labels,
+            population_labels=population_labels,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -5260,6 +5268,7 @@ class MainWindow(QMainWindow):
         tuple[str, ...],
         dict[str, dict[str, Any]],
         dict[str, str],
+        dict[str, str],
     ]:
         """Build one immutable-input snapshot for both compensation editors."""
         channels_by_id: dict[str, Any] = {}
@@ -5284,7 +5293,10 @@ class MainWindow(QMainWindow):
         )
         samples = tuple(self._sample_browser.samples())
         sample_ids = tuple(s.id for s in samples)
-        sample_labels = {s.id: s.name for s in samples}
+        sample_labels = {
+            s.id: self._sample_title_for(s.id)
+            for s in samples
+        }
         population_ids: list[str] = ["all_events"]
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
@@ -5309,7 +5321,16 @@ class MainWindow(QMainWindow):
                 "population_mask": masks["all_events"],
                 "masks": masks,
             }
-        return display_channels, sample_ids, tuple(population_ids), sample_data, sample_labels
+        population_labels = self._population_name_map()
+        population_labels.setdefault("all_events", "All Events")
+        return (
+            display_channels,
+            sample_ids,
+            tuple(population_ids),
+            sample_data,
+            sample_labels,
+            population_labels,
+        )
 
     def _on_edit_compensation_calculations(self) -> None:
         """Compatibility entry point; open the unified workspace on Controls."""

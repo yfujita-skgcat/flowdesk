@@ -189,7 +189,8 @@ preview request/resultから設定する。
 - マウスホイールによるzoom、ドラッグによるpan、ViewBoxの現在X/Y range
 - point size、alpha、density/single color、grid、背景、軸ラベル
 
-X transform / Y transformはLinear、Log10、Asinhを表示用に選択できる。補償計算は常に
+Sample titleとPopulation / gateをpreview selectorで選択し、不要な細胞を表示対象から
+除外できる。X transform / Y transformはLinear、Log10、Asinhを表示用に選択できる。補償計算は常に
 raw eventへcanonical compensationを適用し、transformはpreview描画と表示range/tickだけに
 使う。軸ラベルとheat map headerは短いproject display labelを表示し、stable channel IDは
 tooltipと内部データで保持する。

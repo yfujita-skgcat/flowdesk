@@ -162,7 +162,7 @@ def test_matrix_preview_accepts_calculated_matrix_once(qapp) -> None:
 def test_main_window_builds_one_workspace_input_snapshot(qapp) -> None:
   window = MainWindow()
   try:
-    channels, sample_ids, population_ids, sample_data, sample_labels = (
+    channels, sample_ids, population_ids, sample_data, sample_labels, population_labels = (
       window._compensation_workspace_inputs()
     )
     assert isinstance(channels, tuple)
@@ -170,6 +170,7 @@ def test_main_window_builds_one_workspace_input_snapshot(qapp) -> None:
     assert "all_events" in population_ids
     assert sample_data == {}
     assert sample_labels == {}
+    assert population_labels == {"all_events": "All Events"}
   finally:
     window.close()
     window.deleteLater()

@@ -42,6 +42,7 @@ class CompensationWorkspaceDialog(QDialog):
     *,
     sample_data: dict[str, dict[str, Any]] | None = None,
     sample_labels: dict[str, str] | None = None,
+    population_labels: dict[str, str] | None = None,
     parent: QWidget | None = None,
   ) -> None:
     super().__init__(parent)
@@ -72,6 +73,8 @@ class CompensationWorkspaceDialog(QDialog):
       (),
       sample_data=sample_data,
       sample_labels=sample_labels,
+      population_ids=population_ids,
+      population_labels=population_labels,
       parent=self,
     )
     self._calculation_editor = CompensationCalculationEditorDialog(

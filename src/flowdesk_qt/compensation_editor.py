@@ -146,6 +146,8 @@ class CompensationMatrixEditorDialog(QDialog):
         *,
         sample_data: dict[str, dict[str, Any]] | None = None,
         sample_labels: dict[str, str] | None = None,
+        population_ids: Sequence[str] | None = None,
+        population_labels: dict[str, str] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         """Initialize the compensation editor dialog.
@@ -173,6 +175,8 @@ class CompensationMatrixEditorDialog(QDialog):
         self._group_ids = tuple(group_ids)
         self._sample_data = sample_data or {}
         self._sample_labels = dict(sample_labels or {})
+        self._population_ids = tuple(population_ids or ("all_events",))
+        self._population_labels = dict(population_labels or {})
         self._binding_panel: QWidget | None = None
         self._loading = False
         self._current_matrix_row = -1
@@ -559,6 +563,18 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_sample_combo.currentIndexChanged.connect(
             lambda _index: self._schedule_candidate_preview()
         )
+        self._preview_population_combo = QComboBox()
+        self._preview_population_combo.setObjectName(
+            "compensationPreviewPopulationCombo"
+        )
+        for population_id in self._population_ids:
+            label = self._population_labels.get(population_id, population_id)
+            self._preview_population_combo.addItem(label, population_id)
+        self._preview_population_combo.currentIndexChanged.connect(
+            lambda _index: self._schedule_candidate_preview()
+        )
+        sel_row.addWidget(QLabel("Population / gate:"))
+        sel_row.addWidget(self._preview_population_combo)
         self._preview_x_transform_combo = QComboBox()
         self._preview_x_transform_combo.setObjectName(
             "compensationPreviewXTransformCombo"
@@ -648,6 +664,9 @@ class CompensationMatrixEditorDialog(QDialog):
             spec = CompensationMatrixSpec(**matrix_mapping)
             events = sample_info["events"]
             channel_ids = sample_info["channel_ids"]
+            population_id = str(
+                self._preview_population_combo.currentData() or "all_events"
+            )
             compensated = apply_compensation(spec, events, channel_ids)
 
             # Show first 10 events for each compensation channel
@@ -679,7 +698,8 @@ class CompensationMatrixEditorDialog(QDialog):
 
             self._preview_table.setRowCount(row)
             self._diag_label.setText(
-                f"Preview: {row} cells (matrix {spec.id}, sample {sample_id})"
+                f"Preview: {row} cells (matrix {spec.id}, sample {sample_id}, "
+                f"population {population_id})"
             )
             self._schedule_candidate_preview()
         except Exception as exc:
@@ -1137,7 +1157,12 @@ class CompensationMatrixEditorDialog(QDialog):
         events = np.asarray(sample_info.get("events"), dtype=np.float64)
         channel_ids = tuple(str(value) for value in sample_info.get("channel_ids", ()))
         population_mask = np.asarray(
-            sample_info.get("population_mask", np.ones(len(events), dtype=np.bool_)),
+            sample_info.get("masks", {}).get(
+                str(self._preview_population_combo.currentData() or "all_events"),
+                sample_info.get(
+                    "population_mask", np.ones(len(events), dtype=np.bool_)
+                ),
+            ),
             dtype=np.bool_,
         )
         positive_mask = None
@@ -1149,7 +1174,7 @@ class CompensationMatrixEditorDialog(QDialog):
             if positive_mask is not None and negative_mask is not None:
                 positive_mask = np.asarray(positive_mask, dtype=np.bool_)
                 negative_mask = np.asarray(negative_mask, dtype=np.bool_)
-                population_mask = positive_mask | negative_mask
+                population_mask = population_mask & (positive_mask | negative_mask)
         self._preview_revision += 1
         request = CompensationPreviewRequest(
             revision=self._preview_revision,
