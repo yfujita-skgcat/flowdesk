@@ -516,6 +516,9 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_btn = QPushButton("Preview")
         self._preview_btn.setObjectName("compensationPreviewButton")
         preview_layout.addWidget(self._preview_btn)
+        self._preview_sample_combo.currentIndexChanged.connect(
+            lambda _index: self._schedule_candidate_preview()
+        )
 
         self._preview_pair_label = QLabel(
             "Select an off-diagonal matrix cell to inspect a source → receiving pair."
@@ -680,6 +683,8 @@ class CompensationMatrixEditorDialog(QDialog):
             self._diag_label.setText("Not validated")
         finally:
             self._loading = False
+        if self._selected_pair is not None and self._sample_data:
+            self._schedule_candidate_preview()
 
     def _clear_matrix_fields(self) -> None:
         self._loading = True
