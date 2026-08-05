@@ -1054,6 +1054,14 @@ class CompensationMatrixEditorDialog(QDialog):
         self._setting_coefficient = True
         try:
             item.setText(f"{percent / 100.0:.8g}")
+            # Slider edits intentionally skip the heat-map reload so its
+            # range/handle do not jump back to the center.  Keep the precise
+            # numeric editor synchronized explicitly instead.
+            self._coefficient_spin.blockSignals(True)
+            try:
+                self._coefficient_spin.setValue(float(percent))
+            finally:
+                self._coefficient_spin.blockSignals(False)
         finally:
             self._setting_coefficient = False
         self._schedule_candidate_preview()

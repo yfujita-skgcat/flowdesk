@@ -253,6 +253,7 @@ def test_fine_adjustment_moves_slider_and_updates_coefficient() -> None:
     assert (
       dialog._coefficient_slider.minimum(), dialog._coefficient_slider.maximum()
     ) == initial_range
+    assert dialog._coefficient_spin.value() == pytest.approx(10.1)
     assert float(dialog._heat_map.item(0, 1).text()) == pytest.approx(0.101)
   finally:
     dialog.close()
