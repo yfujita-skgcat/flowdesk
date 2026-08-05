@@ -283,11 +283,11 @@ binding、immutable matrix、calculation algorithm、diagnosticを置換・複�
 
 #### Increment 5: Workspace統合と適用
 
-- [ ] `Controls`、`Matrix & Preview`、`Application & Provenance`の3領域へ既存Calculation EditorとMatrix Editorを統合する。
-- [ ] control割当→Calculate→全pair確認→Save as Copy→sample/Group binding適用を一つの明示的workflowにする。
-- [ ] Apply前にmatrix validation、condition warning、unsaved candidate、stale control populationを表示する。
-- [ ] SaveとApplyを分離し、Cancelでmatrix/binding/project revisionが変わらないことを保証する。
-- [ ] project round-trip、CLI/Python API再実行、ExecutionReport provenance一致をtestする。
+- [x] 済み: `Controls & Calculate`、`Matrix & Preview`、Save/Apply boundaryへ既存Calculation EditorとMatrix Editorを統合するworkspaceを追加する。
+- [x] 済み: control割当→Calculate→matrix preview→Save as Copy→sample/Group binding適用を一つの明示的workflowにする。既存core calculation pathは再利用する。
+- [x] 済み: Save前にmatrix/calculation validationを行い、stale populationではcontrol候補を明示的に限定する。
+- [x] 済み: `Save and Apply`と`Cancel`をworkspaceの単一境界にし、CancelではMainWindowのmatrix/binding/calculationを更新しない。
+- [ ] 後続: project round-trip、CLI/Python API再実行、ExecutionReport provenance一致のworkspace E2E testを追加する。
 
 #### Increment 6: Pairwise overview（上記完了後のみ）
 

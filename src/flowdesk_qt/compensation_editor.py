@@ -177,6 +177,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._source_matrix_snapshot: dict[str, Any] | None = None
         self._manual_source_snapshots: dict[str, dict[str, Any]] = {}
         self._selected_pair: tuple[str, str] | None = None
+        self._control_assignments: dict[str, dict[str, Any]] = {}
         self._preview_revision = 0
         self._setting_coefficient = False
         self._preview_scheduler = CompensationPreviewScheduler(self)
@@ -206,6 +207,37 @@ class CompensationMatrixEditorDialog(QDialog):
         """Return a deep copy of the current binding definitions."""
         self._commit_current_binding()
         return deepcopy(self._bindings)
+
+    def set_control_assignments(
+        self, calculations: Sequence[dict[str, Any]]
+    ) -> None:
+        """Use explicit calculation controls to choose preview data.
+
+        The mapping is display metadata only.  The core preview still receives
+        stable channel IDs and immutable masks from ``sample_data``.
+        """
+        assignments: dict[str, dict[str, Any]] = {}
+        for calculation in calculations:
+            for control in calculation.get("controls", []):
+                detector = str(control.get("detector_channel_id", ""))
+                if detector and detector not in assignments:
+                    assignments[detector] = deepcopy(control)
+        self._control_assignments = assignments
+        self._schedule_candidate_preview()
+
+    def add_matrix_mapping(
+        self, mapping: dict[str, Any], *, select: bool = True
+    ) -> bool:
+        """Add a calculated matrix once and optionally select it for review."""
+        matrix_id = str(mapping.get("id", ""))
+        if not matrix_id or any(
+            str(value.get("id", "")) == matrix_id for value in self._matrices
+        ):
+            return False
+        self._commit_current_matrix()
+        self._matrices.append(deepcopy(mapping))
+        self._refresh_matrix_list(len(self._matrices) - 1 if select else 0)
+        return True
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         """Stop candidate preview work before the dialog is destroyed."""
@@ -970,6 +1002,15 @@ class CompensationMatrixEditorDialog(QDialog):
             return
         if not (0 <= self._current_matrix_row < len(self._matrices)):
             return
+        source_channel = self._selected_pair[0]
+        assignment = self._control_assignments.get(source_channel)
+        if assignment is not None:
+            assigned_sample = str(assignment.get("sample_id", ""))
+            assigned_index = self._preview_sample_combo.findText(assigned_sample)
+            if assigned_index >= 0:
+                self._preview_sample_combo.blockSignals(True)
+                self._preview_sample_combo.setCurrentIndex(assigned_index)
+                self._preview_sample_combo.blockSignals(False)
         sample_index = self._preview_sample_combo.currentIndex()
         if sample_index < 0:
             return
@@ -992,6 +1033,16 @@ class CompensationMatrixEditorDialog(QDialog):
             sample_info.get("population_mask", np.ones(len(events), dtype=np.bool_)),
             dtype=np.bool_,
         )
+        positive_mask = None
+        negative_mask = None
+        masks = sample_info.get("masks", {})
+        if assignment is not None and isinstance(masks, dict):
+            positive_mask = masks.get(str(assignment.get("positive_population_id", "")))
+            negative_mask = masks.get(str(assignment.get("negative_population_id", "")))
+            if positive_mask is not None and negative_mask is not None:
+                positive_mask = np.asarray(positive_mask, dtype=np.bool_)
+                negative_mask = np.asarray(negative_mask, dtype=np.bool_)
+                population_mask = positive_mask | negative_mask
         self._preview_revision += 1
         request = CompensationPreviewRequest(
             revision=self._preview_revision,
@@ -1007,11 +1058,11 @@ class CompensationMatrixEditorDialog(QDialog):
             ),
             source_channel_id=self._selected_pair[0],
             receiving_channel_id=self._selected_pair[1],
-            positive_mask=(
+            positive_mask=positive_mask if positive_mask is not None else (
                 np.asarray(sample_info["positive_mask"], dtype=np.bool_)
                 if sample_info.get("positive_mask") is not None else None
             ),
-            negative_mask=(
+            negative_mask=negative_mask if negative_mask is not None else (
                 np.asarray(sample_info["negative_mask"], dtype=np.bool_)
                 if sample_info.get("negative_mask") is not None else None
             ),
@@ -1414,6 +1465,7 @@ class CompensationCalculationEditorDialog(QDialog):
         self._loading = False
         self._current_calc_row = -1
         self._calculation_result: CompensationCalculationResult | None = None
+        self._calculation_result_definition: dict[str, Any] | None = None
 
         self._channel_ids = [
             ch.get("id", ch.get("name", "")) if isinstance(ch, dict)
@@ -1619,6 +1671,8 @@ class CompensationCalculationEditorDialog(QDialog):
             return
         self._loading = True
         try:
+            self._calculation_result = None
+            self._calculation_result_definition = None
             self._current_calc_row = row
             value = self._calculations[row]
             self._id_edit.setText(str(value.get("id", "")))
@@ -1665,6 +1719,8 @@ class CompensationCalculationEditorDialog(QDialog):
 
     def _add_calculation(self) -> None:
         self._commit_current_calculation()
+        self._calculation_result = None
+        self._calculation_result_definition = None
         self._calculations.append(_empty_calculation_mapping())
         self._refresh_calc_list(len(self._calculations) - 1)
 
@@ -1672,6 +1728,8 @@ class CompensationCalculationEditorDialog(QDialog):
         row = self._current_calc_row
         if row < 0:
             return
+        self._calculation_result = None
+        self._calculation_result_definition = None
         self._calculations.pop(row)
         self._current_calc_row = -1
         if self._calculations:
@@ -1682,6 +1740,28 @@ class CompensationCalculationEditorDialog(QDialog):
             self._refresh_calc_list(0)
 
     # -- Control table -------------------------------------------------------
+
+    def _channel_label(self, channel_id: object) -> str:
+        """Show a readable channel label while retaining stable ID in data."""
+        target = str(channel_id)
+        for channel in self._channels:
+            if isinstance(channel, dict):
+                value = channel.get("id", channel.get("name", ""))
+                if str(value) != target:
+                    continue
+                display = channel.get("display_name") or channel.get("name") or target
+            else:
+                value = getattr(channel, "id", getattr(channel, "name", ""))
+                if str(value) != target:
+                    continue
+                display = (
+                    getattr(channel, "display_name", None)
+                    or getattr(channel, "short_name", None)
+                    or getattr(channel, "name", None)
+                    or target
+                )
+            return target if str(display) == target else f"{display} [{target}]"
+        return target
 
     def _update_control_table(self, controls: list[dict[str, Any]]) -> None:
         self._loading = True
@@ -1694,8 +1774,12 @@ class CompensationCalculationEditorDialog(QDialog):
 
     def _set_control_row(self, row_idx: int, ctrl: dict[str, Any]) -> None:
         det_combo = QComboBox()
-        det_combo.addItems(self._channel_ids)
-        det_combo.setCurrentText(str(ctrl.get("detector_channel_id", "")))
+        for channel_id in self._channel_ids:
+            det_combo.addItem(self._channel_label(channel_id), channel_id)
+        detector_id = str(ctrl.get("detector_channel_id", ""))
+        detector_index = det_combo.findData(detector_id)
+        if detector_index >= 0:
+            det_combo.setCurrentIndex(detector_index)
         self._control_table.setCellWidget(row_idx, 0, det_combo)
 
         sample_combo = QComboBox()
@@ -1723,7 +1807,10 @@ class CompensationCalculationEditorDialog(QDialog):
         ]:
             widget = self._control_table.cellWidget(row_idx, col)
             if isinstance(widget, QComboBox):
-                result[key] = widget.currentText()
+                result[key] = (
+                    widget.currentData()
+                    if col == 0 else widget.currentText()
+                ) or ""
             else:
                 result[key] = ""
         return result
@@ -1764,6 +1851,16 @@ class CompensationCalculationEditorDialog(QDialog):
         for row_idx in range(self._control_table.rowCount()):
             controls.append(self._read_control_row(row_idx))
         original["controls"] = controls
+        if (
+            self._calculation_result is not None
+            and self._calculation_result_definition is not None
+            and original != self._calculation_result_definition
+        ):
+            self._calculation_result = None
+            self._calculation_result_definition = None
+            self._diag_label.setText(
+                "Calculation inputs changed; run calculation again."
+            )
 
     # -- Validation & accept -------------------------------------------------
 
@@ -1779,6 +1876,11 @@ class CompensationCalculationEditorDialog(QDialog):
     def _validate_all(self) -> None:
         ids: set[str] = set()
         for mapping in self._calculations:
+            # The editor starts with a blank draft row.  It is a UI affordance,
+            # not a persisted calculation definition, and may remain blank when
+            # the user only reviews matrices in the unified workspace.
+            if not str(mapping.get("id", "")).strip() and not mapping.get("controls"):
+                continue
             try:
                 spec = CompensationCalculationSpec(**mapping)
             except ValueError as exc:
@@ -1908,6 +2010,7 @@ class CompensationCalculationEditorDialog(QDialog):
                 population_masks,
             )
             self._calculation_result = result
+            self._calculation_result_definition = deepcopy(mapping)
             self._update_diagnostic_panel(result)
             self._diag_label.setText(
                 f"Calculation successful (condition={result.condition_number:.4g})"
@@ -1941,7 +2044,9 @@ class CompensationCalculationEditorDialog(QDialog):
         self._diag_table.setRowCount(len(diags))
         for row_idx, diag in enumerate(diags):
             self._diag_table.setItem(
-                row_idx, 0, QTableWidgetItem(diag.detector_channel_id)
+                row_idx, 0, QTableWidgetItem(
+                    self._channel_label(diag.detector_channel_id)
+                )
             )
             self._diag_table.setItem(
                 row_idx, 1, QTableWidgetItem(

@@ -229,8 +229,8 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |Cancel Pipeline|—|現在のstageが終わった安全な境界でpipelineを協調的に停止する。途中Resultsは採用せず、以前のResultsがあればstaleとして残る。|
 |Pipeline Execution Settings...|—|次回Run Pipelineの逐次実行を確認する。bounded thread、最大worker数、memory budgetは検証完了までGUIで無効化され、project定義は変更しない。|
 |Derived Parameters...|—|式から derived parameter を定義、validate、preview する。|
-|Compensation...|—|compensation matrix と binding を定義・検証する。|
-|Compensation Calculations...|—|single-color control 等から matrix calculation を定義・実行し、matrix として保存する。|
+|Compensation Workspace...|—|single-color control の割当・matrix計算・補償前後plot・係数調整・bindingを一つのSave/Cancel境界で行う。|
+|Compensation Controls (Workspace)...|—|上記workspaceをControls & Calculateタブから開く互換入口。|
 |Manage Parameter Transforms...|—|parameter ごとの formal analysis transform を定義する。|
 |Use Multiple Analysis Groups|checkable|advanced Group panel を表示する。通常の treatment/control 比較は同じ Group、異なる panel/control/QC のみ分離する設計。|
 |Clear Gates|Ctrl+G|全 gate を消去し、plot の gate creation 状態も解除する。|
@@ -652,6 +652,17 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 ### 14.5 Compensation Matrices
 
+通常は Analysis → Compensation Workspace... を使う。workspaceには次の2タブがある。
+
+- `Controls & Calculate`: detectorごとにcontrol sample、positive/negative population、
+  regression/outlier policyを指定し、既存のcore計算を実行する。
+- `Matrix & Preview`: matrix cellを選択し、同じsample/event subsetの補償前後plotを比較する。
+  `Save and Apply`で初めてMainWindowのmatrix、calculation、bindingへ反映し、`Cancel`では
+  変更を破棄する。pipeline結果は自動で書き換えず、staleとして再実行を要求する。
+
+control populationの計算結果がstaleな場合は、workspaceは安全のため`all_events`だけを
+候補として表示する。ゲートを推測してcontrol populationへ置換することはない。
+
 #### Matrices list
 
 `New`、`Save as Copy`、`Delete` で matrix definition を管理する。保存済みmatrixを手動調整する場合は、元matrixの由来を保てるよう`Save as Copy`で複製してから編集する。
@@ -695,6 +706,9 @@ source event count、candidate event count、gained、lost、scientific equivale
 `OK` は定義全体を validate して保存、`Cancel` は破棄する。
 
 ### 14.6 Compensation Calculations
+
+この項目はworkspaceの`Controls & Calculate`タブへ統合された。既存projectとの互換性の
+ためメニュー入口は残るが、同じworkspaceを開き、別の計算経路は持たない。
 
 |control|説明|
 |---|---|

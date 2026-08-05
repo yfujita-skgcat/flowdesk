@@ -50,10 +50,16 @@ scheduler、GUI統合を一度に変更しない。
   相関を補償正解とは扱わない。
 - calculated matrixは引き続きread-onlyで、`Save as Copy`を編集入口とする。raw eventと
   original matrixを変更しない。manual edit provenanceはcandidate matrixへ記録する。
+- `CompensationWorkspaceDialog`がControls & CalculateとMatrix & Previewを同じSave and
+  Apply/Cancel境界に組み込む。既存の`calculate_spillover_matrix()`を再利用し、GUI側に
+  別の補償計算式を持たない。
+- workspace起動時にはreportがfreshな場合だけsampleごとのpopulation masksを渡し、stale
+  な場合はall_eventsのみを安全な候補として渡す。control populationが未解決のまま
+  silentに別sampleへ置換されることはない。
 
-この段階では、controls/calculation editorの統合、control populationを自動的に選択する
-機能、Undo/Redo、bindingのApply分離は未実装である。これらはIncrement 5の課題として
-実装し、既存のA4/A5の計算・binding経路を再実装してはならない。
+この段階では、control populationを自動的に推定する機能、Undo/Redo、project round-tripを
+含むworkspace E2E検証は未完了である。後続incrementで実装し、既存のA4/A5の計算・binding
+経路を再実装してはならない。
 
 ### 3.1 保持する基盤
 
@@ -480,6 +486,10 @@ negative/>100%、manual edit consolidation、Cancel無変更をtestする。
 既存Calculation Editorのcore-backed挙動をworkspaceへ移し、旧dialogは一時的なthin adapterに
 する。二つのscientific calculation pathを残さない。Save、Apply、Run Pipelineの境界と
 stale statusをE2E testする。migration期間終了後だけunused UI/codeを削除する。
+
+実装対象は`src/flowdesk_qt/compensation_workspace.py`と`MainWindow`の起動・commit経路である。
+`CompensationCalculationEditorDialog`と`CompensationMatrixEditorDialog`はworkspace内の
+canonical formとして再利用する。各editorの科学計算を複製した別実装を作らない。
 
 ### Increment 6: Pairwise overview
 

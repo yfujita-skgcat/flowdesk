@@ -826,13 +826,13 @@ class MainWindow(QMainWindow):
         )
         analysis_menu.addAction(self.action_derived_parameters)
 
-        self.action_compensation = QAction("&Compensation...", self)
+        self.action_compensation = QAction("&Compensation Workspace...", self)
         self.action_compensation.setObjectName("actionCompensation")
         self.action_compensation.triggered.connect(self._on_edit_compensation)
         analysis_menu.addAction(self.action_compensation)
 
         self.action_compensation_calculations = QAction(
-            "Compensation &Calculations...", self
+            "Compensation &Controls (Workspace)...", self
         )
         self.action_compensation_calculations.setObjectName(
             "actionCompensationCalculations"
@@ -5227,12 +5227,51 @@ class MainWindow(QMainWindow):
         self._replot()
 
     def _on_edit_compensation(self) -> None:
-        """Edit compensation matrices and bindings."""
-        from flowdesk_qt.compensation_editor import (
-            CompensationMatrixEditorDialog,
+        """Open the unified controls, matrix preview, and apply workspace."""
+        from flowdesk_qt.compensation_workspace import (
+            CompensationWorkspaceDialog,
         )
 
-        channels_by_id = {}
+        channels, sample_ids, population_ids, sample_data = (
+            self._compensation_workspace_inputs()
+        )
+        dialog = CompensationWorkspaceDialog(
+            self._compensation_matrices,
+            self._compensation_bindings,
+            self._compensation_calculations,
+            channels,
+            population_ids,
+            sample_ids,
+            sample_data=sample_data,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._compensation_matrices = dialog.matrices()
+        self._compensation_bindings = dialog.bindings()
+        self._compensation_calculations = dialog.calculations()
+        calc_matrix = dialog.calculated_matrix()
+        if calc_matrix is not None:
+            existing_ids = {
+                str(value.get("id", "")) for value in self._compensation_matrices
+            }
+            if str(calc_matrix.get("id", "")) not in existing_ids:
+                self._compensation_matrices.append(calc_matrix)
+            self._update_status(
+                f"Calculated matrix ready: {calc_matrix.get('id', '')}"
+            )
+        self._mark_results_stale("Compensation workspace changed")
+
+    def _compensation_workspace_inputs(
+        self,
+    ) -> tuple[
+        tuple[dict[str, Any], ...],
+        tuple[str, ...],
+        tuple[str, ...],
+        dict[str, dict[str, Any]],
+    ]:
+        """Build one immutable-input snapshot for both compensation editors."""
+        channels_by_id: dict[str, Any] = {}
         for sample in self._sample_browser.samples():
             for channel in sample.info.channels:
                 channels_by_id.setdefault(channel.id, channel)
@@ -5240,19 +5279,6 @@ class MainWindow(QMainWindow):
         if current is not None:
             channels_by_id.update({channel.id: channel for channel in current.channels})
 
-        sample_ids = [s.id for s in self._sample_browser.samples()]
-        group_ids = []
-        sample_data = {
-            sample_id: {
-                "events": sample.events,
-                "channel_ids": [channel.id for channel in sample.channels],
-                "population_mask": np.ones(sample.event_count, dtype=np.bool_),
-            }
-            for sample_id, sample in self._sample_data.items()
-        }
-
-        # Pass project-scoped labels while retaining stable IDs for all
-        # persisted matrix definitions and bindings.
         display_channels = tuple(
             {
                 "id": channel.id,
@@ -5265,76 +5291,36 @@ class MainWindow(QMainWindow):
             }
             for channel in channels_by_id.values()
         )
-        dialog = CompensationMatrixEditorDialog(
-            self._compensation_matrices,
-            self._compensation_bindings,
-            display_channels,
-            sample_ids,
-            group_ids,
-            sample_data=sample_data,
-            parent=self,
-        )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        self._compensation_matrices = dialog.matrices()
-        self._compensation_bindings = dialog.bindings()
-        self._mark_results_stale("Compensation changed")
-
-    def _on_edit_compensation_calculations(self) -> None:
-        """Edit compensation calculation specs (detector × control table)."""
-        from flowdesk_qt.compensation_editor import (
-            CompensationCalculationEditorDialog,
-        )
-
-        channels_by_id = {}
-        for sample in self._sample_browser.samples():
-            for channel in sample.info.channels:
-                channels_by_id.setdefault(channel.id, channel)
-        current = self._sample_data.get(self._current_sample_id or "")
-        if current is not None:
-            channels_by_id.update({channel.id: channel for channel in current.channels})
-
-        population_ids = ["all_events"]
-        for gate in self._gate_editor.gates():
-            if gate.id not in population_ids:
-                population_ids.append(gate.id)
-
-        sample_ids = [s.id for s in self._sample_browser.samples()]
-
-        # Build sample_data for "Run Calculation": events + population masks.
-        sample_data: dict[str, dict[str, Any]] = {}
+        sample_ids = tuple(s.id for s in self._sample_browser.samples())
+        population_ids: list[str] = ["all_events"]
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
-            for sample_id, sample in self._sample_data.items():
-                masks: dict[str, NDArray[np.bool_]] = {}
+            population_ids.extend(
+                membership.population_id
+                for membership in report.population_membership
+                if membership.population_id not in population_ids
+            )
+
+        sample_data: dict[str, dict[str, Any]] = {}
+        for sample_id, sample in self._sample_data.items():
+            masks: dict[str, Any] = {
+                "all_events": np.ones(sample.event_count, dtype=np.bool_)
+            }
+            if report is not None and not self._results_stale:
                 for membership in report.population_membership:
                     if membership.sample_id == sample_id:
                         masks[membership.population_id] = membership.mask
-                if masks:
-                    sample_data[sample_id] = {
-                        "events": sample.events,
-                        "masks": masks,
-                    }
+            sample_data[sample_id] = {
+                "events": sample.events,
+                "channel_ids": [channel.id for channel in sample.channels],
+                "population_mask": masks["all_events"],
+                "masks": masks,
+            }
+        return display_channels, sample_ids, tuple(population_ids), sample_data
 
-        dialog = CompensationCalculationEditorDialog(
-            self._compensation_calculations,
-            tuple(channels_by_id.values()),
-            population_ids,
-            sample_ids,
-            sample_data=sample_data,
-            parent=self,
-        )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        self._compensation_calculations = dialog.calculations()
-        # Save the calculated matrix as an immutable result.
-        calc_matrix = dialog.calculated_matrix()
-        if calc_matrix is not None:
-            self._compensation_matrices.append(calc_matrix)
-            self._update_status(
-                f"Calculated matrix saved: {calc_matrix['id']}"
-            )
-        self._mark_results_stale("Compensation calculations changed")
+    def _on_edit_compensation_calculations(self) -> None:
+        """Compatibility entry point; open the unified workspace on Controls."""
+        self._on_edit_compensation()
 
     def _on_add_statistic_from_population_tree(self, population_id: str) -> None:
         """Open a new statistic definition scoped to a tree population."""
