@@ -1273,6 +1273,38 @@ def test_selected_gate_preserves_population_outline_color_after_deselect() -> No
     app.processEvents()
 
 
+def test_gate_highlight_resolves_visible_item_by_stable_id() -> None:
+  app = _app()
+  widget = PlotWidget()
+  try:
+    non_renderable = GateSpec(
+      id="range-gate",
+      name="range",
+      gate_type="range",
+      x_parameter="X",
+      thresholds={"min": 1.0},
+    )
+    visible = GateSpec(
+      id="rectangle-gate",
+      name="rectangle",
+      gate_type="rectangle",
+      x_parameter="X",
+      y_parameter="Y",
+      thresholds={"x_min": 1.0, "x_max": 3.0, "y_min": 1.0, "y_max": 3.0},
+    )
+    widget.add_gate_overlay(non_renderable, gate_index=0)
+    widget.add_gate_overlay(visible, gate_index=1)
+    assert len(widget._gate_items) == 1
+
+    widget.highlight_gate_id("rectangle-gate")
+
+    assert widget._gate_items[0].pen.color().name() == "#0057b8"
+  finally:
+    widget.close()
+    widget.deleteLater()
+    app.processEvents()
+
+
 def test_polygon_gate_creation_uses_scene_click_and_double_click() -> None:
   app = _app()
   widget = PlotWidget()

@@ -2784,11 +2784,15 @@ class MainWindow(QMainWindow):
 
     def _on_gate_selected(self, gate_index: int) -> None:
         """Called when a gate is selected in the gate editor."""
-        # Highlight the selected gate overlay with a solid pen
-        self._plot_widget.highlight_gate_index(gate_index)
         gates = self._gate_editor.gates()
         if 0 <= gate_index < len(gates):
             self._selected_gate_id = gates[gate_index].id
+            # GateEditor indices include gates that may not be renderable on
+            # the current axes. Resolve the live plot item by stable ID.
+            self._plot_widget.highlight_gate_id(self._selected_gate_id)
+        else:
+            self._selected_gate_id = None
+            self._plot_widget.highlight_gate_id(None)
 
     def _on_show_gate(self, gate) -> None:
         """Display the gate's parent population with the gate outline."""
@@ -6636,8 +6640,8 @@ class MainWindow(QMainWindow):
             self._schedule_current_preview()
 
     def _sync_statistic_result_definitions(self) -> None:
-        """Expose persisted statistic columns before their next calculation."""
-        self._result_state.update_definitions(
+        """Synchronize Results rows with persisted statistic definitions."""
+        self._result_state.replace_statistic_definitions(
             sample_ids=tuple(sample.id for sample in self._sample_browser.samples()),
             population_ids=tuple(self._population_parent_map()),
             statistic_definitions=tuple(

@@ -127,6 +127,7 @@ class PlotWidget(QWidget):
         # not allocate a thread pool merely because a PlotWidget exists.
         self._density_scheduler: DensityColorScheduler | None = None
         self._gate_items: list[Any] = []
+        self._gate_item_ids: list[str] = []
         # Resolved per-gate colors must survive selection and global style
         # refreshes; keep them parallel to the live geometry items.
         self._gate_item_outline_colors: list[str | None] = []
@@ -1008,6 +1009,7 @@ class PlotWidget(QWidget):
         if item is not None:
             self._plot_item.addItem(item)
             self._gate_items.append(item)
+            self._gate_item_ids.append(gate.id)
             self._gate_item_outline_colors.append(outline_color)
         elif not self._gate_matches_current_axes(gate):
             self._hidden_gate_reasons.append(
@@ -1439,6 +1441,7 @@ class PlotWidget(QWidget):
                     item.setPen(original_pen)
                 except Exception:
                     pass
+
             try:
                 handles = list(item.getHandles())
             except Exception:
@@ -1448,6 +1451,21 @@ class PlotWidget(QWidget):
                     handle.setVisible(visible)
                 except Exception:
                     pass
+
+    def highlight_gate_id(self, gate_id: str | None) -> None:
+        """Highlight the visible geometry belonging to a stable gate ID.
+
+        GateEditor indices include non-renderable gates and gates hidden by an
+        axis/transform mismatch, so they cannot safely index ``_gate_items``.
+        """
+        if not gate_id:
+            self.highlight_gate_index(-1)
+            return
+        try:
+            index = self._gate_item_ids.index(str(gate_id))
+        except ValueError:
+            index = -1
+        self.highlight_gate_index(index)
 
     def _begin_export_aspect(self, enabled: bool) -> tuple[bool, float] | None:
         if not enabled:
@@ -2226,6 +2244,7 @@ class PlotWidget(QWidget):
     def _clear_gates(self) -> None:
         items = self._gate_items
         self._gate_items = []
+        self._gate_item_ids = []
         self._gate_item_outline_colors = []
         for item in items:
             callback = self._gate_item_callbacks.pop(id(item), None)

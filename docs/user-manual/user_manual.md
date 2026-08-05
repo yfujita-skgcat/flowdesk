@@ -421,7 +421,7 @@ plot 上部の黄系 banner は、sample gate override status、results stale re
 
 `All Events` は root で削除・geometry edit できない。Gate hierarchy の選択は selected gate を変更するが、display population を自動的に同じものへ変えるとは限らない。
 
-選択中のgateは、plot上で背景に埋もれないよう、背景に応じたコントラスト色の太い実線で強調される。編集可能なgeometryでは薄い半透明fillも表示される。この強調表示はGUI上の選択状態だけであり、gateの保存色、geometry、gate membership、export時のgate outlineは変更しない。
+選択中のgateは、plot上で背景に埋もれないよう太い実線と薄い半透明fillで強調される。個別のGate Outline Colorを設定している場合はその色を維持し、未設定の場合だけ背景に応じた強調色を使う。選択はgateのstable IDで表示中のgeometryに対応付けられるため、現在の軸に一致しない非表示gateがあっても別gateを強調しない。この強調表示はGUI上の選択状態だけであり、gateの保存色、geometry、gate membership、export時のgate outlineは変更しない。
 
 ゲート作成欄のコンテキスト表示は通常、親Population名だけを表示する。対象Sample、軸、Scale、Transform ID、親Populationの内部IDなどの詳細は、表示欄のツールチップで確認できる。これらはゲート作成条件の確認やトラブル調査に使用する。
 
@@ -739,7 +739,7 @@ source event count、candidate event count、gained、lost、scientific equivale
 |button|説明|
 |---|---|
 |New|pending defaults を使って新規 statistic を作る。既定Metricは`mean`で、Parameterを選択できる状態から開始する。|
-|Delete|選択 definition を削除。downstream reference がある場合は保護される。|
+|Delete|選択 definition を削除。最後の1件も削除できる。downstream reference がある場合は保護される。削除後はResults列と保持済み統計値も直ちに除去され、次回Pipelineでは削除済み定義を計算しない。|
 |Duplicate|選択 definition を新 ID 用に複製。|
 |Clear All|全 definition を削除。|
 |Undo / Redo|dialog 内の statistic definition edits を取り消し/やり直し。gate undo とは別。|

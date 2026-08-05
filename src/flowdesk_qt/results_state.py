@@ -183,6 +183,52 @@ class RuntimeResultState:
           merged.append(population_id)
       self._statistic_population_ids[statistic_id] = tuple(merged)
 
+  def replace_statistic_definitions(
+    self,
+    *,
+    sample_ids: Sequence[str] = (),
+    population_ids: Sequence[str] = (),
+    statistic_definitions: Sequence[tuple[str, str]],
+  ) -> None:
+    """Synchronize statistic rows with the current persisted definitions.
+
+    ``update_definitions`` is intentionally additive for callers that discover
+    new rows.  Editing a project, however, can remove a definition; in that
+    case stale rows and their cached values must be discarded immediately.
+    """
+    self._defined_sample_ids.update(sample_ids)
+    self._defined_population_ids.update(population_ids)
+    grouped: dict[str, list[str]] = {}
+    for definition in statistic_definitions:
+      statistic_id, population_id = definition[:2]
+      if population_id in self._defined_population_ids:
+        grouped.setdefault(statistic_id, []).append(population_id)
+    normalized = {
+      statistic_id: tuple(dict.fromkeys(population_ids))
+      for statistic_id, population_ids in grouped.items()
+    }
+    allowed = {
+      (statistic_id, population_id)
+      for statistic_id, population_ids in normalized.items()
+      for population_id in population_ids
+    }
+    self._statistic_population_ids = normalized
+    self._rows = {
+      key: row
+      for key, row in self._rows.items()
+      if key.kind != "statistic"
+      or (key.result_id, key.population_id) in allowed
+    }
+    if self._authoritative_report is not None:
+      self._authoritative_report = replace(
+        self._authoritative_report,
+        statistic_results=tuple(
+          result for result in self._authoritative_report.statistic_results
+          if (result.statistic_id, result.population_id) in allowed
+        ),
+      )
+    self._ensure_defined_rows()
+
   def set_authoritative_report(
     self,
     report: ExecutionReport | None,
@@ -199,7 +245,9 @@ class RuntimeResultState:
     self._batch_stale = False
     self._defined_sample_ids.update(sample_ids)
     self._defined_population_ids.update(population_ids)
-    self._register_statistic_definitions(statistic_definitions)
+    self.replace_statistic_definitions(
+      statistic_definitions=statistic_definitions,
+    )
     self._rows = {}
     self._rebuild_from_authoritative()
 

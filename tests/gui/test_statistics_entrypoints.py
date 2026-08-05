@@ -308,6 +308,20 @@ def test_statistics_editor_blocks_delete_with_downstream_reference(qapp, monkeyp
   assert "binding-1" in messages[0]
 
 
+def test_statistics_editor_can_delete_last_definition(qapp) -> None:
+  dialog = StatisticsEditorDialog(
+    statistics=[{"id": "mean", "name": "Mean", "population_id": "all_events"}],
+    available_channels=(),
+    population_ids=("all_events",),
+  )
+
+  dialog._delete_button.click()
+
+  assert dialog._statistics == []
+  assert dialog._list.count() == 0
+  assert dialog._list.currentRow() == -1
+
+
 def test_statistics_editor_rejects_empty_population_targets(qapp) -> None:
   dialog = StatisticsEditorDialog(
     statistics=[],

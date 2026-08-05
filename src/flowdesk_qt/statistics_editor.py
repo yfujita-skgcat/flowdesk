@@ -708,7 +708,7 @@ class StatisticsEditorDialog(QDialog):
 
     def _delete_statistic(self) -> None:
         row = self._list.currentRow()
-        if row < 0:
+        if row < 0 or row >= len(self._statistics):
             return
         statistic_id = str(self._statistics[row].get("id", ""))
         references = self._statistic_references.get(statistic_id, ())
@@ -723,8 +723,10 @@ class StatisticsEditorDialog(QDialog):
         self._record_history()
         self._statistics.pop(row)
         self._current_row = -1
-        if self._statistics:
-            self._refresh_list(max(0, row - 1))
+        # Always rebuild the visible list, including when the last definition
+        # was removed.  Otherwise QListWidget keeps a stale selected row while
+        # the backing list is empty and a second click indexes past the list.
+        self._refresh_list(max(0, row - 1) if self._statistics else -1)
 
     def _duplicate_statistic(self) -> None:
         row = self._list.currentRow()

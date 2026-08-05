@@ -175,6 +175,40 @@ def test_removed_population_is_discarded_from_rows_and_authoritative_report() ->
   )
 
 
+def test_removed_statistic_is_discarded_from_rows_and_authoritative_report() -> None:
+  report = ExecutionReport(
+    project_id="project",
+    execution_profile_id="default",
+    pipeline_version="test",
+    status="success",
+    population_results=(
+      PopulationResult("sample-1", "all_events", 10, None, 1.0),
+    ),
+    statistic_results=(
+      StatisticResult("sample-1", "keep", "all_events", "mean", 1.0),
+      StatisticResult("sample-1", "remove", "all_events", "mean", 2.0),
+    ),
+  )
+  state = RuntimeResultState(
+    report,
+    authoritative_revision=1,
+    sample_ids=("sample-1",),
+    population_ids=("all_events",),
+    statistic_definitions=(("keep", "all_events"), ("remove", "all_events")),
+  )
+
+  state.replace_statistic_definitions(
+    statistic_definitions=(("keep", "all_events"),),
+  )
+
+  assert "remove" not in state.statistic_definitions
+  assert all(row.key.result_id != "remove" for row in state.rows())
+  assert state.authoritative_report is not None
+  assert [result.statistic_id for result in state.authoritative_report.statistic_results] == [
+    "keep"
+  ]
+
+
 def test_preview_statistic_overlay_is_current_without_changing_batch_baseline() -> None:
   state = _state()
   state.invalidate(
