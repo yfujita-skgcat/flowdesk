@@ -231,7 +231,11 @@ class CompensationMatrixEditorDialog(QDialog):
                 if detector and detector not in assignments:
                     assignments[detector] = deepcopy(control)
         self._control_assignments = assignments
-        self._schedule_candidate_preview(preserve_range=False)
+        # Selecting another matrix cell changes the pair, but must not destroy
+        # the user's current viewport.  The candidate is rendered into the
+        # same plot and the range is restored when the asynchronous result
+        # arrives.
+        self._schedule_candidate_preview()
 
     def add_matrix_mapping(
         self, mapping: dict[str, Any], *, select: bool = True
@@ -1076,7 +1080,16 @@ class CompensationMatrixEditorDialog(QDialog):
             self._preview_preserved_view_range = None
         elif self._preview_preserved_view_range is None:
             ranges = self._compensated_plot.view_range()
-            if ranges is not None and self._compensated_plot.has_rendered_data():
+            if (
+                ranges is not None
+                and self._compensated_plot.has_rendered_data()
+                and all(
+                    np.isfinite(value)
+                    for axis_range in ranges
+                    for value in axis_range
+                )
+                and all(axis_range[0] < axis_range[1] for axis_range in ranges)
+            ):
                 self._preview_preserved_view_range = ranges
         if self._selected_pair is None:
             return
@@ -1179,7 +1192,9 @@ class CompensationMatrixEditorDialog(QDialog):
             {"title": "Compensated candidate", "background_color": "#ffffff"}
         )
         if self._preview_preserved_view_range is None:
-            self._apply_shared_preview_range(result.axis_limits)
+            self._apply_shared_preview_range(
+                self._candidate_preview_axis_limits(result)
+            )
         else:
             self._apply_preserved_preview_range(self._preview_preserved_view_range)
         diagnostic = result.diagnostics[0] if result.diagnostics else None
@@ -1221,6 +1236,35 @@ class CompensationMatrixEditorDialog(QDialog):
             f"events={result.population_event_count}; "
             + "; ".join(details)
         )
+
+    def _candidate_preview_axis_limits(
+        self, result: CompensationPreviewResult
+    ) -> tuple[float, float, float, float] | None:
+        """Return safe initial limits in the PlotWidget's data coordinates.
+
+        The core result also retains the raw/uncompensated values for
+        diagnostics.  The GUI renders only candidate compensated values, so
+        its initial range must be derived from those values.  In log mode,
+        non-positive values are excluded before passing limits to pyqtgraph;
+        otherwise pyqtgraph can create nonsensical powers such as 10^-200.
+        """
+        x_values = np.asarray(result.compensated_x, dtype=np.float64)
+        y_values = np.asarray(result.compensated_y, dtype=np.float64)
+        x_valid = np.isfinite(x_values)
+        y_valid = np.isfinite(y_values)
+        if self._compensated_plot._x_transform == "log10":
+            x_valid &= x_values > 0
+        if self._compensated_plot._y_transform == "log10":
+            y_valid &= y_values > 0
+        if not np.any(x_valid) or not np.any(y_valid):
+            return None
+        x_values = x_values[x_valid]
+        y_values = y_values[y_valid]
+        x_min, x_max = float(np.min(x_values)), float(np.max(x_values))
+        y_min, y_max = float(np.min(y_values)), float(np.max(y_values))
+        if not (x_min < x_max and y_min < y_max):
+            return None
+        return x_min, x_max, y_min, y_max
 
     def _apply_shared_preview_range(
         self,

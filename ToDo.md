@@ -286,6 +286,7 @@ binding、immutable matrix、calculation algorithm、diagnosticを置換・複�
 - [x] 済み: source value、candidate value、difference、Resetを表示する（Undo/Redoは既存dialogのmatrix編集履歴へ統合する後続課題）。
 - [x] 済み: calculated matrixは直接変更せず、`Save as Copy`で作成したcandidateを編集する。
 - [x] 済み: manual edit provenanceへstable row/column ID、old/new、時刻、editor、reasonを保存する。
+- [x] 済み: Fine adjustmentとMatrix cell変更で現在のX/Y rangeを保持し、Log10初期rangeから非正値と非有限値を除外する。
 
 #### Increment 5: Workspace統合と適用
 

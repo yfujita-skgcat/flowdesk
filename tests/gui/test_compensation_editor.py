@@ -232,6 +232,28 @@ def test_preview_pan_and_zoom_updates_compensated_plot() -> None:
     app.processEvents()
 
 
+def test_fine_adjustment_moves_slider_and_updates_coefficient() -> None:
+  app = _app()
+  dialog = CompensationMatrixEditorDialog(
+    matrices=[_valid_2x2_matrix()],
+    bindings=[],
+    available_channels=_sample_channels(),
+    sample_ids=["sample_1"],
+    group_ids=[],
+  )
+  try:
+    dialog._on_heat_map_cell_clicked(0, 1)
+    initial = dialog._coefficient_slider.value()
+    dialog._coefficient_slider.setValue(initial + 100)
+    app.processEvents()
+    assert dialog._coefficient_slider.value() == initial + 100
+    assert float(dialog._heat_map.item(0, 1).text()) == pytest.approx(0.101)
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    app.processEvents()
+
+
 def test_channel_controls_and_labels_match_their_behavior() -> None:
     app = _app()
     channels = (

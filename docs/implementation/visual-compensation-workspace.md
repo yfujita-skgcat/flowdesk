@@ -194,14 +194,10 @@ raw eventへcanonical compensationを適用し、transformはpreview描画と表
 使う。軸ラベルとheat map headerは短いproject display labelを表示し、stable channel IDは
 tooltipと内部データで保持する。
 
-ViewBoxの`sigRangeChanged`は左右双方へ接続し、片側のzoom/panをもう片側へコピーする。
-同期中フラグで再帰的なsignal連鎖を防ぐ。科学計算結果やraw eventは変更せず、表示状態
-だけを同期する。将来どちらか一方だけを操作可能にする場合は、明示的なUIモードとして
-追加し、既定では同期を維持する。
-
-係数変更やFine adjustmentでは、変更前のViewBox rangeを保存して新しいpreview結果へ
-復元する。Sample、Population、transformの変更は比較対象自体が変わるため保存rangeを
-破棄し、coreが返す新しい共有rangeを使用する。
+係数変更、Fine adjustment、Matrix cell変更では、変更前のViewBox rangeを保存して新しい
+preview結果へ復元する。candidate plotは補償後の有限値だけから初期rangeを作り、Log10
+では非正値を除外する。Sample、Population、transformの変更は比較対象自体が変わるため
+保存rangeを破棄し、core結果に基づく新しいrangeを使用する。
 
 補償後の蛍光値は負になり得る。Log10で表示不能なeventを黙って除外して見栄えを
 改善してはならない。linear、asinh、正式Logicle等から明示的に選び、現在transformで
