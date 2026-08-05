@@ -156,8 +156,8 @@ def test_preview_applies_identical_range_to_both_plots() -> None:
     def __init__(self) -> None:
       self.ranges = []
 
-    def set_manual_view_range(self, value) -> None:
-      self.ranges.append(value)
+    def set_manual_view_range(self, x_range, y_range) -> None:
+      self.ranges.append((x_range, y_range))
 
   try:
     uncompensated = _RangeRecorder()

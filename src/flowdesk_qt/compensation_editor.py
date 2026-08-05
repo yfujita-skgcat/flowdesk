@@ -1181,9 +1181,8 @@ class CompensationMatrixEditorDialog(QDialog):
         if axis_limits is None:
             return
         x_min, x_max, y_min, y_max = axis_limits
-        shared_range = ((x_min, x_max), (y_min, y_max))
         for plot in (self._uncompensated_plot, self._compensated_plot):
-            plot.set_manual_view_range(shared_range)
+            plot.set_manual_view_range((x_min, x_max), (y_min, y_max))
 
     def _on_candidate_preview_failed(
         self,
