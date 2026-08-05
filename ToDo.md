@@ -249,6 +249,7 @@ AutoSpill、spectral unmixing、autofluorescence extractionはこのPhaseへ混�
 - [x] 済み: 補償前後plotの同期契約を明示し、初期X/Y rangeだけでなくViewBoxのzoom/panを双方向同期する。同期中の再帰signalをガードし、同一sample・population・event subset・transform・表示上限・非有限値規則を共有する。
 - [x] 済み: Compensation PreviewにLinear/Log10/Asinhの表示transform選択を追加し、補償計算のraw値と表示transformを分離する。plot軸とheat map headerは短いdisplay labelを使い、stable channel IDはtooltipで確認できるようにする。
 - [x] 済み: Compensation PreviewでSample titleとPopulation / gateを選択できるようにし、選択したpopulation maskだけを補償前後plotへ渡す。controlのpositive/negative maskを使う場合も選択gateとの積集合を維持する。
+- [x] 済み: Matrix係数/Fine adjustment変更時はユーザーのzoom・pan範囲を保持し、Sample、Population、transform変更時だけ新しい共有rangeへリセットする。
 
 現在のmatrix数値表と先頭10 eventのpreview tableでは、係数変更による分布の変化を
 科学的に確認できない。`docs/implementation/visual-compensation-workspace.md`を唯一の

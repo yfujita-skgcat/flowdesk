@@ -200,6 +200,10 @@ ViewBoxの`sigRangeChanged`は左右双方へ接続し、片側のzoom/panをも
 だけを同期する。将来どちらか一方だけを操作可能にする場合は、明示的なUIモードとして
 追加し、既定では同期を維持する。
 
+係数変更やFine adjustmentでは、変更前のViewBox rangeを保存して新しいpreview結果へ
+復元する。Sample、Population、transformの変更は比較対象自体が変わるため保存rangeを
+破棄し、coreが返す新しい共有rangeを使用する。
+
 補償後の蛍光値は負になり得る。Log10で表示不能なeventを黙って除外して見栄えを
 改善してはならない。linear、asinh、正式Logicle等から明示的に選び、現在transformで
 表示不能なevent数をdiagnosticとして示す。

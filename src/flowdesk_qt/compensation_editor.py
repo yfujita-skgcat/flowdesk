@@ -186,6 +186,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._selected_pair: tuple[str, str] | None = None
         self._control_assignments: dict[str, dict[str, Any]] = {}
         self._preview_revision = 0
+        self._preview_preserved_view_range = None
         self._setting_coefficient = False
         self._preview_scheduler = CompensationPreviewScheduler(self)
 
@@ -230,7 +231,7 @@ class CompensationMatrixEditorDialog(QDialog):
                 if detector and detector not in assignments:
                     assignments[detector] = deepcopy(control)
         self._control_assignments = assignments
-        self._schedule_candidate_preview()
+        self._schedule_candidate_preview(preserve_range=False)
 
     def add_matrix_mapping(
         self, mapping: dict[str, Any], *, select: bool = True
@@ -561,7 +562,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_btn.setObjectName("compensationPreviewButton")
         preview_layout.addWidget(self._preview_btn)
         self._preview_sample_combo.currentIndexChanged.connect(
-            lambda _index: self._schedule_candidate_preview()
+            lambda _index: self._schedule_candidate_preview(preserve_range=False)
         )
         self._preview_population_combo = QComboBox()
         self._preview_population_combo.setObjectName(
@@ -571,7 +572,7 @@ class CompensationMatrixEditorDialog(QDialog):
             label = self._population_labels.get(population_id, population_id)
             self._preview_population_combo.addItem(label, population_id)
         self._preview_population_combo.currentIndexChanged.connect(
-            lambda _index: self._schedule_candidate_preview()
+            lambda _index: self._schedule_candidate_preview(preserve_range=False)
         )
         sel_row.addWidget(QLabel("Population / gate:"))
         sel_row.addWidget(self._preview_population_combo)
@@ -701,14 +702,14 @@ class CompensationMatrixEditorDialog(QDialog):
                 f"Preview: {row} cells (matrix {spec.id}, sample {sample_id}, "
                 f"population {population_id})"
             )
-            self._schedule_candidate_preview()
+            self._schedule_candidate_preview(preserve_range=False)
         except Exception as exc:
             self._diag_label.setText(f"Preview failed: {exc}")
 
     def _on_preview_transform_changed(self) -> None:
         """Apply the selected display transforms to both preview plots."""
         self._apply_preview_axis_transforms()
-        self._schedule_candidate_preview()
+        self._schedule_candidate_preview(preserve_range=False)
 
     def _apply_preview_axis_transforms(self) -> None:
         x_transform = str(
@@ -781,7 +782,7 @@ class CompensationMatrixEditorDialog(QDialog):
         finally:
             self._loading = False
         if self._selected_pair is not None and self._sample_data:
-            self._schedule_candidate_preview()
+            self._schedule_candidate_preview(preserve_range=False)
 
     def _clear_matrix_fields(self) -> None:
         self._loading = True
@@ -1034,7 +1035,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._selected_pair = channels[column], channels[row]
         self._update_preview_pair_label()
         self._load_coefficient_controls()
-        self._schedule_candidate_preview()
+        self._schedule_candidate_preview(preserve_range=False)
 
     def _on_heat_map_cell_changed(self, _row: int, _column: int) -> None:
         if not self._loading:
@@ -1124,7 +1125,13 @@ class CompensationMatrixEditorDialog(QDialog):
         ]
         self._set_selected_coefficient_percent(float(value) * 100.0)
 
-    def _schedule_candidate_preview(self) -> None:
+    def _schedule_candidate_preview(self, *, preserve_range: bool = True) -> None:
+        if not preserve_range:
+            self._preview_preserved_view_range = None
+        elif self._preview_preserved_view_range is None:
+            ranges = self._uncompensated_plot.view_range()
+            if ranges is not None and self._uncompensated_plot.has_rendered_data():
+                self._preview_preserved_view_range = ranges
         if self._selected_pair is None:
             return
         if not (0 <= self._current_matrix_row < len(self._matrices)):
@@ -1234,7 +1241,10 @@ class CompensationMatrixEditorDialog(QDialog):
         self._compensated_plot.set_presentation(
             {"title": "Compensated", "background_color": "#ffffff"}
         )
-        self._apply_shared_preview_range(result.axis_limits)
+        if self._preview_preserved_view_range is None:
+            self._apply_shared_preview_range(result.axis_limits)
+        else:
+            self._apply_preserved_preview_range(self._preview_preserved_view_range)
         diagnostic = result.diagnostics[0] if result.diagnostics else None
         if diagnostic is None:
             self._diag_label.setText(
@@ -1290,6 +1300,18 @@ class CompensationMatrixEditorDialog(QDialog):
         x_min, x_max, y_min, y_max = axis_limits
         for plot in (self._uncompensated_plot, self._compensated_plot):
             plot.set_manual_view_range((x_min, x_max), (y_min, y_max))
+
+    def _apply_preserved_preview_range(
+        self,
+        view_range: tuple[tuple[float, float], tuple[float, float]],
+    ) -> None:
+        """Restore the user's current ViewBox range after coefficient edits."""
+        for plot in (self._uncompensated_plot, self._compensated_plot):
+            view_box = plot._view_box()
+            if view_box is not None:
+                view_box.setRange(
+                    xRange=view_range[0], yRange=view_range[1], padding=0
+                )
 
     def _on_candidate_preview_failed(
         self,
