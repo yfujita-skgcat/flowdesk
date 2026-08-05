@@ -50,8 +50,8 @@ scheduler、GUI統合を一度に変更しない。
   相関を補償正解とは扱わない。
 - calculated matrixは引き続きread-onlyで、`Save as Copy`を編集入口とする。raw eventと
   original matrixを変更しない。manual edit provenanceはcandidate matrixへ記録する。
-- `CompensationWorkspaceDialog`がControls & CalculateとMatrix & Previewを同じSave and
-  Apply/Cancel境界に組み込む。既存の`calculate_spillover_matrix()`を再利用し、GUI側に
+- `CompensationWorkspaceDialog`がControls & Calculate、Matrix Preview、Application /
+  Bindingsを同じSave and Apply/Cancel境界に組み込む。既存の`calculate_spillover_matrix()`を再利用し、GUI側に
   別の補償計算式を持たない。
 - workspace起動時にはreportがfreshな場合だけsampleごとのpopulation masksを渡し、stale
   な場合はall_eventsのみを安全な候補として渡す。control populationが未解決のまま
@@ -94,30 +94,33 @@ revision競合、window close、複数workspaceのcommit競合を別途解決す
 
 ```text
 Compensation Workspace
-  Controls
+  Controls & Calculate
     detectorごとのcontrol sample / positive / negative Population
     Calculate
-  Matrix & Preview
+  Matrix Preview
     matrix cell selection
       -> source/receiving/controlを解決
       -> Before / After plot
       -> coefficient slider + numeric input
       -> pair diagnostic
-  Application & Provenance
-    source matrix / manual edit history / validation
-    Save as Copy
-    Apply to sample or Group
+  Application / Bindings
+    matrixをsample / group / execution profileへ適用するbinding
+    scopeとtargetの確認
 ```
 
 ### 4.1 新規計算
 
-1. `Compensation Controls` roleのGroupまたはexplicit sampleからcontrolを選ぶ。
+1. `Controls & Calculate` tabで`Compensation Controls` roleのGroupまたはexplicit sampleからcontrolを選ぶ。
 2. detectorごとにsample、positive Population、negative Populationを指定する。
 3. staleでないfull-resolution membershipを確認する。
 4. existing core calculation APIでmatrixを計算する。
 5. 全pairをreviewする。
 6. calculated matrixをimmutable resultとして保存する。
 7. sample/Group bindingを明示的に適用する。
+
+Bindingsは係数を表すMatrixとは別に、どの対象へどのMatrixを適用するかを保存する。
+単一matrixの調整時に混乱しないよう、Matrix Previewからは分離し、Application / Bindings
+tabで編集する。既存のbinding model、resolver、project schemaは変更しない。
 
 ### 4.2 既存matrixの確認・微調整
 

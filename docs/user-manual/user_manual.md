@@ -230,7 +230,6 @@ Undo/Redo は操作可能な履歴がないと disabled になる。Gate history
 |Pipeline Execution Settings...|—|次回Run Pipelineの逐次実行を確認する。bounded thread、最大worker数、memory budgetは検証完了までGUIで無効化され、project定義は変更しない。|
 |Derived Parameters...|—|式から derived parameter を定義、validate、preview する。|
 |Compensation Workspace...|—|single-color control の割当・matrix計算・補償前後plot・係数調整・bindingを一つのSave/Cancel境界で行う。|
-|Compensation Controls (Workspace)...|—|上記workspaceをControls & Calculateタブから開く互換入口。|
 |Manage Parameter Transforms...|—|parameter ごとの formal analysis transform を定義する。|
 |Use Multiple Analysis Groups|checkable|advanced Group panel を表示する。通常の treatment/control 比較は同じ Group、異なる panel/control/QC のみ分離する設計。|
 |Clear Gates|Ctrl+G|全 gate を消去し、plot の gate creation 状態も解除する。|
@@ -652,11 +651,15 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 ### 14.5 Compensation Matrices
 
-通常は Analysis → Compensation Workspace... を使う。workspaceには次の2タブがある。
+通常は Analysis → Compensation Workspace... を使う。Controls専用の別メニューはなく、workspaceには次の3タブがある。
 
 - `Controls & Calculate`: detectorごとにcontrol sample、positive/negative population、
   regression/outlier policyを指定し、既存のcore計算を実行する。
-- `Matrix & Preview`: matrix cellを選択し、同じsample/event subsetの補償前後plotを比較する。
+- `Matrix Preview`: Matrix ID、Name、Source、Notes、Channels、全選択/全解除、
+  ヒートマップを確認し、matrix cellを選択して同じsample/event subsetの補償前後plotを比較する。
+  右側のプロット領域を広く使い、サンプルはSample nameで表示する（内部ではstable IDを保持）。
+- `Application / Bindings`: matrixをsample、group、execution profileへ適用するBindingを管理する。
+  Bindingは行列係数ではなく「どの対象にどのmatrixを使うか」を定義するため、通常の係数調整画面から分離している。
   `Save and Apply`で初めてMainWindowのmatrix、calculation、bindingへ反映し、`Cancel`では
   変更を破棄する。pipeline結果は自動で書き換えず、staleとして再実行を要求する。
 
@@ -684,7 +687,7 @@ control populationの計算結果がstaleな場合は、workspaceは安全のた
 |Validate|shape、finite values、diagonal、invertibility/condition 等を inspect。|
 |diagnostic label|validity と condition number、または errors。|
 
-#### Bindings list / Binding Editor
+#### Application / Bindings tab
 
 |control|説明|
 |---|---|
@@ -703,7 +706,7 @@ control populationの計算結果がstaleな場合は、workspaceは安全のた
 |Preview|current matrix を selected sample に適用する。|
 |Preview table|Channel、Uncompensated、Compensated の代表 summary。|
 
-`OK` は定義全体を validate して保存、`Cancel` は破棄する。
+`OK` は定義全体を validate して保存、`Cancel` は破棄する。画面サイズは利用可能なモニタ領域に合わせて初期化され、必要なら手動でリサイズできる。
 
 ### 14.6 Compensation Calculations
 

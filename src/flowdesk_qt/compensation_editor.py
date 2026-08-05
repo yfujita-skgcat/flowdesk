@@ -145,6 +145,7 @@ class CompensationMatrixEditorDialog(QDialog):
         group_ids: Sequence[str],
         *,
         sample_data: dict[str, dict[str, Any]] | None = None,
+        sample_labels: dict[str, str] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         """Initialize the compensation editor dialog.
@@ -171,6 +172,8 @@ class CompensationMatrixEditorDialog(QDialog):
         self._sample_ids = tuple(sample_ids)
         self._group_ids = tuple(group_ids)
         self._sample_data = sample_data or {}
+        self._sample_labels = dict(sample_labels or {})
+        self._binding_panel: QWidget | None = None
         self._loading = False
         self._current_matrix_row = -1
         self._current_binding_row = -1
@@ -255,7 +258,7 @@ class CompensationMatrixEditorDialog(QDialog):
         outer = QVBoxLayout(self)
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # --- Left side: matrix list + binding list ---
+        # --- Left side: matrix list ---
         left = QWidget()
         left_layout = QVBoxLayout(left)
 
@@ -278,26 +281,11 @@ class CompensationMatrixEditorDialog(QDialog):
         matrix_layout.addLayout(matrix_btns)
         left_layout.addWidget(matrix_group)
 
-        binding_group = QGroupBox("Bindings")
-        binding_layout = QVBoxLayout(binding_group)
-        self._binding_list = QListWidget()
-        self._binding_list.setObjectName("compensationBindingList")
-        binding_layout.addWidget(self._binding_list)
-
-        binding_btns = QHBoxLayout()
-        self._new_binding_btn = QPushButton("New")
-        self._new_binding_btn.setObjectName("compensationNewBindingButton")
-        self._delete_binding_btn = QPushButton("Delete")
-        self._delete_binding_btn.setObjectName("compensationDeleteBindingButton")
-        binding_btns.addWidget(self._new_binding_btn)
-        binding_btns.addWidget(self._delete_binding_btn)
-        binding_layout.addLayout(binding_btns)
-        left_layout.addWidget(binding_group)
         left_layout.addStretch(1)
 
         # --- Right side: matrix form + heat map ---
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
+        details = QWidget()
+        details_layout = QVBoxLayout(details)
 
         form = QFormLayout()
         self._id_edit = QLineEdit()
@@ -335,7 +323,7 @@ class CompensationMatrixEditorDialog(QDialog):
         channel_btns.addWidget(self._add_channel_btn)
         channel_btns.addWidget(self._remove_channel_btn)
         form.addRow("", channel_btns)
-        right_layout.addLayout(form)
+        details_layout.addLayout(form)
 
         # Heat map table
         heat_group = QGroupBox("Matrix Heat Map Preview")
@@ -361,7 +349,7 @@ class CompensationMatrixEditorDialog(QDialog):
             QHeaderView.ResizeMode.Interactive
         )
         heat_layout.addWidget(self._heat_map)
-        right_layout.addWidget(heat_group)
+        details_layout.addWidget(heat_group, 1)
 
         coefficient_group = QGroupBox("Selected off-diagonal coefficient")
         coefficient_form = QFormLayout(coefficient_group)
@@ -381,7 +369,7 @@ class CompensationMatrixEditorDialog(QDialog):
         coefficient_form.addRow("Coefficient:", self._coefficient_spin)
         coefficient_form.addRow("Fine adjustment:", self._coefficient_slider)
         coefficient_form.addRow("", self._coefficient_reset_btn)
-        right_layout.addWidget(coefficient_group)
+        details_layout.addWidget(coefficient_group)
 
         # Validation label
         actions = QHBoxLayout()
@@ -389,21 +377,23 @@ class CompensationMatrixEditorDialog(QDialog):
         self._validate_btn.setObjectName("compensationValidateButton")
         actions.addWidget(self._validate_btn)
         actions.addStretch(1)
-        right_layout.addLayout(actions)
+        details_layout.addLayout(actions)
         self._diag_label = QLabel("Not validated")
         self._diag_label.setObjectName("compensationDiagnosticLabel")
         self._diag_label.setWordWrap(True)
-        right_layout.addWidget(self._diag_label)
+        details_layout.addWidget(self._diag_label)
 
-        # Compensated / uncompensated preview
-        self._build_preview_section(right_layout)
-
-        right_layout.addStretch(1)
+        preview = QWidget()
+        preview_layout = QVBoxLayout(preview)
+        self._build_preview_section(preview_layout)
 
         splitter.addWidget(left)
-        splitter.addWidget(right)
+        splitter.addWidget(details)
+        splitter.addWidget(preview)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(2, 5)
+        splitter.setSizes([220, 420, 760])
         outer.addWidget(splitter)
 
         buttons = QDialogButtonBox(
@@ -415,12 +405,9 @@ class CompensationMatrixEditorDialog(QDialog):
 
         # --- Signal connections ---
         self._matrix_list.currentRowChanged.connect(self._on_matrix_row_changed)
-        self._binding_list.currentRowChanged.connect(self._on_binding_row_changed)
         self._new_matrix_btn.clicked.connect(self._add_matrix)
         self._duplicate_matrix_btn.clicked.connect(self._duplicate_matrix)
         self._delete_matrix_btn.clicked.connect(self._delete_matrix)
-        self._new_binding_btn.clicked.connect(self._add_binding)
-        self._delete_binding_btn.clicked.connect(self._delete_binding)
         self._add_channel_btn.clicked.connect(self._add_channel)
         self._remove_channel_btn.clicked.connect(self._remove_channel)
         self._heat_map.cellClicked.connect(self._on_heat_map_cell_clicked)
@@ -436,8 +423,38 @@ class CompensationMatrixEditorDialog(QDialog):
         buttons.accepted.connect(self._accept_if_valid)
         buttons.rejected.connect(self.reject)
 
-        # --- Binding form (shown inline on left) ---
-        self._build_binding_form(left_layout)
+        self._build_binding_panel()
+
+    def _build_binding_panel(self) -> None:
+        """Build binding management in a separate workspace tab."""
+        panel = QWidget()
+        panel.setObjectName("compensationBindingsPanel")
+        layout = QVBoxLayout(panel)
+        binding_group = QGroupBox("Bindings")
+        binding_layout = QVBoxLayout(binding_group)
+        self._binding_list = QListWidget()
+        self._binding_list.setObjectName("compensationBindingList")
+        binding_layout.addWidget(self._binding_list, 1)
+        binding_btns = QHBoxLayout()
+        self._new_binding_btn = QPushButton("New")
+        self._new_binding_btn.setObjectName("compensationNewBindingButton")
+        self._delete_binding_btn = QPushButton("Delete")
+        self._delete_binding_btn.setObjectName("compensationDeleteBindingButton")
+        binding_btns.addWidget(self._new_binding_btn)
+        binding_btns.addWidget(self._delete_binding_btn)
+        binding_layout.addLayout(binding_btns)
+        layout.addWidget(binding_group, 1)
+        self._build_binding_form(layout)
+        self._binding_list.currentRowChanged.connect(self._on_binding_row_changed)
+        self._new_binding_btn.clicked.connect(self._add_binding)
+        self._delete_binding_btn.clicked.connect(self._delete_binding)
+        self._binding_panel = panel
+
+    def binding_panel(self) -> QWidget:
+        """Return the bindings editor page for the unified workspace."""
+        if self._binding_panel is None:
+            raise RuntimeError("binding panel has not been built")
+        return self._binding_panel
 
     def _build_binding_form(self, layout: QVBoxLayout) -> None:
         """Build the inline binding editor form."""
@@ -482,11 +499,12 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_sample_combo.setObjectName(
             "compensationPreviewSampleCombo"
         )
-        preview_available = [
-            sid for sid in self._sample_ids if sid in self._sample_data
-        ]
+        preview_available = [sid for sid in self._sample_ids if sid in self._sample_data]
         if preview_available:
-            self._preview_sample_combo.addItems(preview_available)
+            for sample_id in preview_available:
+                self._preview_sample_combo.addItem(
+                    self._sample_labels.get(sample_id, sample_id), sample_id
+                )
         else:
             self._preview_sample_combo.insertItem(
                 0, "(no data available)"
@@ -538,8 +556,11 @@ class CompensationMatrixEditorDialog(QDialog):
         idx = self._preview_sample_combo.currentIndex()
         if idx < 0:
             return
-        sample_id = str(self._preview_sample_combo.itemText(idx))
-        if sample_id == "(no data available)":
+        sample_id = str(self._preview_sample_combo.itemData(idx) or "")
+        if (
+            not sample_id
+            or self._preview_sample_combo.currentText() == "(no data available)"
+        ):
             self._diag_label.setText("No sample data available for preview")
             return
 
@@ -1006,7 +1027,7 @@ class CompensationMatrixEditorDialog(QDialog):
         assignment = self._control_assignments.get(source_channel)
         if assignment is not None:
             assigned_sample = str(assignment.get("sample_id", ""))
-            assigned_index = self._preview_sample_combo.findText(assigned_sample)
+            assigned_index = self._preview_sample_combo.findData(assigned_sample)
             if assigned_index >= 0:
                 self._preview_sample_combo.blockSignals(True)
                 self._preview_sample_combo.setCurrentIndex(assigned_index)
@@ -1014,7 +1035,7 @@ class CompensationMatrixEditorDialog(QDialog):
         sample_index = self._preview_sample_combo.currentIndex()
         if sample_index < 0:
             return
-        sample_id = str(self._preview_sample_combo.itemText(sample_index))
+        sample_id = str(self._preview_sample_combo.itemData(sample_index) or "")
         if sample_id == "(no data available)":
             return
         sample_info = self._sample_data.get(sample_id)

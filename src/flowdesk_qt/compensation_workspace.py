@@ -12,6 +12,7 @@ from copy import deepcopy
 from typing import Any
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
   QDialog,
   QDialogButtonBox,
@@ -40,12 +41,28 @@ class CompensationWorkspaceDialog(QDialog):
     sample_ids: tuple[str, ...] | list[str],
     *,
     sample_data: dict[str, dict[str, Any]] | None = None,
+    sample_labels: dict[str, str] | None = None,
     parent: QWidget | None = None,
   ) -> None:
     super().__init__(parent)
     self.setObjectName("compensationWorkspaceDialog")
     self.setWindowTitle("Compensation Workspace")
-    self.resize(1500, 1000)
+    self.setMinimumSize(900, 600)
+    screen = QGuiApplication.primaryScreen()
+    if self.parent() is not None:
+      parent_screen = QGuiApplication.screenAt(
+        self.parent().mapToGlobal(self.parent().rect().center())
+      )
+      if parent_screen is not None:
+        screen = parent_screen
+    available = screen.availableGeometry() if screen is not None else None
+    if available is None:
+      self.resize(1200, 800)
+    else:
+      self.resize(
+        min(1400, int(available.width() * 0.92)),
+        min(900, int(available.height() * 0.88)),
+      )
 
     self._matrix_editor = CompensationMatrixEditorDialog(
       matrices,
@@ -54,6 +71,7 @@ class CompensationWorkspaceDialog(QDialog):
       sample_ids,
       (),
       sample_data=sample_data,
+      sample_labels=sample_labels,
       parent=self,
     )
     self._calculation_editor = CompensationCalculationEditorDialog(
@@ -70,7 +88,8 @@ class CompensationWorkspaceDialog(QDialog):
     outer = QVBoxLayout(self)
     help_label = QLabel(
       "Controls: assign single-stain populations and calculate a matrix. "
-      "Matrix & Preview: review before/after events and fine-tune a copy. "
+      "Matrix Preview: edit matrix metadata and review before/after events. "
+      "Application / Bindings: choose where a matrix is applied. "
       "Save and Apply commits matrices and bindings; Cancel discards all edits."
     )
     help_label.setObjectName("compensationWorkspaceHelpLabel")
@@ -80,7 +99,8 @@ class CompensationWorkspaceDialog(QDialog):
     self._tabs = QTabWidget()
     self._tabs.setObjectName("compensationWorkspaceTabs")
     self._tabs.addTab(self._calculation_editor, "Controls & Calculate")
-    self._tabs.addTab(self._matrix_editor, "Matrix & Preview")
+    self._tabs.addTab(self._matrix_editor, "Matrix Preview")
+    self._tabs.addTab(self._matrix_editor.binding_panel(), "Application / Bindings")
     self._tabs.currentChanged.connect(self._sync_control_assignments)
     outer.addWidget(self._tabs, 1)
 

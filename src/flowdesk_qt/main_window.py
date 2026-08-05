@@ -831,17 +831,6 @@ class MainWindow(QMainWindow):
         self.action_compensation.triggered.connect(self._on_edit_compensation)
         analysis_menu.addAction(self.action_compensation)
 
-        self.action_compensation_calculations = QAction(
-            "Compensation &Controls (Workspace)...", self
-        )
-        self.action_compensation_calculations.setObjectName(
-            "actionCompensationCalculations"
-        )
-        self.action_compensation_calculations.triggered.connect(
-            self._on_edit_compensation_calculations
-        )
-        analysis_menu.addAction(self.action_compensation_calculations)
-
         self.action_transforms = QAction("Manage Parameter &Transforms...", self)
         self.action_transforms.setObjectName("actionTransforms")
         self.action_transforms.triggered.connect(self._on_edit_transforms)
@@ -5232,7 +5221,7 @@ class MainWindow(QMainWindow):
             CompensationWorkspaceDialog,
         )
 
-        channels, sample_ids, population_ids, sample_data = (
+        channels, sample_ids, population_ids, sample_data, sample_labels = (
             self._compensation_workspace_inputs()
         )
         dialog = CompensationWorkspaceDialog(
@@ -5243,6 +5232,7 @@ class MainWindow(QMainWindow):
             population_ids,
             sample_ids,
             sample_data=sample_data,
+            sample_labels=sample_labels,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -5269,6 +5259,7 @@ class MainWindow(QMainWindow):
         tuple[str, ...],
         tuple[str, ...],
         dict[str, dict[str, Any]],
+        dict[str, str],
     ]:
         """Build one immutable-input snapshot for both compensation editors."""
         channels_by_id: dict[str, Any] = {}
@@ -5291,7 +5282,9 @@ class MainWindow(QMainWindow):
             }
             for channel in channels_by_id.values()
         )
-        sample_ids = tuple(s.id for s in self._sample_browser.samples())
+        samples = tuple(self._sample_browser.samples())
+        sample_ids = tuple(s.id for s in samples)
+        sample_labels = {s.id: s.name for s in samples}
         population_ids: list[str] = ["all_events"]
         report = self._population_tree.last_report()
         if report is not None and not self._results_stale:
@@ -5316,7 +5309,7 @@ class MainWindow(QMainWindow):
                 "population_mask": masks["all_events"],
                 "masks": masks,
             }
-        return display_channels, sample_ids, tuple(population_ids), sample_data
+        return display_channels, sample_ids, tuple(population_ids), sample_data, sample_labels
 
     def _on_edit_compensation_calculations(self) -> None:
         """Compatibility entry point; open the unified workspace on Controls."""

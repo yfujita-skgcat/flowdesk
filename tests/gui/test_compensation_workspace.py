@@ -62,9 +62,10 @@ def test_workspace_has_one_save_boundary_and_two_review_tabs(qapp) -> None:
   try:
     tabs = dialog.findChild(QDialogButtonBox, "compensationWorkspaceButtons")
     assert tabs is not None
-    assert dialog._tabs.count() == 2
+    assert dialog._tabs.count() == 3
     assert dialog._tabs.tabText(0) == "Controls & Calculate"
-    assert dialog._tabs.tabText(1) == "Matrix & Preview"
+    assert dialog._tabs.tabText(1) == "Matrix Preview"
+    assert dialog._tabs.tabText(2) == "Application / Bindings"
     assert dialog._matrix_editor.findChild(QDialogButtonBox).isHidden()
     assert dialog._calculation_editor.findChild(QDialogButtonBox).isHidden()
   finally:
@@ -161,13 +162,14 @@ def test_matrix_preview_accepts_calculated_matrix_once(qapp) -> None:
 def test_main_window_builds_one_workspace_input_snapshot(qapp) -> None:
   window = MainWindow()
   try:
-    channels, sample_ids, population_ids, sample_data = (
+    channels, sample_ids, population_ids, sample_data, sample_labels = (
       window._compensation_workspace_inputs()
     )
     assert isinstance(channels, tuple)
     assert isinstance(sample_ids, tuple)
     assert "all_events" in population_ids
     assert sample_data == {}
+    assert sample_labels == {}
   finally:
     window.close()
     window.deleteLater()
