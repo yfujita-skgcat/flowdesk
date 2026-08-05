@@ -142,6 +142,45 @@ def test_heat_map_populated_for_2x2_matrix() -> None:
         app.processEvents()
 
 
+def test_preview_uses_compact_labels_and_supports_display_transforms() -> None:
+  app = _app()
+  channels = (
+    {
+      "id": "fcs_fl1_a_abc123",
+      "name": "FL1-A",
+      "display_name": "FITC-A",
+    },
+    {
+      "id": "fcs_fl2_a_def456",
+      "name": "FL2-A",
+      "display_name": "APC-A",
+    },
+  )
+  matrix = _valid_2x2_matrix()
+  matrix["channels"] = ["fcs_fl1_a_abc123", "fcs_fl2_a_def456"]
+  matrix["matrix"] = [[1.0, 0.1], [0.2, 1.0]]
+  dialog = CompensationMatrixEditorDialog(
+    matrices=[matrix],
+    bindings=[],
+    available_channels=channels,
+    sample_ids=["sample_1"],
+    group_ids=[],
+  )
+  try:
+    assert dialog._heat_map.verticalHeaderItem(0).text() == "FITC-A"
+    assert dialog._heat_map.horizontalHeaderItem(1).text() == "APC-A"
+    assert dialog._preview_x_transform_combo.itemData(1) == "log10"
+    assert dialog._preview_y_transform_combo.itemData(2) == "asinh"
+    dialog._preview_x_transform_combo.setCurrentIndex(1)
+    dialog._preview_y_transform_combo.setCurrentIndex(2)
+    assert dialog._uncompensated_plot._x_transform == "log10"
+    assert dialog._compensated_plot._y_transform == "asinh"
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    app.processEvents()
+
+
 def test_preview_applies_identical_range_to_both_plots() -> None:
   app = _app()
   dialog = CompensationMatrixEditorDialog(
@@ -242,11 +281,9 @@ def test_channel_controls_and_labels_match_their_behavior() -> None:
                 "matrix": [[1.0, 0.0], [0.0, 1.0]],
             }
         )
-        assert dialog._heat_map.horizontalHeaderItem(0).text() == (
-            "GFP (FITC-A) [fcs_fl1_a_abc123]"
-        )
+        assert dialog._heat_map.horizontalHeaderItem(0).text() == "GFP (FITC-A)"
         assert dialog._heat_map.verticalHeaderItem(1).text() == (
-            "RFP (PE-A) [fcs_fl2_a_def456]"
+            "RFP (PE-A)"
         )
     finally:
         dialog.close()

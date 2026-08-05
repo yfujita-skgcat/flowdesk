@@ -559,6 +559,28 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_sample_combo.currentIndexChanged.connect(
             lambda _index: self._schedule_candidate_preview()
         )
+        self._preview_x_transform_combo = QComboBox()
+        self._preview_x_transform_combo.setObjectName(
+            "compensationPreviewXTransformCombo"
+        )
+        self._preview_y_transform_combo = QComboBox()
+        self._preview_y_transform_combo.setObjectName(
+            "compensationPreviewYTransformCombo"
+        )
+        for combo in (
+            self._preview_x_transform_combo,
+            self._preview_y_transform_combo,
+        ):
+            combo.addItem("Linear", "linear")
+            combo.addItem("Log10", "log10")
+            combo.addItem("Asinh", "asinh")
+            combo.currentIndexChanged.connect(
+                lambda _index: self._on_preview_transform_changed()
+            )
+        sel_row.addWidget(QLabel("X transform:"))
+        sel_row.addWidget(self._preview_x_transform_combo)
+        sel_row.addWidget(QLabel("Y transform:"))
+        sel_row.addWidget(self._preview_y_transform_combo)
 
         self._preview_pair_label = QLabel(
             "Select an off-diagonal matrix cell to inspect a source → receiving pair."
@@ -662,6 +684,21 @@ class CompensationMatrixEditorDialog(QDialog):
             self._schedule_candidate_preview()
         except Exception as exc:
             self._diag_label.setText(f"Preview failed: {exc}")
+
+    def _on_preview_transform_changed(self) -> None:
+        """Apply the selected display transforms to both preview plots."""
+        self._apply_preview_axis_transforms()
+        self._schedule_candidate_preview()
+
+    def _apply_preview_axis_transforms(self) -> None:
+        x_transform = str(
+            self._preview_x_transform_combo.currentData() or "linear"
+        )
+        y_transform = str(
+            self._preview_y_transform_combo.currentData() or "linear"
+        )
+        for plot in (self._uncompensated_plot, self._compensated_plot):
+            plot.set_axis_transforms(x_transform, y_transform)
 
     # -- Matrix list ---------------------------------------------------------
 
@@ -862,6 +899,10 @@ class CompensationMatrixEditorDialog(QDialog):
             return stable_id
         return f"{display_name} [{stable_id}]"
 
+    def _short_channel_label(self, channel_id: object) -> str:
+        """Return the compact project label used inside plots and heat maps."""
+        return self._channel_display_name(channel_id)
+
     def _refresh_channels_list(self, selected_ids: list[str]) -> None:
         self._channels_list.clear()
         for channel in self._channels:
@@ -902,12 +943,12 @@ class CompensationMatrixEditorDialog(QDialog):
 
         for row_idx in range(n):
             label = channels[row_idx] if row_idx < len(channels) else f"R{row_idx}"
-            header = QTableWidgetItem(self._channel_label(label))
+            header = QTableWidgetItem(self._short_channel_label(label))
             header.setToolTip(str(label))
             self._heat_map.setVerticalHeaderItem(row_idx, header)
         for col_idx in range(n):
             label = channels[col_idx] if col_idx < len(channels) else f"C{col_idx}"
-            header = QTableWidgetItem(self._channel_label(label))
+            header = QTableWidgetItem(self._short_channel_label(label))
             header.setToolTip(str(label))
             self._heat_map.setHorizontalHeaderItem(col_idx, header)
 
@@ -954,8 +995,8 @@ class CompensationMatrixEditorDialog(QDialog):
             return
         source, receiving = self._selected_pair
         self._preview_pair_label.setText(
-            f"Source channel (spill from) {self._channel_label(source)} → "
-            f"Receiving channel (spill into) {self._channel_label(receiving)}"
+                f"Source channel (spill from) {self._short_channel_label(source)} → "
+                f"Receiving channel (spill into) {self._short_channel_label(receiving)}"
         )
 
     def _on_heat_map_cell_clicked(self, row: int, column: int) -> None:
@@ -1006,7 +1047,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._setting_coefficient = True
         try:
             self._coefficient_label.setText(
-                f"{self._channel_label(source)} → {self._channel_label(receiving)}"
+                f"{self._short_channel_label(source)} → {self._short_channel_label(receiving)}"
             )
             editable = matrix.get("source") != "calculated"
             self._coefficient_spin.setEnabled(editable)
@@ -1147,8 +1188,9 @@ class CompensationMatrixEditorDialog(QDialog):
     ) -> None:
         if request.revision != self._preview_revision:
             return
-        source_label = self._channel_label(result.source_channel_id)
-        receiving_label = self._channel_label(result.receiving_channel_id)
+        source_label = self._short_channel_label(result.source_channel_id)
+        receiving_label = self._short_channel_label(result.receiving_channel_id)
+        self._apply_preview_axis_transforms()
         self._uncompensated_plot.plot_events(
             result.uncompensated_x,
             result.uncompensated_y,

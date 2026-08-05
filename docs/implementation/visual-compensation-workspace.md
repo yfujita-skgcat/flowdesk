@@ -189,6 +189,11 @@ preview request/resultから設定する。
 - マウスホイールによるzoom、ドラッグによるpan、ViewBoxの現在X/Y range
 - point size、alpha、density/single color、grid、背景、軸ラベル
 
+X transform / Y transformはLinear、Log10、Asinhを表示用に選択できる。補償計算は常に
+raw eventへcanonical compensationを適用し、transformはpreview描画と表示range/tickだけに
+使う。軸ラベルとheat map headerは短いproject display labelを表示し、stable channel IDは
+tooltipと内部データで保持する。
+
 ViewBoxの`sigRangeChanged`は左右双方へ接続し、片側のzoom/panをもう片側へコピーする。
 同期中フラグで再帰的なsignal連鎖を防ぐ。科学計算結果やraw eventは変更せず、表示状態
 だけを同期する。将来どちらか一方だけを操作可能にする場合は、明示的なUIモードとして
