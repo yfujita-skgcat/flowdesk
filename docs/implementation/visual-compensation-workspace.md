@@ -226,8 +226,9 @@ percent/fractionの単位をcontrol横へ常時表示し、変換をwidget callb
 現在値を中心とするlocal adjustment用であり、科学的なvalid rangeを定義しない。
 slider外のfinite値はnumeric inputで受理し、sliderを再中心化する。silent clamp禁止。
 
-初期slider windowはsource valueの前後5 percentage pointsを推奨するが、これは
-presentation設定でありmatrixへ保存しない。stepは0.001 percentage point以下を扱える
+初期slider windowはsource valueの前後5 percentage pointsとし、UIで±1、±5、±20、
+±100 percentage pointsへ変更できる。これはpresentation設定でありmatrixへ保存しない。
+stepは0.001 percentage point以下を扱える
 ようにする。数値入力中のincomplete/invalid textはpreview requestを発行しない。
 
 ### 5.4 状態表示

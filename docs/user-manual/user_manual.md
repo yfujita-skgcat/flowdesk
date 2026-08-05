@@ -707,6 +707,9 @@ control populationの計算結果がstaleな場合は、workspaceは安全のた
 |---|---|
 |Sample combo|event data が GUI に読み込まれている sample。|
 |Preview|current matrix を selected sample に適用する。|
+|Coefficient / Fine adjustment|Coefficient は正確な percent 値を入力する spinbox。Fine adjustment は現在値周辺を移動する補助スライダーで、マウスホイールでも spinbox を微調整できる。|
+|Slider range|Fine adjustment の局所範囲を ±1、±5、±20、±100 percentage points から選ぶ。係数に科学的な固定上限・下限はなく、範囲外は spinbox に直接入力する。|
+|Reset to source value|自動計算または元 matrix の係数へ戻す。|
 |Preview table|Channel、Compensated candidate の代表 summary。未補償値はcoreのpreview計算には保持されるが、GUIでは重複表示しない。|
 
 `OK` は定義全体を validate して保存、`Cancel` は破棄する。画面サイズは利用可能なモニタ領域に合わせて初期化され、必要なら手動でリサイズできる。

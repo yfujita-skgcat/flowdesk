@@ -189,6 +189,7 @@ class CompensationMatrixEditorDialog(QDialog):
         self._preview_preserved_view_range = None
         self._setting_coefficient = False
         self._coefficient_slider_dragging = False
+        self._coefficient_slider_span_percent = 5.0
         self._preview_scheduler = CompensationPreviewScheduler(self)
 
         self._build_ui()
@@ -373,11 +374,20 @@ class CompensationMatrixEditorDialog(QDialog):
         self._coefficient_spin.setSuffix(" %")
         self._coefficient_slider = QSlider(Qt.Orientation.Horizontal)
         self._coefficient_slider.setObjectName("compensationCoefficientSlider")
+        self._coefficient_slider_span_combo = QComboBox()
+        self._coefficient_slider_span_combo.setObjectName(
+            "compensationCoefficientSliderSpanCombo"
+        )
+        for span in (1.0, 5.0, 20.0, 100.0):
+            self._coefficient_slider_span_combo.addItem(
+                f"±{span:g} percentage points", span
+            )
         self._coefficient_reset_btn = QPushButton("Reset to source value")
         self._coefficient_reset_btn.setObjectName("compensationCoefficientResetButton")
         coefficient_form.addRow("Pair:", self._coefficient_label)
         coefficient_form.addRow("Coefficient:", self._coefficient_spin)
         coefficient_form.addRow("Fine adjustment:", self._coefficient_slider)
+        coefficient_form.addRow("Slider range:", self._coefficient_slider_span_combo)
         coefficient_form.addRow("", self._coefficient_reset_btn)
         details_layout.addWidget(coefficient_group)
 
@@ -427,6 +437,9 @@ class CompensationMatrixEditorDialog(QDialog):
         )
         self._coefficient_slider.valueChanged.connect(
             self._on_coefficient_slider_changed
+        )
+        self._coefficient_slider_span_combo.currentIndexChanged.connect(
+            self._on_coefficient_slider_span_changed
         )
         self._coefficient_reset_btn.clicked.connect(self._reset_coefficient)
         self._validate_btn.clicked.connect(self._validate_current)
@@ -1030,9 +1043,7 @@ class CompensationMatrixEditorDialog(QDialog):
             self._coefficient_slider.setEnabled(editable)
             self._coefficient_reset_btn.setEnabled(editable)
             self._coefficient_spin.setValue(percent)
-            center = round(percent * 1000.0)
-            self._coefficient_slider.setRange(center - 5000, center + 5000)
-            self._coefficient_slider.setValue(center)
+            self._set_coefficient_slider_position(percent)
         finally:
             self._setting_coefficient = False
 
@@ -1077,6 +1088,26 @@ class CompensationMatrixEditorDialog(QDialog):
             self._set_selected_coefficient_percent(float(value) / 1000.0)
         finally:
             self._coefficient_slider_dragging = False
+
+    def _set_coefficient_slider_position(self, percent: float) -> None:
+        """Center the local slider range on a coefficient percentage."""
+        center = round(float(percent) * 1000.0)
+        span = round(self._coefficient_slider_span_percent * 1000.0)
+        self._coefficient_slider.setRange(center - span, center + span)
+        self._coefficient_slider.setValue(center)
+
+    def _on_coefficient_slider_span_changed(self, _index: int) -> None:
+        if self._setting_coefficient or self._selected_pair is None:
+            return
+        value = self._coefficient_slider_span_combo.currentData()
+        try:
+            span = float(value)
+        except (TypeError, ValueError):
+            return
+        if not np.isfinite(span) or span <= 0:
+            return
+        self._coefficient_slider_span_percent = span
+        self._set_coefficient_slider_position(self._coefficient_spin.value())
 
     def _reset_coefficient(self) -> None:
         if self._selected_pair is None or self._source_matrix_snapshot is None:
