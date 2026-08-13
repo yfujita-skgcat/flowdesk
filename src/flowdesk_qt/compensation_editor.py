@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -114,6 +115,7 @@ def _empty_binding_mapping() -> dict[str, Any]:
         "matrix_id": "",
         "scope": "sample",
         "target_id": "",
+        "enabled": True,
         "created_by": None,
         "created_at": None,
         "notes": "",
@@ -156,6 +158,9 @@ class CompensationMatrixEditorDialog(QDialog):
         *,
         sample_data: dict[str, dict[str, Any]] | None = None,
         sample_labels: dict[str, str] | None = None,
+        group_labels: dict[str, str] | None = None,
+        execution_profile_ids: Sequence[str] | None = None,
+        execution_profile_labels: dict[str, str] | None = None,
         population_ids: Sequence[str] | None = None,
         population_labels: dict[str, str] | None = None,
         parent: QWidget | None = None,
@@ -185,6 +190,9 @@ class CompensationMatrixEditorDialog(QDialog):
         self._group_ids = tuple(group_ids)
         self._sample_data = sample_data or {}
         self._sample_labels = dict(sample_labels or {})
+        self._group_labels = dict(group_labels or {})
+        self._execution_profile_ids = tuple(execution_profile_ids or ("default",))
+        self._execution_profile_labels = dict(execution_profile_labels or {})
         self._population_ids = tuple(population_ids or ("all_events",))
         self._population_labels = dict(population_labels or {})
         self._binding_panel: QWidget | None = None
@@ -511,21 +519,82 @@ class CompensationMatrixEditorDialog(QDialog):
         self._b_scope_combo = QComboBox()
         self._b_scope_combo.setObjectName("compensationBindingScopeCombo")
         self._b_scope_combo.addItems(["sample", "group", "execution_profile"])
-        self._b_target_edit = QLineEdit()
-        self._b_target_edit.setObjectName("compensationBindingTargetEdit")
+        self._b_target_edit = QComboBox()
+        self._b_target_edit.setObjectName("compensationBindingTargetCombo")
         self._b_notes_edit = QLineEdit()
         self._b_notes_edit.setObjectName("compensationBindingNotesEdit")
+        self._b_enabled_check = QCheckBox("Enabled")
+        self._b_enabled_check.setObjectName("compensationBindingEnabledCheck")
 
         form.addRow("Binding ID:", self._b_id_edit)
         form.addRow("Matrix:", self._b_matrix_combo)
         form.addRow("Scope:", self._b_scope_combo)
         form.addRow("Target ID:", self._b_target_edit)
+        form.addRow("Status:", self._b_enabled_check)
         form.addRow("Notes:", self._b_notes_edit)
         form_layout.addLayout(form)
         layout.addWidget(binding_form_group)
 
         # Populate matrix combo
         self._refresh_matrix_combo()
+        self._b_scope_combo.currentTextChanged.connect(
+            self._on_binding_scope_changed
+        )
+
+    def _on_binding_scope_changed(self, _scope: str) -> None:
+        """Reset the target when the target namespace (scope) changes."""
+        if self._loading:
+            return
+        self._refresh_target_combo("")
+
+    def _target_options(self, scope: str) -> list[tuple[str, str]]:
+        """Return (display label, stable ID) choices for a binding scope."""
+        if scope == "sample":
+            return [
+                (self._sample_labels.get(sample_id, sample_id), sample_id)
+                for sample_id in self._sample_ids
+            ]
+        if scope == "group":
+            return [
+                (self._group_labels.get(group_id, group_id), group_id)
+                for group_id in self._group_ids
+            ]
+        return [
+            (
+                self._execution_profile_labels.get(profile_id, profile_id),
+                profile_id,
+            )
+            for profile_id in self._execution_profile_ids
+        ]
+
+    def _available_target_ids(self, scope: str) -> set[str]:
+        """Return current stable IDs valid for a binding scope."""
+        return {stable_id for _label, stable_id in self._target_options(scope)}
+
+    def _refresh_target_combo(self, target_id: str | None = None) -> None:
+        """Refresh target choices after a scope change, preserving the ID."""
+        if not hasattr(self, "_b_target_edit"):
+            return
+        current = (
+            str(target_id)
+            if target_id is not None
+            else str(self._b_target_edit.currentData() or "")
+        )
+        self._b_target_edit.blockSignals(True)
+        try:
+            self._b_target_edit.clear()
+            self._b_target_edit.addItem("(select target)", "")
+            options = self._target_options(self._b_scope_combo.currentText())
+            for label, stable_id in options:
+                self._b_target_edit.addItem(label, stable_id)
+            if current and self._b_target_edit.findData(current) < 0:
+                self._b_target_edit.addItem(
+                    f"(saved; unavailable) {current}", current
+                )
+            index = self._b_target_edit.findData(current)
+            self._b_target_edit.setCurrentIndex(max(index, 0))
+        finally:
+            self._b_target_edit.blockSignals(False)
 
     # -- Preview section -----------------------------------------------------
 
@@ -1505,8 +1574,9 @@ class CompensationMatrixEditorDialog(QDialog):
                 matrix_id = binding.get("matrix_id", "")
                 scope = binding.get("scope", "")
                 target = binding.get("target_id", "")
+                status = "" if binding.get("enabled", True) else " [disabled]"
                 self._binding_list.addItem(
-                    f"{matrix_id} -> {scope}:{target}"
+                    f"{matrix_id} -> {scope}:{target}{status}"
                 )
             if self._bindings:
                 self._binding_list.setCurrentRow(
@@ -1530,8 +1600,9 @@ class CompensationMatrixEditorDialog(QDialog):
             if idx >= 0:
                 self._b_matrix_combo.setCurrentIndex(idx)
             self._b_scope_combo.setCurrentText(str(value.get("scope", "sample")))
-            self._b_target_edit.setText(str(value.get("target_id", "")))
+            self._refresh_target_combo(str(value.get("target_id", "")))
             self._b_notes_edit.setText(str(value.get("notes", "")))
+            self._b_enabled_check.setChecked(bool(value.get("enabled", True)))
         finally:
             self._loading = False
 
@@ -1576,7 +1647,10 @@ class CompensationMatrixEditorDialog(QDialog):
         original["id"] = self._b_id_edit.text().strip()
         original["matrix_id"] = str(self._b_matrix_combo.currentData() or "")
         original["scope"] = self._b_scope_combo.currentText()
-        original["target_id"] = self._b_target_edit.text().strip()
+        original["target_id"] = str(
+            self._b_target_edit.currentData() or ""
+        ).strip()
+        original["enabled"] = self._b_enabled_check.isChecked()
         original["notes"] = self._b_notes_edit.text().strip()
         if not original["id"] and original["matrix_id"] and original["target_id"]:
             original["id"] = (
@@ -1628,6 +1702,11 @@ class CompensationMatrixEditorDialog(QDialog):
             if spec.matrix_id not in matrix_ids:
                 raise ValueError(
                     f"Binding {spec.id} references unknown matrix: {spec.matrix_id}"
+                )
+            if spec.target_id not in self._available_target_ids(spec.scope):
+                raise ValueError(
+                    f"Binding {spec.id} references unavailable {spec.scope} target: "
+                    f"{spec.target_id}"
                 )
             key = (spec.scope, spec.target_id)
             if key in scope_targets:

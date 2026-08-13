@@ -44,6 +44,28 @@ once a matrix, target, or note is edited, validation requires a non-empty Bindin
 ID, Matrix ID, and Target ID.  When the user supplies a target but leaves the ID
 blank, the ID is generated from matrix, scope, and target.
 
+Target ID is a scope-dependent combo box, not a free-text field for normal
+creation.  The candidate namespace must be rebuilt whenever Scope changes:
+
+- `sample`: every loaded sample ID, displayed with its sample title;
+- `group`: every project sample-group ID, displayed with its group name;
+- `execution_profile`: every available execution-profile ID, displayed with its
+  profile name.
+
+The combo stores the stable ID as `currentData()` while showing the human label.
+An existing manifest binding whose target is no longer available must remain
+loadable and visible as an explicit `(saved; unavailable)` option; it must not be
+silently rewritten.  A new binding must choose one of the current candidates,
+and changing Scope clears the previous target rather than carrying an ID across
+namespaces.  Headless resolution continues to consume only the persisted stable
+`target_id`.
+
+Each binding also has an `enabled` boolean, defaulting to `true` for legacy
+manifests that omit it.  Disabled bindings remain visible and are persisted, but
+the core resolver must exclude them before duplicate detection and scope-priority
+resolution.  Toggling this flag is therefore a reversible way to stop applying a
+matrix without deleting its provenance or target assignment.
+
 When the workspace changes tabs, the currently visible matrix/calculation fields
 are committed to the in-memory draft before the destination tab is shown.  The
 Application / Bindings matrix combo is then rebuilt from matrices with a non-empty

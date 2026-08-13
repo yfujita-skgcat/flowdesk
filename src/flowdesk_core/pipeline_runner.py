@@ -1578,6 +1578,7 @@ class PipelineRunner:
           matrix_id=value["matrix_id"],
           scope=value["scope"],
           target_id=value["target_id"],
+          enabled=bool(value.get("enabled", True)),
           created_at=value.get("created_at"),
           created_by=value.get("created_by"),
           notes=str(value.get("notes", "")),

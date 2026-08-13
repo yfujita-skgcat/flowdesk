@@ -137,8 +137,9 @@ def resolve_compensation_binding(
   known_matrix_ids: set[str],
 ) -> CompensationBindingResolution:
   """Resolve one matrix without silently choosing among conflicting bindings."""
+  active_bindings = tuple(binding for binding in bindings if binding.enabled)
   seen_targets: dict[tuple[str, str], str] = {}
-  for binding in bindings:
+  for binding in active_bindings:
     key = (binding.scope, binding.target_id)
     previous = seen_targets.get(key)
     if previous is not None:
@@ -168,7 +169,7 @@ def resolve_compensation_binding(
     )
 
   sample_bindings = tuple(
-    binding for binding in bindings
+    binding for binding in active_bindings
     if binding.scope == "sample" and binding.target_id == sample_id
   )
   if sample_bindings:
@@ -179,7 +180,7 @@ def resolve_compensation_binding(
     )
 
   profile_bindings = tuple(
-    binding for binding in bindings
+    binding for binding in active_bindings
     if binding.scope == "execution_profile"
     and binding.target_id == execution_profile_id
   )
@@ -195,7 +196,7 @@ def resolve_compensation_binding(
 
   group_id_set = set(group_ids)
   group_bindings = tuple(
-    binding for binding in bindings
+    binding for binding in active_bindings
     if binding.scope == "group" and binding.target_id in group_id_set
   )
   if group_bindings:

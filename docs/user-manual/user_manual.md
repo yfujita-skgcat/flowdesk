@@ -699,7 +699,10 @@ control populationの計算結果がstaleな場合は、workspaceは安全のた
    `Preview`と`Validate`で結果を確認する。ここでの変更は候補値であり、raw FCSや保存済み
    pipeline結果を直接変更しない。
 6. `Application / Bindings`タブで`New`を押し、使用するmatrix、Scope（sample、group、
-   execution profile）、Target IDを明示する。Target IDは誤適用を防ぐため自動推測されない。
+   execution profile）を選ぶ。Scopeに応じてTarget IDの候補が切り替わるので、sampleでは
+   sample title、groupではgroup名、execution profileではprofile名を選択する。画面には
+   表示名が出るが、保存されるのは対応するstable IDである。Target IDは候補から選択し、
+   誤適用を防ぐため任意の文字列を推測・補完しない。
    何も編集していない空のDraftは無視されるが、保存するBindingにはBinding ID、Matrix、
    Target IDが必要である。
 7. Workspace右下の`Save and Apply`を押してmatrixとBindingをprojectへ反映する。`Cancel`
@@ -747,7 +750,8 @@ matrix bindingに従って派生値を作る。したがって、同じmatrixを
 |Binding ID|stable binding ID。|
 |Matrix|対象 matrix。|
 |Scope|sample / group / execution_profile|
-|Target ID|scope に対応する sample/group/profile ID。|
+|Target ID|scopeに対応するsample/group/profileの選択欄。表示名から選ぶが、保存値はstable ID。|
+|Enabled|チェック時だけPipelineでBindingを解決する。解除してもmatrixとBinding定義は保持され、後で再有効化できる。|
 |Notes|任意メモ。|
 
 #### Compensated Preview

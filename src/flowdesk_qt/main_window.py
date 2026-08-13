@@ -5272,8 +5272,26 @@ class MainWindow(QMainWindow):
             channels,
             population_ids,
             sample_ids,
+            group_ids=tuple(
+                str(group.get("id", ""))
+                for group in self._sample_groups
+                if str(group.get("id", "")).strip()
+            ),
             sample_data=sample_data,
             sample_labels=sample_labels,
+            group_labels={
+                str(group.get("id", "")): str(
+                    group.get("name", group.get("id", ""))
+                )
+                for group in self._sample_groups
+                if str(group.get("id", "")).strip()
+            },
+            # MainWindow does not own the pipeline worker's profile attribute;
+            # the GUI currently exposes the persisted default execution profile.
+            execution_profile_ids=("default",),
+            execution_profile_labels={
+                "default": "Default Profile",
+            },
             population_labels=population_labels,
             parent=self,
         )
@@ -6865,6 +6883,7 @@ class MainWindow(QMainWindow):
                     matrix_id=binding_dict["matrix_id"],
                     scope=binding_dict.get("scope", "sample"),
                     target_id=binding_dict["target_id"],
+                    enabled=bool(binding_dict.get("enabled", True)),
                     created_at=binding_dict.get("created_at"),
                     created_by=binding_dict.get("created_by"),
                     notes=binding_dict.get("notes", ""),

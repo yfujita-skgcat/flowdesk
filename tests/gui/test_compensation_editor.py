@@ -110,6 +110,37 @@ def test_empty_binding_draft_is_ignored_and_new_binding_gets_matrix_default() ->
         app.processEvents()
 
 
+def test_binding_target_choices_follow_scope_and_store_stable_ids() -> None:
+    app = _app()
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[_valid_2x2_matrix()],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=["group_1"],
+        sample_labels={"sample_1": "Sample one"},
+        group_labels={"group_1": "Group one"},
+        execution_profile_ids=["default", "qc"],
+        execution_profile_labels={"default": "Default", "qc": "QC"},
+    )
+    try:
+        dialog._add_binding()
+        assert dialog._b_target_edit.itemData(1) == "sample_1"
+        assert dialog._b_target_edit.itemText(1) == "Sample one"
+
+        dialog._b_scope_combo.setCurrentText("group")
+        assert dialog._b_target_edit.itemData(1) == "group_1"
+        assert dialog._b_target_edit.itemText(1) == "Group one"
+
+        dialog._b_scope_combo.setCurrentText("execution_profile")
+        assert dialog._b_target_edit.itemData(1) == "default"
+        assert dialog._b_target_edit.itemText(1) == "Default"
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 def test_editor_round_trip_preserves_matrix_and_binding() -> None:
     app = _app()
     matrix = _valid_2x2_matrix()

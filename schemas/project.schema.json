@@ -592,6 +592,7 @@
           "enum": ["sample", "group", "execution_profile"]
         },
         "target_id": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean", "default": true },
         "created_at": { "type": ["string", "null"] },
         "created_by": { "type": ["string", "null"] },
         "notes": { "type": "string" }

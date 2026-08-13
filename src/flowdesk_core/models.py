@@ -508,6 +508,7 @@ class CompensationBindingSpec:
   matrix_id: str
   scope: CompensationBindingScope
   target_id: str
+  enabled: bool = True
   created_at: str | None = None
   created_by: str | None = None
   notes: str = ""
