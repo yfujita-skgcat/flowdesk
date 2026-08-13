@@ -675,6 +675,42 @@ Application / Bindings のMatrix候補へ即時反映されます。IDが空のD
 control populationの計算結果がstaleな場合は、workspaceは安全のため`all_events`だけを
 候補として表示する。ゲートを推測してcontrol populationへ置換することはない。
 
+#### Compensation設定の標準手順
+
+単色コントロールから補償行列を作成し、解析対象へ適用する場合は、次の順番で操作する。
+
+1. FCS sampleを読み込み、各単色コントロールについてpositive populationとnegative
+   populationをゲートで作成する。ゲート結果が最新でない場合は、先にRun Pipelineを
+   実行する。
+2. `Analysis → Compensation Workspace...`を開き、`Controls & Calculate`タブの`New`
+   を押す。Calculation ID、Name、Regression、Outlier Policy、最低event数を確認する。
+3. `Add Control`で検出器ごとの行を追加し、Detector Channel、Control Sample、Positive
+   Population、Negative Populationをそれぞれ指定する。controlの割り当てが不足している、
+   またはpositive/negative event数が少ない場合は、Run Calculationのdiagnosticsに理由が
+   表示されるので、ゲートまたは最低event数を見直して再計算する。
+4. `Run Calculation`を押してspillover係数を計算する。Detectorごとのevent数、slope、
+   residual、outlier、condition numberを確認し、異常な行を修正する。`Save Matrix`は
+   成功した計算結果をmatrix definitionとして保存する操作で、まだsampleへの適用は
+   行わない。
+5. `Matrix Preview`タブで保存したmatrixを選択し、Matrix ID、Channels、heat mapの行列
+   方向（列=spill from、行=spill into）を確認する。off-diagonal cellを選ぶと、選択した
+   sample、population、X/Y transformの候補補償plotが表示される。係数を微調整する場合は
+   `Save as Copy`で元matrixを残してからCoefficientまたはFine adjustmentを変更し、
+   `Preview`と`Validate`で結果を確認する。ここでの変更は候補値であり、raw FCSや保存済み
+   pipeline結果を直接変更しない。
+6. `Application / Bindings`タブで`New`を押し、使用するmatrix、Scope（sample、group、
+   execution profile）、Target IDを明示する。Target IDは誤適用を防ぐため自動推測されない。
+   何も編集していない空のDraftは無視されるが、保存するBindingにはBinding ID、Matrix、
+   Target IDが必要である。
+7. Workspace右下の`Save and Apply`を押してmatrixとBindingをprojectへ反映する。`Cancel`
+   ならWorkspaceでの変更は破棄される。反映後は結果がstaleになるため、`Run Pipeline`を
+   実行して、補償→derived parameter→transform→gate→statisticsの順で再計算する。
+
+既存のFCS metadata/imported/calculated matrixを使う場合は、手順2～4を省略して、
+`Matrix Preview`でmatrixを確認した後、手順6～7を行う。補償はraw eventを上書きせず、
+matrix bindingに従って派生値を作る。したがって、同じmatrixを使った再計算や、Bindingを
+外した後の再解析が可能である。
+
 #### Matrices list
 
 `New`、`Save as Copy`、`Delete` で matrix definition を管理する。保存済みmatrixを手動調整する場合は、元matrixの由来を保てるよう`Save as Copy`で複製してから編集する。
