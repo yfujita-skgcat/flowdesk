@@ -333,12 +333,15 @@ class SampleBrowser(QWidget):
         self._refresh_channel_statuses()
         next_index = min(removed_index, len(self._samples) - 1)
         next_id = self._samples[next_index].id if self._samples else None
-        self._rebuild_sample_list(selected_id=next_id)
+        # Notify owners before selecting/replotting the next sample. MainWindow
+        # uses this boundary to prune annotations and other live references to
+        # the removed IDs; selecting first could render against dangling state.
         for removed_sample in removed:
             for callback in self._removed_callbacks:
                 invoke_callback(callback, removed_sample)
         for callback in self._batch_removed_callbacks:
             invoke_callback(callback, removed)
+        self._rebuild_sample_list(selected_id=next_id)
         self._emit_overlay_state()
         return removed
 

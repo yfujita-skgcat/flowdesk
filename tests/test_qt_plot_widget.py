@@ -2178,6 +2178,76 @@ def test_sample_browser_removes_all_extended_selection_rows(
     app.processEvents()
 
 
+def test_main_window_sample_removal_prunes_stale_annotations(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  app = _app()
+  window = MainWindow()
+  try:
+    monkeypatch.setattr("flowdesk_qt.sample_browser.read_fcs_info", lambda _path: _fcs_info())
+    path = tmp_path / "moved.fcs"
+    path.write_text("not real fcs")
+    assert window._sample_browser.add_samples_from_paths([str(path)]) == 1
+    sample = window._sample_browser.samples()[0]
+    window._annotations = [{
+      "sample_id": sample.id,
+      "keyword": "sample_title",
+      "value": "Old title",
+      "source": "workspace",
+    }]
+    window._sample_groups = [{
+      "id": "all", "name": "All", "sample_ids": [sample.id],
+      "membership_rule": {"all": []},
+    }]
+
+    window._sample_browser._list_widget.setCurrentRow(0)
+    removed = window._sample_browser.remove_selected_samples()
+
+    assert [item.id for item in removed] == [sample.id]
+    assert window._annotations == []
+    assert window._sample_groups[0]["sample_ids"] == []
+    manifest = window._build_project_manifest()
+    assert manifest["annotations"] == []
+  finally:
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_sample_removal_callback_runs_before_next_selection(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  app = _app()
+  browser = SampleBrowser()
+  observations: list[tuple[str, object]] = []
+  try:
+    monkeypatch.setattr("flowdesk_qt.sample_browser.read_fcs_info", lambda _path: _fcs_info())
+    paths = [tmp_path / "first.fcs", tmp_path / "second.fcs"]
+    for path in paths:
+      path.write_text("not real fcs")
+    assert browser.add_samples_from_paths([str(path) for path in paths]) == 2
+    first_id = browser.samples()[0].id
+    browser.on_samples_removed(
+      lambda _removed: observations.append(("removed", browser.selected_sample()))
+    )
+    browser.on_sample_selected(
+      lambda sample: observations.append(("selected", sample.id))
+    )
+    browser.select_sample(first_id)
+    observations.clear()
+
+    browser.remove_selected_samples()
+
+    assert observations[0] == ("removed", None)
+    assert observations[1][0] == "selected"
+  finally:
+    browser.close()
+    browser.deleteLater()
+    app.processEvents()
+
+
 def test_sample_browser_reorders_by_stable_id_and_keyboard_move(
   tmp_path: Path,
   monkeypatch: pytest.MonkeyPatch,

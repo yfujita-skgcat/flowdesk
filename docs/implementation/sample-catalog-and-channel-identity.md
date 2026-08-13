@@ -217,6 +217,36 @@ metadata, and a stable project ID. Never use the visible label as the only ident
 - Do not place FCS parsing in Qt.
 - Do not silently select the first duplicate label.
 
+## Sample removal reference cleanup
+
+Removing a sample from the catalog is a project-definition mutation, not only an
+event-cache operation. A removed stable sample ID must be pruned from every live
+sample-scoped reference before another sample is selected or imported. The cleanup
+must be implemented as a GUI-independent pure helper and used by the Qt removal
+callback.
+
+Prune the following execution/display references:
+
+- annotations for the removed sample;
+- sample-specific gate overrides and cached automatic/magnetic/tethered gate fits;
+- explicit `sample_ids` in sample groups;
+- compensation bindings whose scope is `sample` and target was removed;
+- compensation calculation controls assigned to a removed sample; remove a
+  calculation if no controls remain;
+- plot-view manual overlay IDs/colors and explicit overlay sources for removed
+  samples;
+- explicit sample targets in Batch Plot Export definitions; remove a definition
+  only if it explicitly targeted samples and none remain.
+
+Do not remove shared gating strategies, transforms, derived parameters, statistics,
+matrix definitions, or matrix provenance. Those definitions remain reusable when a
+moved FCS file is imported under a new sample ID. Historical provenance is audit
+metadata rather than a live sample selector.
+
+Acceptance tests must prove that cleanup does not mutate its input, removes all
+known dangling live references, preserves shared analysis definitions, and prevents
+`unknown_annotation_sample` during group resolution after a remove/re-import cycle.
+
 ## Final verification
 
 ```bash

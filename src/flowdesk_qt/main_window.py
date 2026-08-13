@@ -1463,6 +1463,7 @@ class MainWindow(QMainWindow):
     def _on_samples_removed(self, samples: list[_SampleInfo]) -> None:
         """Clean up all removed samples once, then invalidate results once."""
         removed_ids = {sample.id for sample in samples}
+        self._prune_removed_sample_references(removed_ids)
         for sample in samples:
             self._event_data.pop(sample.id, None)
             self._sample_data.pop(sample.id, None)
@@ -1478,6 +1479,39 @@ class MainWindow(QMainWindow):
             f"Removed {len(samples)} sample" + ("s" if len(samples) != 1 else "")
         )
         self._project_dirty = True
+
+    def _prune_removed_sample_references(self, removed_ids: set[str]) -> None:
+        """Remove live project selectors for samples deleted from the catalog."""
+        from flowdesk_core.sample_references import prune_removed_sample_references
+
+        state = prune_removed_sample_references({
+            "annotations": self._annotations,
+            "sample_groups": self._sample_groups,
+            "gate_overrides": self._gate_overrides,
+            "auto_gate_fits": self._auto_gate_fits,
+            "magnetic_gate_fits": self._magnetic_gate_fits,
+            "tethered_gate_fits": self._tethered_gate_fits,
+            "compensation_bindings": self._compensation_bindings,
+            "compensation_calculations": self._compensation_calculations,
+            "batch_plot_exports": self._batch_plot_exports,
+            "plot_views": self._plot_views,
+            "overlays": self._overlays,
+        }, removed_ids)
+        self._annotations = state["annotations"]
+        self._sample_groups = state["sample_groups"]
+        self._gate_overrides = state["gate_overrides"]
+        self._auto_gate_fits = state["auto_gate_fits"]
+        self._magnetic_gate_fits = state["magnetic_gate_fits"]
+        self._tethered_gate_fits = state["tethered_gate_fits"]
+        self._compensation_bindings = state["compensation_bindings"]
+        self._compensation_calculations = state["compensation_calculations"]
+        self._batch_plot_exports = state["batch_plot_exports"]
+        self._plot_views = state["plot_views"]
+        self._overlays = state["overlays"]
+        self._override_undo_stack = UndoStack({
+            "gate_overrides": self._gate_overrides
+        })
+        self._group_panel.set_groups(self._sample_groups)
 
     def _on_samples_reordered(self, ordered_ids: list[str]) -> None:
         """Persist user sample order without invalidating scientific Results."""

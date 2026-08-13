@@ -323,7 +323,7 @@ Manual順では、行をドラッグして並べ替えできます。現在のsa
 |ボタン|説明|
 |---|---|
 |Add FCS Files...|複数 FCS を個別選択して追加する。無効な FCS しか選ばれなかった場合は warning。|
-|Remove Selected|選択中の1つ以上の sampleをproject sessionから外す。ディスク上のFCSは削除しない。削除後は次のsampleが自動選択され、overlay/comparison設定からも削除対象を取り除く。|
+|Remove Selected|選択中の1つ以上の sampleをproject sessionから外す。ディスク上のFCSは削除しない。削除後は次のsampleが自動選択され、annotation、sample固有gate override、明示group member、sample binding、overlay/comparisonなど、削除したsample IDへのlive参照も整理する。共有gate strategy、transform、derived parameter、statisticは残る。移動した同一FCSを設定ごと維持したい場合は、削除・再追加ではなく`Reconnect…`を使う。|
 |Reconnect…|missing または移動した sample を新しい FCS path に接続する。stored fingerprint と異なる場合は、identity replacement を明示確認する。|
 
 ---

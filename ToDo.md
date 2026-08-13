@@ -92,6 +92,8 @@ git status --short
 
 ### Phase A1: Sampleごとのchannel identity [S01]
 
+- [x] 済み: sample削除時にannotation、sample override、group member、sample binding、overlay等のlive参照をpruneし、移動先FCS再追加後の`unknown_annotation_sample`を防止する。
+
 #### 事前文書
 
 - [x] 済み: `docs/implementation/sample-catalog-and-channel-identity.md`を全文読み、今回のincrementで確定したcontractと制限を追記する。
