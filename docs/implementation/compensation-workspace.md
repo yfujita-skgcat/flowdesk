@@ -30,6 +30,28 @@ Read `compensation-engine.md`, `fcs-io.md`, and
 
 ## Binding contract
 
+The Matrix Preview and Controls & Calculate lists start empty.  `New` explicitly
+creates a draft definition; the UI must not insert a blank `New matrix` or `New
+calculation` row merely because the project has no saved definitions.  This keeps
+the compensation editors consistent with Edit Statistics and prevents an empty
+draft from being mistaken for a usable definition.
+
+Application / Bindings follows the same draft rule.  `New` uses the currently
+selected Matrix ID and proposes a stable Binding ID, with `sample` as the default
+scope.  It must never guess a Target ID, because applying compensation to the
+wrong sample is a scientific error.  An untouched empty draft is ignored on save;
+once a matrix, target, or note is edited, validation requires a non-empty Binding
+ID, Matrix ID, and Target ID.  When the user supplies a target but leaves the ID
+blank, the ID is generated from matrix, scope, and target.
+
+When the workspace changes tabs, the currently visible matrix/calculation fields
+are committed to the in-memory draft before the destination tab is shown.  The
+Application / Bindings matrix combo is then rebuilt from matrices with a non-empty
+Matrix ID.  A blank draft is never a binding candidate; if no saved/draft matrix
+has an ID, the combo displays a disabled `(no saved matrix)` item.  Save and Apply
+is still the only operation that commits the workspace to the project, and Cancel
+discards these in-memory edits.
+
 Persist matrix provenance separately from the binding that applies it. Resolve
 bindings in the documented order: explicit sample binding, execution-profile
 binding, group binding, project default, then no compensation. Conflicting group

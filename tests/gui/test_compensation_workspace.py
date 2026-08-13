@@ -74,6 +74,58 @@ def test_workspace_has_one_save_boundary_and_two_review_tabs(qapp) -> None:
     qapp.processEvents()
 
 
+def test_workspace_editors_start_empty_until_new_is_pressed(qapp) -> None:
+  dialog = CompensationWorkspaceDialog(
+    [], [], [], _channels(), ("all_events",), ("sample-1",)
+  )
+  try:
+    assert dialog._matrix_editor.matrices() == []
+    assert dialog._calculation_editor.calculations() == []
+    dialog._matrix_editor._add_matrix()
+    dialog._calculation_editor._add_calculation()
+    assert len(dialog._matrix_editor.matrices()) == 1
+    assert len(dialog._calculation_editor.calculations()) == 1
+    assert dialog._matrix_editor._matrix_list.item(0).text() == "New matrix (0 channels)"
+    assert dialog._calculation_editor._calc_list.item(0).text() == (
+      "New calculation (0 controls)"
+    )
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_matrix_draft_is_available_to_bindings_after_tab_change(qapp) -> None:
+  dialog = CompensationWorkspaceDialog(
+    [], [], [], _channels(), ("all_events",), ("sample-1",)
+  )
+  try:
+    dialog._matrix_editor._add_matrix()
+    dialog._matrix_editor._id_edit.setText("matrix-new")
+    dialog._matrix_editor._name_edit.setText("New matrix")
+    dialog._tabs.setCurrentIndex(2)
+    combo = dialog._matrix_editor._b_matrix_combo
+    assert combo.findData("matrix-new") >= 0
+    assert combo.itemText(combo.findData("matrix-new")) == "New matrix"
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_workspace_omits_untouched_binding_draft(qapp) -> None:
+  dialog = _workspace()
+  try:
+    dialog._matrix_editor._add_binding()
+    dialog._matrix_editor._b_matrix_combo.setCurrentIndex(0)
+    dialog._matrix_editor._b_target_edit.clear()
+    assert dialog.bindings() == []
+  finally:
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
 def test_workspace_cancel_does_not_return_candidate_changes(qapp) -> None:
   dialog = _workspace()
   try:

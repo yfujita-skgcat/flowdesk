@@ -8,7 +8,7 @@ and binding management.  Follows the same list+form pattern as
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
@@ -120,6 +120,16 @@ def _empty_binding_mapping() -> dict[str, Any]:
     }
 
 
+def _binding_is_blank(mapping: Mapping[str, Any]) -> bool:
+    """Return whether a binding row is an untouched empty draft."""
+    # New proposes an ID and matrix, so those fields alone do not constitute
+    # an application request.  A target (or note) is the user's explicit
+    # commitment to the draft and makes validation mandatory.
+    return not str(mapping.get("target_id", "")).strip() and not str(
+        mapping.get("notes", "")
+    ).strip()
+
+
 # ---------------------------------------------------------------------------
 # CompensationMatrixEditorDialog
 # ---------------------------------------------------------------------------
@@ -200,8 +210,6 @@ class CompensationMatrixEditorDialog(QDialog):
             self._on_candidate_preview_failed
         )
 
-        if not self._matrices:
-            self._matrices.append(_empty_matrix_mapping())
         self._refresh_matrix_list(0)
         if self._bindings:
             self._refresh_binding_list(0)
@@ -217,6 +225,17 @@ class CompensationMatrixEditorDialog(QDialog):
         """Return a deep copy of the current binding definitions."""
         self._commit_current_binding()
         return deepcopy(self._bindings)
+
+    def synchronize_pending_edits(self) -> None:
+        """Commit visible draft fields and refresh Binding matrix choices.
+
+        The workspace embeds this editor in multiple tabs.  A matrix entered
+        on Matrix Preview must become available to the Binding form as soon as
+        the user changes tabs, while blank drafts must remain non-selectable.
+        """
+        self._commit_current_matrix()
+        self._commit_current_binding()
+        self._refresh_matrix_combo()
 
     def set_control_assignments(
         self, calculations: Sequence[dict[str, Any]]
@@ -712,8 +731,16 @@ class CompensationMatrixEditorDialog(QDialog):
         self._b_matrix_combo.blockSignals(True)
         self._b_matrix_combo.clear()
         for matrix in self._matrices:
-            name = matrix.get("name") or matrix.get("id") or "(unnamed)"
-            self._b_matrix_combo.addItem(name, matrix.get("id", ""))
+            matrix_id = str(matrix.get("id", "")).strip()
+            if not matrix_id:
+                continue
+            name = str(matrix.get("name") or matrix_id)
+            self._b_matrix_combo.addItem(name, matrix_id)
+        if self._b_matrix_combo.count() == 0:
+            self._b_matrix_combo.addItem("(no saved matrix)", "")
+            item = self._b_matrix_combo.model().item(0)
+            if item is not None:
+                item.setEnabled(False)
         self._b_matrix_combo.blockSignals(False)
 
     def _load_matrix_row(self, row: int) -> None:
@@ -1516,7 +1543,19 @@ class CompensationMatrixEditorDialog(QDialog):
 
     def _add_binding(self) -> None:
         self._commit_current_binding()
-        self._bindings.append(_empty_binding_mapping())
+        draft = _empty_binding_mapping()
+        current_matrix = (
+            self._matrices[self._current_matrix_row]
+            if 0 <= self._current_matrix_row < len(self._matrices)
+            else None
+        )
+        matrix_id = "" if current_matrix is None else str(
+            current_matrix.get("id", "")
+        ).strip()
+        if matrix_id:
+            draft["matrix_id"] = matrix_id
+            draft["id"] = f"binding_{matrix_id}_sample"
+        self._bindings.append(draft)
         self._refresh_binding_list(len(self._bindings) - 1)
 
     def _delete_binding(self) -> None:
@@ -1539,6 +1578,11 @@ class CompensationMatrixEditorDialog(QDialog):
         original["scope"] = self._b_scope_combo.currentText()
         original["target_id"] = self._b_target_edit.text().strip()
         original["notes"] = self._b_notes_edit.text().strip()
+        if not original["id"] and original["matrix_id"] and original["target_id"]:
+            original["id"] = (
+                f"binding_{original['matrix_id']}_{original['scope']}_"
+                f"{original['target_id']}"
+            )
 
     # -- Accept --------------------------------------------------------------
 
@@ -1573,6 +1617,8 @@ class CompensationMatrixEditorDialog(QDialog):
         binding_ids: set[str] = set()
         scope_targets: set[tuple[str, str]] = set()
         for mapping in self._bindings:
+            if _binding_is_blank(mapping):
+                continue
             spec = CompensationBindingSpec(**mapping)
             if not spec.id:
                 raise ValueError("Every binding must have a non-empty ID")
@@ -1671,8 +1717,6 @@ class CompensationCalculationEditorDialog(QDialog):
 
         self._build_ui()
 
-        if not self._calculations:
-            self._calculations.append(_empty_calculation_mapping())
         self._refresh_calc_list(0)
 
     # -- Public API ----------------------------------------------------------

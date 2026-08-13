@@ -104,7 +104,7 @@ class CompensationWorkspaceDialog(QDialog):
     self._tabs.addTab(self._calculation_editor, "Controls & Calculate")
     self._tabs.addTab(self._matrix_editor, "Matrix Preview")
     self._tabs.addTab(self._matrix_editor.binding_panel(), "Application / Bindings")
-    self._tabs.currentChanged.connect(self._sync_control_assignments)
+    self._tabs.currentChanged.connect(self._on_tab_changed)
     outer.addWidget(self._tabs, 1)
 
     buttons = QDialogButtonBox()
@@ -124,12 +124,18 @@ class CompensationWorkspaceDialog(QDialog):
 
   def _sync_control_assignments(self) -> None:
     """Propagate explicit control assignments to the preview selector."""
+    self._calculation_editor._commit_current_calculation()
+    self._matrix_editor.synchronize_pending_edits()
     calculated = self._calculation_editor.calculated_matrix()
     if calculated is not None:
       self._matrix_editor.add_matrix_mapping(calculated)
     self._matrix_editor.set_control_assignments(
       self._calculation_editor.calculations()
     )
+
+  def _on_tab_changed(self, _index: int) -> None:
+    """Synchronize embedded editors before exposing another workspace tab."""
+    self._sync_control_assignments()
 
   @staticmethod
   def _prepare_embedded_editor(editor: QDialog) -> None:
@@ -144,7 +150,11 @@ class CompensationWorkspaceDialog(QDialog):
     return self._matrix_editor.matrices()
 
   def bindings(self) -> list[dict[str, Any]]:
-    return self._matrix_editor.bindings()
+    return [
+      value for value in self._matrix_editor.bindings()
+      if str(value.get("target_id", "")).strip()
+      or str(value.get("notes", "")).strip()
+    ]
 
   def calculations(self) -> list[dict[str, Any]]:
     values = self._calculation_editor.calculations()

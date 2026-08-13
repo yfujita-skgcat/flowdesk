@@ -72,13 +72,38 @@ def test_editor_constructs_and_returns_empty_defaults() -> None:
         group_ids=[],
     )
     try:
-        # An empty matrix is auto-created when no matrices provided
+        # The editor starts empty; New creates the first draft explicitly.
         matrices = dialog.matrices()
-        assert len(matrices) == 1
-        assert matrices[0]["id"] == ""
-        assert matrices[0]["source"] == "user_defined"
+        assert matrices == []
+        dialog._add_matrix()
+        assert len(dialog.matrices()) == 1
+        assert dialog.matrices()[0]["id"] == ""
+        assert dialog.matrices()[0]["source"] == "user_defined"
         bindings = dialog.bindings()
         assert bindings == []
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_empty_binding_draft_is_ignored_and_new_binding_gets_matrix_default() -> None:
+    app = _app()
+    dialog = CompensationMatrixEditorDialog(
+        matrices=[_valid_2x2_matrix()],
+        bindings=[],
+        available_channels=_sample_channels(),
+        sample_ids=["sample_1"],
+        group_ids=[],
+    )
+    try:
+        dialog._add_binding()
+        assert dialog._b_matrix_combo.currentData() == "comp_2x2"
+        assert dialog._b_id_edit.text() == "binding_comp_2x2_sample"
+        dialog._b_target_edit.clear()
+        dialog._commit_current_binding()
+        dialog._validate_all_bindings()
+        assert dialog.bindings()[0]["target_id"] == ""
     finally:
         dialog.close()
         dialog.deleteLater()

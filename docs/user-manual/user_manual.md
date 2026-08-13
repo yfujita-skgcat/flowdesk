@@ -653,6 +653,12 @@ source event count、candidate event count、gained、lost、scientific equivale
 
 通常は Analysis → Compensation Workspace... を使う。Controls専用の別メニューはなく、workspaceには次の3タブがある。
 
+Controls & Calculate と Matrix Preview の定義一覧は、初期状態では空です。`New`
+を押したときだけ `New calculation` または `New matrix` の編集対象が作成されます。
+これは Edit Statistics と同じ挙動で、空の未保存行列を誤ってBinding対象として扱わないためです。
+Matrix PreviewでMatrix IDを入力して別タブへ移ると、そのIDを持つ行列は
+Application / Bindings のMatrix候補へ即時反映されます。IDが空のDraftは候補に表示されません。
+
 - `Controls & Calculate`: detectorごとにcontrol sample、positive/negative population、
   regression/outlier policyを指定し、既存のcore計算を実行する。
 - `Matrix Preview`: Matrix ID、Name、Source、Notes、Channels、全選択/全解除、
@@ -691,6 +697,13 @@ control populationの計算結果がstaleな場合は、workspaceは安全のた
 |diagnostic label|validity と condition number、または errors。|
 
 #### Application / Bindings tab
+
+`New` は現在選択中のMatrixを初期Matrixとして、Scope=`sample` と
+`binding_<matrix-id>_sample`形式のBinding ID候補を入力します。Target IDは解析対象を
+誤って推測しないため自動入力されず、適用先のsample/group/profileを明示してください。
+何も編集していない空のDraftはSave and Apply時に無視されます。MatrixまたはTargetを
+入力したDraftは、Binding ID、Matrix、Target IDがすべて必要です。Binding IDを空欄の
+ままTarget IDを入力すると、Matrix・Scope・Targetから自動生成されます。
 
 |control|説明|
 |---|---|
